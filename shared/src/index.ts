@@ -13,6 +13,7 @@ export * from './common/pagination.schema';
 
 // Domain contracts
 export * from './weather/weather.schema';
+export * from './public-api/public-api.schema';
 export * from './airport/airport.schema';
 export * from './config/config.schema';
 export * from './system-notice/system-notice.schema';
@@ -31,11 +32,13 @@ export * from './exchange-rate/exchange-rate.schema';
 export * from './exchange-rate/frankfurter-currencies';
 export * from './reservation/reservation.schema';
 export * from './reservation/ki-reservation.schema';
+export * from './datetime/datetime-normalize';
 export * from './airtrail/airtrail.schema';
 export * from './day/day.schema';
 export * from './day/note-colors';
 export * from './assignment/assignment.schema';
 export * from './place/place.schema';
+export * from './place/place-match';
 export * from './place/track-colors';
 export * from './collection/collection.schema';
 export * from './trip/trip.schema';

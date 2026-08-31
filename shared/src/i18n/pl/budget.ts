@@ -196,7 +196,8 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.explicitNote': 'Rate note (optional)',
   'costs.exchangeRates.fetchedAt': 'Fetched: {date}',
   'costs.exchangeRates.inverse': 'Inverse: 1 {tripCurrency} = {rate} {currency}',
-  'costs.exchangeRates.frozenHint': 'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
+  'costs.exchangeRates.frozenHint':
+    'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
 };

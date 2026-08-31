@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { server } from '../../helpers/msw/server';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { useSettingsStore } from '../../../src/store/settingsStore';
-import { resetAllStores } from '../../helpers/store';
 import { buildSettings } from '../../helpers/factories';
+import { server } from '../../helpers/msw/server';
+import { resetAllStores } from '../../helpers/store';
 
 beforeEach(() => {
   resetAllStores();
@@ -13,9 +13,7 @@ describe('settingsStore', () => {
   describe('FE-SETTINGS-001: loadSettings()', () => {
     it('fetches settings and updates store', async () => {
       const settings = buildSettings({ default_currency: 'EUR', language: 'de' });
-      server.use(
-        http.get('/api/settings', () => HttpResponse.json({ settings }))
-      );
+      server.use(http.get('/api/settings', () => HttpResponse.json({ settings })));
 
       await useSettingsStore.getState().loadSettings();
       const state = useSettingsStore.getState();
@@ -42,16 +40,10 @@ describe('settingsStore', () => {
 
   describe('FE-SETTINGS-003: updateSetting() reverts on API failure', () => {
     it('throws when API fails', async () => {
-      server.use(
-        http.put('/api/settings', () =>
-          HttpResponse.json({ error: 'Server error' }, { status: 500 })
-        )
-      );
+      server.use(http.put('/api/settings', () => HttpResponse.json({ error: 'Server error' }, { status: 500 })));
 
       // The store optimistically sets, then throws — the revert is a throw
-      await expect(
-        useSettingsStore.getState().updateSetting('default_currency', 'GBP')
-      ).rejects.toThrow();
+      await expect(useSettingsStore.getState().updateSetting('default_currency', 'GBP')).rejects.toThrow();
     });
   });
 
@@ -67,11 +59,7 @@ describe('settingsStore', () => {
 
   describe('FE-SETTINGS-005: loadSettings failure', () => {
     it('leaves isLoaded false on API failure so the load is retried (#1618)', async () => {
-      server.use(
-        http.get('/api/settings', () =>
-          HttpResponse.json({ error: 'Server error' }, { status: 500 })
-        )
-      );
+      server.use(http.get('/api/settings', () => HttpResponse.json({ error: 'Server error' }, { status: 500 })));
 
       await useSettingsStore.getState().loadSettings();
 
@@ -82,18 +70,12 @@ describe('settingsStore', () => {
     });
 
     it('recovers on a later retry after an initial failure (#1618)', async () => {
-      server.use(
-        http.get('/api/settings', () =>
-          HttpResponse.json({ error: 'Server error' }, { status: 500 })
-        )
-      );
+      server.use(http.get('/api/settings', () => HttpResponse.json({ error: 'Server error' }, { status: 500 })));
       await useSettingsStore.getState().loadSettings();
       expect(useSettingsStore.getState().isLoaded).toBe(false);
 
       const settings = buildSettings({ default_currency: 'EUR' });
-      server.use(
-        http.get('/api/settings', () => HttpResponse.json({ settings }))
-      );
+      server.use(http.get('/api/settings', () => HttpResponse.json({ settings })));
       await useSettingsStore.getState().loadSettings();
 
       const state = useSettingsStore.getState();
@@ -146,15 +128,9 @@ describe('settingsStore', () => {
 
   describe('FE-STORE-SETTINGS-010: updateSettings API failure throws', () => {
     it('throws when bulk API returns 500', async () => {
-      server.use(
-        http.post('/api/settings/bulk', () =>
-          HttpResponse.json({ error: 'Server error' }, { status: 500 })
-        )
-      );
+      server.use(http.post('/api/settings/bulk', () => HttpResponse.json({ error: 'Server error' }, { status: 500 })));
 
-      await expect(
-        useSettingsStore.getState().updateSettings({ dark_mode: true })
-      ).rejects.toThrow();
+      await expect(useSettingsStore.getState().updateSettings({ dark_mode: true })).rejects.toThrow();
     });
   });
 
@@ -170,11 +146,7 @@ describe('settingsStore', () => {
 
   describe('FE-STORE-SETTINGS-012: loadSettings merges server values with defaults', () => {
     it('preserves default keys not returned by server', async () => {
-      server.use(
-        http.get('/api/settings', () =>
-          HttpResponse.json({ settings: { dark_mode: true } })
-        )
-      );
+      server.use(http.get('/api/settings', () => HttpResponse.json({ settings: { dark_mode: true } })));
 
       await useSettingsStore.getState().loadSettings();
 
@@ -228,15 +200,9 @@ describe('settingsStore', () => {
 
   describe('FE-STORE-SETTINGS-014: updateSetting API failure leaves optimistic state', () => {
     it('throws on API failure but keeps the optimistic state', async () => {
-      server.use(
-        http.put('/api/settings', () =>
-          HttpResponse.json({ error: 'Server error' }, { status: 500 })
-        )
-      );
+      server.use(http.put('/api/settings', () => HttpResponse.json({ error: 'Server error' }, { status: 500 })));
 
-      await expect(
-        useSettingsStore.getState().updateSetting('default_currency', 'EUR')
-      ).rejects.toThrow();
+      await expect(useSettingsStore.getState().updateSetting('default_currency', 'EUR')).rejects.toThrow();
 
       expect(useSettingsStore.getState().settings.default_currency).toBe('EUR');
     });
@@ -253,17 +219,13 @@ describe('settingsStore', () => {
 
       // d.tile.openstreetmap.org no longer resolves, so a template stored before
       // OSM dropped sharding must not reach the map or the tile prefetcher.
-      expect(useSettingsStore.getState().settings.map_tile_url).toBe(
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-      );
+      expect(useSettingsStore.getState().settings.map_tile_url).toBe('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
     });
 
     it('leaves a custom template from another provider untouched', async () => {
       const url = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
       server.use(
-        http.get('/api/settings', () =>
-          HttpResponse.json({ settings: buildSettings({ map_tile_url: url }) })
-        )
+        http.get('/api/settings', () => HttpResponse.json({ settings: buildSettings({ map_tile_url: url }) }))
       );
 
       await useSettingsStore.getState().loadSettings();
@@ -288,12 +250,8 @@ describe('settingsStore', () => {
 
       // Normalizing only on read would leave the dead host in the database and
       // hand it straight back on the next load.
-      expect(useSettingsStore.getState().settings.map_tile_url).toBe(
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-      );
-      expect(bodies).toEqual([
-        { key: 'map_tile_url', value: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
-      ]);
+      expect(useSettingsStore.getState().settings.map_tile_url).toBe('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+      expect(bodies).toEqual([{ key: 'map_tile_url', value: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' }]);
     });
 
     it('rewrites the template inside a bulk save and persists the rewrite', async () => {
@@ -310,9 +268,7 @@ describe('settingsStore', () => {
         map_provider: 'leaflet',
       });
 
-      expect(useSettingsStore.getState().settings.map_tile_url).toBe(
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-      );
+      expect(useSettingsStore.getState().settings.map_tile_url).toBe('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
       expect(bodies[0].settings).toEqual({
         map_tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
         map_provider: 'leaflet',

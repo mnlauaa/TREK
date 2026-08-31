@@ -1,15 +1,14 @@
-import React from 'react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Route, Routes } from 'react-router';
 import { http, HttpResponse } from 'msw';
-import { fireEvent, render, screen, waitFor } from '../../../helpers/render';
-import { server } from '../../../helpers/msw/server';
-import { resetAllStores, seedStore } from '../../../helpers/store';
-import { buildAdmin } from '../../../helpers/factories';
-import { useAuthStore } from '../../../../src/store/authStore';
-import { useAddonStore } from '../../../../src/store/addonStore';
+import { Route, Routes } from 'react-router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastContainer } from '../../../../src/components/shared/Toast';
 import MAdmin from '../../../../src/mobile/screens/admin/MAdmin';
+import { useAddonStore } from '../../../../src/store/addonStore';
+import { useAuthStore } from '../../../../src/store/authStore';
+import { buildAdmin } from '../../../helpers/factories';
+import { server } from '../../../helpers/msw/server';
+import { fireEvent, render, screen, waitFor } from '../../../helpers/render';
+import { resetAllStores, seedStore } from '../../../helpers/store';
 
 // FE-MOB-ADMIN-001 onwards
 
@@ -46,9 +45,7 @@ vi.mock('../../../../src/mobile/screens/admin/MAdminMcpTokensPanel', () => ({
   default: () => <div data-testid="mcp-tokens-panel" />,
 }));
 vi.mock('../../../../src/mobile/screens/admin/MAdminAuditLogPanel', () => ({
-  default: ({ serverTimezone }: { serverTimezone?: string }) => (
-    <div data-testid="audit-panel">{serverTimezone}</div>
-  ),
+  default: ({ serverTimezone }: { serverTimezone?: string }) => <div data-testid="audit-panel">{serverTimezone}</div>,
 }));
 vi.mock('../../../../src/mobile/screens/admin/MAdminGitHubPanel', () => ({
   default: ({ isPrerelease }: { isPrerelease: boolean }) => (
@@ -74,11 +71,17 @@ vi.mock('../../../../src/mobile/screens/admin/MAdminAddonManager', () => ({
   }) => (
     <div>
       <span data-testid="bag-state">{String(bagTrackingEnabled)}</span>
-      <button type="button" onClick={onToggleBagTracking}>toggle bag</button>
+      <button type="button" onClick={onToggleBagTracking}>
+        toggle bag
+      </button>
       <span data-testid="chat-state">{String(collabFeatures.chat)}</span>
-      <button type="button" onClick={() => onToggleCollabFeature('chat')}>toggle chat</button>
+      <button type="button" onClick={() => onToggleCollabFeature('chat')}>
+        toggle chat
+      </button>
       <span data-testid="notes-state">{String(collabFeatures.notes)}</span>
-      <button type="button" onClick={() => onToggleCollabFeature('notes')}>toggle notes</button>
+      <button type="button" onClick={() => onToggleCollabFeature('notes')}>
+        toggle notes
+      </button>
     </div>
   ),
 }));
@@ -92,7 +95,7 @@ function renderAdmin() {
         <Route path="/dashboard" element={<div>dashboard page</div>} />
       </Routes>
     </>,
-    { initialEntries: ['/admin'] },
+    { initialEntries: ['/admin'] }
   );
 }
 
@@ -106,12 +109,12 @@ beforeEach(() => {
   seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
   server.use(
     http.get('/api/admin/collab-features', () =>
-      HttpResponse.json({ chat: true, notes: true, polls: true, whatsnext: true }),
+      HttpResponse.json({ chat: true, notes: true, polls: true, whatsnext: true })
     ),
     http.get('/api/admin/places-photos', () => HttpResponse.json({ enabled: false })),
     http.get('/api/admin/places-autocomplete', () => HttpResponse.json({ enabled: false })),
     http.get('/api/admin/places-details', () => HttpResponse.json({ enabled: false })),
-    http.get('/api/admin/invites/trips', () => HttpResponse.json({ trips: [] })),
+    http.get('/api/admin/invites/trips', () => HttpResponse.json({ trips: [] }))
   );
 });
 
@@ -237,8 +240,8 @@ describe('MAdmin', () => {
           current: '3.4.0',
           is_prerelease: true,
           is_docker: true,
-        }),
-      ),
+        })
+      )
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), serverTimezone: 'Europe/Berlin' });
     renderAdmin();
@@ -254,8 +257,8 @@ describe('MAdmin', () => {
   it('FE-MOB-ADMIN-010: the update banner opens the how-to-update sheet', async () => {
     server.use(
       http.get('/api/admin/version-check', () =>
-        HttpResponse.json({ update_available: true, latest: '3.5.0', current: '3.4.0', is_docker: true }),
-      ),
+        HttpResponse.json({ update_available: true, latest: '3.5.0', current: '3.4.0', is_docker: true })
+      )
     );
     renderAdmin();
 
@@ -280,7 +283,7 @@ describe('MAdmin', () => {
       http.post('/api/admin/save-demo-baseline', () => {
         saved = true;
         return HttpResponse.json({ success: true });
-      }),
+      })
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), demoMode: true });
     renderAdmin();
@@ -295,8 +298,8 @@ describe('MAdmin', () => {
   it('FE-MOB-ADMIN-013: a failing baseline save surfaces the server message', async () => {
     server.use(
       http.post('/api/admin/save-demo-baseline', () =>
-        HttpResponse.json({ error: 'Not a demo instance' }, { status: 400 }),
-      ),
+        HttpResponse.json({ error: 'Not a demo instance' }, { status: 400 })
+      )
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), demoMode: true });
     renderAdmin();
@@ -315,7 +318,7 @@ describe('MAdmin', () => {
         return bodies.length === 1
           ? HttpResponse.json({ enabled: true })
           : HttpResponse.json({ error: 'boom' }, { status: 500 });
-      }),
+      })
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -337,7 +340,7 @@ describe('MAdmin', () => {
       http.put('/api/admin/collab-features', async ({ request }) => {
         sent = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ ...sent });
-      }),
+      })
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -351,9 +354,7 @@ describe('MAdmin', () => {
   });
 
   it('FE-MOB-ADMIN-016: a failing collab update restores the previous flags', async () => {
-    server.use(
-      http.put('/api/admin/collab-features', () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
-    );
+    server.use(http.put('/api/admin/collab-features', () => HttpResponse.json({ error: 'boom' }, { status: 500 })));
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
     await openSection('Addons');
@@ -370,11 +371,13 @@ describe('MAdmin', () => {
       http.put('/api/admin/collab-features', async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         if ('chat' in body) {
-          await new Promise<void>((resolve) => { releaseChat = resolve; });
+          await new Promise<void>((resolve) => {
+            releaseChat = resolve;
+          });
           return HttpResponse.json({ error: 'boom' }, { status: 500 });
         }
         return HttpResponse.json({ ...body });
-      }),
+      })
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -394,9 +397,7 @@ describe('MAdmin', () => {
 
   it('FE-MOB-ADMIN-017: the stats grid falls back to zero files', async () => {
     server.use(
-      http.get('/api/admin/stats', () =>
-        HttpResponse.json({ totalUsers: 3, totalTrips: 7, totalPlaces: 11 }),
-      ),
+      http.get('/api/admin/stats', () => HttpResponse.json({ totalUsers: 3, totalTrips: 7, totalPlaces: 11 }))
     );
     renderAdmin();
 

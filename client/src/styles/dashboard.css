@@ -1592,6 +1592,22 @@
   font-weight: 500;
   margin-bottom: 2px;
 }
+.trek-dash .upc-info .t {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* An unconfirmed booking looked exactly like a confirmed one here (#1934). */
+.trek-dash .upc-pending {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-3);
+}
 .trek-dash .upc-info .s {
   font-size: 12px;
   color: var(--ink-3);

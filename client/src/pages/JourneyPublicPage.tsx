@@ -1,11 +1,11 @@
 import {
+  ArrowUpDown,
   BookOpen,
   Camera,
   Clock,
   Cloud,
   CloudLightning,
   CloudRain,
-  ArrowUpDown,
   CloudSun,
   Frown,
   Grid,
@@ -149,27 +149,25 @@ export default function JourneyPublicPage() {
     perms.share_timeline && { id: 'timeline' as const, icon: List, label: t('journey.share.timeline') },
     perms.share_gallery && { id: 'gallery' as const, icon: Grid, label: t('journey.share.gallery') },
     !desktopTwoColumn &&
-    !isMobile &&
-    perms.share_map && { id: 'map' as const, icon: MapPin, label: t('journey.share.map') },
+      !isMobile &&
+      perms.share_map && { id: 'map' as const, icon: MapPin, label: t('journey.share.map') },
   ].filter(Boolean) as { id: 'timeline' | 'gallery' | 'map'; icon: any; label: string }[];
 
   // The hook cannot build these: the thumbnail URL needs the share token, which is
   // the credential for the byte proxy.
   const photoLayer = token
     ? mapPhotos.map((p: { id: string; lat: number; lng: number; photoId: number }) => ({
-      id: p.id,
-      lat: p.lat,
-      lng: p.lng,
-      thumbUrl: photoUrl({ photo_id: p.photoId }, token, 'thumbnail'),
-    }))
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        thumbUrl: photoUrl({ photo_id: p.photoId }, token, 'thumbnail'),
+      }))
     : [];
 
   // Shared timeline renderer used in both layout modes
   const renderTimeline = () => (
     <div className="flex flex-col gap-6">
-      {sortedDates.length === 0 && (
-        <EmptyState scene="journey" title={t('journey.detail.noEntries')} />
-      )}
+      {sortedDates.length === 0 && <EmptyState scene="journey" title={t('journey.detail.noEntries')} />}
       {/* The owner publishes a reading order; the reader may flip it. Only the order
           changes — the day colours and the stop numbers stay chronological. */}
       {sortedDates.length > 1 && (
@@ -252,9 +250,14 @@ export default function JourneyPublicPage() {
                       >
                         <div className={`relative h-64 w-full ${photos[0].media_type === 'video' ? 'bg-black' : ''}`}>
                           <img
-                            src={photoUrl(photos[0], token!, photos[0].media_type === 'video' ? 'thumbnail' : 'original')}
-                            className={`h-full w-full ${photos[0].media_type === 'video' ? 'object-contain' : 'object-cover'
-                              }`}
+                            src={photoUrl(
+                              photos[0],
+                              token!,
+                              photos[0].media_type === 'video' ? 'thumbnail' : 'original'
+                            )}
+                            className={`h-full w-full ${
+                              photos[0].media_type === 'video' ? 'object-contain' : 'object-cover'
+                            }`}
                             alt=""
                           />
 
@@ -297,15 +300,17 @@ export default function JourneyPublicPage() {
                           <button
                             key={p.id}
                             type="button"
-                            className={`relative block h-52 w-full cursor-pointer overflow-hidden ${p.media_type === 'video' ? 'bg-black' : ''
-                              }`}
+                            className={`relative block h-52 w-full cursor-pointer overflow-hidden ${
+                              p.media_type === 'video' ? 'bg-black' : ''
+                            }`}
                             onClick={() => setLightbox({ photos: lightboxPhotos, index: i })}
                           >
                             <img
                               src={photoUrl(p, token!, 'thumbnail')}
                               alt=""
-                              className={`h-full w-full ${p.media_type === 'video' ? 'object-contain' : 'object-cover'
-                                }`}
+                              className={`h-full w-full ${
+                                p.media_type === 'video' ? 'object-contain' : 'object-cover'
+                              }`}
                             />
 
                             {p.media_type === 'video' && (
@@ -330,8 +335,9 @@ export default function JourneyPublicPage() {
                           <img
                             src={photoUrl(photos[0], token!, 'thumbnail')}
                             alt=""
-                            className={`h-full w-full ${photos[0].media_type === 'video' ? 'object-contain bg-black' : 'object-cover'
-                              }`}
+                            className={`h-full w-full ${
+                              photos[0].media_type === 'video' ? 'bg-black object-contain' : 'object-cover'
+                            }`}
                           />
                         </button>
                         <div className="flex min-w-0 flex-1 flex-col" style={{ gap: 2 }}>
@@ -343,8 +349,9 @@ export default function JourneyPublicPage() {
                             <img
                               src={photoUrl(photos[1], token!, 'thumbnail')}
                               alt=""
-                              className={`h-full w-full ${photos[1].media_type === 'video' ? 'object-contain bg-black' : 'object-cover'
-                                }`}
+                              className={`h-full w-full ${
+                                photos[1].media_type === 'video' ? 'bg-black object-contain' : 'object-cover'
+                              }`}
                             />
                           </button>
                           <button
@@ -355,8 +362,9 @@ export default function JourneyPublicPage() {
                             <img
                               src={photoUrl(photos[2], token!, 'thumbnail')}
                               alt=""
-                              className={`h-full w-full ${photos[2].media_type === 'video' ? 'object-contain bg-black' : 'object-cover'
-                                }`}
+                              className={`h-full w-full ${
+                                photos[2].media_type === 'video' ? 'bg-black object-contain' : 'object-cover'
+                              }`}
                             />
                             {photos.length > 3 && (
                               <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -368,8 +376,7 @@ export default function JourneyPublicPage() {
                           </button>
                         </div>
                       </div>
-                    )
-                    }
+                    )}
 
                     {/* Content */}
                     {/* Stays a div: the story renders user markdown, links included,
@@ -503,10 +510,10 @@ export default function JourneyPublicPage() {
                 );
               })}
             </div>
-          </div >
+          </div>
         );
       })}
-    </div >
+    </div>
   );
 
   // Shared gallery renderer
@@ -531,10 +538,9 @@ export default function JourneyPublicPage() {
         >
           <img
             src={photoUrl(photo, token!, 'thumbnail')}
-            className={`h-full w-full transition-transform hover:scale-105 ${photo.media_type === 'video'
-              ? 'object-contain bg-black'
-              : 'object-cover'
-              }`}
+            className={`h-full w-full transition-transform hover:scale-105 ${
+              photo.media_type === 'video' ? 'bg-black object-contain' : 'object-cover'
+            }`}
             alt=""
             loading="lazy"
           />
@@ -555,13 +561,15 @@ export default function JourneyPublicPage() {
     views.length > 1 && (
       <div className="mb-6 flex w-fit overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
         {views.map((v) => (
-          <button type="button"
+          <button
+            type="button"
             key={v.id}
             onClick={() => setView(v.id)}
-            className={`flex items-center gap-1.5 px-3 py-[7px] text-[12px] font-medium ${view === v.id
-              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-              }`}
+            className={`flex items-center gap-1.5 px-3 py-[7px] text-[12px] font-medium ${
+              view === v.id
+                ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            }`}
           >
             <v.icon size={13} />
             {v.label}
@@ -618,7 +626,8 @@ export default function JourneyPublicPage() {
 
         {/* Language picker */}
         <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
-          <button type="button"
+          <button
+            type="button"
             onClick={() => setShowLangPicker((v) => !v)}
             style={{
               padding: '5px 12px',
@@ -862,13 +871,15 @@ export default function JourneyPublicPage() {
             >
               <div className="flex overflow-hidden rounded-lg border border-zinc-200 bg-white/90 shadow-lg backdrop-blur-lg dark:border-zinc-700 dark:bg-zinc-800/90">
                 {availableViews.map((v) => (
-                  <button type="button"
+                  <button
+                    type="button"
                     key={v.id}
                     onClick={() => setView(v.id)}
-                    className={`flex items-center gap-1.5 px-3 py-[7px] text-[12px] font-medium ${view === v.id
-                      ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                      : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                      }`}
+                    className={`flex items-center gap-1.5 px-3 py-[7px] text-[12px] font-medium ${
+                      view === v.id
+                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
                   >
                     <v.icon size={13} />
                     {v.label}
@@ -903,7 +914,13 @@ export default function JourneyPublicPage() {
           {/* Map (standalone tab — only in single-column mode) */}
           {view === 'map' && perms.share_map && (
             <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-700">
-              <JourneyMap checkins={[]} entries={sidebarMapItems as any} photos={photoLayer} height={500} cartoApiKey={cartoApiKey} />
+              <JourneyMap
+                checkins={[]}
+                entries={sidebarMapItems as any}
+                photos={photoLayer}
+                height={500}
+                cartoApiKey={cartoApiKey}
+              />
             </div>
           )}
         </div>
@@ -945,12 +962,10 @@ export default function JourneyPublicPage() {
         <MobileEntryView
           entry={viewingEntry as any}
           readOnly
-          publicPhotoUrl={(photoId, size = 'original') =>
-            `/api/public/journey/${token}/photos/${photoId}/${size}`
-          }
+          publicPhotoUrl={(photoId, size = 'original') => `/api/public/journey/${token}/photos/${photoId}/${size}`}
           onClose={() => setViewingEntry(null)}
-          onEdit={() => { }}
-          onDelete={() => { }}
+          onEdit={() => {}}
+          onDelete={() => {}}
           onPhotoClick={(photos, idx) =>
             setLightbox({
               photos: photos.map((p) => ({

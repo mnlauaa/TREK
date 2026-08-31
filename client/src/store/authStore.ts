@@ -10,6 +10,7 @@ import { tripSyncManager } from '../sync/tripSyncManager';
 import { clearAppearanceSnapshot } from '../theme/applyAppearance';
 import type { User } from '../types';
 import { getApiErrorMessage } from '../types';
+import { clearSignedOut, markSignedOut } from '../utils/signedOut';
 import { forgetStartDestination } from '../utils/startDestination';
 import { clearAllPluginSessions } from './pluginStore';
 import { useSystemNoticeStore } from './systemNoticeStore.js';
@@ -91,6 +92,9 @@ let authSequence = 0;
  */
 async function onAuthSuccess(userId: number): Promise<void> {
   setAuthed(true);
+  // A successful password, SSO, MFA, demo, or restored session clears the
+  // deliberate-sign-out marker so a later OIDC visit may auto-start again.
+  clearSignedOut();
   try {
     await reopenForUser(userId);
   } catch (err) {
@@ -222,6 +226,9 @@ export const useAuthStore = create<AuthState>()(
         // this it would stamp a ?redirect= back to it — which then beats the user's
         // startup destination on the next login.
         set({ isAuthenticated: false, loggingOut: true });
+        // This survives the route redirect and a full document load, preventing
+        // an OIDC-only installation from signing the user straight back in.
+        markSignedOut();
         // 2. Stop background sync triggers (30s interval, WS pre-reconnect hook, listeners).
         unregisterSyncTriggers();
         // 3. Tear down the live connection.

@@ -34,9 +34,9 @@ import {
   localizeAmountInput,
 } from '../../utils/formatters';
 import { localToday } from '../Planner/today';
+import CurrencySelect from '../shared/CurrencySelect';
 import { CustomDatePicker } from '../shared/CustomDateTimePicker';
 import CustomSelect from '../shared/CustomSelect';
-import CurrencySelect from '../shared/CurrencySelect';
 import EmptyState from '../shared/EmptyState';
 import GuestBadge from '../shared/GuestBadge';
 import Modal from '../shared/Modal';
@@ -44,6 +44,7 @@ import { NumericInput } from '../shared/NumericInput';
 import { useToast } from '../shared/Toast';
 import { SPLIT_COLORS, SYMBOLS } from './BudgetPanel.constants';
 import type { TripMember } from './BudgetPanelMemberChips';
+import { catMeta, COST_CATEGORY_LIST } from './costsCategories';
 import {
   calculateTicketShares,
   hasTicketSplit,
@@ -57,10 +58,9 @@ import {
   type TicketItem,
 } from './CostsPanel.helpers';
 import ExchangeRateManager from './ExchangeRateManager';
+import { frozenTransactionAmountToDisplay } from './exchangeRateMath';
 import ItemExchangeRateFields from './ItemExchangeRateFields';
 import { useItemExchangeRate } from './useItemExchangeRate';
-import { catMeta, COST_CATEGORY_LIST } from './costsCategories';
-import { frozenTransactionAmountToDisplay } from './exchangeRateMath';
 
 interface CostsPanelProps {
   tripId: number;
@@ -675,47 +675,47 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
               </button>
               {canEdit && (
                 <>
-                <button
-                  type="button"
-                  onClick={settleAll}
-                  disabled={!(settlement?.flows || []).length}
-                  className="border border-edge bg-surface-card text-content disabled:opacity-40"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    padding: '10px 16px',
-                    borderRadius: 12,
-                    fontSize: 'calc(14px * var(--fs-scale-body, 1))',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Check size={16} /> {t('costs.settleUp')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(null);
-                    setModalOpen(true);
-                  }}
-                  className="bg-[var(--text-primary)] text-[var(--bg-primary)]"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    padding: '10px 18px',
-                    borderRadius: 12,
-                    fontSize: 'calc(14px * var(--fs-scale-body, 1))',
-                    fontWeight: 600,
-                    border: 0,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Plus size={16} /> {t('costs.addExpense')}
-                </button>
+                  <button
+                    type="button"
+                    onClick={settleAll}
+                    disabled={!(settlement?.flows || []).length}
+                    className="border border-edge bg-surface-card text-content disabled:opacity-40"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      padding: '10px 16px',
+                      borderRadius: 12,
+                      fontSize: 'calc(14px * var(--fs-scale-body, 1))',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <Check size={16} /> {t('costs.settleUp')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(null);
+                      setModalOpen(true);
+                    }}
+                    className="bg-[var(--text-primary)] text-[var(--bg-primary)]"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      padding: '10px 18px',
+                      borderRadius: 12,
+                      fontSize: 'calc(14px * var(--fs-scale-body, 1))',
+                      fontWeight: 600,
+                      border: 0,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <Plus size={16} /> {t('costs.addExpense')}
+                  </button>
                 </>
               )}
             </div>
@@ -1048,12 +1048,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
         />
       )}
 
-      <Modal
-        isOpen={ratesOpen}
-        onClose={() => setRatesOpen(false)}
-        title={t('costs.exchangeRates.title')}
-        size="xl"
-      >
+      <Modal isOpen={ratesOpen} onClose={() => setRatesOpen(false)} title={t('costs.exchangeRates.title')} size="xl">
         <ExchangeRateManager
           tripId={tripId}
           tripCurrency={tripCurrency}
@@ -2598,11 +2593,7 @@ function SettlementModal({
           </div>
           <div style={{ minWidth: 0 }}>
             <label className={labelCls}>{t('costs.currency')}</label>
-            <CurrencySelect
-              value={cur}
-              onChange={setCur}
-              style={{ width: '100%' }}
-            />
+            <CurrencySelect value={cur} onChange={setCur} style={{ width: '100%' }} />
           </div>
         </div>
         <ItemExchangeRateFields
@@ -3065,11 +3056,7 @@ export function ExpenseModal({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <label className={labelCls}>{t('costs.currency')}</label>
-                <CurrencySelect
-                  value={currency}
-                  onChange={setCurrency}
-                  style={{ width: '100%' }}
-                />
+                <CurrencySelect value={currency} onChange={setCurrency} style={{ width: '100%' }} />
               </div>
               <div style={{ minWidth: 0 }}>
                 <label className={labelCls}>{t('costs.day')}</label>
@@ -3247,10 +3234,10 @@ export function ExpenseModal({
                                 height: 22,
                                 borderRadius: '50%',
                                 background: SPLIT_COLORS[idx % SPLIT_COLORS.length].gradient,
-                                color: '#fff',
+                                color: 'var(--avatar-foreground, #fff)',
                                 display: 'grid',
                                 placeItems: 'center',
-                                fontSize: 9,
+                                fontSize: 'calc(9px * var(--fs-scale-caption, 1))',
                                 fontWeight: 700,
                                 flexShrink: 0,
                                 opacity: on ? 1 : 0.45,
@@ -3331,7 +3318,11 @@ export function ExpenseModal({
                 </div>
                 {!payersOk && (
                   <div
-                    style={{ marginTop: 8, fontSize: 'calc(12.5px * var(--fs-scale-caption, 1))', color: '#d97706' }}
+                    style={{
+                      marginTop: 8,
+                      fontSize: 'calc(12.5px * var(--fs-scale-caption, 1))',
+                      color: 'var(--warning)',
+                    }}
                   >
                     {t('costs.payersUnbalanced', { amount: formatMoney(totalNum, currency, locale) })}
                   </div>
@@ -3429,7 +3420,7 @@ export function ExpenseModal({
                             minWidth: 0,
                             padding: '6px 10px',
                             borderRadius: 8,
-                            fontSize: 13,
+                            fontSize: 'calc(13px * var(--fs-scale-body, 1))',
                             border: '1px solid var(--border-color)',
                             outline: 'none',
                           }}
@@ -3438,7 +3429,10 @@ export function ExpenseModal({
                           className="border border-edge bg-surface-input"
                           style={{ display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: 8 }}
                         >
-                          <span className="text-content-faint" style={{ fontSize: 12 }}>
+                          <span
+                            className="text-content-faint"
+                            style={{ fontSize: 'calc(12px * var(--fs-scale-caption, 1))' }}
+                          >
                             {sym(currency)}
                           </span>
                           <NumericInput
@@ -3452,7 +3446,7 @@ export function ExpenseModal({
                               border: 0,
                               background: 'none',
                               outline: 'none',
-                              fontSize: 13,
+                              fontSize: 'calc(13px * var(--fs-scale-body, 1))',
                               fontWeight: 600,
                               textAlign: 'right',
                               padding: '6px 0',
@@ -3472,7 +3466,12 @@ export function ExpenseModal({
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
                         <span
                           className="text-content-faint"
-                          style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', marginRight: 4 }}
+                          style={{
+                            fontSize: 'calc(10.5px * var(--fs-scale-caption, 1))',
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            marginRight: 4,
+                          }}
                         >
                           {t('costs.ticketSplitting')}
                         </span>
@@ -3494,7 +3493,7 @@ export function ExpenseModal({
                                 gap: 4,
                                 padding: '3px 8px',
                                 borderRadius: 999,
-                                fontSize: 11,
+                                fontSize: 'calc(11px * var(--fs-scale-caption, 1))',
                                 fontWeight: 500,
                                 cursor: 'pointer',
                                 fontFamily: 'inherit',
@@ -3514,10 +3513,10 @@ export function ExpenseModal({
                                     height: 14,
                                     borderRadius: '50%',
                                     background: SPLIT_COLORS[pIdx % SPLIT_COLORS.length].gradient,
-                                    color: '#fff',
+                                    color: 'var(--avatar-foreground, #fff)',
                                     display: 'grid',
                                     placeItems: 'center',
-                                    fontSize: 7,
+                                    fontSize: 'calc(7px * var(--fs-scale-caption, 1))',
                                     fontWeight: 700,
                                   }}
                                 >
@@ -3541,7 +3540,7 @@ export function ExpenseModal({
                     padding: '8px 12px',
                     borderRadius: 10,
                     background: 'none',
-                    fontSize: 13,
+                    fontSize: 'calc(13px * var(--fs-scale-body, 1))',
                     fontWeight: 500,
                     cursor: 'pointer',
                     fontFamily: 'inherit',
@@ -3556,14 +3555,28 @@ export function ExpenseModal({
 
                 {ticketItems.length > 0 && (
                   <div className="border border-edge bg-surface-secondary" style={{ padding: 12, borderRadius: 10 }}>
-                    <div className="text-content" style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                    <div
+                      className="text-content"
+                      style={{
+                        fontSize: 'calc(12px * var(--fs-scale-caption, 1))',
+                        fontWeight: 600,
+                        marginBottom: 8,
+                      }}
+                    >
                       {t('costs.ticketShares')}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {people.map((p) => {
                         const share = ticketInfo.shares[p.id] || 0;
                         return (
-                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <div
+                            key={p.id}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              fontSize: 'calc(13px * var(--fs-scale-body, 1))',
+                            }}
+                          >
                             <span className="text-content-muted">{p.id === me ? t('costs.you') : p.username}</span>
                             <span className="text-content" style={{ fontWeight: 600 }}>
                               {sym(currency)}
@@ -3632,10 +3645,10 @@ export function ExpenseModal({
                                 height: 22,
                                 borderRadius: '50%',
                                 background: SPLIT_COLORS[idx % SPLIT_COLORS.length].gradient,
-                                color: '#fff',
+                                color: 'var(--avatar-foreground, #fff)',
                                 display: 'grid',
                                 placeItems: 'center',
-                                fontSize: 9,
+                                fontSize: 'calc(9px * var(--fs-scale-caption, 1))',
                                 fontWeight: 700,
                                 flexShrink: 0,
                                 opacity: on ? 1 : 0.45,
@@ -3647,7 +3660,7 @@ export function ExpenseModal({
                           <span
                             className="text-content"
                             style={{
-                              fontSize: 14,
+                              fontSize: 'calc(14px * var(--fs-scale-body, 1))',
                               fontWeight: 500,
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
@@ -3662,7 +3675,12 @@ export function ExpenseModal({
                           on ? (
                             <span
                               className="text-content"
-                              style={{ fontSize: 14, fontWeight: 600, textAlign: 'right', paddingRight: 10 }}
+                              style={{
+                                fontSize: 'calc(14px * var(--fs-scale-body, 1))',
+                                fontWeight: 600,
+                                textAlign: 'right',
+                                paddingRight: 10,
+                              }}
                             >
                               {sym(currency)}
                               {(equalShares[p.id] || 0).toFixed(2)}
@@ -3670,7 +3688,11 @@ export function ExpenseModal({
                           ) : (
                             <span
                               className="text-content-faint"
-                              style={{ fontSize: 12, textAlign: 'right', paddingRight: 10 }}
+                              style={{
+                                fontSize: 'calc(12px * var(--fs-scale-caption, 1))',
+                                textAlign: 'right',
+                                paddingRight: 10,
+                              }}
                             >
                               {t('costs.excluded')}
                             </span>
@@ -3686,7 +3708,10 @@ export function ExpenseModal({
                               padding: '0 10px',
                             }}
                           >
-                            <span className="text-content-faint" style={{ fontSize: 13 }}>
+                            <span
+                              className="text-content-faint"
+                              style={{ fontSize: 'calc(13px * var(--fs-scale-body, 1))' }}
+                            >
                               {sym(currency)}
                             </span>
                             <input
@@ -3701,7 +3726,7 @@ export function ExpenseModal({
                                 border: 0,
                                 background: 'none',
                                 outline: 'none',
-                                fontSize: 14,
+                                fontSize: 'calc(14px * var(--fs-scale-body, 1))',
                                 fontWeight: 600,
                                 padding: '8px 0',
                                 textAlign: 'right',
@@ -3718,7 +3743,7 @@ export function ExpenseModal({
                               border: 0,
                               cursor: 'pointer',
                               fontFamily: 'inherit',
-                              fontSize: 12,
+                              fontSize: 'calc(12px * var(--fs-scale-caption, 1))',
                               textAlign: 'right',
                             }}
                           >
@@ -3732,7 +3757,7 @@ export function ExpenseModal({
                 <div
                   style={{
                     marginTop: 10,
-                    fontSize: 12.5,
+                    fontSize: 'calc(12.5px * var(--fs-scale-caption, 1))',
                     display: 'flex',
                     justifyContent: 'space-between',
                     gap: 10,

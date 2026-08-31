@@ -1,6 +1,5 @@
 import { Check, ChevronDown, Plus, Trash2, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { SPLIT_COLORS, SYMBOLS } from '../../../../components/Budget/BudgetPanel.constants';
 import type { TripMember } from '../../../../components/Budget/BudgetPanelMemberChips';
 import { COST_CATEGORY_LIST, catMeta } from '../../../../components/Budget/costsCategories';
@@ -17,11 +16,12 @@ import {
   writeTicketItems,
   type TicketItem,
 } from '../../../../components/Budget/CostsPanel.helpers';
+import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { useItemExchangeRate } from '../../../../components/Budget/useItemExchangeRate';
 import { localToday } from '../../../../components/Planner/today';
+import CurrencySelect from '../../../../components/shared/CurrencySelect';
 import { CustomDatePicker } from '../../../../components/shared/CustomDateTimePicker';
 import CustomSelect from '../../../../components/shared/CustomSelect';
-import CurrencySelect from '../../../../components/shared/CurrencySelect';
 import GuestBadge from '../../../../components/shared/GuestBadge';
 import { NumericInput } from '../../../../components/shared/NumericInput';
 import { useToast } from '../../../../components/shared/Toast';
@@ -441,12 +441,7 @@ export default function MCostSheet({
         <div className="mt-3 flex gap-2">
           <div className="min-w-0 flex-1">
             <Eyebrow className="mb-[5px] uppercase">{t('costs.currency')}</Eyebrow>
-            <CurrencySelect
-              value={currency}
-              onChange={setCurrency}
-              size="sm"
-              style={{ width: '100%' }}
-            />
+            <CurrencySelect value={currency} onChange={setCurrency} size="sm" style={{ width: '100%' }} />
           </div>
           <div className="min-w-0 flex-1">
             <Eyebrow className="mb-[5px] uppercase">{t('costs.day')}</Eyebrow>

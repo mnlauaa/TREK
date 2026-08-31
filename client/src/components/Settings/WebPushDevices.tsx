@@ -89,7 +89,7 @@ export default function WebPushDevices(): React.ReactElement {
       <div
         aria-busy="true"
         aria-label={t('settings.webPush.title')}
-        className="h-5 animate-pulse rounded bg-surface-subtle"
+        className="bg-surface-subtle h-5 animate-pulse rounded"
       />
     );
   }

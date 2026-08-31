@@ -1,12 +1,12 @@
 // FE-MOB-SET-001 onwards
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { render, screen } from '../../../helpers/render';
-import { resetAllStores, seedStore } from '../../../helpers/store';
-import { buildSettings } from '../../../helpers/factories';
-import { useSettingsStore } from '../../../../src/store/settingsStore';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastContainer } from '../../../../src/components/shared/Toast';
 import MSettingsGeneral from '../../../../src/mobile/screens/settings/MSettingsGeneral';
+import { useSettingsStore } from '../../../../src/store/settingsStore';
+import { buildSettings } from '../../../helpers/factories';
+import { render, screen } from '../../../helpers/render';
+import { resetAllStores, seedStore } from '../../../helpers/store';
 
 describe('MSettingsGeneral', () => {
   beforeEach(() => {
@@ -93,7 +93,12 @@ describe('MSettingsGeneral', () => {
 
   it('FE-MOB-SET-007: unset unit preferences fall back to the metric/24h defaults', () => {
     seedStore(useSettingsStore, {
-      settings: buildSettings({ language: 'en', temperature_unit: undefined, distance_unit: undefined, time_format: undefined }),
+      settings: buildSettings({
+        language: 'en',
+        temperature_unit: undefined,
+        distance_unit: undefined,
+        time_format: undefined,
+      }),
     });
     render(<MSettingsGeneral />);
 
@@ -108,7 +113,10 @@ describe('MSettingsGeneral', () => {
     expect(screen.getByRole('switch', { name: 'Booking route labels' })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('switch', { name: 'Explore places on the map' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('switch', { name: 'Blur Booking Codes' })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('switch', { name: 'Optimize route from accommodation' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: 'Optimize route from accommodation' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 
   it('FE-MOB-SET-009: flipping a travel toggle persists the new boolean', async () => {
@@ -139,7 +147,12 @@ describe('MSettingsGeneral', () => {
       settings: buildSettings({ language: 'en' }),
       updateSetting: vi.fn().mockRejectedValue(new Error('Error saving setting')),
     });
-    render(<><ToastContainer /><MSettingsGeneral /></>);
+    render(
+      <>
+        <ToastContainer />
+        <MSettingsGeneral />
+      </>
+    );
 
     await user.click(screen.getByRole('button', { name: '°F Fahrenheit' }));
     expect(await screen.findByText('Error saving setting')).toBeInTheDocument();
@@ -151,7 +164,12 @@ describe('MSettingsGeneral', () => {
       settings: buildSettings({ language: 'en' }),
       updateSetting: vi.fn().mockRejectedValue('boom'),
     });
-    render(<><ToastContainer /><MSettingsGeneral /></>);
+    render(
+      <>
+        <ToastContainer />
+        <MSettingsGeneral />
+      </>
+    );
 
     await user.click(screen.getByRole('button', { name: '°F Fahrenheit' }));
     expect(await screen.findByText('Error')).toBeInTheDocument();
