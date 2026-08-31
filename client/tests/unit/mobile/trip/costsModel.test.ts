@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   baseTotal,
   buildCostsCsv,
@@ -19,8 +19,8 @@ import {
   type CostsFilterState,
   type CostsSettlementFlow,
 } from '../../../../src/mobile/screens/trip/tabs/costsModel';
-import { buildBudgetItem } from '../../../helpers/factories';
 import type { BudgetItem } from '../../../../src/types';
+import { buildBudgetItem } from '../../../helpers/factories';
 
 // FE-MOB-CMOD-001 to FE-MOB-CMOD-027
 
@@ -212,21 +212,21 @@ describe('costsModel — list filters and grouping', () => {
   });
 
   it('FE-MOB-CMOD-013: "mine" keeps expenses I fronted money on', () => {
-    expect(filterBudgetItems(all, filters({ segment: 'mine' }), ctx).map(e => e.id)).toEqual([20, 22]);
+    expect(filterBudgetItems(all, filters({ segment: 'mine' }), ctx).map((e) => e.id)).toEqual([20, 22]);
   });
 
   it('FE-MOB-CMOD-014: "owed" keeps expenses where I am net owed', () => {
-    expect(filterBudgetItems(all, filters({ segment: 'owed' }), ctx).map(e => e.id)).toEqual([20]);
+    expect(filterBudgetItems(all, filters({ segment: 'owed' }), ctx).map((e) => e.id)).toEqual([20]);
   });
 
   it('FE-MOB-CMOD-015: category, day and search narrow the list and combine', () => {
-    expect(filterBudgetItems(all, filters({ categoryKey: 'food' }), ctx).map(e => e.id)).toEqual([21]);
-    expect(filterBudgetItems(all, filters({ dayKey: '2026-07-02' }), ctx).map(e => e.id)).toEqual([21]);
+    expect(filterBudgetItems(all, filters({ categoryKey: 'food' }), ctx).map((e) => e.id)).toEqual([21]);
+    expect(filterBudgetItems(all, filters({ dayKey: '2026-07-02' }), ctx).map((e) => e.id)).toEqual([21]);
     // search is trimmed and case-insensitive
-    expect(filterBudgetItems(all, filters({ search: '  HOTEL ' }), ctx).map(e => e.id)).toEqual([20]);
+    expect(filterBudgetItems(all, filters({ search: '  HOTEL ' }), ctx).map((e) => e.id)).toEqual([20]);
     expect(filterBudgetItems(all, filters({ search: 'nothing' }), ctx)).toEqual([]);
     expect(
-      filterBudgetItems(all, filters({ segment: 'mine', categoryKey: 'accommodation' }), ctx).map(e => e.id),
+      filterBudgetItems(all, filters({ segment: 'mine', categoryKey: 'accommodation' }), ctx).map((e) => e.id)
     ).toEqual([20]);
   });
 
@@ -249,7 +249,7 @@ describe('costsModel — list filters and grouping', () => {
     const mid = expense({ id: 35, expense_date: '2026-07-02' });
     const late = expense({ id: 36, expense_date: '2026-07-04' });
 
-    expect(groupByDay([undated, mid, late]).map(g => g.dateKey)).toEqual(['2026-07-04', '2026-07-02', '']);
+    expect(groupByDay([undated, mid, late]).map((g) => g.dateKey)).toEqual(['2026-07-04', '2026-07-02', '']);
   });
 
   it('FE-MOB-CMOD-017: categoryFilterKeys lists only used categories, in canonical order', () => {
@@ -285,7 +285,7 @@ describe('costsModel — breakdown and presentation', () => {
     ];
     const bars = categoryBreakdown(items, ctx);
 
-    expect(bars.map(b => b.key)).toEqual(['accommodation', 'food']);
+    expect(bars.map((b) => b.key)).toEqual(['accommodation', 'food']);
     expect(bars[0]).toEqual({ key: 'accommodation', amount: 300, widthPct: 100 });
     expect(bars[1].amount).toBe(200);
     expect(bars[1].widthPct).toBeCloseTo(66.667, 3);
@@ -407,7 +407,7 @@ describe('costsModel — CSV export', () => {
   it('FE-MOB-CMOD-024: falls back to the raw ISO date when the locale is unusable', () => {
     const { content } = buildCostsCsv(
       [expense({ id: 44, name: 'Bus', category: 'transport', expense_date: '2026-07-16', total_price: 3 })],
-      { base: 'EUR', ctx, locale: '!!', t },
+      { base: 'EUR', ctx, locale: '!!', t }
     );
     expect(content.split('\r\n')[1].startsWith('2026-07-16;Bus;')).toBe(true);
   });

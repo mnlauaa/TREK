@@ -328,8 +328,10 @@ export default function MDashboard(): React.ReactElement {
           aria-label="TREK"
           className="flex flex-none items-center gap-[7px]"
         >
-          <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px] bg-[#101013]">
-            {/* theme-lint-disable — brand tile stays black in both themes */}
+          <span
+            className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px]"
+            style={{ background: 'var(--m-brand-tile, #101013)' }}
+          >
             <img src="/icons/icon-white.svg" alt="" className="block h-[22px] w-[22px]" />
           </span>
         </button>
@@ -521,11 +523,15 @@ function MSpotlightCard({
           <CoverActionBtn key={a.key} action={a} />
         ))}
       </div>
-      <div className="absolute bottom-[10px] left-[10px] right-[10px] rounded-[18px] border border-white/[.16] bg-[rgba(14,14,17,.52)] p-[12px_14px] text-white backdrop-blur-[22px] backdrop-saturate-[1.6]">
-        {/* theme-lint-disable — fixed dark glass on the cover photo */}
+      <div
+        className="absolute bottom-[10px] left-[10px] right-[10px] rounded-[18px] border border-white/[.16] p-[12px_14px] text-white backdrop-blur-[22px] backdrop-saturate-[1.6]"
+        style={{ background: 'var(--m-cover-overlay, rgba(14,14,17,.52))' }}
+      >
         <span className="flex gap-[6px]">
-          <span className="rounded-full bg-white/[.92] px-2 py-[3px] text-[0.625rem] font-bold uppercase tracking-[.07em] text-[#101013]">
-            {/* theme-lint-disable — fixed on-photo badge */}
+          <span
+            className="rounded-full bg-white/[.92] px-2 py-[3px] text-[0.625rem] font-bold uppercase tracking-[.07em]"
+            style={{ color: 'var(--m-cover-badge-ink, #101013)' }}
+          >
             {primaryBadge}
           </span>
           {secondaryBadge && (

@@ -1,15 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { readEnv } from '../../app-config';
 import { decrypt_api_key, maybe_encrypt_api_key } from '../common/crypto/apiKeyCrypto';
+import { DatabaseService } from '../database/database.service';
+import { Injectable } from '@nestjs/common';
 import {
   FRANKFURTER_CURRENCY_SET,
   MASKED_SETTING_VALUE,
   commonCurrencyListSchema,
   normalizeAppearance,
 } from '@trek/shared';
-import { readEnv } from '../../app-config';
 
-const ENCRYPTED_SETTING_KEYS = new Set([
+/**
+ * Exported so a caller that hands settings to somebody else can assert its own
+ * allow-list against the live values rather than a copy: a sixth key added here
+ * has to fail that assertion, which a hand-typed list would not.
+ */
+export const ENCRYPTED_SETTING_KEYS = new Set([
   'webhook_url',
   'ntfy_token',
   'mapbox_access_token',
@@ -18,7 +23,7 @@ const ENCRYPTED_SETTING_KEYS = new Set([
 ]);
 // Encrypted keys that are masked (••••••••) when returned to the client.
 // Keys not in this set but in ENCRYPTED_SETTING_KEYS are decrypted and returned.
-const MASKED_SETTING_KEYS = new Set(['webhook_url', 'ntfy_token', 'llm_api_key']);
+export const MASKED_SETTING_KEYS = new Set(['webhook_url', 'ntfy_token', 'llm_api_key']);
 
 export const DEFAULTABLE_USER_SETTING_KEYS = [
   'temperature_unit',
@@ -52,7 +57,7 @@ export const DEFAULTABLE_USER_SETTING_KEYS = [
   'llm_api_key',
 ] as const;
 
-type DefaultableKey = typeof DEFAULTABLE_USER_SETTING_KEYS[number];
+type DefaultableKey = (typeof DEFAULTABLE_USER_SETTING_KEYS)[number];
 
 const DEFAULTABLE_USER_SETTING_KEY_SET = new Set<string>(DEFAULTABLE_USER_SETTING_KEYS);
 
@@ -65,17 +70,25 @@ const VALID_VALUES: Partial<Record<DefaultableKey, unknown[]>> = {
   llm_provider: ['local', 'openai', 'anthropic'],
 };
 
-const BOOLEAN_KEYS = new Set<DefaultableKey>(['blur_booking_codes', 'mapbox_3d_enabled', 'mapbox_quality_mode', 'llm_multimodal']);
+const BOOLEAN_KEYS = new Set<DefaultableKey>([
+  'blur_booking_codes',
+  'mapbox_3d_enabled',
+  'mapbox_quality_mode',
+  'llm_multimodal',
+]);
 
 function normalizeStoredCommonCurrencies(value: unknown): string[] {
   const parsed = commonCurrencyListSchema.safeParse(value);
   if (parsed.success) return parsed.data;
   if (!Array.isArray(value)) return [];
-  return [...new Set(value
-    .filter((code): code is string => typeof code === 'string')
-    .map((code) => code.trim().toUpperCase())
-    .filter((code) => FRANKFURTER_CURRENCY_SET.has(code)))]
-    .slice(0, 10);
+  return [
+    ...new Set(
+      value
+        .filter((code): code is string => typeof code === 'string')
+        .map((code) => code.trim().toUpperCase())
+        .filter((code) => FRANKFURTER_CURRENCY_SET.has(code)),
+    ),
+  ].slice(0, 10);
 }
 
 /**
@@ -96,7 +109,11 @@ export function isAdminOnlyLlmSetting(key: string, value: unknown): boolean {
 }
 
 function parseValue(raw: string): unknown {
-  try { return JSON.parse(raw); } catch { return raw; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function serializeValue(key: string, value: unknown): string {
@@ -107,8 +124,8 @@ function serializeValue(key: string, value: unknown): string {
   // null and undefined both mean "cleared" and store '' — the legacy code stored
   // the string "null" for null, which leaked back out of getDecryptedUserSetting
   // as a literal four-character "null" (e.g. as an LLM API key).
-  const raw = value === null || value === undefined ? ''
-    : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const raw =
+    value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
   if (ENCRYPTED_SETTING_KEYS.has(key)) return maybe_encrypt_api_key(raw) ?? raw;
   return raw;
 }
@@ -129,7 +146,7 @@ export class SettingsService {
 
   getAdminUserDefaults(): Record<string, unknown> {
     const rows = this.db.all<{ key: string; value: string }>(
-      "SELECT key, value FROM app_settings WHERE key LIKE 'default_user_setting_%'"
+      "SELECT key, value FROM app_settings WHERE key LIKE 'default_user_setting_%'",
     );
     const defaults: Record<string, unknown> = {};
     for (const row of rows) {
@@ -149,9 +166,9 @@ export class SettingsService {
   setAdminUserDefaults(partial: Record<string, unknown>): void {
     const upsert = this.db.prepare(
       `INSERT INTO app_settings (key, value) VALUES (?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     );
-    const del = this.db.prepare("DELETE FROM app_settings WHERE key = ?");
+    const del = this.db.prepare('DELETE FROM app_settings WHERE key = ?');
 
     this.db.transaction(() => {
       for (const [key, value] of Object.entries(partial)) {
@@ -189,7 +206,10 @@ export class SettingsService {
   getUserSettings(userId: number): Record<string, unknown> {
     const adminDefaults = this.getAdminUserDefaults();
 
-    const rows = this.db.all<{ key: string; value: string }>('SELECT key, value FROM settings WHERE user_id = ?', userId);
+    const rows = this.db.all<{ key: string; value: string }>(
+      'SELECT key, value FROM settings WHERE user_id = ?',
+      userId,
+    );
     const userSettings: Record<string, unknown> = {};
     for (const row of rows) {
       if (MASKED_SETTING_KEYS.has(row.key)) {
@@ -262,10 +282,15 @@ export class SettingsService {
 
   upsertSetting(userId: number, key: string, value: unknown) {
     if (key === 'common_currencies') value = commonCurrencyListSchema.parse(value);
-    this.db.run(`
+    this.db.run(
+      `
     INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)
     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
-  `, userId, key, serializeValue(key, value));
+  `,
+      userId,
+      key,
+      serializeValue(key, value),
+    );
   }
 
   bulkUpsertSettings(userId: number, settings: Record<string, unknown>) {

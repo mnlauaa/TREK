@@ -12,6 +12,8 @@ import {
   Hotel,
   LayoutGrid,
   List,
+  LogIn,
+  LogOut,
   MapPin,
   ParkingSquare,
   Plane,
@@ -33,13 +35,14 @@ import { IcsSubscribeModal } from '../components/Planner/IcsSubscribeModal';
 import PluginFrame from '../components/Plugins/PluginFrame';
 import PluginWidgets from '../components/Plugins/PluginWidgets';
 import { TripCardBadges, useTripCardBadges } from '../components/Plugins/TripCardBadges';
-import TripFormModal from '../components/Trips/TripFormModal';
 import ConfirmDialog from '../components/shared/ConfirmDialog';
 import CopyTripDialog from '../components/shared/CopyTripDialog';
-import CustomSelect from '../components/shared/CustomSelect';
 import CurrencySelect from '../components/shared/CurrencySelect';
+import CustomSelect from '../components/shared/CustomSelect';
 import EmptyState from '../components/shared/EmptyState';
 import PlaceAvatar from '../components/shared/PlaceAvatar';
+import { Skeleton, SpotlightSkeleton, TripCardSkeleton } from '../components/shared/Skeleton';
+import TripFormModal from '../components/Trips/TripFormModal';
 import { useTranslation } from '../i18n';
 import { useAddonStore } from '../store/addonStore';
 import { usePluginStore } from '../store/pluginStore';
@@ -47,17 +50,18 @@ import { useSettingsStore } from '../store/settingsStore';
 import '../styles/dashboard.css';
 import { formatTime, splitReservationDateTime } from '../utils/formatters';
 import { convertDistance, getDistanceUnitLabel } from '../utils/units';
-import DepartureCountdownBoard from './dashboard/DepartureCountdownBoard';
 import {
   type DashboardTrip,
   type DepartureTransport,
   type HeroBundle,
-  MS_PER_DAY,
   type TravelStats,
   type UpcomingReservation,
+  MS_PER_DAY,
   daysUntil,
   getTripStatus,
+  upcomingKey,
 } from './dashboard/dashboardModel';
+import DepartureCountdownBoard from './dashboard/DepartureCountdownBoard';
 import { useDashboard } from './dashboard/useDashboard';
 
 const GRADIENTS = [
@@ -126,8 +130,20 @@ const RES_ICON: Record<string, React.ReactElement> = {
   hotel: <Hotel size={16} />,
   restaurant: <Utensils size={16} />,
   parking: <ParkingSquare size={16} />,
+  // A stay's two moments (#1934) — the arrow says which way you are going, on
+  // the same green the hotel tile already uses.
+  checkin: <LogIn size={16} />,
+  checkout: <LogOut size={16} />,
 };
-const RES_TYPE_CLASS: Record<string, string> = { flight: 'flight', hotel: 'hotel', restaurant: 'food' };
+const RES_TYPE_CLASS: Record<string, string> = {
+  flight: 'flight',
+  hotel: 'hotel',
+  restaurant: 'food',
+  checkin: 'hotel',
+  checkout: 'hotel',
+};
+/** The label a stay's moment carries in place of a location. */
+const MOMENT_LABEL: Record<string, string> = { checkin: 'day.checkIn', checkout: 'day.checkOut' };
 
 export default function DashboardPage(): React.ReactElement {
   // ViewportRoute in App.tsx picks the branch now, so the phone screen is a
@@ -230,6 +246,11 @@ function DashboardPageDesktop(): React.ReactElement {
                   </button>
                 </div>
               )}
+              {/* The hero and the cards below stand in for themselves while the trips load.
+                Without them the page rendered its finished empty state: no hero, no
+                cards, and a stats row reading zero, which reads as "your trips are
+                gone" rather than "not here yet" on a slow connection (#2115). */}
+              {isLoading && !spotlight && gridTrips.length === 0 && <SpotlightSkeleton />}
               {spotlight && (
                 <BoardingPassHero
                   trip={spotlight}
@@ -334,6 +355,13 @@ function DashboardPageDesktop(): React.ReactElement {
                       onDelete={() => setDeleteTrip(trip)}
                     />
                   ))}
+                  {isLoading && gridTrips.length === 0 && (
+                    <>
+                      <TripCardSkeleton />
+                      <TripCardSkeleton />
+                      <TripCardSkeleton />
+                    </>
+                  )}
                   {tripFilter === 'planned' && !isLoading && (
                     <button
                       type="button"
@@ -746,6 +774,11 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
   const atlasTemplateM =
     [dash.mobile.tripsTotal && '1fr', dash.mobile.daysTraveled && '1fr'].filter(Boolean).join(' ') || '1fr';
 
+  // stats stays null until travelStats() answers, and that call carries no loading
+  // flag of its own, so every tile below used to render its zero fallback in the
+  // meantime. On a slow connection that reads as "no trips", which is the whole of
+  // #2115. A dash placeholder says "not yet" where a 0 says "none".
+  const statsPending = stats === null;
   const countries = stats?.countries || [];
   const distanceKm = stats?.totalDistanceKm || 0;
   const distance = convertDistance(distanceKm, distanceUnit);
@@ -763,7 +796,7 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
         <div className="atlas-card passport">
           <div className="label">{t('dashboard.atlas.countriesVisited')}</div>
           <div className="value mono">
-            {countries.length}{' '}
+            {statsPending ? <Skeleton width={44} height={30} radius={6} /> : countries.length}{' '}
             <span className="unit text-[oklch(1_0_0_/_.55)]">{t('dashboard.atlas.ofTotal', { total: 195 })}</span>
           </div>
           <div className="passport-flags">
@@ -781,8 +814,16 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
       {showTrips && (
         <div className="atlas-card">
           <div className="label">{t('dashboard.atlas.tripsTotal')}</div>
-          <div className="value mono">{stats?.totalTrips ?? 0}</div>
-          <div className="delta">{t('dashboard.atlas.placesMapped', { count: stats?.totalPlaces ?? 0 })}</div>
+          <div className="value mono">
+            {statsPending ? <Skeleton width={44} height={30} radius={6} /> : (stats.totalTrips ?? 0)}
+          </div>
+          <div className="delta">
+            {statsPending ? (
+              <Skeleton width={90} height={12} />
+            ) : (
+              t('dashboard.atlas.placesMapped', { count: stats.totalPlaces ?? 0 })
+            )}
+          </div>
           <svg className="spark" width="80" height="36" viewBox="0 0 80 36">
             <polyline
               points="0,30 12,26 22,28 32,18 44,22 56,10 68,14 80,4"
@@ -799,7 +840,8 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
         <div className="atlas-card">
           <div className="label">{t('dashboard.atlas.daysTraveled')}</div>
           <div className="value mono">
-            {stats?.totalDays ?? 0} <span className="unit">{t('dashboard.atlas.daysUnit')}</span>
+            {statsPending ? <Skeleton width={44} height={30} radius={6} /> : (stats.totalDays ?? 0)}{' '}
+            <span className="unit">{t('dashboard.atlas.daysUnit')}</span>
           </div>
           <div className="delta">{t('dashboard.atlas.acrossAllTrips')}</div>
           <svg className="spark" width="80" height="36" viewBox="0 0 80 36">
@@ -812,9 +854,16 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
         <div className="atlas-card">
           <div className="label">{t('dashboard.atlas.distanceFlown')}</div>
           <div className="value mono">
-            {distanceText} <span className="unit">{distanceLabel}</span>
+            {statsPending ? <Skeleton width={60} height={30} radius={6} /> : distanceText}{' '}
+            <span className="unit">{distanceLabel}</span>
           </div>
-          <div className="delta">{t('dashboard.atlas.aroundEquator', { count: equatorTimes })}</div>
+          <div className="delta">
+            {statsPending ? (
+              <Skeleton width={110} height={12} />
+            ) : (
+              t('dashboard.atlas.aroundEquator', { count: equatorTimes })
+            )}
+          </div>
           <svg className="spark" width="80" height="36" viewBox="0 0 80 36">
             <circle cx="40" cy="18" r="14" fill="none" stroke="oklch(0.88 0.01 70)" strokeWidth="2" />
             <circle
@@ -1049,7 +1098,6 @@ function CurrencyTool(): React.ReactElement {
   }, [isLoaded, updateSetting]);
 
   const currencies = rates ? Object.keys(rates).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) : CURRENCIES;
-  const ccyOptions = currencies.map((c) => ({ value: c, label: c }));
   const rate = rates?.[to] ?? null;
   const converted = rate != null ? (Number.parseFloat(amount.replace(',', '.')) || 0) * rate : null;
 
@@ -1075,7 +1123,7 @@ function CurrencyTool(): React.ReactElement {
           <CurrencySelect
             value={from}
             onChange={setFrom}
-            availableCurrencies={ccyOptions.map((option) => String(option.value))}
+            availableCurrencies={currencies}
             size="sm"
             style={{ marginTop: 6 }}
           />
@@ -1089,7 +1137,7 @@ function CurrencyTool(): React.ReactElement {
           <CurrencySelect
             value={to}
             onChange={setTo}
-            availableCurrencies={ccyOptions.map((option) => String(option.value))}
+            availableCurrencies={currencies}
             size="sm"
             style={{ marginTop: 6 }}
           />
@@ -1296,10 +1344,11 @@ function UpcomingTool({
             const dateStr = datePart ? splitDate(datePart, locale) : null;
             const timeStr = parsed.time ? formatTime(parsed.time, locale, timeFormat) : null;
             const typeClass = RES_TYPE_CLASS[r.type] || 'other';
+            const moment = MOMENT_LABEL[r.type];
             return (
               <div
                 className="upc-item"
-                key={r.id}
+                key={upcomingKey(r)}
                 onClick={() => onOpen(r.trip_id)}
                 role="button"
                 tabIndex={0}
@@ -1315,14 +1364,17 @@ function UpcomingTool({
                   <div className="m">{dateStr?.m ?? ''}</div>
                 </div>
                 <div className="upc-info">
-                  <div className="t">{r.title}</div>
+                  <div className="t">
+                    {r.title}
+                    {r.status === 'pending' && <span className="upc-pending">{t('reservations.pending')}</span>}
+                  </div>
                   <div className="s">
                     {timeStr && (
                       <>
                         <Clock size={11} /> {timeStr} ·{' '}
                       </>
                     )}
-                    {r.location || r.place_name || r.trip_title}
+                    {moment ? t(moment) : r.location || r.place_name || r.trip_title}
                   </div>
                 </div>
                 <div className={`upc-type ${typeClass}`}>{RES_ICON[r.type] || <Ticket size={16} />}</div>

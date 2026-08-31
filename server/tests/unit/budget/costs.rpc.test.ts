@@ -33,9 +33,13 @@ const req = (method: string, params: Record<string, unknown> = {}): RpcRequest =
 function build(opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean } = {}) {
   const budget = {
     listBudgetItems: vi.fn((tripId: number) => [{ id: 5, trip_id: tripId }]),
+    listSettlements: vi.fn((tripId: number) => [{ id: 6, trip_id: tripId }]),
     create: vi.fn(async (tripId: string, i: Record<string, unknown>) => ({ id: 9, trip_id: tripId, ...i })),
     update: vi.fn(async () => (opts.missing ? null : { id: 5, name: 'Hotel' })),
     remove: vi.fn(() => !opts.missing),
+    createSettlement: vi.fn(async () => (opts.missing ? null : { id: 6, amount: 20 })),
+    updateSettlement: vi.fn(async () => (opts.missing ? null : { id: 6, amount: 25 })),
+    deleteSettlement: vi.fn(() => !opts.missing),
   } as unknown as BudgetService & Record<string, ReturnType<typeof vi.fn>>;
   const realtime = { broadcast: vi.fn() } as unknown as RealtimeService & { broadcast: ReturnType<typeof vi.fn> };
   const db = {
@@ -51,7 +55,13 @@ function build(opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean }
   );
   // The leaf membership read replaced the deleted trips.bridge for listMine.
   const membership = { listAccessibleTripIds: vi.fn(() => [1, 2]) } as unknown as TripMembershipService;
-  const rpc = new CostsRpc(budget, db, realtime, guards, membership, {} as never);
+  const exchangeRates = {
+    listTripExchangeRates: vi.fn(() => [{ currency: 'USD', exchange_rate: 1.2 }]),
+    resolveExchangeRate: vi.fn(async () => ({ currency: 'USD', exchange_rate: 1.2, source: 'trip' })),
+    setTripExchangeRate: vi.fn(() => ({ currency: 'USD', exchange_rate: 1.2 })),
+    deleteTripExchangeRate: vi.fn(() => !opts.missing),
+  };
+  const rpc = new CostsRpc(budget, db, realtime, guards, membership, exchangeRates as never);
   const host = (...grants: string[]) =>
     new PluginRpcHost(
       'p',
@@ -59,7 +69,7 @@ function build(opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean }
       makeDeps(),
       createTestPluginRegistry([rpc]),
     );
-  return { budget, realtime, host };
+  return { budget, exchangeRates, realtime, host };
 }
 
 describe('CostsRpc reads', () => {
@@ -191,5 +201,100 @@ describe('CostsRpc writes', () => {
 
   it('COSTS-RPC-012 the class is listed in its module providers', () => {
     expectRegisteredProvider(BudgetModule, CostsRpc);
+  });
+});
+
+describe('CostsRpc FX and settlement parity', () => {
+  it('COSTS-RPC-013 reads Trip rates, resolved provenance, and the settlement ledger', async () => {
+    const f = build();
+    await expect(f.host().dispatch(req('costs.listRates', { tripId: 1 }), 42)).resolves.toMatchObject({ ok: true });
+    await expect(
+      f.host().dispatch(req('costs.resolveRate', { tripId: 1, currency: 'USD' }), 42),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(f.host().dispatch(req('costs.listSettlements', { tripId: 1 }), 42)).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(f.exchangeRates.resolveExchangeRate).toHaveBeenCalledWith(1, 'USD');
+    expect(f.budget.listSettlements).toHaveBeenCalledWith(1);
+  });
+
+  it('COSTS-RPC-014 saves and deletes Trip defaults with the cost-specific permission gate', async () => {
+    const f = build();
+    expect(
+      (
+        await f
+          .host()
+          .dispatch(req('costs.setRate', { tripId: 1, currency: 'usd', exchangeRate: 1.2, note: 'bank' }), 42)
+      ).ok,
+    ).toBe(true);
+    expect(f.exchangeRates.setTripExchangeRate).toHaveBeenCalledWith(1, 'usd', 1.2, 42, 'bank');
+    expect((await f.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'usd' }), 42)).ok).toBe(true);
+    expect(f.realtime.broadcast.mock.calls.map((call) => call[1])).toEqual([
+      'budget:exchange-rates-updated',
+      'budget:exchange-rates-updated',
+    ]);
+
+    const missing = build({ missing: true });
+    expect(
+      ((await missing.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'USD' }), 42)) as RpcError).error
+        .message,
+    ).toBe('no trip exchange rate for USD');
+  });
+
+  it('COSTS-RPC-015 creates, updates, and deletes foreign-currency settlements through BudgetService', async () => {
+    const input = { from_user_id: 42, to_user_id: 43, amount: 20, currency: 'USD', exchange_rate: 1.2 };
+    const f = build();
+    expect((await f.host().dispatch(req('costs.createSettlement', { tripId: 1, input }), 42)).ok).toBe(true);
+    expect((await f.host().dispatch(req('costs.updateSettlement', { tripId: 1, settlementId: 6, input }), 42)).ok).toBe(
+      true,
+    );
+    expect((await f.host().dispatch(req('costs.deleteSettlement', { tripId: 1, settlementId: 6 }), 42)).ok).toBe(true);
+    expect(f.realtime.broadcast.mock.calls.map((call) => call[1])).toEqual([
+      'budget:settlement-created',
+      'budget:settlement-updated',
+      'budget:settlement-deleted',
+    ]);
+  });
+
+  it('COSTS-RPC-016 rejects malformed settlement bodies and missing rows without broadcasting', async () => {
+    const malformed = build();
+    const bad = (await malformed
+      .host()
+      .dispatch(req('costs.createSettlement', { tripId: 1, input: { amount: 'twenty' } }), 42)) as RpcError;
+    expect(bad.error.code).toBe('BAD_PARAMS');
+    expect(malformed.realtime.broadcast).not.toHaveBeenCalled();
+
+    const input = { from_user_id: 42, to_user_id: 43, amount: 20 };
+    const missing = build({ missing: true });
+    expect(
+      ((await missing.host().dispatch(req('costs.createSettlement', { tripId: 1, input }), 42)) as RpcError).error
+        .message,
+    ).toBe('no settlement on trip 1');
+    expect(
+      (
+        (await missing
+          .host()
+          .dispatch(req('costs.updateSettlement', { tripId: 1, settlementId: 404, input }), 42)) as RpcError
+      ).error.message,
+    ).toBe('no settlement 404 on trip 1');
+    expect(
+      ((await missing.host().dispatch(req('costs.deleteSettlement', { tripId: 1, settlementId: 404 }), 42)) as RpcError)
+        .error.message,
+    ).toBe('no settlement 404 on trip 1');
+  });
+
+  it('COSTS-RPC-017 validates numeric rate arguments and still refuses userless rate writes', async () => {
+    const f = build();
+    expect(
+      (
+        (await f
+          .host()
+          .dispatch(req('costs.setRate', { tripId: 1, currency: 'USD', exchangeRate: 'x' }), 42)) as RpcError
+      ).error.code,
+    ).toBe('BAD_PARAMS');
+    expect(
+      ((await f.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'USD' }), undefined)) as RpcError).error
+        .message,
+    ).toBe('cost writes require an authenticated user context');
   });
 });

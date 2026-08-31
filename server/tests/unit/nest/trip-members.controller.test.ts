@@ -7,7 +7,10 @@ vi.mock('../../../src/nest/audit/audit-log.logger', () => ({ LOG_LEVEL: 'error',
 
 import { TripMembersController } from '../../../src/nest/trip-members/trip-members.controller';
 import { TripMembersModule } from '../../../src/nest/trip-members/trip-members.module';
-import type { TripMembersService } from '../../../src/nest/trip-members/trip-members.service';
+import {
+  GuestIdentityTransferError,
+  type TripMembersService,
+} from '../../../src/nest/trip-members/trip-members.service';
 import type { AuditService } from '../../../src/nest/audit/audit.service';
 import { NotFoundError, ValidationError } from '../../../src/nest/common/domain-errors';
 import type { User } from '../../../src/types';
@@ -155,6 +158,120 @@ describe('guests (#1362)', () => {
   it('maps a ValidationError from createGuest to 400', () => {
     const ve = svc({ createGuest: vi.fn().mockImplementation(() => { throw new ValidationError('Guest name must be 50 characters or fewer'); }) } as Partial<TripMembersService>);
     expect(thrown(() => tc(ve).createGuest(user, '9', { name: 'x'.repeat(60) }))).toEqual({ status: 400, body: { error: 'Guest name must be 50 characters or fewer' } });
+  });
+
+  it('maps rename validation and preserves unknown guest errors', () => {
+    const invalid = svc({
+      renameGuest: vi.fn().mockImplementation(() => {
+        throw new ValidationError('Guest name is required');
+      }),
+    } as Partial<TripMembersService>);
+    expect(thrown(() => tc(invalid).renameGuest(user, '9', '7', { name: '' }))).toEqual({
+      status: 400,
+      body: { error: 'Guest name is required' },
+    });
+    const unknown = svc({
+      renameGuest: vi.fn().mockImplementation(() => {
+        throw new Error('database unavailable');
+      }),
+    } as Partial<TripMembersService>);
+    expect(() => tc(unknown).renameGuest(user, '9', '7', { name: 'Bob' })).toThrow('database unavailable');
+  });
+});
+
+describe('Guest identity transfer', () => {
+  const impact = {
+    expenses: 1,
+    payments: 0,
+    itinerary: 2,
+    bookings: 1,
+    todos: 1,
+    packing: 1,
+    ratings: 1,
+    rating_overlaps: 0,
+  };
+
+  it('runs and declines the new-member identity check', () => {
+    const runNewMemberIdentityCheck = vi.fn().mockReturnValue({ required: true, candidates: [] });
+    const completeNewMemberIdentityCheck = vi.fn().mockReturnValue({ success: true });
+    const s = svc({ runNewMemberIdentityCheck, completeNewMemberIdentityCheck } as Partial<TripMembersService>);
+    expect(tc(s).newMemberIdentityCheck(user, '9')).toEqual({ required: true, candidates: [] });
+    expect(tc(s).declineNewMemberIdentityCheck(user, '9')).toEqual({ success: true });
+    expect(runNewMemberIdentityCheck).toHaveBeenCalledWith('9', user.id);
+    expect(completeNewMemberIdentityCheck).toHaveBeenCalledWith('9', user.id);
+  });
+
+  it('lists candidates and transfers a Guest with audit and WebSocket disclosure', () => {
+    const candidate = { guest_user_id: 7, name: 'Sam', impact, conflicts: [] };
+    const listGuestIdentityTransferCandidates = vi.fn().mockReturnValue([candidate]);
+    const transferGuestIdentity = vi.fn().mockReturnValue({
+      success: true,
+      transferred_guest_user_id: 7,
+      impact,
+    });
+    const broadcast = vi.fn();
+    const s = svc({
+      listGuestIdentityTransferCandidates,
+      transferGuestIdentity,
+      broadcast,
+    } as Partial<TripMembersService>);
+
+    expect(tc(s).guestIdentityTransferCandidates(user, '9')).toEqual({ candidates: [candidate] });
+    expect(tc(s).transferGuestIdentity(user, '9', '7', req, 'sock')).toMatchObject({
+      success: true,
+      transferred_guest_user_id: 7,
+    });
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'trip.guest_identity_transfer',
+        details: expect.objectContaining({ tripId: 9, guestUserId: 7, accountMemberUserId: user.id, impact }),
+      }),
+    );
+    expect(broadcast).toHaveBeenCalledWith(
+      '9',
+      'guest:identity-transferred',
+      { guestUserId: 7, transferredByUserId: user.id },
+      'sock',
+    );
+  });
+
+  it('maps conflicts to 409, forbidden callers to 403, and rethrows unknown errors', () => {
+    const conflict = new GuestIdentityTransferError(
+      'GUEST_IDENTITY_TRANSFER_CONFLICT',
+      'conflicting financial records',
+      [{ type: 'expense_share_overlap', record_id: 4 }],
+    );
+    const conflictService = svc({
+      runNewMemberIdentityCheck: vi.fn().mockImplementation(() => {
+        throw conflict;
+      }),
+    } as Partial<TripMembersService>);
+    expect(thrown(() => tc(conflictService).newMemberIdentityCheck(user, '9'))).toEqual({
+      status: 409,
+      body: {
+        error: 'conflicting financial records',
+        code: 'GUEST_IDENTITY_TRANSFER_CONFLICT',
+        conflicts: [{ type: 'expense_share_overlap', record_id: 4 }],
+      },
+    });
+
+    const forbidden = svc({
+      completeNewMemberIdentityCheck: vi.fn().mockImplementation(() => {
+        throw new GuestIdentityTransferError(
+          'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
+          'Only non-owner account members can transfer Guest identities',
+        );
+      }),
+    } as Partial<TripMembersService>);
+    expect(thrown(() => tc(forbidden).declineNewMemberIdentityCheck(user, '9')).status).toBe(403);
+
+    const unknown = new Error('boom');
+    const unknownService = svc({
+      listGuestIdentityTransferCandidates: vi.fn().mockImplementation(() => {
+        throw unknown;
+      }),
+    } as Partial<TripMembersService>);
+    expect(() => tc(unknownService).guestIdentityTransferCandidates(user, '9')).toThrow(unknown);
   });
 });
 

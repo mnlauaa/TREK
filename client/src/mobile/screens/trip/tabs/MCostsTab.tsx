@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { budgetApi } from '../../../../api/client';
-import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { readUserNote } from '../../../../components/Budget/CostsPanel.helpers';
+import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { catMeta, COST_CAT_META } from '../../../../components/Budget/costsCategories';
 import { useItemExchangeRate } from '../../../../components/Budget/useItemExchangeRate';
 import CurrencySelect from '../../../../components/shared/CurrencySelect';
@@ -47,8 +47,8 @@ import {
   memberShareOf,
   tint,
   type CostsCtx,
-  type CostsSegment,
   type CostsRecordedSettlement,
+  type CostsSegment,
   type CostsSettlementResponse,
 } from './costsModel';
 import { CountPill, TabScroller } from './tabChrome';
@@ -985,7 +985,11 @@ function AddPaymentSheet({
 
   return (
     <MSheet open={open} onClose={onClose} ariaLabel={editing ? t('costs.editPayment') : t('costs.addPayment')}>
-      <FormSheetHeader title={editing ? t('costs.editPayment') : t('costs.addPayment')} onClose={onClose} closeLabel={t('common.close')} />
+      <FormSheetHeader
+        title={editing ? t('costs.editPayment') : t('costs.addPayment')}
+        onClose={onClose}
+        closeLabel={t('common.close')}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-[6px] pt-1">
         <Eyebrow className="mb-[7px] uppercase">{t('costs.from')}</Eyebrow>
         <div className="flex flex-wrap gap-[6px]">

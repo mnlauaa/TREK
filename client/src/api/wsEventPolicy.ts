@@ -1,4 +1,4 @@
-import type { TrekWsEventName } from '@trek/shared'
+import type { TrekWsEventName } from '@trek/shared';
 
 /**
  * Client-side handling policy for every event in the shared WS registry
@@ -74,7 +74,7 @@ export const HANDLED_OUTSIDE_TRIP_STORE = [
   'import:progress',
   'import:done',
   'import:error',
-] as const satisfies readonly TrekWsEventName[]
+] as const satisfies readonly TrekWsEventName[];
 
 /**
  * Events the client deliberately does not act on today (state of the world
@@ -106,4 +106,4 @@ export const IGNORED_WS_EVENTS = [
   'trip:deleted',
   'member:added',
   'member:removed',
-] as const satisfies readonly TrekWsEventName[]
+] as const satisfies readonly TrekWsEventName[];

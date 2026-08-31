@@ -549,14 +549,12 @@ export default function DemoBanner(): React.ReactElement | null {
           >
             <Github size={13} />
             <span>{t.selfHost}</span>
-            <a
-              href="/legal"
-              style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}
-            >
+            <a href="/legal" style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}>
               {t.selfHostLink}
             </a>
           </div>
-          <button type="button"
+          <button
+            type="button"
             onClick={() => setDismissed(true)}
             style={{
               background: '#111827',

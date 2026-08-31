@@ -14,9 +14,21 @@
  * The rate cache is deliberately MODULE-scoped, so it persists across tests in
  * this file — every case uses its own base currency to stay isolated.
  */
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
-import type { DatabaseService } from '../../../src/nest/database/database.service';
+import {
+  convertWithRates,
+  effectiveTripValue,
+  type ExchangeRateWrite,
+  ExchangeRateConflictError,
+  ExchangeRatePreviewExpiredError,
+  ExchangeRatesService,
+  InvalidExchangeRateError,
+  isSupportedProviderCurrency,
+  resetExchangeRateProviderStateForTests,
+} from '../../../src/nest/budget/exchange-rates.service';
+import { DatabaseService } from '../../../src/nest/database/database.service';
+import { createTestDb } from '../../helpers/test-db';
 
+import type Database from 'better-sqlite3';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const TTL_MS = 6 * 60 * 60 * 1000; // mirrors the service's 6h TTL
@@ -188,5 +200,297 @@ describe('cross-instance cache sharing', () => {
     // bridges new up) must serve the same cached feed instead of refetching.
     expect(await new ExchangeRatesService(fakeDb).getRates('AUD')).toEqual(primed);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('enhanced frozen-rate workflow', () => {
+  let db: Database.Database;
+  let service: ExchangeRatesService;
+  let ownerId: number;
+  let memberId: number;
+  let tripId: number;
+
+  const saveSnapshot = (
+    base: string,
+    rates: Record<string, number>,
+    fetchedAt = new Date().toISOString(),
+    sourceVersion = 'fixture:v1',
+  ) => {
+    db.prepare(
+      `INSERT OR REPLACE INTO global_exchange_rate_snapshots
+         (base_currency, rates_json, source_version, effective_date, fetched_at)
+       VALUES (?, ?, ?, '2026-08-30', ?)`,
+    ).run(base, JSON.stringify(rates), sourceVersion, fetchedAt);
+  };
+
+  const expense = (rate = 1.25, source = 'global') =>
+    Number(
+      db
+        .prepare(
+          `INSERT INTO budget_items
+             (trip_id, name, total_price, currency, exchange_rate, exchange_rate_source,
+              exchange_rate_source_version, exchange_rate_set_at)
+           VALUES (?, 'Hotel', 125, 'USD', ?, ?, 'fixture:old', CURRENT_TIMESTAMP)`,
+        )
+        .run(tripId, rate, source).lastInsertRowid,
+    );
+
+  const settlement = (rate = 1.25, source = 'trip') =>
+    Number(
+      db
+        .prepare(
+          `INSERT INTO budget_settlements
+             (trip_id, from_user_id, to_user_id, amount, currency, exchange_rate,
+              exchange_rate_source, exchange_rate_source_version, exchange_rate_set_at)
+           VALUES (?, ?, ?, 50, 'USD', ?, ?, 'fixture:old', CURRENT_TIMESTAMP)`,
+        )
+        .run(tripId, ownerId, memberId, rate, source).lastInsertRowid,
+    );
+
+  beforeEach(() => {
+    resetExchangeRateProviderStateForTests();
+    db = createTestDb();
+    const insertUser = db.prepare('INSERT INTO users (username,email,password_hash,role) VALUES (?, ?, ?, ?)');
+    ownerId = Number(insertUser.run('owner', 'owner@fx.test', 'x', 'admin').lastInsertRowid);
+    memberId = Number(insertUser.run('member', 'member@fx.test', 'x', 'user').lastInsertRowid);
+    tripId = Number(
+      db.prepare("INSERT INTO trips (user_id,title,currency) VALUES (?, 'FX trip', 'EUR')").run(ownerId)
+        .lastInsertRowid,
+    );
+    db.prepare('INSERT INTO trip_members (trip_id,user_id) VALUES (?, ?)').run(tripId, memberId);
+    service = new ExchangeRatesService(new DatabaseService(db));
+  });
+
+  afterEach(() => {
+    resetExchangeRateProviderStateForTests();
+    db.close();
+  });
+
+  it('covers supported currencies and frozen-value conversion rules', () => {
+    expect(isSupportedProviderCurrency(' usd ')).toBe(true);
+    expect(isSupportedProviderCurrency('ZZZ')).toBe(false);
+    expect(convertWithRates(125, 'USD', 'EUR', { EUR: 1, USD: 1.25 })).toBe(100);
+    expect(convertWithRates(125, 'EUR', 'EUR', null)).toBe(125);
+    expect(convertWithRates(125, 'USD', 'EUR', { EUR: 1, USD: 0 })).toBe(125);
+    expect(effectiveTripValue(125, 'USD', 'EUR', 1.25, 'trip', null)).toBe(100);
+    expect(effectiveTripValue(125, 'USD', 'EUR', 1, 'legacy', { EUR: 1, USD: 1.25 })).toBe(100);
+    expect(effectiveTripValue(125, 'EUR', 'EUR', 999, 'explicit', null)).toBe(125);
+    expect(effectiveTripValue(125, 'USD', 'EUR', null, null, null)).toBe(125);
+  });
+
+  it('reads durable snapshots, rejects corrupt rows, and does not fetch unsupported bases', async () => {
+    saveSnapshot('EUR', { EUR: 1, USD: 1.25 });
+    const fresh = await service.getGlobalRateSnapshot('eur');
+    expect(fresh).toMatchObject({ base_currency: 'EUR', rates: { EUR: 1, USD: 1.25 }, stale: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    saveSnapshot('ZZZ', { ZZZ: 1, USD: 2 });
+    expect(await service.refreshGlobalRates('zzz')).toMatchObject({ base_currency: 'ZZZ' });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    db.prepare("UPDATE global_exchange_rate_snapshots SET rates_json = '{' WHERE base_currency = 'ZZZ'").run();
+    expect(await service.refreshGlobalRates('ZZZ')).toBeNull();
+  });
+
+  it('refreshes every supported stored base once and always includes EUR', async () => {
+    saveSnapshot('USD', { USD: 1, EUR: 0.8 });
+    saveSnapshot('ZZZ', { ZZZ: 1, EUR: 2 });
+    fetchMock.mockImplementation(async (url: string) => {
+      const base = new URL(url).searchParams.get('base')!;
+      return okResponse([{ date: '2026-08-30', quote: base === 'EUR' ? 'USD' : 'EUR', rate: 1.2 }]);
+    });
+    await service.refreshStoredRateBases();
+    expect(fetchMock.mock.calls.map((call) => new URL(call[0]).searchParams.get('base')).sort()).toEqual([
+      'EUR',
+      'USD',
+    ]);
+  });
+
+  it('resolves identity, Trip, Global, unavailable, missing-trip, and invalid currency paths', async () => {
+    saveSnapshot('EUR', { EUR: 1, USD: 1.25 });
+    expect(await service.resolveExchangeRate(tripId, 'EUR')).toMatchObject({ source: 'identity', exchange_rate: 1 });
+    expect(await service.resolveExchangeRate(99999, 'USD')).toBeNull();
+    await expect(service.resolveExchangeRate(tripId, 'bad-code')).rejects.toBeInstanceOf(InvalidExchangeRateError);
+
+    db.prepare(
+      `INSERT INTO trip_exchange_rates
+         (trip_id,currency,exchange_rate,effective_date,source_version,set_at,set_by_user_id,note)
+       VALUES (?, 'USD', 1.3, '2026-08-29', 'trip:fixture', CURRENT_TIMESTAMP, ?, 'saved')`,
+    ).run(tripId, ownerId);
+    expect(await service.resolveExchangeRate(tripId, 'usd')).toMatchObject({
+      source: 'trip',
+      exchange_rate: 1.3,
+      source_version: 'trip:fixture',
+    });
+
+    db.prepare("DELETE FROM trip_exchange_rates WHERE trip_id = ? AND currency = 'USD'").run(tripId);
+    expect(await service.resolveExchangeRate(tripId, 'USD')).toMatchObject({ source: 'global', exchange_rate: 1.25 });
+    expect(await service.resolveExchangeRate(tripId, 'JPY')).toBeNull();
+  });
+
+  it('freezes identity and explicit rates while stripping caller-owned provenance', async () => {
+    const identity = {
+      currency: 'EUR',
+      exchange_rate: 9,
+      exchange_rate_source: 'global' as const,
+      exchange_rate_source_version: 'forged',
+      exchange_rate_effective_date: '1900-01-01',
+      exchange_rate_set_at: 'forged',
+      exchange_rate_set_by_user_id: 999,
+      exchange_rate_reset_at: 'forged',
+      exchange_rate_note: 'remove for identity',
+    };
+    await service.freezeRateForWrite(tripId, identity, ownerId);
+    expect(identity).toMatchObject({
+      exchange_rate: 1,
+      exchange_rate_source: 'identity',
+      exchange_rate_source_version: 'identity:EUR',
+      exchange_rate_set_by_user_id: ownerId,
+      exchange_rate_note: null,
+    });
+    expect(identity.exchange_rate_reset_at).toBeUndefined();
+
+    const explicit: ExchangeRateWrite = {
+      currency: 'USD',
+      exchange_rate: 1.5,
+      exchange_rate_note: 'bank rate',
+    };
+    await service.freezeRateForWrite(tripId, explicit, ownerId);
+    expect(explicit).toMatchObject({ exchange_rate: 1.5, exchange_rate_source: 'explicit' });
+    expect(explicit.exchange_rate_source_version).toMatch(/^explicit:/);
+  });
+
+  it('preserves an unchanged frozen rate and resolves a changed/new currency through Trip then Global', async () => {
+    saveSnapshot('EUR', { EUR: 1, USD: 1.25, GBP: 0.8 });
+    db.prepare(
+      `INSERT INTO trip_exchange_rates
+         (trip_id,currency,exchange_rate,source_version,set_at,set_by_user_id)
+       VALUES (?, 'USD', 1.4, 'trip:usd', CURRENT_TIMESTAMP, ?)`,
+    ).run(tripId, ownerId);
+
+    const preserved = { exchange_rate_note: 'only note changed' };
+    await service.freezeRateForWrite(tripId, preserved, ownerId, { currency: 'USD', exchange_rate: 1.1 });
+    expect(preserved).toEqual({ exchange_rate_note: 'only note changed' });
+
+    const trip = { currency: 'USD' };
+    await service.freezeRateForWrite(tripId, trip, ownerId, { currency: 'GBP', exchange_rate: 0.7 });
+    expect(trip).toMatchObject({ exchange_rate: 1.4, exchange_rate_source: 'trip' });
+
+    const global = { currency: 'GBP' };
+    await service.freezeRateForWrite(tripId, global, ownerId);
+    expect(global).toMatchObject({ exchange_rate: 0.8, exchange_rate_source: 'global' });
+
+    await expect(service.freezeRateForWrite(tripId, { currency: 'JPY' }, ownerId)).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      service.freezeRateForWrite(tripId, { currency: 'USD', exchange_rate: 0 }, ownerId),
+    ).rejects.toBeInstanceOf(InvalidExchangeRateError);
+    const missingTrip = { currency: 'USD' };
+    await service.freezeRateForWrite(99999, missingTrip, ownerId);
+    expect(missingTrip).toEqual({ currency: 'USD' });
+  });
+
+  it('creates, lists, replaces, validates, and deletes Trip defaults', () => {
+    expect(service.setTripExchangeRate(99999, 'USD', 1.2, ownerId)).toBeNull();
+    expect(() => service.setTripExchangeRate(tripId, 'EUR', 1.2, ownerId)).toThrow(/identity rate/);
+    expect(() => service.setTripExchangeRate(tripId, 'XX', 1.2, ownerId)).toThrow(InvalidExchangeRateError);
+    expect(() => service.setTripExchangeRate(tripId, 'USD', Number.NaN, ownerId)).toThrow(InvalidExchangeRateError);
+
+    expect(service.setTripExchangeRate(tripId, 'usd', 1.2, ownerId, 'first')).toMatchObject({
+      currency: 'USD',
+      exchange_rate: 1.2,
+      note: 'first',
+    });
+    expect(service.setTripExchangeRate(tripId, 'USD', 1.3, ownerId, '')).toMatchObject({
+      exchange_rate: 1.3,
+      note: null,
+    });
+    expect(service.listTripExchangeRates(tripId)).toHaveLength(1);
+    expect(service.deleteTripExchangeRate(tripId, 'USD')).toBe(true);
+    expect(service.deleteTripExchangeRate(tripId, 'USD')).toBe(false);
+  });
+
+  it('previews and selectively applies a version-checked batch to expenses and settlements', async () => {
+    saveSnapshot('EUR', { EUR: 1, USD: 1.25 });
+    const expenseId = expense(1.25, 'global');
+    const settlementId = settlement(1.3, 'explicit');
+    const preview = (await service.previewTripExchangeRateUpdate(tripId, 'usd', 1.5, ownerId, 'new default')) as {
+      preview_id: string;
+      rows: Array<{ type: 'expense' | 'settlement'; id: number; selected: boolean }>;
+    };
+    expect(preview.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'expense', id: expenseId, selected: true }),
+        expect.objectContaining({ type: 'settlement', id: settlementId, selected: false }),
+      ]),
+    );
+
+    const applied = service.applyTripExchangeRateUpdate(
+      tripId,
+      preview.preview_id,
+      [
+        { type: 'expense', id: expenseId },
+        { type: 'settlement', id: settlementId },
+      ],
+      ownerId,
+      'USD',
+    ) as { updated: unknown[]; rate: { exchange_rate: number } };
+    expect(applied.updated).toHaveLength(2);
+    expect(applied.rate.exchange_rate).toBe(1.5);
+    expect(
+      db
+        .prepare('SELECT exchange_rate,exchange_rate_source,exchange_rate_note FROM budget_items WHERE id=?')
+        .get(expenseId),
+    ).toEqual({ exchange_rate: 1.5, exchange_rate_source: 'trip', exchange_rate_note: 'new default' });
+    expect(
+      db.prepare('SELECT exchange_rate,exchange_rate_source FROM budget_settlements WHERE id=?').get(settlementId),
+    ).toEqual({ exchange_rate: 1.5, exchange_rate_source: 'trip' });
+    expect(db.prepare('SELECT 1 FROM exchange_rate_batch_previews WHERE id=?').get(preview.preview_id)).toBeUndefined();
+  });
+
+  it('rejects invalid previews and selections before writing', async () => {
+    expect(() => service.cleanupExpiredExchangeRatePreviews(Date.now())).not.toThrow();
+    await expect(service.previewTripExchangeRateUpdate(tripId, 'USD', 0, ownerId)).rejects.toThrow(
+      InvalidExchangeRateError,
+    );
+    await expect(service.previewTripExchangeRateUpdate(99999, 'USD', 1.2, ownerId)).rejects.toThrow(/Trip not found/);
+    await expect(service.previewTripExchangeRateUpdate(tripId, 'EUR', 1.2, ownerId)).rejects.toThrow(/identity rate/);
+
+    const expenseId = expense();
+    const preview = (await service.previewTripExchangeRateUpdate(tripId, 'USD', 1.4, ownerId)) as {
+      preview_id: string;
+    };
+    expect(() =>
+      service.applyTripExchangeRateUpdate(tripId, preview.preview_id, [{ type: 'expense', id: expenseId }], memberId),
+    ).toThrow(/preview not found/);
+    expect(() => service.applyTripExchangeRateUpdate(tripId, preview.preview_id, [], ownerId, 'GBP')).toThrow(
+      /currency does not match/,
+    );
+    expect(() =>
+      service.applyTripExchangeRateUpdate(tripId, preview.preview_id, [{ type: 'expense', id: 99999 }], ownerId),
+    ).toThrow(/outside this preview/);
+  });
+
+  it('rejects expired and stale-state previews with distinct conflicts', async () => {
+    const expenseId = expense();
+    const expired = (await service.previewTripExchangeRateUpdate(tripId, 'USD', 1.4, ownerId)) as {
+      preview_id: string;
+    };
+    db.prepare("UPDATE exchange_rate_batch_previews SET created_at='2000-01-01 00:00:00' WHERE id=?").run(
+      expired.preview_id,
+    );
+    expect(() => service.applyTripExchangeRateUpdate(tripId, expired.preview_id, [], ownerId)).toThrow(
+      ExchangeRatePreviewExpiredError,
+    );
+    expect(db.prepare('SELECT 1 FROM exchange_rate_batch_previews WHERE id=?').get(expired.preview_id)).toBeUndefined();
+
+    const stale = (await service.previewTripExchangeRateUpdate(tripId, 'USD', 1.4, ownerId)) as {
+      preview_id: string;
+    };
+    db.prepare('UPDATE budget_items SET total_price=126 WHERE id=?').run(expenseId);
+    expect(() => service.applyTripExchangeRateUpdate(tripId, stale.preview_id, [], ownerId)).toThrow(
+      ExchangeRateConflictError,
+    );
   });
 });

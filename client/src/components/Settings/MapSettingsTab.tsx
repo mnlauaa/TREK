@@ -11,6 +11,7 @@ import ErrorBoundary from '../shared/ErrorBoundary'
 import { GlMapPreviewMapbox, GlMapPreviewMaplibre } from '../Map/glLazy'
 import Section from './Section'
 import ToggleSwitch from './ToggleSwitch'
+import { withTileApiKey } from '../../utils/tileUrl'
 import type { Place } from '../../types'
 import {
   MAPBOX_DEFAULT_STYLE,
@@ -30,6 +31,12 @@ interface MapPreset {
 const MAP_PRESETS: MapPreset[] = [
   { name: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
   { name: 'OpenStreetMap DE', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png' },
+  // The app default, and a vector style rather than a {z}/{x}/{y} template: no
+  // key, no registration, no request limits.
+  { name: 'OpenFreeMap Positron', url: 'https://tiles.openfreemap.org/styles/positron' },
+  { name: 'OpenFreeMap Bright', url: 'https://tiles.openfreemap.org/styles/bright' },
+  // CARTO watermarks keyless tiles since 26.08.2026 and issues keys by mail, so
+  // these two need one; without it the map falls back to the default (#2054).
   { name: 'CartoDB Light', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' },
   { name: 'CartoDB Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' },
   { name: 'Stadia Smooth', url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png' },
@@ -467,7 +474,12 @@ export default function MapSettingsTab(): React.ReactElement {
               onMarkerClick: null,
               onMapClick: null,
               onMapContextMenu: null,
-              tileUrl: mapTileUrl,
+              // With the key on it, or the preview resolves the template as a
+              // keyless CARTO one and quietly shows the app default instead of
+              // the basemap being configured. The fields hold what the user is
+              // editing rather than what useTileUrl already resolved, so the key
+              // has to be put back on here.
+              tileUrl: withTileApiKey(mapTileUrl, cartoKey),
               fitKey: null,
               dayOrderMap: [],
               leftWidth: 0,
