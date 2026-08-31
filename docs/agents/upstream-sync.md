@@ -23,6 +23,7 @@ v4.1.1 is the current baseline (`33a33e7`). Once it is adopted, compatible signe
 - Traditional Chinese wording overlay and `zh-HK` detection.
 - Debranded Help/About/release promotion with a neutral AGPL Legal/Source page.
 - Docker builder stages explicitly include development dependencies.
+- Fork CI runs the S3 contract against pinned community MinIO so it does not depend on upstream's proprietary AIStor license secret.
 
 Superseded: the Mapbox reservation-source teardown patch, which is already present upstream v4.
 

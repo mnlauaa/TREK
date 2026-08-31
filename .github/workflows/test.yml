@@ -225,11 +225,6 @@ jobs:
     name: S3 Driver Contract (MinIO)
     runs-on: ubuntu-latest
     needs: [plugin-facts, i18n-parity, server-quality, client-quality, plugin-sdk-quality]
-    # Fork PRs don't get repo secrets, so MINIO_LICENSE_KEY would be empty and
-    # the AIStor container would fail to boot. Pushes and manual dispatches do
-    # have secrets, so only fork PRs are filtered out. (The implicit success()
-    # on this expression also keeps the job skipped when a preflight fails.)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - uses: actions/checkout@v6
@@ -255,24 +250,18 @@ jobs:
       - name: Build shared
         run: npm run build --workspace=shared
 
-      - name: Write MinIO license
-        run: printf '%s' "${{ secrets.MINIO_LICENSE_KEY }}" > minio-licence.key
-
       - name: Start MinIO
-        # `services:` can't pass the `server /data --license ...` command to
-        # the AIStor image, so it starts via docker run. 127.0.0.1 endpoint is
-        # load-bearing: aws-lite picks path-style only for IP/localhost hosts,
-        # which is all stock MinIO/AIStor speaks.
+        # Keep the fork's contract test independent of a proprietary AIStor
+        # license secret. 127.0.0.1 is load-bearing: aws-lite picks path-style
+        # only for IP/localhost hosts, which is what community MinIO expects.
         run: |
           docker run -d --name minio -p 127.0.0.1:9000:9000 \
-            -v "$PWD/minio-licence.key:/minio.license:ro" \
             -e MINIO_ROOT_USER=trekci -e MINIO_ROOT_PASSWORD=trekci-secret \
-            quay.io/minio/aistor/minio:RELEASE.2026-08-07T18-34-35Z server /data --license /minio.license
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
 
       - name: Wait for MinIO
-        # curl was removed from the AIStor image — poll from the runner instead.
-        # 60 x 2s gives a wider margin on cold runners than the 30 x 1s the
-        # pre-6fbff835 job used.
+        # Poll from the runner so the check does not depend on tools in the image.
+        # 60 x 2s leaves enough margin for a cold image pull.
         run: |
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:9000/minio/health/live && exit 0
