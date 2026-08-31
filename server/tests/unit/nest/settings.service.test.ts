@@ -7,6 +7,13 @@
  * Uses a real in-memory SQLite DB; apiKeyCrypto is mocked to a passthrough
  * so we don't need real encryption for most tests.
  */
+import { runMigrations } from '../../../src/db/migrations';
+import { createTables } from '../../../src/db/schema';
+import { DatabaseService } from '../../../src/nest/database/database.service';
+import { SettingsService } from '../../../src/nest/settings/settings.service';
+import { createUser } from '../../helpers/factories';
+import { resetTestDb } from '../../helpers/test-db';
+
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
 // ── DB + apiKeyCrypto mock ────────────────────────────────────────────────────
@@ -41,13 +48,6 @@ vi.mock('../../../src/nest/common/crypto/apiKeyCrypto', () => ({
   decrypt_api_key: (v: string) => v,
 }));
 
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { resetTestDb } from '../../helpers/test-db';
-import { createUser } from '../../helpers/factories';
-import { DatabaseService } from '../../../src/nest/database/database.service';
-import { SettingsService } from '../../../src/nest/settings/settings.service';
-
 const svc = new SettingsService(new DatabaseService(testDb));
 
 beforeAll(() => {
@@ -66,9 +66,33 @@ afterAll(() => {
 // ── getUserSettings ───────────────────────────────────────────────────────────
 
 describe('getUserSettings', () => {
-  it('SET-SVC-001 — returns empty object when user has no settings', () => {
+  it('SET-SVC-001 — returns the built-in empty common currency list when user has no settings', () => {
     const { user } = createUser(testDb);
-    expect(svc.getUserSettings(user.id)).toEqual({});
+    expect(svc.getUserSettings(user.id)).toEqual({ common_currencies: [] });
+  });
+
+  it('reactivates and defensively normalizes a preserved common_currencies row', () => {
+    const { user } = createUser(testDb);
+    testDb
+      .prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'common_currencies', ?)")
+      .run(user.id, JSON.stringify(['usd', 'HKD', 'USD', 'bogus', 1, ' EUR ']));
+    expect(svc.getUserSettings(user.id).common_currencies).toEqual(['USD', 'HKD', 'EUR']);
+  });
+
+  it('inherits the admin common list, while a personal empty list intentionally hides it', () => {
+    const { user } = createUser(testDb);
+    setAdminDefault('common_currencies', JSON.stringify(['USD', 'JPY']));
+    expect(svc.getUserSettings(user.id).common_currencies).toEqual(['USD', 'JPY']);
+    svc.upsertSetting(user.id, 'common_currencies', []);
+    expect(svc.getUserSettings(user.id).common_currencies).toEqual([]);
+  });
+
+  it('deletes the personal common list and returns to the administrator default', () => {
+    const { user } = createUser(testDb);
+    setAdminDefault('common_currencies', JSON.stringify(['GBP']));
+    svc.upsertSetting(user.id, 'common_currencies', ['EUR']);
+    expect(svc.deleteSetting(user.id, 'common_currencies')).toEqual(['GBP']);
+    expect(svc.getUserSettings(user.id).common_currencies).toEqual(['GBP']);
   });
 
   it('SET-SVC-002 — returns stored plain string values', () => {
@@ -98,7 +122,9 @@ describe('getUserSettings', () => {
 
   it('SET-SVC-005 — webhook_url with a value is masked as ••••••••', () => {
     const { user } = createUser(testDb);
-    testDb.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'webhook_url', 'https://secret.example.com')").run(user.id);
+    testDb
+      .prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'webhook_url', 'https://secret.example.com')")
+      .run(user.id);
     const s = svc.getUserSettings(user.id);
     expect(s.webhook_url).toBe('••••••••');
   });
@@ -123,9 +149,11 @@ describe('getUserSettings', () => {
   // Admin "user defaults" fall-through (#1634) — a system-wide Mapbox token must
   // reach a user who left their own token blank.
   const setAdminDefault = (settingKey: string, value: string) =>
-    testDb.prepare(
-      "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    ).run(`default_user_setting_${settingKey}`, value);
+    testDb
+      .prepare(
+        'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(`default_user_setting_${settingKey}`, value);
 
   it('SET-SVC-020 — new user with no rows inherits the admin default token', () => {
     const { user } = createUser(testDb);
@@ -143,7 +171,9 @@ describe('getUserSettings', () => {
   it('SET-SVC-022 — a non-empty user token overrides the admin default', () => {
     const { user } = createUser(testDb);
     setAdminDefault('mapbox_access_token', 'pk.admin');
-    testDb.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'mapbox_access_token', 'pk.user')").run(user.id);
+    testDb
+      .prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'mapbox_access_token', 'pk.user')")
+      .run(user.id);
     expect(svc.getUserSettings(user.id).mapbox_access_token).toBe('pk.user');
   });
 
@@ -233,6 +263,13 @@ describe('getUserSettings', () => {
 // ── upsertSetting ─────────────────────────────────────────────────────────────
 
 describe('upsertSetting', () => {
+  it('validates and uppercases common currencies while rejecting duplicates', () => {
+    const { user } = createUser(testDb);
+    svc.upsertSetting(user.id, 'common_currencies', ['usd', 'jpy']);
+    expect(svc.getUserSettings(user.id).common_currencies).toEqual(['USD', 'JPY']);
+    expect(() => svc.upsertSetting(user.id, 'common_currencies', ['USD', 'usd'])).toThrow();
+    expect(() => svc.upsertSetting(user.id, 'common_currencies', ['ZZZ'])).toThrow();
+  });
   it('SET-SVC-008 — inserts a new setting', () => {
     const { user } = createUser(testDb);
     svc.upsertSetting(user.id, 'language', 'en');
@@ -258,7 +295,9 @@ describe('upsertSetting', () => {
   it('SET-SVC-011 — serializes boolean values as strings', () => {
     const { user } = createUser(testDb);
     svc.upsertSetting(user.id, 'notifications', true);
-    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'notifications'").get(user.id) as any;
+    const raw = testDb
+      .prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'notifications'")
+      .get(user.id) as any;
     expect(raw.value).toBe('true');
   });
 
@@ -266,7 +305,9 @@ describe('upsertSetting', () => {
     const { user } = createUser(testDb);
     svc.upsertSetting(user.id, 'webhook_url', 'https://hook.example.com');
     // With passthrough mock, value is stored as-is
-    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'webhook_url'").get(user.id) as any;
+    const raw = testDb
+      .prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'webhook_url'")
+      .get(user.id) as any;
     expect(raw.value).toBe('https://hook.example.com');
     // But getUserSettings masks it
     const s = svc.getUserSettings(user.id);
@@ -332,7 +373,11 @@ describe('bulkUpsertSettings', () => {
     vi.spyOn(testDb, 'prepare').mockImplementationOnce((sql: string) => {
       const stmt = origPrepare(sql);
       intercepted = true;
-      return { run: () => { throw new Error('forced DB error'); } } as any;
+      return {
+        run: () => {
+          throw new Error('forced DB error');
+        },
+      } as any;
     });
     expect(() => svc.bulkUpsertSettings(user.id, { k: 'v' })).toThrow('forced DB error');
     expect(intercepted).toBe(true);
@@ -346,7 +391,9 @@ describe('legacy quirk fixes', () => {
   it('SET-SVC-027 — null serializes as the empty string, not the string "null"', () => {
     const { user } = createUser(testDb);
     svc.upsertSetting(user.id, 'llm_api_key', null);
-    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'llm_api_key'").get(user.id) as { value: string };
+    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'llm_api_key'").get(user.id) as {
+      value: string;
+    };
     expect(raw.value).toBe('');
     // The legacy "null" storage leaked back out of getDecryptedUserSetting as
     // the literal string "null"; a cleared secret must read as null.
@@ -366,9 +413,13 @@ describe('legacy quirk fixes', () => {
     const count = svc.bulkUpsertSettings(user.id, { ntfy_topic: 'trek', ntfy_token: '••••••••' });
     expect(count).toBe(1);
     // Passthrough crypto mock: the stored value must still be the real token.
-    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'ntfy_token'").get(user.id) as { value: string };
+    const raw = testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'ntfy_token'").get(user.id) as {
+      value: string;
+    };
     expect(raw.value).toBe('tok-real');
-    expect(testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'ntfy_topic'").get(user.id)).toEqual({ value: 'trek' });
+    expect(testDb.prepare("SELECT value FROM settings WHERE user_id = ? AND key = 'ntfy_topic'").get(user.id)).toEqual({
+      value: 'trek',
+    });
   });
 
   it('SET-SVC-030 — bulk returns the count of keys actually written', () => {

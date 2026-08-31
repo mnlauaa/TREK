@@ -1,5 +1,6 @@
 import { readEnv } from '../app-config';
 import { encrypt_api_key } from '../nest/common/crypto/apiKeyCrypto';
+import { normalizeLegacyForkLineage, runForkMigrations } from './fork-migrations';
 
 import Database from 'better-sqlite3';
 import fs from 'fs';
@@ -4178,6 +4179,8 @@ function runMigrations(db: Database.Database): void {
     },
   ];
 
+  currentVersion = normalizeLegacyForkLineage(db, currentVersion, migrations.length);
+
   if (currentVersion < migrations.length) {
     for (let i = currentVersion; i < migrations.length; i++) {
       console.log(`[DB] Running migration ${i + 1}/${migrations.length}`);
@@ -4205,6 +4208,8 @@ function runMigrations(db: Database.Database): void {
     }
     console.log(`[DB] Migrations complete — schema version ${migrations.length}`);
   }
+
+  runForkMigrations(db);
 }
 
 export { runMigrations };

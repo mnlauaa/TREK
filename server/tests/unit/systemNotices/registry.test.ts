@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { RETIRED_NOTICE_IDS, SYSTEM_NOTICES } from '../../../src/systemNotices/registry.js';
+
 import fs from 'node:fs';
 import path from 'node:path';
 import semver from 'semver';
-import { SYSTEM_NOTICES } from '../../../src/systemNotices/registry.js';
-import { isNoticeVersionActive } from '../../../src/systemNotices/service.js';
+import { describe, it, expect } from 'vitest';
 
 /** Collect all actionIds registered via registerNoticeAction() in client source files. */
 function collectRegisteredActionIds(): Set<string> {
@@ -14,7 +14,10 @@ function collectRegisteredActionIds(): Set<string> {
     const dir = queue.pop()!;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { queue.push(full); continue; }
+      if (entry.isDirectory()) {
+        queue.push(full);
+        continue;
+      }
       if (!entry.name.endsWith('noticeActions.ts') && !entry.name.endsWith('noticeActions.js')) continue;
       const src = fs.readFileSync(full, 'utf8');
       for (const m of src.matchAll(/registerNoticeAction\(\s*['"]([^'"]+)['"]/g)) {
@@ -27,15 +30,15 @@ function collectRegisteredActionIds(): Set<string> {
 
 describe('registry integrity', () => {
   it('has no duplicate ids', () => {
-    const ids = SYSTEM_NOTICES.map(n => n.id);
+    const ids = SYSTEM_NOTICES.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('all action CTAs reference a registered actionId', () => {
     const registeredActionIds = collectRegisteredActionIds();
-    const actionCtaIds = SYSTEM_NOTICES
-      .filter(n => n.cta?.kind === 'action')
-      .map(n => (n.cta as { actionId: string }).actionId);
+    const actionCtaIds = SYSTEM_NOTICES.filter((n) => n.cta?.kind === 'action').map(
+      (n) => (n.cta as { actionId: string }).actionId,
+    );
 
     for (const id of actionCtaIds) {
       expect(registeredActionIds, `actionId "${id}" not found in any client noticeActions.ts`).toContain(id);
@@ -59,41 +62,16 @@ describe('registry integrity', () => {
       if (n.minVersion && n.maxVersion) {
         expect(
           semver.lte(n.minVersion, n.maxVersion),
-          `notice "${n.id}": minVersion ${n.minVersion} > maxVersion ${n.maxVersion}`
+          `notice "${n.id}": minVersion ${n.minVersion} > maxVersion ${n.maxVersion}`,
         ).toBe(true);
       }
     }
   });
 
-  it('the 4.0.0 release notice covers the whole 4.x line', () => {
-    const release = SYSTEM_NOTICES.find(n => n.id === 'release-4-0-0');
-    expect(release).toBeDefined();
-    // It must not greet somebody still on 3.x...
-    expect(isNoticeVersionActive(release!, '3.4.1')).toBe(false);
-    expect(isNoticeVersionActive(release!, '4.0.0')).toBe(true);
-    expect(isNoticeVersionActive(release!, '4.0.7')).toBe(true);
-    expect(isNoticeVersionActive(release!, '4.0.12')).toBe(true);
-    // ...and it stays up across the minors, so no 4.x install is left without a
-    // notice the way 4.1.0 was under the old per-release window.
-    expect(isNoticeVersionActive(release!, '4.1.0')).toBe(true);
-    expect(isNoticeVersionActive(release!, '4.2.0')).toBe(true);
-    expect(isNoticeVersionActive(release!, '4.9.9')).toBe(true);
-    // The upper bound is exclusive: 5.0.0 gets its own notice.
-    expect(isNoticeVersionActive(release!, '5.0.0')).toBe(false);
-  });
-
-  it('the thank-you notice hands over to the release modal at 4.0.0', () => {
-    const thankYou = SYSTEM_NOTICES.find(n => n.id === 'thank-you-support');
-    expect(thankYou).toBeDefined();
-    // Both carry the same thank-you and the same two support links, so exactly
-    // one of them may be active at any version.
-    expect(isNoticeVersionActive(thankYou!, '3.4.1')).toBe(true);
-    expect(isNoticeVersionActive(thankYou!, '4.0.0')).toBe(false);
-
-    const release = SYSTEM_NOTICES.find(n => n.id === 'release-4-0-0')!;
-    for (const version of ['3.4.1', '4.0.0', '4.0.7', '4.1.0', '5.0.0']) {
-      const active = [thankYou!, release].filter(n => isNoticeVersionActive(n, version));
-      expect(active.length, `both thank-you notices active at ${version}`).toBeLessThanOrEqual(1);
+  it('reserves but does not publish upstream promotional notice ids', () => {
+    for (const id of ['release-4-0-0', 'thank-you-support']) {
+      expect(RETIRED_NOTICE_IDS).toContain(id);
+      expect(SYSTEM_NOTICES.some((notice) => notice.id === id)).toBe(false);
     }
   });
 });

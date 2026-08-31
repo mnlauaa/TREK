@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import {
   budgetCreateItemRequestSchema,
   budgetUpdateItemRequestSchema,
@@ -9,7 +8,12 @@ import {
   budgetReorderCategoriesRequestSchema,
   budgetCreateSettlementRequestSchema,
   budgetUpdateSettlementRequestSchema,
+  setTripExchangeRateRequestSchema,
+  previewTripExchangeRateRequestSchema,
+  applyTripExchangeRateRequestSchema,
 } from '@trek/shared';
+
+import { createZodDto } from 'nestjs-zod';
 
 /**
  * Server-side createZodDto wrappers over the @trek/shared budget contracts. The
@@ -26,3 +30,6 @@ export class BudgetReorderItemsDto extends createZodDto(budgetReorderItemsReques
 export class BudgetReorderCategoriesDto extends createZodDto(budgetReorderCategoriesRequestSchema) {}
 export class BudgetCreateSettlementDto extends createZodDto(budgetCreateSettlementRequestSchema) {}
 export class BudgetUpdateSettlementDto extends createZodDto(budgetUpdateSettlementRequestSchema) {}
+export class SetTripExchangeRateDto extends createZodDto(setTripExchangeRateRequestSchema) {}
+export class PreviewTripExchangeRateDto extends createZodDto(previewTripExchangeRateRequestSchema) {}
+export class ApplyTripExchangeRateDto extends createZodDto(applyTripExchangeRateRequestSchema) {}

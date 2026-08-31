@@ -1,23 +1,27 @@
 // FE-COMP-NAVBAR-001 to FE-COMP-NAVBAR-028
-import { act, fireEvent, render, screen, waitFor } from '../../../tests/helpers/render';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { buildSettings, buildUser } from '../../../tests/helpers/factories';
 import { server } from '../../../tests/helpers/msw/server';
-import { useAuthStore } from '../../store/authStore';
-import { useSettingsStore } from '../../store/settingsStore';
-import { useAddonStore } from '../../store/addonStore';
-import { usePluginStore } from '../../store/pluginStore';
+import { act, fireEvent, render, screen, waitFor } from '../../../tests/helpers/render';
 import { resetAllStores, seedStore } from '../../../tests/helpers/store';
-import { buildUser, buildSettings } from '../../../tests/helpers/factories';
+import { useAddonStore } from '../../store/addonStore';
+import { useAuthStore } from '../../store/authStore';
+import { usePluginStore } from '../../store/pluginStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import Navbar from './Navbar';
 
 beforeEach(() => {
   resetAllStores();
   server.use(
     http.get('/api/auth/app-config', () => HttpResponse.json({ version: '2.9.10' })),
-    http.get('/api/addons', () => HttpResponse.json({ addons: [] })),
+    http.get('/api/addons', () => HttpResponse.json({ addons: [] }))
   );
-  seedStore(useAuthStore, { user: buildUser({ username: 'testuser', role: 'user' }), isAuthenticated: true, appVersion: '2.9.10' });
+  seedStore(useAuthStore, {
+    user: buildUser({ username: 'testuser', role: 'user' }),
+    isAuthenticated: true,
+    appVersion: '2.9.10',
+  });
   seedStore(useSettingsStore, { settings: buildSettings() });
 });
 
@@ -206,9 +210,11 @@ describe('Navbar', () => {
 
   it('FE-COMP-NAVBAR-024: global addon nav links appear when addons enabled', () => {
     server.use(
-      http.get('/api/addons', () => HttpResponse.json({
-        addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
-      })),
+      http.get('/api/addons', () =>
+        HttpResponse.json({
+          addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
+        })
+      )
     );
     seedStore(useAddonStore, {
       addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
@@ -474,12 +480,18 @@ describe('Navbar styling and menu details', () => {
       fireEvent.click(theme);
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(true);
 
-      act(() => { vi.advanceTimersByTime(200); });
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
       fireEvent.click(theme); // restarts the pending timer
-      act(() => { vi.advanceTimersByTime(200); });
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(true);
 
-      act(() => { vi.advanceTimersByTime(200); });
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(false);
     } finally {
       vi.useRealTimers();
@@ -516,7 +528,7 @@ describe('Navbar styling and menu details', () => {
     render(<Navbar />);
     await user.click(screen.getByText('adminuser'));
 
-    for (const name of [/^Settings$/, /^Help$/, /^Admin$/]) {
+    for (const name of [/^Settings$/, /^Legal & source$/, /^Admin$/]) {
       const link = screen.getByRole('link', { name });
       fireEvent.mouseEnter(link);
       expect(link.style.background).toBe('var(--bg-hover)');
@@ -524,12 +536,7 @@ describe('Navbar styling and menu details', () => {
       expect(link.style.background).toBe('transparent');
     }
 
-    const discord = screen.getByTitle('Discord');
-    fireEvent.mouseEnter(discord);
-    expect(discord.style.background).toBe('rgba(88, 101, 242, 0.125)');
-    fireEvent.mouseLeave(discord);
-    expect(discord.style.background).toBe('var(--bg-tertiary)');
-
+    expect(screen.queryByTitle('Discord')).not.toBeInTheDocument();
     expect(document.querySelector('img[src="/text-light.svg"]')).not.toBeNull();
   });
 
@@ -541,7 +548,7 @@ describe('Navbar styling and menu details', () => {
     });
     render(<Navbar />);
 
-    for (const name of [/^Settings$/, /^Help$/, /^Admin$/]) {
+    for (const name of [/^Settings$/, /^Legal & source$/, /^Admin$/]) {
       await user.click(screen.getByText('adminuser'));
       await user.click(screen.getByRole('link', { name }));
       expect(screen.queryByRole('link', { name: /^Settings$/ })).not.toBeInTheDocument();
@@ -578,7 +585,11 @@ describe('Navbar styling and menu details', () => {
 describe('Navbar layout (#1983)', () => {
   const withAddons = (n: number) => {
     const addons = Array.from({ length: n }, (_, i) => ({
-      id: `addon${i}`, name: `Addon ${i}`, icon: 'CalendarDays', type: 'global' as const, enabled: true,
+      id: `addon${i}`,
+      name: `Addon ${i}`,
+      icon: 'CalendarDays',
+      type: 'global' as const,
+      enabled: true,
     }));
     server.use(http.get('/api/addons', () => HttpResponse.json({ addons })));
     seedStore(useAddonStore, { addons });
@@ -597,7 +608,7 @@ describe('Navbar layout (#1983)', () => {
     withAddons(4);
     const { container } = render(<Navbar />);
     const nav = container.querySelector('nav') as HTMLElement;
-    const columns = Array.from(nav.children).filter(c => c.classList.contains('flex-1'));
+    const columns = Array.from(nav.children).filter((c) => c.classList.contains('flex-1'));
     // Left brand column and right action cluster, both flex-1 basis-0.
     expect(columns).toHaveLength(2);
     for (const c of columns) expect(c.classList.contains('basis-0')).toBe(true);

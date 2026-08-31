@@ -1,11 +1,14 @@
-import { createZodDto } from 'nestjs-zod';
 import {
   preferencesUpdateRequestSchema,
   testSmtpRequestSchema,
   testWebhookRequestSchema,
   testNtfyRequestSchema,
   notificationRespondRequestSchema,
+  webPushCurrentRequestSchema,
+  webPushRenameRequestSchema,
 } from '@trek/shared';
+
+import { createZodDto } from 'nestjs-zod';
 
 /**
  * Server-side createZodDto wrappers over the @trek/shared notification
@@ -19,3 +22,5 @@ export class TestSmtpDto extends createZodDto(testSmtpRequestSchema) {}
 export class TestWebhookDto extends createZodDto(testWebhookRequestSchema) {}
 export class TestNtfyDto extends createZodDto(testNtfyRequestSchema) {}
 export class NotificationRespondDto extends createZodDto(notificationRespondRequestSchema) {}
+export class WebPushCurrentDto extends createZodDto(webPushCurrentRequestSchema) {}
+export class WebPushRenameDto extends createZodDto(webPushRenameRequestSchema) {}

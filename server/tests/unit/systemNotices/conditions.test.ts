@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { evaluate } from '../../../src/systemNotices/conditions.js';
+import { evaluate, registerPredicate } from '../../../src/systemNotices/conditions.js';
 import type { NoticeCondition, SystemNotice } from '../../../src/systemNotices/types.js';
+
+import { describe, it, expect } from 'vitest';
 
 const baseNotice: SystemNotice = {
   id: 'test',
@@ -90,10 +91,7 @@ describe('role', () => {
 
 describe('AND logic', () => {
   it('requires all conditions to pass', () => {
-    const notice = noticeWith(
-      { kind: 'firstLogin' },
-      { kind: 'role', roles: ['user'] },
-    );
+    const notice = noticeWith({ kind: 'firstLogin' }, { kind: 'role', roles: ['user'] });
     // login_count=1 passes firstLogin, role=user passes role → true
     expect(evaluate(notice, { ...baseCtx, user: { ...baseCtx.user, login_count: 1 } })).toBe(true);
     // login_count=2 fails firstLogin → false
@@ -128,5 +126,35 @@ describe('managed', () => {
     expect(evaluate(wantsSelfRun, { ...baseCtx, managed: true })).toBe(false);
     expect(evaluate(wantsManaged, { ...baseCtx, managed: true })).toBe(true);
     expect(evaluate(wantsManaged, { ...baseCtx, managed: false })).toBe(false);
+  });
+});
+
+describe('remaining condition kinds and defensive fallbacks', () => {
+  it('supports always and noTrips in both directions', () => {
+    expect(evaluate(noticeWith({ kind: 'always' }), baseCtx)).toBe(true);
+    const noTrips = noticeWith({ kind: 'noTrips' });
+    expect(evaluate(noTrips, { ...baseCtx, user: { ...baseCtx.user, noTrips: 0 } })).toBe(true);
+    expect(evaluate(noTrips, baseCtx)).toBe(false);
+  });
+
+  it('rejects an invalid version condition and a date after its end', () => {
+    expect(evaluate(noticeWith({ kind: 'existingUserBeforeVersion', version: 'not-semver' }), baseCtx)).toBe(false);
+    expect(
+      evaluate(
+        noticeWith({
+          kind: 'dateWindow',
+          startsAt: '2026-01-01T00:00:00Z',
+          endsAt: '2026-05-01T00:00:00Z',
+        }),
+        baseCtx,
+      ),
+    ).toBe(false);
+  });
+
+  it('runs registered custom predicates, rejects unknown ones, and fails closed on an unknown kind', () => {
+    registerPredicate('unit-allowed', (ctx) => ctx.user.role === 'user');
+    expect(evaluate(noticeWith({ kind: 'custom', id: 'unit-allowed' }), baseCtx)).toBe(true);
+    expect(evaluate(noticeWith({ kind: 'custom', id: 'unit-missing' }), baseCtx)).toBe(false);
+    expect(evaluate(noticeWith({ kind: 'future-kind' } as never), baseCtx)).toBe(false);
   });
 });

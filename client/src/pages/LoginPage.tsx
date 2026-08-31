@@ -1,22 +1,10 @@
-import {
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Fingerprint,
-  Globe,
-  KeyRound,
-  Lock,
-  Mail,
-  Plane,
-  Shield,
-  User,
-} from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Fingerprint, Globe, KeyRound, Lock, Mail, Plane, Shield, User } from 'lucide-react';
 import React from 'react';
 import ToggleSwitch from '../components/Settings/ToggleSwitch';
 import { SUPPORTED_LANGUAGES, useTranslation } from '../i18n';
-import { useLogin } from './login/useLogin';
+import { clearSignedOut } from '../utils/signedOut';
 import LoginWorld from './login/LoginWorld';
-import { clearSignedOut } from '../utils/signedOut'
+import { useLogin } from './login/useLogin';
 
 /** Fixed so the sky does not reshuffle on every render. */
 const STARFIELD = [
@@ -224,7 +212,8 @@ export default function LoginPage(): React.ReactElement {
     <div style={{ minHeight: '100vh', display: 'flex', fontFamily: 'var(--font-system)', position: 'relative' }}>
       {/* Language dropdown */}
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10 }}>
-        <button type="button"
+        <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             setLangDropdownOpen((o) => !o);
@@ -287,7 +276,8 @@ export default function LoginPage(): React.ReactElement {
             }}
           >
             {SUPPORTED_LANGUAGES.map(({ value, label }) => (
-              <button type="button"
+              <button
+                type="button"
                 key={value}
                 role="option"
                 aria-selected={value === language}
@@ -590,20 +580,6 @@ export default function LoginPage(): React.ReactElement {
                     >
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>{t('login.insecureCookie.title')}</div>
                       <div style={{ lineHeight: 1.55 }}>{t('login.insecureCookie.body')}</div>
-                      <a
-                        href="https://github.com/liketrek/TREK/wiki/Troubleshooting"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-block',
-                          marginTop: 6,
-                          fontWeight: 600,
-                          color: '#b45309',
-                          textDecoration: 'underline',
-                        }}
-                      >
-                        {t('login.insecureCookie.link')} ↗
-                      </a>
                     </div>
                   )}
 
@@ -1062,7 +1038,8 @@ export default function LoginPage(): React.ReactElement {
                     }}
                   >
                     {mode === 'login' ? t('login.noAccount') + ' ' : t('login.hasAccount') + ' '}
-                    <button type="button"
+                    <button
+                      type="button"
                       onClick={() => {
                         setMode((m) => (m === 'login' ? 'register' : 'login'));
                         setError('');
@@ -1100,9 +1077,7 @@ export default function LoginPage(): React.ReactElement {
               </div>
               <a
                 onClick={clearSignedOut}
-                href={`/api/auth/oidc/login${
-                  inviteToken ? '?invite=' + encodeURIComponent(inviteToken) : ''
-                }${
+                href={`/api/auth/oidc/login${inviteToken ? '?invite=' + encodeURIComponent(inviteToken) : ''}${
                   // The remember-me toggle only renders in login mode; in
                   // register mode omit the param so the server default applies.
                   mode === 'login' ? (inviteToken ? '&' : '?') + 'remember=' + (rememberMe ? '1' : '0') : ''
@@ -1199,7 +1174,8 @@ export default function LoginPage(): React.ReactElement {
 
           {/* Demo login button */}
           {appConfig?.demo_mode && (
-            <button type="button"
+            <button
+              type="button"
               onClick={handleDemoLogin}
               disabled={isLoading}
               style={{
@@ -1238,6 +1214,14 @@ export default function LoginPage(): React.ReactElement {
           )}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => navigate('/legal')}
+        className="fixed bottom-3 right-4 z-20 text-xs text-white/60 underline"
+      >
+        {t('legal.title')}
+      </button>
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }

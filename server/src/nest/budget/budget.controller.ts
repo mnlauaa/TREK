@@ -1,3 +1,21 @@
+import type { User } from '../../types';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { TripAccess } from '../database/database.service';
+import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
+import { Trip } from '../permissions/trip.decorator';
+import {
+  BudgetCreateItemDto,
+  BudgetUpdateItemDto,
+  BudgetUpdatePayersDto,
+  BudgetUpdateMembersDto,
+  BudgetToggleMemberPaidDto,
+  BudgetReorderItemsDto,
+  BudgetReorderCategoriesDto,
+  BudgetCreateSettlementDto,
+  BudgetUpdateSettlementDto,
+} from './budget.dto';
+import { BudgetService } from './budget.service';
 import {
   Body,
   Controller,
@@ -11,24 +29,6 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { User } from '../../types';
-import { BudgetService } from './budget.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
-import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
-import { Trip } from '../permissions/trip.decorator';
-import type { TripAccess } from '../database/database.service';
-import {
-  BudgetCreateItemDto,
-  BudgetUpdateItemDto,
-  BudgetUpdatePayersDto,
-  BudgetUpdateMembersDto,
-  BudgetToggleMemberPaidDto,
-  BudgetReorderItemsDto,
-  BudgetReorderCategoriesDto,
-  BudgetCreateSettlementDto,
-  BudgetUpdateSettlementDto,
-} from './budget.dto';
 
 /**
  * /api/trips/:tripId/budget — trip-scoped expense planner.
@@ -53,8 +53,6 @@ import {
 @UseGuards(JwtAuthGuard, TripAccessGuard)
 export class BudgetController {
   constructor(private readonly budget: BudgetService) {}
-
-
 
   @Get()
   list(@CurrentUser() user: User, @Param('tripId') tripId: string) {
@@ -91,7 +89,14 @@ export class BudgetController {
   ) {
     const settlement = await this.budget.createSettlement(
       tripId,
-      { from_user_id: body.from_user_id, to_user_id: body.to_user_id, amount: body.amount, currency: body.currency },
+      {
+        from_user_id: body.from_user_id,
+        to_user_id: body.to_user_id,
+        amount: body.amount,
+        currency: body.currency,
+        exchange_rate: body.exchange_rate,
+        exchange_rate_note: body.exchange_rate_note,
+      },
       user.id,
     );
     // A party who is not on this trip gets the same answer as a settlement that
@@ -112,12 +117,19 @@ export class BudgetController {
     @Body() body: BudgetUpdateSettlementDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const settlement = await this.budget.updateSettlement(settlementId, tripId, {
-      from_user_id: body.from_user_id,
-      to_user_id: body.to_user_id,
-      amount: body.amount,
-      currency: body.currency,
-    });
+    const settlement = await this.budget.updateSettlement(
+      settlementId,
+      tripId,
+      {
+        from_user_id: body.from_user_id,
+        to_user_id: body.to_user_id,
+        amount: body.amount,
+        currency: body.currency,
+        exchange_rate: body.exchange_rate,
+        exchange_rate_note: body.exchange_rate_note,
+      },
+      user.id,
+    );
     if (!settlement) {
       throw new HttpException({ error: 'Settlement not found' }, 404);
     }
@@ -148,7 +160,7 @@ export class BudgetController {
     @Body() body: BudgetCreateItemDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const item = await this.budget.create(tripId, body);
+    const item = await this.budget.create(tripId, body, user.id);
     this.budget.broadcast(tripId, 'budget:created', { item }, socketId);
     return { item };
   }
@@ -188,7 +200,7 @@ export class BudgetController {
     @Body() body: BudgetUpdateItemDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const updated = await this.budget.update(id, tripId, body);
+    const updated = await this.budget.update(id, tripId, body, user.id);
     if (!updated) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
@@ -212,7 +224,12 @@ export class BudgetController {
     if (!result) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
-    this.budget.broadcast(tripId, 'budget:members-updated', { itemId: Number(id), members: result.members, persons: result.item.persons }, socketId);
+    this.budget.broadcast(
+      tripId,
+      'budget:members-updated',
+      { itemId: Number(id), members: result.members, persons: result.item.persons },
+      socketId,
+    );
     return { members: result.members, item: result.item };
   }
 
@@ -244,7 +261,12 @@ export class BudgetController {
     @Headers('x-socket-id') socketId?: string,
   ) {
     const member = this.budget.toggleMemberPaid(id, tripId, userId, body.paid);
-    this.budget.broadcast(tripId, 'budget:member-paid-updated', { itemId: Number(id), userId: Number(userId), paid: body.paid ? 1 : 0 }, socketId);
+    this.budget.broadcast(
+      tripId,
+      'budget:member-paid-updated',
+      { itemId: Number(id), userId: Number(userId), paid: body.paid ? 1 : 0 },
+      socketId,
+    );
     return { member };
   }
 

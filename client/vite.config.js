@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { visualizer } from 'rollup-plugin-visualizer';
 
 // `npm run build:analyze` writes dist/stats.html — a treemap of what actually ended
 // up in each chunk. The plain build only reports chunk sizes, which tells you a chunk
@@ -9,8 +9,7 @@ import { visualizer } from 'rollup-plugin-visualizer';
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    mode === 'analyze' &&
-      visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
+    mode === 'analyze' && visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
     VitePWA({
       registerType: 'autoUpdate',
       // Serve the generated manifest (+ dev SW) in development too, so the installed
@@ -37,6 +36,7 @@ export default defineConfig(({ mode }) => ({
         navigateFallback: undefined,
       },
       workbox: {
+        importScripts: ['/push-sw.js'],
         // Anything above this is dropped from the precache manifest. The build does
         // not fail over it, it only prints "won't be precached", so the ceiling has
         // to sit close to the real bundle or an accidental heavyweight goes
@@ -183,6 +183,7 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       manifest: {
+        id: '/',
         name: 'TREK \u2014 Travel Planner',
         short_name: 'TREK',
         description: 'Travel Resource & Exploration Kit',

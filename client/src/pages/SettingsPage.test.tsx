@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '../../tests/helpers/render';
 import userEvent from '@testing-library/user-event';
-import { resetAllStores, seedStore } from '../../tests/helpers/store';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { buildUser } from '../../tests/helpers/factories';
+import { render, screen, waitFor } from '../../tests/helpers/render';
+import { resetAllStores, seedStore } from '../../tests/helpers/store';
 import { useAuthStore } from '../store/authStore';
 import SettingsPage from './SettingsPage';
 
@@ -28,9 +28,7 @@ vi.mock('../components/Settings/AccountTab', () => ({
 }));
 
 vi.mock('../components/Settings/AboutTab', () => ({
-  default: ({ appVersion }: { appVersion: string }) => (
-    <div data-testid="about-tab">About v{appVersion}</div>
-  ),
+  default: ({ appVersion }: { appVersion: string }) => <div data-testid="about-tab">About v{appVersion}</div>,
 }));
 
 beforeEach(() => {
@@ -127,8 +125,8 @@ describe('SettingsPage', () => {
     });
   });
 
-  describe('FE-PAGE-SETTINGS-006: About tab shown when version loads', () => {
-    it('About tab appears when app version is returned by API', async () => {
+  describe('FE-PAGE-SETTINGS-006: Legal link shown when version loads', () => {
+    it('links the displayed app version to the public legal page', async () => {
       const { http, HttpResponse } = await import('msw');
       const { server } = await import('../../tests/helpers/msw/server');
 
@@ -142,14 +140,15 @@ describe('SettingsPage', () => {
             oidc_only_mode: false,
             version: '2.9.10',
           });
-        }),
+        })
       );
 
       render(<SettingsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /about/i })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /legal & source.*2\.9\.10/i })).toHaveAttribute('href', '/legal');
       });
+      expect(screen.queryByRole('button', { name: /about/i })).not.toBeInTheDocument();
     });
   });
 });

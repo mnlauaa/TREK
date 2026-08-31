@@ -1,50 +1,52 @@
-import { useState } from 'react'
-import { ChevronDown, Languages, Map, Rocket } from 'lucide-react'
-import { useTranslation, SUPPORTED_LANGUAGES } from '../../../i18n'
-import { useSettingsStore } from '../../../store/settingsStore'
-import { useToast } from '../../../components/shared/Toast'
-import { SYMBOLS, currenciesWith } from '../../../components/Budget/BudgetPanel.constants'
-import { TRIP_TAB_IDS, TRIP_TAB_LABEL_KEYS, isTripTabId } from '../../../constants/tripTabs'
-import { DEFAULT_START_PAGE, DEFAULT_START_TRIP_TAB, type StartPage } from '../../../utils/startDestination'
-import type { Settings, DistanceUnit } from '../../../types'
-import { MSetCard, MSetEyebrow, MSetSelectRow, MSetSegments, MSetRow } from './MSettingsUi'
-import MToggle from '../../components/MToggle'
-import MSetPickerSheet from './MSetPickerSheet'
+import { ChevronDown, Languages, Map, Rocket } from 'lucide-react';
+import { useState } from 'react';
+import { SYMBOLS, currenciesWith } from '../../../components/Budget/BudgetPanel.constants';
+import CommonCurrenciesEditor from '../../../components/Settings/CommonCurrenciesEditor';
+import { buildCurrencyOptions } from '../../../components/shared/currencyOptions';
+import { useToast } from '../../../components/shared/Toast';
+import { TRIP_TAB_IDS, TRIP_TAB_LABEL_KEYS, isTripTabId } from '../../../constants/tripTabs';
+import { SUPPORTED_LANGUAGES, useTranslation } from '../../../i18n';
+import { useSettingsStore } from '../../../store/settingsStore';
+import type { DistanceUnit, Settings } from '../../../types';
+import { DEFAULT_START_PAGE, DEFAULT_START_TRIP_TAB, type StartPage } from '../../../utils/startDestination';
+import MToggle from '../../components/MToggle';
+import MSetPickerSheet from './MSetPickerSheet';
+import { MSetCard, MSetEyebrow, MSetRow, MSetSegments, MSetSelectRow } from './MSettingsUi';
 
 /**
  * "General" settings section — the demo's Language & region and Travel & map
  * cards, wired to the real user preferences (DisplaySettingsTab parity).
  */
 export default function MSettingsGeneral() {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const { settings, updateSetting } = useSettingsStore()
-  const [currencyOpen, setCurrencyOpen] = useState(false)
-  const [langOpen, setLangOpen] = useState(false)
-  const [startTabOpen, setStartTabOpen] = useState(false)
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { settings, updateSetting } = useSettingsStore();
+  const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const [startTabOpen, setStartTabOpen] = useState(false);
 
   const save = async (key: keyof Settings, value: Settings[keyof Settings]) => {
     try {
-      await updateSetting(key, value)
+      await updateSetting(key, value);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : t('common.error'))
+      toast.error(e instanceof Error ? e.message : t('common.error'));
     }
-  }
+  };
 
-  const startPage: StartPage = settings.start_page === 'active_trip' ? 'active_trip' : DEFAULT_START_PAGE
-  const startTripTab = isTripTabId(settings.start_trip_tab) ? settings.start_trip_tab : DEFAULT_START_TRIP_TAB
-  const currency = settings.default_currency || ''
-  const currencyLabel = currency ? `${currency} — ${SYMBOLS[currency] || currency}` : t('settings.currencyTrip')
-  const language = SUPPORTED_LANGUAGES.find((l) => l.value === settings.language) || SUPPORTED_LANGUAGES[0]
+  const startPage: StartPage = settings.start_page === 'active_trip' ? 'active_trip' : DEFAULT_START_PAGE;
+  const startTripTab = isTripTabId(settings.start_trip_tab) ? settings.start_trip_tab : DEFAULT_START_TRIP_TAB;
+  const currency = settings.default_currency || '';
+  const currencyLabel = currency ? `${currency} — ${SYMBOLS[currency] || currency}` : t('settings.currencyTrip');
+  const language = SUPPORTED_LANGUAGES.find((l) => l.value === settings.language) || SUPPORTED_LANGUAGES[0];
 
-  const chevron = <ChevronDown size={13} strokeWidth={2} className="flex-none text-m-faint" />
+  const chevron = <ChevronDown size={13} strokeWidth={2} className="flex-none text-m-faint" />;
 
   const travelRows: {
-    key: keyof Settings
-    label: string
-    sub: string
-    on: boolean
-    value: (on: boolean) => boolean
+    key: keyof Settings;
+    label: string;
+    sub: string;
+    on: boolean;
+    value: (on: boolean) => boolean;
   }[] = [
     {
       key: 'map_booking_labels',
@@ -74,7 +76,7 @@ export default function MSettingsGeneral() {
       on: settings.optimize_from_accommodation !== false,
       value: (on) => on,
     },
-  ]
+  ];
 
   return (
     <>
@@ -138,6 +140,19 @@ export default function MSettingsGeneral() {
         />
       </MSetCard>
 
+      <MSetCard title={t('settings.commonCurrencies.title')} icon={Languages} className="mt-3">
+        <p className="mb-2 text-[0.6875rem] text-m-faint">{t('settings.commonCurrencies.hint')}</p>
+        <CommonCurrenciesEditor
+          mobile
+          value={settings.common_currencies || []}
+          onSave={async (value) => {
+            await updateSetting('common_currencies', value);
+            return value;
+          }}
+          onReset={() => useSettingsStore.getState().resetSetting('common_currencies')}
+        />
+      </MSetCard>
+
       <MSetCard title={t('settings.general.travelMap')} icon={Map} className="mt-3">
         <div className="-mt-[6px]">
           {travelRows.map((row) => (
@@ -146,11 +161,7 @@ export default function MSettingsGeneral() {
               label={row.label}
               sub={row.sub}
               trailing={
-                <MToggle
-                  checked={row.on}
-                  onChange={(on) => save(row.key, row.value(on))}
-                  ariaLabel={row.label}
-                />
+                <MToggle checked={row.on} onChange={(on) => save(row.key, row.value(on))} ariaLabel={row.label} />
               }
             />
           ))}
@@ -163,10 +174,16 @@ export default function MSettingsGeneral() {
         title={t('settings.currency')}
         value={currency}
         onSelect={(v) => save('default_currency', v)}
-        options={[
-          { value: '', label: t('settings.currencyTrip') },
-          ...currenciesWith(currency).map((c) => ({ value: c, label: `${c} — ${SYMBOLS[c] || c}` })),
-        ]}
+        options={buildCurrencyOptions({
+          commonCurrencies: settings.common_currencies,
+          availableCurrencies: currenciesWith(currency),
+          currentCurrency: currency,
+          locale: settings.language,
+          commonLabel: t('settings.commonCurrencies.group'),
+          otherLabel: t('settings.otherCurrencies.group'),
+          specialOptions: [{ value: '', label: t('settings.currencyTrip') }],
+        })}
+        searchable
       />
 
       <MSetPickerSheet
@@ -187,5 +204,5 @@ export default function MSettingsGeneral() {
         options={TRIP_TAB_IDS.map((id) => ({ value: id, label: t(TRIP_TAB_LABEL_KEYS[id]) }))}
       />
     </>
-  )
+  );
 }

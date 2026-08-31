@@ -5,21 +5,21 @@
  */
 
 import type {
-  User,
-  Trip,
-  Day,
-  Place,
+  AppConfig,
   Assignment,
+  BudgetItem,
+  Category,
+  Day,
   DayNote,
   PackingItem,
-  TodoItem,
-  BudgetItem,
+  Place,
   Reservation,
-  TripFile,
-  Tag,
-  Category,
   Settings,
-  AppConfig,
+  Tag,
+  TodoItem,
+  Trip,
+  TripFile,
+  User,
 } from '../../src/types';
 
 // ── Counters ──────────────────────────────────────────────────────────────────
@@ -263,6 +263,7 @@ export function buildSettings(overrides: Partial<Settings> = {}): Settings {
     map_tile_url: '',
     dark_mode: false,
     default_currency: 'USD',
+    common_currencies: [],
     language: 'en',
     temperature_unit: 'fahrenheit',
     time_format: '12h',
