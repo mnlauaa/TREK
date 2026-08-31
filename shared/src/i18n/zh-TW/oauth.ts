@@ -4,7 +4,7 @@ const oauth: TranslationStrings = {
   'oauth.scope.group.trips': '行程',
   'oauth.scope.group.places': '地點',
   'oauth.scope.group.collections': '收藏集',
-  'oauth.scope.group.atlas': 'Atlas',
+  'oauth.scope.group.atlas': '足跡',
   'oauth.scope.group.packing': '行李',
   'oauth.scope.group.todos': '待辦事項',
   'oauth.scope.group.budget': '預算',
@@ -12,7 +12,7 @@ const oauth: TranslationStrings = {
   'oauth.scope.group.collab': '協作',
   'oauth.scope.group.notifications': '通知',
   'oauth.scope.group.vacay': '假期',
-  'oauth.scope.group.geo': 'Geo',
+  'oauth.scope.group.geo': '地圖服務',
   'oauth.scope.group.weather': '天氣',
   'oauth.scope.group.journey': '旅程',
   'oauth.scope.trips:read.label': '檢視行程與旅遊計畫',
@@ -31,9 +31,9 @@ const oauth: TranslationStrings = {
   'oauth.scope.collections:read.description': '讀取地點收藏集及其中的地點、評分、標籤與成員',
   'oauth.scope.collections:write.label': '管理收藏集',
   'oauth.scope.collections:write.description': '建立/編輯收藏集，儲存、評分、標記及複製地點，並分享清單',
-  'oauth.scope.atlas:read.label': '檢視 Atlas',
+  'oauth.scope.atlas:read.label': '檢視足跡',
   'oauth.scope.atlas:read.description': '讀取已造訪的國家、地區及願望清單',
-  'oauth.scope.atlas:write.label': '管理 Atlas',
+  'oauth.scope.atlas:write.label': '管理足跡',
   'oauth.scope.atlas:write.description': '標記已造訪的國家及地區，管理願望清單',
   'oauth.scope.packing:read.label': '檢視行李清單',
   'oauth.scope.packing:read.description': '讀取行李物品、行李袋及類別負責人',
@@ -73,24 +73,40 @@ const oauth: TranslationStrings = {
   'oauth.scope.journey:write.description': '建立、更新及刪除旅程及其條目',
   'oauth.scope.journey:share.label': '管理旅程連結',
   'oauth.scope.journey:share.description': '建立、更新及撤銷旅程的公開分享連結',
-  'oauth.authorize.authorizing': 'Authorizing…', // en-fallback
-  'oauth.authorize.loading': 'Loading…', // en-fallback
-  'oauth.authorize.errorTitle': 'Authorization Error', // en-fallback
-  'oauth.authorize.loginTitle': 'Sign in to continue', // en-fallback
-  'oauth.authorize.loginDescription': '{client} wants access to your TREK account. Please sign in first.', // en-fallback
-  'oauth.authorize.loginButton': 'Sign in to TREK', // en-fallback
-  'oauth.authorize.requestLabel': 'Authorization Request', // en-fallback
-  'oauth.authorize.requestDescription': 'This application is requesting access to your TREK account.', // en-fallback
-  'oauth.authorize.trustNote': 'Only grant access to applications you trust. Your data stays on your server.', // en-fallback
-  'oauth.authorize.selectScope': 'Select at least one scope', // en-fallback
-  'oauth.authorize.approveOneScope': 'Approve ({count} scope)', // en-fallback
-  'oauth.authorize.approveManyScopes': 'Approve ({count} scopes)', // en-fallback
-  'oauth.authorize.approveAccess': 'Approve Access', // en-fallback
-  'oauth.authorize.deny': 'Deny', // en-fallback
-  'oauth.authorize.choosePermissions': 'Choose which permissions to grant', // en-fallback
-  'oauth.authorize.permissionsRequested': 'Permissions requested', // en-fallback
-  'oauth.authorize.alwaysIncluded': 'Always included', // en-fallback
-  'oauth.authorize.alwaysTool.listTrips': 'List your trips so the AI can discover trip IDs', // en-fallback
-  'oauth.authorize.alwaysTool.getTripSummary': 'Read a trip overview needed to use any other tool', // en-fallback
+  'oauth.authorize.authorizing': '正在授權…',
+  'oauth.authorize.loading': '載入中…',
+  'oauth.authorize.errorTitle': '授權錯誤',
+  'oauth.authorize.loginTitle': '登入以繼續',
+  'oauth.authorize.loginDescription': '{client} 想要存取您的 TREK 帳戶。請先登入。',
+  'oauth.authorize.loginButton': '登入 TREK',
+  'oauth.authorize.requestLabel': '授權請求',
+  'oauth.authorize.requestDescription': '此應用程式正在請求存取您的 TREK 帳戶。',
+  'oauth.authorize.trustNote': '只授予您信任的應用程式存取權。您的資料會保留在自己的伺服器上。',
+  'oauth.authorize.selectScope': '請至少選擇一個權限範圍',
+  'oauth.authorize.approveOneScope': '核准（{count} 個權限範圍）',
+  'oauth.authorize.approveManyScopes': '核准（{count} 個權限範圍）',
+  'oauth.authorize.approveAccess': '核准存取',
+  'oauth.authorize.deny': '拒絕',
+  'oauth.authorize.choosePermissions': '選擇要授予的權限',
+  'oauth.authorize.permissionsRequested': '要求的權限',
+  'oauth.authorize.alwaysIncluded': '一律包含',
+  'oauth.authorize.alwaysTool.listTrips': '列出您的行程，讓 AI 找到行程 ID',
+  'oauth.authorize.alwaysTool.getTripSummary': '讀取使用其他工具所需的行程概覽',
+  'oauth.scope.group.files': '檔案',
+  'oauth.scope.group.settings': '設定',
+  'oauth.scope.files:read.label': '檢視行程檔案',
+  'oauth.scope.files:read.description': '列出行程的文件：名稱、大小、上傳者以及關聯的對象',
+  'oauth.scope.files:write.label': '管理行程檔案',
+  'oauth.scope.files:write.description': '重新命名與描述檔案，關聯至訂位和地點，加上星號並移至垃圾桶',
+  'oauth.scope.files:content.label': '讀取檔案內容',
+  'oauth.scope.files:content.description': '讀取已上傳文件的內容，例如訂位 PDF 或票券',
+  'oauth.scope.settings:read.label': '檢視你的偏好設定',
+  'oauth.scope.settings:read.description': '讀取單位、時間格式、語言、預設貨幣和起始頁',
+  'oauth.scope.settings:write.label': '更改你的偏好設定',
+  'oauth.scope.settings:write.description': '更改單位、時間格式、語言、預設貨幣和起始頁。絕不涉及已儲存的 API 金鑰',
+  'oauth.scope.group.plugins': '外掛',
+  'oauth.scope.plugins:use.label': '執行外掛工具',
+  'oauth.scope.plugins:use.description':
+    '允許此用戶端呼叫由管理員安裝並核准的外掛所發布的工具。每個外掛都以其已獲授予的權限運作，而非以此權杖的權限範圍運作',
 };
 export default oauth;

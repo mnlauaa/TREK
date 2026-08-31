@@ -2,13 +2,14 @@
  * Public config e2e — verifies /api/config is reachable WITHOUT authentication
  * (it has no guard) and returns the server default language. No db needed.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import request from 'supertest';
-import type { Server } from 'http';
-import { Test } from '@nestjs/testing';
-import { ConfigModule } from '../../src/nest/config/config.module';
-import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { DEFAULT_LANGUAGE } from '../../src/config';
+import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
+import { ConfigModule } from '../../src/nest/config/config.module';
+import { Test } from '@nestjs/testing';
+
+import type { Server } from 'http';
+import request from 'supertest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 describe('Public config e2e (no auth guard)', () => {
   let server: Server;
@@ -34,6 +35,10 @@ describe('Public config e2e (no auth guard)', () => {
   it('200 with the default language and no cookie required', async () => {
     const res = await request(server).get('/api/config');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ defaultLanguage: DEFAULT_LANGUAGE });
+    expect(res.body).toEqual({
+      defaultLanguage: DEFAULT_LANGUAGE,
+      sourceCodeUrl: expect.stringContaining('mnlauaa/TREK'),
+      version: expect.any(String),
+    });
   });
 });

@@ -126,6 +126,7 @@ export const KNOWN_METHODS = [
   'journal.updateEntry',
   'journal.deleteEntry',
   'journal.createJourney',
+  'journal.addEntryPhoto',
   'journal.deleteJourney',
   'weather.get',
   'categories.list',
@@ -143,6 +144,14 @@ export const KNOWN_METHODS = [
   'costs.create',
   'costs.update',
   'costs.delete',
+  'costs.listRates',
+  'costs.resolveRate',
+  'costs.setRate',
+  'costs.deleteRate',
+  'costs.listSettlements',
+  'costs.createSettlement',
+  'costs.updateSettlement',
+  'costs.deleteSettlement',
   'places.create',
   'places.update',
   'places.delete',
@@ -261,6 +270,7 @@ export const METHOD_PERMISSION = {
   'vacay.toggleEntry': 'db:write:vacay',
   'vacay.toggleCompanyHoliday': 'db:write:vacay',
   'journal.createEntry': 'db:write:journal',
+  'journal.addEntryPhoto': 'db:write:journal',
   'journal.updateEntry': 'db:write:journal',
   'journal.deleteEntry': 'db:write:journal',
   'journal.createJourney': 'db:write:journal',
@@ -281,6 +291,14 @@ export const METHOD_PERMISSION = {
   'costs.create': 'db:write:costs',
   'costs.update': 'db:write:costs',
   'costs.delete': 'db:write:costs',
+  'costs.listRates': 'db:read:costs',
+  'costs.resolveRate': 'db:read:costs',
+  'costs.setRate': 'db:write:costs',
+  'costs.deleteRate': 'db:write:costs',
+  'costs.listSettlements': 'db:read:costs',
+  'costs.createSettlement': 'db:write:costs',
+  'costs.updateSettlement': 'db:write:costs',
+  'costs.deleteSettlement': 'db:write:costs',
   'places.create': 'db:write:places',
   'places.update': 'db:write:places',
   'places.delete': 'db:write:places',
@@ -386,6 +404,17 @@ export const KNOWN_PERMISSIONS = [
   // applies. Nothing is sent to the server; the plugin's server code never sees a
   // position unless its own client ships it through one of its routes.
   'geolocation:read',
+  // Lets the plugin publish tools on TREK's own MCP server, so an assistant can
+  // call into it as the requesting user. Modelled on the hook:* family rather
+  // than on geolocation:read above: the host dispatches INTO the child for
+  // every call, so it needs the active-and-holds-the-grant check and the
+  // acting-user binding that HOOK_PERMISSION gives it. The name has no hook:
+  // prefix because the surface it opens is MCP, not a TREK render slot, and
+  // nothing keys off that prefix.
+  //
+  // This is the real boundary on plugin tools. The user-facing plugins:use
+  // OAuth scope only decides whether they are advertised to a client at all.
+  'mcp:tools',
 ] as const;
 
 /**
@@ -429,6 +458,10 @@ export const HOOK_PERMISSION = {
   journalEntryProvider: 'hook:journal-entry-provider',
   tripCardProvider: 'hook:trip-card-provider',
   notificationChannel: 'hook:notification-channel',
+  // The one entry whose permission is not hook:*-shaped; see mcp:tools in
+  // KNOWN_PERMISSIONS. Being here is what buys it providersOf()'s grant check
+  // and requireTotalCoverage's boot assertion.
+  mcpToolProvider: 'mcp:tools',
 } as const satisfies Record<string, KnownPermission>;
 
 export type HookKey = keyof typeof HOOK_PERMISSION;

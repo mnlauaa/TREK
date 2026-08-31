@@ -1,9 +1,11 @@
-import type { SystemNotice } from './types.js';
-import { registerPredicate } from './conditions.js';
 import { db } from '../db/database.js';
+import { registerPredicate } from './conditions.js';
+import type { SystemNotice } from './types.js';
 
 registerPredicate('whitespace-collision-detected', () => {
-  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'whitespace_migration_collision'").get() as { value: string } | undefined;
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'whitespace_migration_collision'").get() as
+    | { value: string }
+    | undefined;
   return row?.value === 'true';
 });
 
@@ -31,9 +33,11 @@ export const RETIRED_NOTICE_IDS = [
   'v3-mcp',
   'v3-features',
   'welcome-v1',
+  'release-4-0-0',
+  'thank-you-support',
 ] as const;
 
-export const SYSTEM_NOTICES: SystemNotice[] = [
+const SYSTEM_NOTICE_REGISTRY: SystemNotice[] = [
   // ── 4.0.0 release — what shipped, and a note from the maintainer ────────────
   // Carries `release`, so it renders as the two-column release modal rather than
   // the generic notice body. Shown once, not per-version: the copy is about this
@@ -106,11 +110,14 @@ export const SYSTEM_NOTICES: SystemNotice[] = [
     conditions: [{ kind: 'managed', is: false }],
     publishedAt: '2026-08-22T00:00:00Z',
     priority: 110,
-    // The 4.0.x window. The copy is about this release, so somebody arriving on
-    // 4.1 — or jumping 3.x straight to 4.2 — should get that release's notice
-    // instead of this one, not a summary of a version they skipped.
+    // The whole 4.x line. The copy is about what 4.0.0 brought, and that is still
+    // what somebody arriving anywhere on 4.x is being introduced to — the minor
+    // releases after it add to that picture rather than replace it. Held open to
+    // the 5.0.0 boundary (exclusive) so a 4.1/4.2 install is not left with no
+    // notice at all, which is what a per-release window did the moment 4.1.0
+    // shipped without an entry of its own.
     minVersion: '4.0.0',
-    maxVersion: '4.1.0',
+    maxVersion: '5.0.0',
   },
 
   // ── Thank-you + support the project — shown once per install AND once per upgrade ──
@@ -164,7 +171,7 @@ export const SYSTEM_NOTICES: SystemNotice[] = [
     severity: 'warn',
     icon: 'AlertTriangle',
     titleKey: 'system_notice.v3014_whitespace_collision.title',
-    bodyKey:  'system_notice.v3014_whitespace_collision.body',
+    bodyKey: 'system_notice.v3014_whitespace_collision.body',
     dismissible: true,
     conditions: [
       { kind: 'existingUserBeforeVersion', version: '3.0.14' },
@@ -179,3 +186,9 @@ export const SYSTEM_NOTICES: SystemNotice[] = [
     minVersion: '3.0.14',
   },
 ];
+
+// This downstream build keeps operational/security notices but removes
+// upstream release promotion and support solicitations from the product UI.
+export const SYSTEM_NOTICES: SystemNotice[] = SYSTEM_NOTICE_REGISTRY.filter(
+  (notice) => notice.id !== 'release-4-0-0' && notice.id !== 'thank-you-support',
+);

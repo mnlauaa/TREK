@@ -1,17 +1,35 @@
-import { Body, Controller, Get, HttpCode, HttpException, Post, Put, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { MASKED_SETTING_VALUE } from '@trek/shared';
 import type { User } from '../../types';
-import { SettingsService, isAdminOnlyLlmSetting } from './settings.service';
-import { SettingUpsertDto, SettingsBulkDto } from './settings.dto';
 import { AdminDefaultUserSettingsDto } from '../admin/admin.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AdminGuard } from '../auth/admin.guard';
+import { RuntimeEnvService } from '../app-config/runtime-env.service';
 import { AuditService } from '../audit/audit.service';
 import { getClientIp } from '../audit/client-ip';
+import { AdminGuard } from '../auth/admin.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { RuntimeEnvService } from '../app-config/runtime-env.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { isManagedLockedKey, splitManagedKeys } from '../common/managed';
+import { SettingUpsertDto, SettingsBulkDto } from './settings.dto';
+import { SettingsService, isAdminOnlyLlmSetting } from './settings.service';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpException,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  MASKED_SETTING_VALUE,
+  commonCurrencyListSchema,
+  settingResetKeySchema,
+  settingResetResponseSchema,
+} from '@trek/shared';
+
+import type { Request } from 'express';
 
 /**
  * /api/settings — per-user key/value preferences: get-all, single upsert
@@ -72,15 +90,18 @@ export class SettingsController {
     if (body.value === MASKED_SETTING_VALUE) {
       return { success: true, key: body.key, unchanged: true };
     }
-    this.settings.upsertSetting(user.id, body.key, body.value);
-    return { success: true, key: body.key, value: body.value };
+    const value = body.key === 'common_currencies' ? this.parseCommonCurrencies(body.value) : body.value;
+    this.settings.upsertSetting(user.id, body.key, value);
+    return { success: true, key: body.key, value };
   }
 
   @Post('bulk')
   @HttpCode(200) // Express answers bulk with res.json (200), not the POST-default 201.
   bulk(@CurrentUser() user: User, @Body() body: SettingsBulkDto) {
     this.assertMayWriteLlmEndpoint(body.settings);
-    const { allowed, blocked } = splitManagedKeys(body.settings, this.env.isManaged());
+    const values = { ...body.settings };
+    if ('common_currencies' in values) values.common_currencies = this.parseCommonCurrencies(values.common_currencies);
+    const { allowed, blocked } = splitManagedKeys(values, this.env.isManaged());
     try {
       const updated = this.settings.bulkUpsertSettings(user.id, allowed);
       return { success: true, updated, ...(blocked.length ? { managed_keys: blocked } : {}) };
@@ -88,6 +109,25 @@ export class SettingsController {
       console.error('Error saving settings:', err);
       throw new HttpException({ error: 'Error saving settings' }, 500);
     }
+  }
+
+  @Delete(':key')
+  delete(@CurrentUser() user: User, @Param('key') key: string) {
+    const parsedKey = settingResetKeySchema.safeParse(key);
+    if (!parsedKey.success) throw new HttpException({ error: 'Setting cannot be reset' }, 400);
+    return settingResetResponseSchema.parse({
+      success: true,
+      key: parsedKey.data,
+      value: this.settings.deleteSetting(user.id, parsedKey.data),
+    });
+  }
+
+  private parseCommonCurrencies(value: unknown): string[] {
+    const result = commonCurrencyListSchema.safeParse(value);
+    if (!result.success) {
+      throw new HttpException({ error: result.error.issues[0]?.message || 'Invalid common currencies' }, 400);
+    }
+    return result.data;
   }
 }
 
@@ -119,10 +159,7 @@ export class AdminDefaultUserSettingsController {
       // with the raw defaults map the admin panel renders from, so an extra
       // field would sit inside the key namespace. The audit row below and the
       // client's capability filter carry the message instead.
-      const { allowed } = splitManagedKeys(
-        body as unknown as Record<string, unknown>,
-        this.env.isManaged(),
-      );
+      const { allowed } = splitManagedKeys(body as unknown as Record<string, unknown>, this.env.isManaged());
       this.settings.setAdminUserDefaults(allowed);
       this.audit.writeAudit({
         userId: user.id,

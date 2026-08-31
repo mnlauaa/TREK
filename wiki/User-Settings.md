@@ -34,6 +34,7 @@ The General tab controls the following preferences, all saved immediately on cha
 **Language & region**
 
 - **Currency** — your display currency; **Trip currency** (the default) shows each trip in its own. See [Currencies](Currencies).
+- **Common currencies** — an ordered list of up to ten shortcuts shown first in currency selectors; clear keeps a personal empty override, while reset returns to the administrator list.
 - **Language** — displayed as a button grid on desktop and a dropdown on mobile.
 - **Temperature unit** — Celsius (°C) or Fahrenheit (°F).
 - **Distance unit** — Metric (km) or Imperial (mi).
@@ -62,7 +63,7 @@ The Map tab requires an explicit **Save** action after making changes.
 
 **Provider** — choose between:
 
-- **Leaflet** — Classic 2D raster tiles. You can pick from built-in presets (OpenStreetMap, OpenStreetMap DE, CartoDB Light/Dark, Stadia Smooth) or enter a custom tile URL template.
+- **Leaflet** — The default. Pick from built-in presets (OpenStreetMap, OpenStreetMap DE, OpenFreeMap Positron/Bright, CartoDB Light/Dark, Stadia Smooth) or enter a custom tile URL template. OpenFreeMap Positron is what an unconfigured map draws; the CartoDB presets need an API key.
 - **Mapbox GL** (Experimental) — Vector tiles with 3D buildings and terrain. Requires a public Mapbox access token (`pk.*`). Supports built-in style presets (Mapbox Standard, Standard Satellite, Streets, Outdoors, Light, Dark, Satellite, Satellite Streets, Navigation Day, Navigation Night) or a custom `mapbox://styles/USER/ID` URL. Additional options:
   - **3D Buildings & Terrain** — Pitch and real 3D building extrusions (works on every style including satellite).
   - **High Quality Mode** (Experimental) — Antialiasing + globe projection for sharper edges. May impact performance on lower-end devices.

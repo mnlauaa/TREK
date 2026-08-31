@@ -15,13 +15,17 @@
  * ALLOWED_DESTRUCTIVE below with the reason. Anything not on that list is
  * treated as a regression.
  */
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { createTestDb } from '../../helpers/test-db';
 
-const MIGRATIONS_PATH = resolve(__dirname, '../../../src/db/migrations.ts');
-const migrationsSource = readFileSync(MIGRATIONS_PATH, 'utf8');
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, it, expect } from 'vitest';
+
+const MIGRATIONS_PATHS = [
+  resolve(__dirname, '../../../src/db/migrations.ts'),
+  resolve(__dirname, '../../../src/db/fork-migrations.ts'),
+];
+const migrationsSource = MIGRATIONS_PATHS.map((file) => readFileSync(file, 'utf8')).join('\n');
 
 /**
  * Strip line and block comments so commented-out SQL (or prose mentioning
@@ -29,9 +33,7 @@ const migrationsSource = readFileSync(MIGRATIONS_PATH, 'utf8');
  * that is exactly where the real SQL lives.
  */
 function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
 
 const scannableSource = stripComments(migrationsSource);
@@ -51,14 +53,20 @@ interface DestructiveHit {
  */
 function findDestructiveStatements(src: string): DestructiveHit[] {
   const hits: DestructiveHit[] = [];
-  const norm = (s: string) => s.replace(/[`"'\[\]]/g, '').replace(/\s+/g, ' ').trim();
+  const norm = (s: string) =>
+    s
+      .replace(/[`"'\[\]]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
   // DROP TABLE [IF EXISTS] <name>
   for (const m of src.matchAll(/DROP\s+TABLE\s+(IF\s+EXISTS\s+)?[`"'\[]?([A-Za-z_][\w]*)/gi)) {
     hits.push({ signature: `DROP TABLE ${m[2]}`, fragment: norm(m[0]) });
   }
   // ALTER TABLE <t> DROP COLUMN <c>  (and bare ALTER ... DROP <c>)
-  for (const m of src.matchAll(/ALTER\s+TABLE\s+[`"'\[]?([A-Za-z_][\w]*)[`"'\]]?\s+DROP\s+(COLUMN\s+)?[`"'\[]?([A-Za-z_][\w]*)/gi)) {
+  for (const m of src.matchAll(
+    /ALTER\s+TABLE\s+[`"'\[]?([A-Za-z_][\w]*)[`"'\]]?\s+DROP\s+(COLUMN\s+)?[`"'\[]?([A-Za-z_][\w]*)/gi,
+  )) {
     hits.push({ signature: `ALTER TABLE ${m[1]} DROP COLUMN ${m[3]}`, fragment: norm(m[0]) });
   }
   // TRUNCATE <t>  (not valid SQLite, but guard anyway)
@@ -85,24 +93,16 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   // ── table rebuilds (data preserved) ──────────────────────────────────────
   'DROP TABLE budget_items':
     'Migration 12: rebuild to drop a stale NOT NULL DEFAULT on persons/days. Rows copied first.',
-  'DROP TABLE oauth_clients':
-    'Make oauth_clients.user_id nullable for anonymous DCR clients. Rebuild, rows copied.',
-  'DROP TABLE idempotency_keys':
-    'Widen PK to (key,user_id,method,path). Rebuild, rows copied (old PK is a subset).',
-  'DROP TABLE day_accommodations':
-    'Make place_id nullable + ON DELETE SET NULL. Rebuild, rows copied.',
-  'DROP TABLE schema_version':
-    'Add surrogate id PK to schema_version. Rebuild, version row copied.',
+  'DROP TABLE oauth_clients': 'Make oauth_clients.user_id nullable for anonymous DCR clients. Rebuild, rows copied.',
+  'DROP TABLE idempotency_keys': 'Widen PK to (key,user_id,method,path). Rebuild, rows copied (old PK is a subset).',
+  'DROP TABLE day_accommodations': 'Make place_id nullable + ON DELETE SET NULL. Rebuild, rows copied.',
+  'DROP TABLE schema_version': 'Add surrogate id PK to schema_version. Rebuild, version row copied.',
 
   // ── photo/journey table rebuilds (data preserved) ────────────────────────
-  'DROP TABLE trip_photos':
-    'trip_photos normalisation + later photo_id FK refactor. Rebuilds, rows copied.',
-  'DROP TABLE trip_album_links':
-    'Normalise trip_album_links to provider+album_id schema. Rebuild, rows copied.',
-  'DROP TABLE journey_photos':
-    'Journey photo provider support + photo_id FK refactor. Rebuilds, rows copied.',
-  'DROP TABLE journey_photos_old':
-    'Migration 121 gallery refactor: drops the temporary *_old backup after backfill.',
+  'DROP TABLE trip_photos': 'trip_photos normalisation + later photo_id FK refactor. Rebuilds, rows copied.',
+  'DROP TABLE trip_album_links': 'Normalise trip_album_links to provider+album_id schema. Rebuild, rows copied.',
+  'DROP TABLE journey_photos': 'Journey photo provider support + photo_id FK refactor. Rebuilds, rows copied.',
+  'DROP TABLE journey_photos_old': 'Migration 121 gallery refactor: drops the temporary *_old backup after backfill.',
   'DROP TABLE journey_location_trail':
     'Migration 87 journey rebuild: old data SELECTed into memory and re-inserted into new schema.',
   'DROP TABLE journey_entries':
@@ -113,14 +113,15 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
     'Migration 87 journey rebuild: old data SELECTed into memory and re-inserted into new schema.',
   'DROP TABLE journey_trips':
     'Migration 87 journey rebuild: old data SELECTed into memory and re-inserted into new schema.',
-  'DROP TABLE journeys':
-    'Migration 87 journey rebuild: old data SELECTed into memory and re-inserted into new schema.',
+  'DROP TABLE journeys': 'Migration 87 journey rebuild: old data SELECTed into memory and re-inserted into new schema.',
 
   // ── template/cache scaffolding drops (no user content lost) ──────────────
   'DROP TABLE packing_template_items':
     'IF EXISTS drop to recreate the template-items table with a category_id FK. Template scaffolding.',
   'DROP TABLE notification_preferences':
     'IF EXISTS drop AFTER migration 71 copied the data into notification_channel_preferences.',
+  'DROP TABLE exchange_rate_quotes':
+    'Migration 200 removes an unreleased ephemeral quote cache; durable snapshots, trip defaults and previews are preserved.',
 
   // ── guarded column drop ──────────────────────────────────────────────────
   'ALTER TABLE photo_providers DROP COLUMN config':
@@ -145,9 +146,7 @@ describe('migration hygiene — destructive operation guard', () => {
     const offenders = hits.filter((h) => !(h.signature in ALLOWED_DESTRUCTIVE));
 
     if (offenders.length > 0) {
-      const detail = offenders
-        .map((o) => `  • ${o.signature}   (matched: "${o.fragment}")`)
-        .join('\n');
+      const detail = offenders.map((o) => `  • ${o.signature}   (matched: "${o.fragment}")`).join('\n');
       throw new Error(
         `Found ${offenders.length} destructive migration statement(s) that are not on the ` +
           `reviewed allowlist in tests/unit/db/migration-hygiene.test.ts.\n` +

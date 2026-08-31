@@ -14,7 +14,6 @@
  * call, which is what keeps the runtime env-mutation semantics the test suite
  * depends on. Zod validation runs once at boot (env.schema.ts), never here.
  */
-import { SUPPORTED_LANGUAGE_CODES } from '@trek/shared';
 import {
   csvList,
   csvListFiltered,
@@ -28,6 +27,7 @@ import {
   resolveSessionTtlMs,
   stripTrailingSlashes,
 } from './parsers';
+import { SUPPORTED_LANGUAGE_CODES } from '@trek/shared';
 
 export type RawEnv = Record<string, string | undefined>;
 
@@ -46,6 +46,10 @@ export function deriveApp(raw: RawEnv) {
     appVersion: raw.APP_VERSION,
     /** Raw APP_URL — trailing-slash stripping differs per site (feeds strips one, notifications strips all). */
     appUrl: raw.APP_URL,
+    sourceCodeUrl: raw.SOURCE_CODE_URL,
+    webPushVapidPublicKey: raw.WEB_PUSH_VAPID_PUBLIC_KEY,
+    webPushVapidPrivateKey: raw.WEB_PUSH_VAPID_PRIVATE_KEY,
+    webPushVapidSubject: raw.WEB_PUSH_VAPID_SUBJECT,
     tz: raw.TZ,
     logLevel: raw.LOG_LEVEL,
     /** Resolved: lowercased, validated against the supported set, falls back to 'en' (src/config.ts semantics). */
@@ -239,7 +243,7 @@ export function deriveIntegrations(raw: RawEnv) {
     // get a list and never re-implement the delimiter.
     searchPath: (raw.PATH || raw.Path || '')
       .split(process.platform === 'win32' ? ';' : ':')
-      .map(p => p.trim())
+      .map((p) => p.trim())
       .filter(Boolean),
   };
 }

@@ -10,44 +10,52 @@
  * So every addon-gated method gets the same two assertions: with the addon off it is
  * refused with that addon's message, and the underlying service is never touched.
  */
-import { describe, it, expect, vi } from 'vitest';
+import type { AddonsService } from '../../../src/nest/addons/addons.service';
+import { AtlasRpc } from '../../../src/nest/atlas/atlas.rpc';
+import { CostsRpc } from '../../../src/nest/budget/costs.rpc';
+import { CollabRpc } from '../../../src/nest/collab/collab.rpc';
+import { CollectionsRpc } from '../../../src/nest/collections/collections.rpc';
+import type { DatabaseService } from '../../../src/nest/database/database.service';
+import { JournalRpc } from '../../../src/nest/journey/journal.rpc';
+import type { PermissionsService } from '../../../src/nest/permissions/permissions.service';
+import { PluginGuards } from '../../../src/nest/plugins/host/plugin-guards.service';
 import { PluginRpcHost } from '../../../src/nest/plugins/host/rpc-host';
 import { createTestPluginRegistry } from '../../../src/nest/plugins/host/rpc-kit/testing';
-import { PluginGuards } from '../../../src/nest/plugins/host/plugin-guards.service';
-import { CollabRpc } from '../../../src/nest/collab/collab.rpc';
-import { AtlasRpc } from '../../../src/nest/atlas/atlas.rpc';
-import { VacayRpc } from '../../../src/nest/vacay/vacay.rpc';
-import { JournalRpc } from '../../../src/nest/journey/journal.rpc';
-import { CollectionsRpc } from '../../../src/nest/collections/collections.rpc';
-import { CostsRpc } from '../../../src/nest/budget/costs.rpc';
-import type { DatabaseService } from '../../../src/nest/database/database.service';
-import type { PermissionsService } from '../../../src/nest/permissions/permissions.service';
-import type { AddonsService } from '../../../src/nest/addons/addons.service';
 import type { RpcRequest, RpcError } from '../../../src/nest/plugins/protocol/envelope';
+import { VacayRpc } from '../../../src/nest/vacay/vacay.rpc';
 import { makeDeps } from '../../helpers/rpc-host-deps';
 
-const req = (method: string, params: Record<string, unknown> = {}): RpcRequest => ({ k: 'req', id: 'x', method, params });
+import { describe, it, expect, vi } from 'vitest';
+
+const req = (method: string, params: Record<string, unknown> = {}): RpcRequest => ({
+  k: 'req',
+  id: 'x',
+  method,
+  params,
+});
 
 /** Records every service call, so "the service was never touched" is checkable. */
 function spyService(calls: string[], name: string) {
   return new Proxy(
     {},
     {
-      get: (_t, prop) => (...args: unknown[]) => {
-        calls.push(`${name}.${String(prop)}`);
-        // Shapes the handlers destructure on the happy path.
-        if (prop === 'votePoll' || prop === 'createMessage') return { error: null, poll: {}, message: {} };
-        if (prop === 'listEntries') return [];
-        if (prop === 'getActivePlanId') return 1;
-        // collections.deletePlace is async in production (it deletes a storage
-        // object); a promise-returning double here pins the fix that awaits it —
-        // an un-awaited call would leave an unhandled rejection unnoticed by every
-        // assertion below.
-        if (name === 'collections' && prop === 'deletePlace') return Promise.resolve(undefined);
-        if (String(prop).startsWith('delete')) return true;
-        if (String(prop).startsWith('list')) return [];
-        return { id: 1 };
-      },
+      get:
+        (_t, prop) =>
+        (...args: unknown[]) => {
+          calls.push(`${name}.${String(prop)}`);
+          // Shapes the handlers destructure on the happy path.
+          if (prop === 'votePoll' || prop === 'createMessage') return { error: null, poll: {}, message: {} };
+          if (prop === 'listEntries') return [];
+          if (prop === 'getActivePlanId') return 1;
+          // collections.deletePlace is async in production (it deletes a storage
+          // object); a promise-returning double here pins the fix that awaits it —
+          // an un-awaited call would leave an unhandled rejection unnoticed by every
+          // assertion below.
+          if (name === 'collections' && prop === 'deletePlace') return Promise.resolve(undefined);
+          if (String(prop).startsWith('delete')) return true;
+          if (String(prop).startsWith('list')) return [];
+          return { id: 1 };
+        },
     },
   ) as never;
 }
@@ -68,14 +76,39 @@ function build(addonOn: boolean) {
     new CollabRpc(spyService(calls, 'collab'), { broadcast: vi.fn() } as never, guards),
     new AtlasRpc(spyService(calls, 'atlas'), guards),
     new VacayRpc(spyService(calls, 'vacay'), guards),
-    new JournalRpc(spyService(calls, 'journey'), guards),
+    // The photo method writes bytes, so its four extra deps need real shapes or the
+    // addon-on half of the table would fail for a reason that is not the gate.
+    new JournalRpc(
+      spyService(calls, 'journey'),
+      guards,
+      { put: async () => undefined, delete: async () => undefined } as never,
+      { get: () => '*' } as never,
+      { schedule: () => undefined } as never,
+      { prepare: () => ({ get: () => ({ email: 'u@example.test' }) }) } as never,
+    ),
     new CollectionsRpc(spyService(calls, 'collections'), guards),
-    new CostsRpc(spyService(calls, 'budget'), db, { broadcast: vi.fn() } as never, guards, spyService(calls, 'membership')),
+    new CostsRpc(
+      spyService(calls, 'budget'),
+      db,
+      { broadcast: vi.fn() } as never,
+      guards,
+      spyService(calls, 'membership'),
+      spyService(calls, 'rates'),
+    ),
   ]);
   const granted = new Set([
-    'db:read:collab', 'db:write:collab', 'db:read:journal', 'db:write:journal',
-    'db:read:atlas', 'db:write:atlas', 'db:read:vacay', 'db:write:vacay',
-    'db:read:collections', 'db:write:collections', 'db:read:costs', 'db:write:costs',
+    'db:read:collab',
+    'db:write:collab',
+    'db:read:journal',
+    'db:write:journal',
+    'db:read:atlas',
+    'db:write:atlas',
+    'db:read:vacay',
+    'db:write:vacay',
+    'db:read:collections',
+    'db:write:collections',
+    'db:read:costs',
+    'db:write:costs',
   ]);
   return { calls, host: new PluginRpcHost('p', granted, makeDeps(), registry) };
 }
@@ -95,6 +128,7 @@ const GATED: Array<[string, Record<string, unknown>, string]> = [
   ['journal.updateEntry', { entryId: 1, input: {} }, 'journey'],
   ['journal.deleteEntry', { entryId: 1 }, 'journey'],
   ['journal.createJourney', { input: { title: 'J' } }, 'journey'],
+  ['journal.addEntryPhoto', { entryId: 1, input: { name: 'a.jpg', content_base64: 'eA==' } }, 'journey'],
   ['journal.deleteJourney', { journeyId: 7 }, 'journey'],
   ['atlas.visited', {}, 'atlas'],
   ['atlas.bucketList', {}, 'atlas'],
@@ -137,7 +171,7 @@ describe('every addon-gated plugin method refuses when its addon is off', () => 
   it('ADDONGATE-covers-every-gated-method', () => {
     // Guards the table itself: if a later PR adds an addon-gated method without a row
     // here, this number is the reminder.
-    expect(GATED).toHaveLength(37);
+    expect(GATED).toHaveLength(38);
   });
 
   it('ADDONGATE-the-same-calls-succeed-with-the-addon-on', async () => {
