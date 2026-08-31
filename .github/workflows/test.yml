@@ -414,8 +414,10 @@ jobs:
   scan:
     name: Scan
     runs-on: ubuntu-latest
-    # Fork PRs don't receive SONAR_TOKEN — skip the scan rather than fail it.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # This fork uses its own SonarQube project and token. Keep the upload gated
+    # behind SONAR_ENABLED so credentials can be rotated without failing CI.
+    # External fork PRs remain excluded because they never receive secrets.
+    if: vars.SONAR_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     # Coverage jobs failing must stop the scan: a missing lcov file would make
     # every line of that package report as uncovered, and the dashboard would
     # show a collapse that did not happen. The preflight gates already stop it
@@ -463,12 +465,10 @@ jobs:
         with:
           # New Code is configured as "previous version", so this string is what
           # draws that line — changing it re-bases every "new code" metric.
-          # Pinned rather than read from package.json on purpose: package.json is
-          # still on 3.4.1 while the project has been analysed as 4.0.0 all along,
-          # and taking the lower number would silently move the baseline. Bump it
-          # here as part of the release, together with the version bump.
+          # Pinned rather than read from package.json on purpose so the release
+          # boundary stays explicit in the workflow review.
           #
           # Everything else — sources, tests, exclusions, the documented
           # false-positive list — lives in sonar-project.properties so it stays
           # reviewable in a PR rather than buried in workflow YAML.
-          args: -Dsonar.projectVersion=4.0.0
+          args: -Dsonar.projectVersion=4.1.1
