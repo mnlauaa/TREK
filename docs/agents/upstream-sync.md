@@ -1,5 +1,7 @@
 # Upstream Release Sync
 
+The repository includes the [TREK Upstream Upgrade skill](../../.agents/skills/trek-upstream-upgrade/SKILL.md), invoked as `$trek-upstream-upgrade`. Its playbook is checked in with the skill, so collaborators do not need the personal `upgrade-upstream-fork` installation.
+
 `origin` is the downstream fork and `upstream` is `https://github.com/liketrek/TREK.git`. Upgrade from official stable release tags, never from upstream `dev`. Record tag and commit signatures separately from release provenance. An unsigned release requires a recorded user acceptance and a pinned full commit SHA.
 
 ## Release-baseline workflow
