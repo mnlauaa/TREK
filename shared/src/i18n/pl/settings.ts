@@ -501,7 +501,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Brak połączenia. Połącz się, aby zapisać podróże offline.',
   'settings.offline.notice.signedOut': 'Twoja sesja wygasła. Zaloguj się ponownie, aby zsynchronizować.',
   'settings.offline.notice.failed': 'Nie udało się ukończyć pobierania. Sprawdź połączenie i spróbuj ponownie.',
-  'settings.offline.notice.loadFailed': 'Nie udało się odczytać pamięci offline tego urządzenia. Zwykle pomaga wyczyszczenie pamięci podręcznej.',
+  'settings.offline.notice.loadFailed':
+    'Nie udało się odczytać pamięci offline tego urządzenia. Zwykle pomaga wyczyszczenie pamięci podręcznej.',
   'settings.offline.clear': 'Wyczyść pamięć podręczną',
   'settings.offline.clearConfirm':
     'Wyczyścić wszystkie dane podróży zapisane offline? Możesz je w każdej chwili zsynchronizować ponownie, będąc online.',

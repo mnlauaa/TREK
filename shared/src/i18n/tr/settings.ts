@@ -499,7 +499,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Bağlantı yok. Gezileri çevrimdışı kaydetmek için bağlanın.',
   'settings.offline.notice.signedOut': 'Oturumunuz sona erdi. Eşitlemek için tekrar giriş yapın.',
   'settings.offline.notice.failed': 'İndirme tamamlanamadı. Bağlantınızı kontrol edip yeniden deneyin.',
-  'settings.offline.notice.loadFailed': 'Bu cihazın çevrimdışı deposu okunamadı. Genellikle önbelleği temizlemek sorunu çözer.',
+  'settings.offline.notice.loadFailed':
+    'Bu cihazın çevrimdışı deposu okunamadı. Genellikle önbelleği temizlemek sorunu çözer.',
   'settings.offline.clear': 'Önbelleği temizle',
   'settings.offline.clearConfirm':
     'Tüm çevrimdışı gezi verileri silinsin mi? Çevrimiçiyken istediğiniz zaman yeniden senkronize edebilirsiniz.',

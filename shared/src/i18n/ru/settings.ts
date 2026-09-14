@@ -503,7 +503,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Нет соединения. Подключитесь, чтобы сохранить поездки офлайн.',
   'settings.offline.notice.signedOut': 'Сеанс завершён. Войдите снова, чтобы синхронизировать.',
   'settings.offline.notice.failed': 'Загрузку не удалось завершить. Проверьте соединение и повторите попытку.',
-  'settings.offline.notice.loadFailed': 'Не удалось прочитать офлайн-хранилище этого устройства. Обычно помогает очистка кэша.',
+  'settings.offline.notice.loadFailed':
+    'Не удалось прочитать офлайн-хранилище этого устройства. Обычно помогает очистка кэша.',
   'settings.offline.clear': 'Очистить кэш',
   'settings.offline.clearConfirm':
     'Очистить все офлайн-данные поездок? Вы сможете синхронизировать их снова в любой момент при наличии подключения.',

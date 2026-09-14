@@ -502,7 +502,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Немає з’єднання. Під’єднайтеся, щоб зберегти подорожі офлайн.',
   'settings.offline.notice.signedOut': 'Сеанс завершився. Увійдіть знову, щоб синхронізувати.',
   'settings.offline.notice.failed': 'Не вдалося завершити завантаження. Перевірте з’єднання і спробуйте ще раз.',
-  'settings.offline.notice.loadFailed': 'Не вдалося прочитати офлайн-сховище цього пристрою. Зазвичай допомагає очищення кешу.',
+  'settings.offline.notice.loadFailed':
+    'Не вдалося прочитати офлайн-сховище цього пристрою. Зазвичай допомагає очищення кешу.',
   'settings.offline.clear': 'Очистити кеш',
   'settings.offline.clearConfirm':
     'Очистити всі офлайн-дані поїздок? Ви можете синхронізувати їх будь-коли в режимі онлайн.',

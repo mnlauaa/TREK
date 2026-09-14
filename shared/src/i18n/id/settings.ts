@@ -499,7 +499,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Tidak ada koneksi. Hubungkan untuk menyimpan perjalanan secara offline.',
   'settings.offline.notice.signedOut': 'Sesimu telah berakhir. Masuk lagi untuk menyinkronkan.',
   'settings.offline.notice.failed': 'Unduhan tidak dapat diselesaikan. Periksa koneksimu dan coba lagi.',
-  'settings.offline.notice.loadFailed': 'Tidak dapat membaca penyimpanan offline perangkat ini. Membersihkan cache biasanya memperbaikinya.',
+  'settings.offline.notice.loadFailed':
+    'Tidak dapat membaca penyimpanan offline perangkat ini. Membersihkan cache biasanya memperbaikinya.',
   'settings.offline.clear': 'Hapus cache',
   'settings.offline.clearConfirm':
     'Hapus semua data perjalanan offline? Kamu bisa menyinkronkan ulang kapan saja saat online.',

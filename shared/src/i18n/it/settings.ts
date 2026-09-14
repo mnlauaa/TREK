@@ -501,7 +501,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Nessuna connessione. Connettiti per salvare i viaggi offline.',
   'settings.offline.notice.signedOut': 'La tua sessione è scaduta. Accedi di nuovo per sincronizzare.',
   'settings.offline.notice.failed': 'Il download non è stato completato. Controlla la connessione e riprova.',
-  'settings.offline.notice.loadFailed': 'Impossibile leggere l’archivio offline di questo dispositivo. Di solito basta svuotare la cache.',
+  'settings.offline.notice.loadFailed':
+    'Impossibile leggere l’archivio offline di questo dispositivo. Di solito basta svuotare la cache.',
   'settings.offline.clear': 'Svuota la cache',
   'settings.offline.clearConfirm':
     'Cancellare tutti i dati di viaggio offline? Puoi risincronizzare in qualsiasi momento quando sei online.',

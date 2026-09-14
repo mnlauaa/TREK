@@ -473,7 +473,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': '接続されていません。オフライン用に保存するには接続してください。',
   'settings.offline.notice.signedOut': 'セッションが終了しました。同期するには再度ログインしてください。',
   'settings.offline.notice.failed': 'ダウンロードを完了できませんでした。接続を確認してもう一度お試しください。',
-  'settings.offline.notice.loadFailed': 'この端末のオフラインストレージを読み取れませんでした。キャッシュを削除すると解決することが多いです。',
+  'settings.offline.notice.loadFailed':
+    'この端末のオフラインストレージを読み取れませんでした。キャッシュを削除すると解決することが多いです。',
   'settings.offline.clear': 'キャッシュを消去',
   'settings.offline.clearConfirm': 'すべてのオフライン旅行データを消去しますか？オンライン時にいつでも再同期できます。',
   'settings.offline.stats.trips': 'キャッシュ済みの旅行',

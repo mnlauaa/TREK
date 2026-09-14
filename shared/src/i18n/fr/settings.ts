@@ -509,7 +509,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Aucune connexion. Connectez-vous pour enregistrer des voyages hors ligne.',
   'settings.offline.notice.signedOut': 'Votre session a expiré. Reconnectez-vous pour synchroniser.',
   'settings.offline.notice.failed': 'Le téléchargement n’a pas pu se terminer. Vérifiez votre connexion et réessayez.',
-  'settings.offline.notice.loadFailed': 'Impossible de lire le stockage hors ligne de cet appareil. Vider le cache résout généralement le problème.',
+  'settings.offline.notice.loadFailed':
+    'Impossible de lire le stockage hors ligne de cet appareil. Vider le cache résout généralement le problème.',
   'settings.offline.clear': 'Vider le cache',
   'settings.offline.clearConfirm':
     'Vider toutes les données de voyage hors ligne ? Vous pourrez resynchroniser à tout moment lorsque vous serez en ligne.',

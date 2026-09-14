@@ -482,7 +482,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Sense connexió. Connecta’t per desar viatges fora de línia.',
   'settings.offline.notice.signedOut': 'La teva sessió ha caducat. Torna a iniciar la sessió per sincronitzar.',
   'settings.offline.notice.failed': 'La descàrrega no s’ha pogut completar. Comprova la connexió i torna-ho a provar.',
-  'settings.offline.notice.loadFailed': 'No s’ha pogut llegir l’emmagatzematge fora de línia d’aquest dispositiu. Normalment es resol buidant la memòria cau.',
+  'settings.offline.notice.loadFailed':
+    'No s’ha pogut llegir l’emmagatzematge fora de línia d’aquest dispositiu. Normalment es resol buidant la memòria cau.',
   'settings.offline.clear': 'Netejar memòria cau',
   'settings.offline.clearConfirm':
     'Vols netejar totes les dades de viatge fora de línia? Pots tornar a sincronitzar en qualsevol moment mentre estiguis connectat.',

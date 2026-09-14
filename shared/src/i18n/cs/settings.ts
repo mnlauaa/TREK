@@ -494,7 +494,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Bez připojení. Připojte se, abyste mohli ukládat cesty offline.',
   'settings.offline.notice.signedOut': 'Vaše relace vypršela. Pro synchronizaci se znovu přihlaste.',
   'settings.offline.notice.failed': 'Stahování se nepodařilo dokončit. Zkontrolujte připojení a zkuste to znovu.',
-  'settings.offline.notice.loadFailed': 'Offline úložiště tohoto zařízení se nepodařilo načíst. Obvykle pomůže vymazání mezipaměti.',
+  'settings.offline.notice.loadFailed':
+    'Offline úložiště tohoto zařízení se nepodařilo načíst. Obvykle pomůže vymazání mezipaměti.',
   'settings.offline.clear': 'Vymazat mezipaměť',
   'settings.offline.clearConfirm': 'Vymazat všechna offline data cest? Kdykoli online je můžete znovu synchronizovat.',
   'settings.offline.stats.trips': 'Cesty v mezipaměti',

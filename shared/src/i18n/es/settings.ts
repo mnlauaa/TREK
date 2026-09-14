@@ -502,7 +502,8 @@ const settings: TranslationStrings = {
   'settings.offline.notice.offline': 'Sin conexión. Conéctate para guardar viajes sin conexión.',
   'settings.offline.notice.signedOut': 'Tu sesión ha caducado. Vuelve a iniciar sesión para sincronizar.',
   'settings.offline.notice.failed': 'La descarga no se pudo completar. Comprueba tu conexión e inténtalo de nuevo.',
-  'settings.offline.notice.loadFailed': 'No se pudo leer el almacenamiento sin conexión de este dispositivo. Normalmente se soluciona vaciando la caché.',
+  'settings.offline.notice.loadFailed':
+    'No se pudo leer el almacenamiento sin conexión de este dispositivo. Normalmente se soluciona vaciando la caché.',
   'settings.offline.clear': 'Vaciar caché',
   'settings.offline.clearConfirm':
     '¿Vaciar todos los datos de viaje offline? Puedes volver a sincronizar en cualquier momento con conexión.',
