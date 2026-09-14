@@ -77,6 +77,8 @@ const places: TranslationStrings = {
   'places.formWebsite': 'Website',
   'places.formNotes': 'Notizen',
   'places.formNotesPlaceholder': 'Persönliche Notizen...',
+  'places.assignmentNotes': 'Notizen für diesen Tag',
+  'places.assignmentNotesPlaceholder': 'Notizen für diesen Ort nur an diesem Tag...',
   'places.formReservation': 'Reservierung',
   'places.reservationNotesPlaceholder': 'Reservierungsnotizen, Bestätigungsnummer...',
   'places.mapsSearchPlaceholder': 'Ortssuche...',
@@ -98,7 +100,8 @@ const places: TranslationStrings = {
   'places.details.facts': 'Gut zu wissen',
   'places.details.nothing': 'Zu diesem Ort wurde nichts gefunden.',
   'places.details.noKeyTitle': 'Mehr Details möglich',
-  'places.details.noKeyHint': 'Ohne Google-API-Key nutzt diese Instanz nur freie Quellen. Wende dich an deine TREK-Administration, um Bewertungen, Öffnungszeiten und Fotos freizuschalten.',
+  'places.details.noKeyHint':
+    'Ohne Google-API-Key nutzt diese Instanz nur freie Quellen. Wende dich an deine TREK-Administration, um Bewertungen, Öffnungszeiten und Fotos freizuschalten.',
   'places.details.aboutBrand': 'Über die Kette',
   'places.details.aboutBrandNote': 'Beschreibt die Kette, nicht diese Filiale.',
   'places.details.fact.rating': 'Bewertung',

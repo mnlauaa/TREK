@@ -77,6 +77,8 @@ const places: TranslationStrings = {
   'places.formWebsite': 'ウェブサイト',
   'places.formNotes': 'メモ',
   'places.formNotesPlaceholder': '個人的なメモ…',
+  'places.assignmentNotes': 'この日のメモ',
+  'places.assignmentNotesPlaceholder': 'この日だけのこの場所に関するメモ…',
   'places.formReservation': '予約',
   'places.reservationNotesPlaceholder': '予約メモ、確認番号など…',
   'places.mapsSearchPlaceholder': '場所を検索…',
@@ -98,7 +100,8 @@ const places: TranslationStrings = {
   'places.details.facts': '知っておくと便利',
   'places.details.nothing': 'この場所の情報は見つかりませんでした。',
   'places.details.noKeyTitle': 'さらに詳しい情報を表示できます',
-  'places.details.noKeyHint': 'Google API キーがない場合、このインスタンスは自由に使えるソースのみを利用します。評価・営業時間・写真のために、TREK の管理者にキーの追加を依頼してください。',
+  'places.details.noKeyHint':
+    'Google API キーがない場合、このインスタンスは自由に使えるソースのみを利用します。評価・営業時間・写真のために、TREK の管理者にキーの追加を依頼してください。',
   'places.details.aboutBrand': 'チェーンについて',
   'places.details.aboutBrandNote': 'この店舗ではなくチェーン全体の説明です。',
   'places.details.fact.rating': '評価',

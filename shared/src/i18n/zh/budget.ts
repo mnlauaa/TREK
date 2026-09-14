@@ -198,5 +198,6 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': '显示货币：约 {amount}',
   'costs.confirm.deletePayment': '要删除这笔已记录的付款吗？未结清余额将重新计算。',
+  'costs.toggleSign': '在支出和退款之间切换',
 };
 export default budget;

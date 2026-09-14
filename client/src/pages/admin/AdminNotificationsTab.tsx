@@ -113,9 +113,12 @@ export default function AdminNotificationsTab({ admin, t }: AdminNotificationsTa
                   ].map((field) => (
                     <div key={field.key}>
                       <label className="mb-1 block text-xs font-medium text-slate-500">{field.label}</label>
+                      {/* A stored password comes back masked. Showing the mask as the VALUE meant
+                  typing a new one appended it to eight bullet characters and saved that,
+                  so the same treatment as the webhook URL below: mask as placeholder. */}
                       <input
                         type={field.type || 'text'}
-                        value={smtpValues[field.key] || ''}
+                        value={smtpValues[field.key] === '••••••••' ? '' : smtpValues[field.key] || ''}
                         onChange={(e) => setSmtpValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"

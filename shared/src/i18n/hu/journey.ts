@@ -190,6 +190,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Név',
   'journey.settings.subtitle': 'Alcím',
   'journey.settings.subtitlePlaceholder': 'pl. Thaiföld, Vietnam és Kambodzsa',
+  'journey.settings.tracks': 'GPX-nyomvonalak',
+  'journey.settings.showTripTracks': 'Az utazások összes GPX-nyomvonalának megjelenítése',
+  'journey.settings.showTripTracksHint': 'A kapcsolt utazások rögzített útvonalait rajzolja a térképre.',
   'journey.settings.endJourney': 'Út archiválása',
   'journey.settings.reopenJourney': 'Út visszaállítása',
   'journey.settings.archived': 'Út archiválva',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Oldalpár letöltése',
-  'journey.studio.downloadSpreadHint': 'Fájlba menti az oldalpár elrendezését, a fényképek nélkül, megosztáshoz vagy újrafelhasználáshoz',
+  'journey.studio.downloadSpreadHint':
+    'Fájlba menti az oldalpár elrendezését, a fényképek nélkül, megosztáshoz vagy újrafelhasználáshoz',
   'journey.studio.importSpread': 'Importálás',
   'journey.studio.importSpreadHint': 'Oldalpár hozzáadása letöltött elrendezésfájlból',
   'journey.studio.importSpreadFailed': 'Ez a fájl nem TREK Studio oldalpár',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Egy könyv tördeléséhez hely kell, ezért a Studio csak asztali gépen érhető el, és a PDF is. Az utazás minden más része itt a megszokott módon működik.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Egy könyv tördeléséhez hely kell, ezért a Studio csak asztali gépen érhető el, és a PDF is. Az utazás minden más része itt a megszokott módon működik.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -544,7 +550,8 @@ const journey: TranslationStrings = {
   'journey.studio.roadsAgain': 'Kérje le újra',
   'journey.studio.roadsClear': 'Törlés',
   'journey.studio.roadsBusy': 'Lekérés',
-  'journey.studio.roadsHint': 'Megkérdezi egy útvonaltervező szolgáltatástól, merre vezet az egyes szakaszok útja. A hosszú szakaszok változatlanok maradnak.',
+  'journey.studio.roadsHint':
+    'Megkérdezi egy útvonaltervező szolgáltatástól, merre vezet az egyes szakaszok útja. A hosszú szakaszok változatlanok maradnak.',
   'journey.studio.roadsHave': 'Az utak ebben a könyvben vannak elmentve, így offline is ugyanaz a vonal nyomtatódik.',
   'journey.studio.routeStyle': 'Megjelenés',
   'journey.studio.routePlain': 'Sima',
@@ -558,8 +565,10 @@ const journey: TranslationStrings = {
   'journey.studio.pinPhoto': 'Fotók',
   'journey.studio.pinPhotoNone': 'Ezeken az állomásokon még nincs fénykép, ezért pontként jelennek meg.',
   'journey.studio.mapSourceSatellite': 'Műhold',
-  'journey.studio.mapSourceSatelliteHint': 'Felhőmentes Sentinel-2, forrásmegjelöléssel szabadon nyomtatható. Utcaszintig éles.',
-  'journey.studio.mapSourceReliefHint': 'NASA árnyékolt domborzat, szabadon nyomtatható. Országhoz vagy kontinenshez ideális, egyetlen városhoz túl durva.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Felhőmentes Sentinel-2, forrásmegjelöléssel szabadon nyomtatható. Utcaszintig éles.',
+  'journey.studio.mapSourceReliefHint':
+    'NASA árnyékolt domborzat, szabadon nyomtatható. Országhoz vagy kontinenshez ideális, egyetlen városhoz túl durva.',
   'journey.studio.mapPrintDpi': 'Nyomtatásban körülbelül',
   'journey.studio.mapPrintDpiLow': 'ebben a méretben életlen, próbáljon tágabb nézetet vagy másik forrást',
   'journey.studio.mapPerTrip': 'Egyszerre egy út',
@@ -593,5 +602,34 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Forgatás balra',
   'journey.studio.rotateRight': 'Forgatás jobbra',
   'journey.studio.saveReadOnly': 'Csak olvasható, nem mentődik',
+  'journey.studio.filterPhotos': 'Fotók szűrése',
+  'journey.studio.filterAll': 'Összes fotó',
+  'journey.studio.filterLoose': 'Nincs bejegyzésben',
+  'journey.studio.filterRecent': 'Most feltöltve',
+  'journey.studio.filterThisPage': 'Ez az oldal',
+  'journey.studio.entryPhotos': 'Fotók',
+  'journey.studio.noEntryPhotos': 'Ehhez a bejegyzéshez még nincs fotó.',
+  'journey.studio.noLoosePhotos': 'Itt minden fotó egy bejegyzéshez tartozik.',
+  'journey.studio.uploadPhotos': 'Fotók feltöltése',
+  'journey.studio.uploadHint': 'Húzd ide a képeket, vagy kattints a kiválasztáshoz',
+  'journey.studio.uploadToEntry': 'Az új képek ebbe a bejegyzésbe kerülnek',
+  'journey.studio.uploadToGallery': 'Az új képek a galériába kerülnek',
+  'journey.studio.uploading': 'Feltöltés: {done} / {total}',
+  'journey.studio.dropFilesHere': 'Engedd el a képek hozzáadásához',
+  'journey.studio.videosSkipped': '{count} videó kimaradt. A könyvbe képek kerülnek.',
+  'journey.studio.fillPage': 'Oldal kitöltése',
+  'journey.studio.fillSpread': 'Oldalpár kitöltése',
+  'journey.studio.fillHint': 'A képet a teljes oldalra nyújtja, kifutóval együtt, és minden más mögé teszi.',
+  'journey.studio.stops': 'Megállók',
+  'journey.studio.stopsHint':
+    'Minden megálló beleszámít az útvonalba, a távolságba és az országokba. Kapcsolj ki egyet, ha ki szeretnéd hagyni, például az otthoni repülőteret.',
+  'journey.studio.stopOn': 'Beleszámít',
+  'journey.studio.stopOff': 'Kihagyva',
+  'journey.studio.stopToggle': 'Ez a megálló számítson',
+  'journey.studio.stopsFailed': 'A megállót nem sikerült módosítani.',
+  'journey.editor.statsExcluded': 'Kihagyás az útvonalból',
+  'journey.editor.statsExcludedHint':
+    'A megálló a naplóban marad, de nem számít bele a távolságba, az országokba és a Studio térképébe.',
+  'journey.entry.offRoute': 'Útvonalon kívül',
 };
 export default journey;

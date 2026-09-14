@@ -22,10 +22,9 @@ permissions:
 #     must stop the scan — a missing lcov file would make every line of that
 #     package report as uncovered, and the dashboard would show a collapse
 #     that did not happen. (The preflight gates stop it transitively.)
-#   - Fork PRs don't receive secrets, so the two jobs that need them skip
-#     themselves: s3-contract (MINIO_LICENSE_KEY) and scan (SONAR_TOKEN).
-#     Everything else runs on fork PRs so outside contributors still get the
-#     full test signal.
+#   - External fork PRs don't receive SONAR_TOKEN, so the optional scan skips
+#     itself. The S3 contract uses public community MinIO without a license
+#     secret; the other gates and test suites run for external contributors too.
 #
 # Automatic Analysis must stay disabled on sonarcloud.io — it is mutually
 # exclusive with CI-based analysis, and it cannot import the lcov coverage
@@ -257,7 +256,7 @@ jobs:
         run: |
           docker run -d --name minio -p 127.0.0.1:9000:9000 \
             -e MINIO_ROOT_USER=trekci -e MINIO_ROOT_PASSWORD=trekci-secret \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e server /data
 
       - name: Wait for MinIO
         # Poll from the runner so the check does not depend on tools in the image.

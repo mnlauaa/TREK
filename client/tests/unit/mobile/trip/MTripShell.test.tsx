@@ -4,7 +4,7 @@ import type { Day, PackingItem, TodoItem } from '../../../../src/types';
 import { buildPlanner, buildShell } from '../../../helpers/mobileTrip';
 import { act, fireEvent, render, screen } from '../../../helpers/render';
 
-// FE-MOB-SHELL-001 to FE-MOB-SHELL-046
+// FE-MOB-SHELL-001 to FE-MOB-SHELL-051
 
 const mocks = vi.hoisted(() => ({ planner: {} as TripPlanner }));
 
@@ -533,6 +533,100 @@ describe('MTripShell', () => {
       );
       renderShell({ selectedDayId: 12 } as Partial<TripPlanner>);
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    });
+  });
+
+  // #2257 — the map filters down to one day, and until now nothing took that
+  // filter back off: the chip rail can only swap one day for another, and the
+  // second tap on the active chip is the day sheet. Its own control, map only.
+  describe('the all-days toggle (#2257)', () => {
+    const allDays = () => screen.getByRole('button', { name: 'mobileTrip.allDays' });
+    const enterMap = () => fireEvent.click(screen.getByRole('button', { name: 'mobileTrip.mapView' }));
+
+    it('FE-MOB-SHELL-047: stays off the plan view, where nothing is filtered anyway', () => {
+      renderShell();
+      expect(screen.queryByRole('button', { name: 'mobileTrip.allDays' })).not.toBeInTheDocument();
+      enterMap();
+      expect(allDays()).toBeInTheDocument();
+    });
+
+    it('FE-MOB-SHELL-048: drops the day and its pin filter so the whole trip comes back', () => {
+      const { planner } = renderShell();
+      enterMap();
+      vi.mocked(planner.setExpandedDayIds).mockClear();
+
+      fireEvent.click(allDays());
+
+      expect(planner.handleSelectDay).toHaveBeenLastCalledWith(null, false);
+      expect(planner.setExpandedDayIds).toHaveBeenCalledWith(null);
+      // The day sheet belongs to the chip, not to this button.
+      expect(shellApi.sheet).toBeNull();
+    });
+
+    it('FE-MOB-SHELL-049: a second press goes back to the day it came from', () => {
+      const { planner, rerenderShell } = renderShell();
+      enterMap();
+      fireEvent.click(allDays());
+
+      // The planner is a fixture, so the commit is replayed by hand.
+      (planner as { selectedDayId: number | null }).selectedDayId = null;
+      rerenderShell();
+      expect(planner.tripActions.setSelectedDay).not.toHaveBeenCalled();
+      expect(allDays()).toHaveAttribute('aria-pressed', 'true');
+      vi.mocked(planner.setExpandedDayIds).mockClear();
+      vi.mocked(planner.autoShowRoute).mockClear();
+
+      fireEvent.click(allDays());
+
+      expect(planner.handleSelectDay).toHaveBeenLastCalledWith(11, false);
+      expect(planner.setExpandedDayIds).toHaveBeenCalledWith(new Set([11]));
+      expect(planner.autoShowRoute).toHaveBeenCalled();
+    });
+
+    it('FE-MOB-SHELL-050: leaving the map puts a day back, the timeline has no all-days state', () => {
+      const { planner, rerenderShell } = renderShell({ selectedDayId: 12 });
+      enterMap();
+      fireEvent.click(allDays());
+      (planner as { selectedDayId: number | null }).selectedDayId = null;
+      rerenderShell();
+
+      fireEvent.click(screen.getByRole('button', { name: 'mobileTrip.listView' }));
+
+      expect(planner.handleSelectDay).toHaveBeenLastCalledWith(12, true);
+    });
+
+    it('restores the previous valid day when a travel-mode button leaves All days', () => {
+      const { planner, rerenderShell } = renderShell({ selectedDayId: 12 });
+      enterMap();
+      fireEvent.click(allDays());
+      planner.selectedDayId = null;
+      rerenderShell();
+      expect(planner.tripActions.setSelectedDay).not.toHaveBeenCalled();
+      act(() => shellApi.setTravelMode('go'));
+      expect(planner.tripActions.setSelectedDay).toHaveBeenLastCalledWith(12);
+    });
+
+    it('falls back to a valid focus day if the parked map day was deleted', () => {
+      const { planner, rerenderShell } = renderShell({ selectedDayId: 12 });
+      enterMap();
+      fireEvent.click(allDays());
+      planner.selectedDayId = null;
+      planner.days = [DAYS[0]];
+      rerenderShell();
+      expect(planner.tripActions.setSelectedDay).not.toHaveBeenCalled();
+      fireEvent.click(allDays());
+      expect(planner.handleSelectDay).toHaveBeenLastCalledWith(11, false);
+    });
+
+    it('FE-MOB-SHELL-051: the active chip still opens the day sheet on the map', () => {
+      const { planner } = renderShell();
+      enterMap();
+      vi.mocked(planner.handleSelectDay).mockClear();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sat 2' }));
+
+      expect(shellApi.sheet).toEqual({ id: 'day', payload: { dayId: 11 } });
+      expect(planner.handleSelectDay).not.toHaveBeenCalled();
     });
   });
 });

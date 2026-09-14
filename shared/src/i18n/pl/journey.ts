@@ -190,6 +190,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Nazwa',
   'journey.settings.subtitle': 'Podtytuł',
   'journey.settings.subtitlePlaceholder': 'np. Tajlandia, Wietnam i Kambodża',
+  'journey.settings.tracks': 'Ślady GPX',
+  'journey.settings.showTripTracks': 'Pokaż wszystkie ślady GPX z podróży',
+  'journey.settings.showTripTracksHint': 'Rysuje na mapie zapisane trasy z powiązanych podróży.',
   'journey.settings.endJourney': 'Archiwizuj podróż',
   'journey.settings.reopenJourney': 'Przywróć podróż',
   'journey.settings.archived': 'Podróż zarchiwizowana',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Pobierz tę rozkładówkę',
-  'journey.studio.downloadSpreadHint': 'Zapisuje projekt tej rozkładówki jako plik, bez zdjęć, do udostępnienia lub ponownego użycia',
+  'journey.studio.downloadSpreadHint':
+    'Zapisuje projekt tej rozkładówki jako plik, bez zdjęć, do udostępnienia lub ponownego użycia',
   'journey.studio.importSpread': 'Importuj',
   'journey.studio.importSpreadHint': 'Dodaje rozkładówkę z pobranego pliku projektu',
   'journey.studio.importSpreadFailed': 'Ten plik nie jest rozkładówką TREK Studio',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Składanie książki wymaga miejsca, dlatego Studio działa tylko na komputerze, tak samo jak tworzenie PDF-a. Reszta podróży działa tu jak zwykle.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Składanie książki wymaga miejsca, dlatego Studio działa tylko na komputerze, tak samo jak tworzenie PDF-a. Reszta podróży działa tu jak zwykle.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -534,7 +540,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Kontury',
   'journey.studio.mapSourceRelief': 'Relief',
   'journey.studio.mapSourceSatellite': 'Satelita',
-  'journey.studio.mapSourceSatelliteHint': 'Bezchmurne Sentinel-2, można drukować bez opłat z podaniem źródła. Ostre aż do pojedynczej ulicy w mieście.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Bezchmurne Sentinel-2, można drukować bez opłat z podaniem źródła. Ostre aż do pojedynczej ulicy w mieście.',
   'journey.studio.routeLook': 'Linia',
   'journey.studio.routeStyle': 'Styl linii',
   'journey.studio.routePlain': 'Gładka',
@@ -557,14 +564,16 @@ const journey: TranslationStrings = {
   'journey.studio.roadsAgain': 'Pobierz ponownie',
   'journey.studio.roadsClear': 'Wyczyść',
   'journey.studio.roadsBusy': 'Pobieranie',
-  'journey.studio.roadsHint': 'Zapyta usługę tras o rzeczywisty przebieg każdego odcinka. Długie odcinki zostają bez zmian.',
+  'journey.studio.roadsHint':
+    'Zapyta usługę tras o rzeczywisty przebieg każdego odcinka. Długie odcinki zostają bez zmian.',
   'journey.studio.roadsHave': 'Drogi są zapisane w tej książce, więc offline drukuje tę samą linię.',
   'journey.studio.mapPerTrip': 'Jedna podróż naraz',
   'journey.studio.mapWholeJourney': 'Cały dziennik',
   'journey.studio.mapScope': 'Pokaż',
   'journey.studio.mapPrintDpi': 'Rozdzielczość druku około',
   'journey.studio.mapPrintDpiLow': 'przy tym rozmiarze wyjdzie nieostro, spróbuj szerszego kadru lub innego źródła',
-  'journey.studio.mapSourceReliefHint': 'Cieniowany relief NASA, można drukować bez licencji. Dobry dla kraju lub kontynentu, za mało dokładny dla miasta.',
+  'journey.studio.mapSourceReliefHint':
+    'Cieniowany relief NASA, można drukować bez licencji. Dobry dla kraju lub kontynentu, za mało dokładny dla miasta.',
   'journey.studio.mapSourceTiles': 'Kafelki',
   'journey.studio.mapSourceStatic': 'Mapbox',
   'journey.studio.mapSourceHint': 'Pobierane przy renderowaniu i drukowane z informacją o źródle',
@@ -593,5 +602,34 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Obróć w lewo',
   'journey.studio.rotateRight': 'Obróć w prawo',
   'journey.studio.saveReadOnly': 'Tylko do odczytu, nie zapisuje się',
+  'journey.studio.filterPhotos': 'Filtruj zdjęcia',
+  'journey.studio.filterAll': 'Wszystkie zdjęcia',
+  'journey.studio.filterLoose': 'Bez wpisu',
+  'journey.studio.filterRecent': 'Właśnie przesłane',
+  'journey.studio.filterThisPage': 'Ta strona',
+  'journey.studio.entryPhotos': 'Zdjęcia',
+  'journey.studio.noEntryPhotos': 'Ten wpis nie ma jeszcze zdjęć.',
+  'journey.studio.noLoosePhotos': 'Każde zdjęcie tutaj należy do jakiegoś wpisu.',
+  'journey.studio.uploadPhotos': 'Prześlij zdjęcia',
+  'journey.studio.uploadHint': 'Upuść obrazy tutaj lub kliknij, aby je wybrać',
+  'journey.studio.uploadToEntry': 'Nowe obrazy trafią do tego wpisu',
+  'journey.studio.uploadToGallery': 'Nowe obrazy trafią do galerii',
+  'journey.studio.uploading': 'Przesyłanie {done} z {total}',
+  'journey.studio.dropFilesHere': 'Upuść, aby dodać obrazy',
+  'journey.studio.videosSkipped': '{count} filmów pominięto. Książka zawiera obrazy.',
+  'journey.studio.fillPage': 'Wypełnij stronę',
+  'journey.studio.fillSpread': 'Wypełnij rozkładówkę',
+  'journey.studio.fillHint': 'Rozciąga obraz na całą stronę, łącznie ze spadem, i umieszcza go za wszystkim innym.',
+  'journey.studio.stops': 'Przystanki',
+  'journey.studio.stopsHint':
+    'Każdy przystanek liczy się do trasy, dystansu i krajów. Wyłącz któryś, aby go pominąć, na przykład swoje lotnisko domowe.',
+  'journey.studio.stopOn': 'Liczy się',
+  'journey.studio.stopOff': 'Pominięty',
+  'journey.studio.stopToggle': 'Liczyć ten przystanek',
+  'journey.studio.stopsFailed': 'Nie udało się zmienić przystanku.',
+  'journey.editor.statsExcluded': 'Pomiń w trasie',
+  'journey.editor.statsExcludedHint':
+    'Przystanek zostaje w dzienniku, ale nie liczy się do dystansu, krajów ani mapy w Studio.',
+  'journey.entry.offRoute': 'Poza trasą',
 };
 export default journey;

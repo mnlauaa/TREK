@@ -77,6 +77,8 @@ const places: TranslationStrings = {
   'places.formWebsite': 'Hemsida',
   'places.formNotes': 'Noteringar',
   'places.formNotesPlaceholder': 'Personliga anteckningar...',
+  'places.assignmentNotes': 'Anteckningar för denna dag',
+  'places.assignmentNotesPlaceholder': 'Anteckningar för denna plats endast denna dag...',
   'places.formReservation': 'Bokning',
   'places.reservationNotesPlaceholder': 'Bokningsinformation, bekräftelsenummer...',
   'places.mapsSearchPlaceholder': 'Sök efter platser...',
@@ -98,7 +100,8 @@ const places: TranslationStrings = {
   'places.details.facts': 'Bra att veta',
   'places.details.nothing': 'Inget hittades för den här platsen.',
   'places.details.noKeyTitle': 'Fler detaljer finns tillgängliga',
-  'places.details.noKeyHint': 'Utan en Google API-nyckel använder den här instansen bara fria källor. Be din TREK-administratör lägga till en för betyg, öppettider och foton.',
+  'places.details.noKeyHint':
+    'Utan en Google API-nyckel använder den här instansen bara fria källor. Be din TREK-administratör lägga till en för betyg, öppettider och foton.',
   'places.details.aboutBrand': 'Om kedjan',
   'places.details.aboutBrandNote': 'Beskriver kedjan, inte det här stället.',
   'places.details.fact.rating': 'Betyg',

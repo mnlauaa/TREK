@@ -190,6 +190,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Название',
   'journey.settings.subtitle': 'Подзаголовок',
   'journey.settings.subtitlePlaceholder': 'напр. Таиланд, Вьетнам и Камбоджа',
+  'journey.settings.tracks': 'GPX-треки',
+  'journey.settings.showTripTracks': 'Показывать все GPX-треки поездок',
+  'journey.settings.showTripTracksHint': 'Рисует на карте записанные маршруты из связанных поездок.',
   'journey.settings.endJourney': 'Архивировать путешествие',
   'journey.settings.reopenJourney': 'Восстановить путешествие',
   'journey.settings.archived': 'Путешествие архивировано',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Скачать этот разворот',
-  'journey.studio.downloadSpreadHint': 'Сохраняет оформление разворота в файл, без фотографий, чтобы поделиться им или использовать снова',
+  'journey.studio.downloadSpreadHint':
+    'Сохраняет оформление разворота в файл, без фотографий, чтобы поделиться им или использовать снова',
   'journey.studio.importSpread': 'Импорт',
   'journey.studio.importSpreadHint': 'Добавляет разворот из скачанного файла оформления',
   'journey.studio.importSpreadFailed': 'Этот файл не является разворотом TREK Studio',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Вёрстка книги требует места, поэтому Студия работает только на компьютере, и создание PDF тоже. Всё остальное в путешествии здесь работает как обычно.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Вёрстка книги требует места, поэтому Студия работает только на компьютере, и создание PDF тоже. Всё остальное в путешествии здесь работает как обычно.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -534,7 +540,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Контуры',
   'journey.studio.mapSourceRelief': 'Рельеф',
   'journey.studio.mapSourceSatellite': 'Спутник',
-  'journey.studio.mapSourceSatelliteHint': 'Sentinel-2 без облаков, печатать можно свободно с указанием источника. Чёткость вплоть до городской улицы.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Sentinel-2 без облаков, печатать можно свободно с указанием источника. Чёткость вплоть до городской улицы.',
   'journey.studio.routeLook': 'Линия',
   'journey.studio.routeStyle': 'Вид',
   'journey.studio.routePlain': 'Обычная',
@@ -557,9 +564,11 @@ const journey: TranslationStrings = {
   'journey.studio.roadsAgain': 'Проложить заново',
   'journey.studio.roadsClear': 'Сбросить',
   'journey.studio.roadsBusy': 'Запрос',
-  'journey.studio.roadsHint': 'Спросить у сервиса маршрутов, по каким дорогам пройден каждый участок. Длинные участки остаются как есть.',
+  'journey.studio.roadsHint':
+    'Спросить у сервиса маршрутов, по каким дорогам пройден каждый участок. Длинные участки остаются как есть.',
   'journey.studio.roadsHave': 'Дороги сохранены в этой книге, поэтому та же линия печатается и без сети.',
-  'journey.studio.mapSourceReliefHint': 'Затенённый рельеф NASA, печатать можно свободно. Подходит для страны или континента, для одного города слишком груб.',
+  'journey.studio.mapSourceReliefHint':
+    'Затенённый рельеф NASA, печатать можно свободно. Подходит для страны или континента, для одного города слишком груб.',
   'journey.studio.mapPrintDpi': 'Печать около',
   'journey.studio.mapPrintDpiLow': 'при таком размере размыто, попробуйте шире охват или другой источник',
   'journey.studio.mapPerTrip': 'По одной поездке',
@@ -593,5 +602,35 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Повернуть влево',
   'journey.studio.rotateRight': 'Повернуть вправо',
   'journey.studio.saveReadOnly': 'Только чтение, не сохраняется',
+  'journey.studio.filterPhotos': 'Фильтр фото',
+  'journey.studio.filterAll': 'Все фото',
+  'journey.studio.filterLoose': 'Без записи',
+  'journey.studio.filterRecent': 'Только что загружены',
+  'journey.studio.filterThisPage': 'Эта страница',
+  'journey.studio.entryPhotos': 'Фото',
+  'journey.studio.noEntryPhotos': 'В этой записи пока нет фото.',
+  'journey.studio.noLoosePhotos': 'Каждое фото здесь относится к какой-то записи.',
+  'journey.studio.uploadPhotos': 'Загрузить фото',
+  'journey.studio.uploadHint': 'Перетащите изображения сюда или нажмите, чтобы выбрать',
+  'journey.studio.uploadToEntry': 'Новые изображения попадут в эту запись',
+  'journey.studio.uploadToGallery': 'Новые изображения попадут в галерею',
+  'journey.studio.uploading': 'Загрузка {done} из {total}',
+  'journey.studio.dropFilesHere': 'Отпустите, чтобы добавить изображения',
+  'journey.studio.videosSkipped': 'Видео пропущено: {count}. В книге только изображения.',
+  'journey.studio.fillPage': 'Заполнить страницу',
+  'journey.studio.fillSpread': 'Заполнить разворот',
+  'journey.studio.fillHint':
+    'Растягивает изображение на всю страницу, включая вылет, и помещает его позади всего остального.',
+  'journey.studio.stops': 'Остановки',
+  'journey.studio.stopsHint':
+    'Каждая остановка учитывается в маршруте, расстоянии и странах. Отключите остановку, чтобы исключить её, например домашний аэропорт.',
+  'journey.studio.stopOn': 'Учитывается',
+  'journey.studio.stopOff': 'Исключена',
+  'journey.studio.stopToggle': 'Учитывать эту остановку',
+  'journey.studio.stopsFailed': 'Не удалось изменить остановку.',
+  'journey.editor.statsExcluded': 'Исключить из маршрута',
+  'journey.editor.statsExcludedHint':
+    'Остановка остаётся в дневнике, но не учитывается в расстоянии, странах и на карте в Studio.',
+  'journey.entry.offRoute': 'Вне маршрута',
 };
 export default journey;

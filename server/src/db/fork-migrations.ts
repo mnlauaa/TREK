@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3';
 
-export const UPSTREAM_SCHEMA_VERSION = 200;
+export const UPSTREAM_SCHEMA_VERSION = 205;
+// The bridge installs only the v4.1.1 tail. Later official migrations must run.
+export const LEGACY_FORK_BRIDGE_VERSION = 200;
 
 export const FORK_SCHEMA_MIGRATION_IDS = [
   'fork/v4-schema-crosswalk',
@@ -78,6 +80,74 @@ function hasWebPushArtifacts(db: Database.Database): boolean {
   return hasTable(db, 'web_push_subscriptions');
 }
 
+/** Read-only classification shared by startup and the standalone upgrade audit. */
+export function classifyForkLineage(db: Database.Database, version: number): string {
+  if (!Number.isInteger(version) || version < 0 || version > UPSTREAM_SCHEMA_VERSION) return 'mixed-or-unsupported';
+
+  const hasLedger = hasTable(db, 'fork_schema_migrations');
+  const ids = hasLedger
+    ? (db.prepare('SELECT id FROM fork_schema_migrations').all() as Array<{ id: string }>).map((row) => row.id)
+    : [];
+  if (ids.some((id) => !(FORK_SCHEMA_MIGRATION_IDS as readonly string[]).includes(id))) return 'mixed-or-unsupported';
+
+  const crosswalk = hasCrosswalkArtifacts(db);
+  const fx = hasEnhancedFxArtifacts(db);
+  const guest = hasGuestIdentityArtifacts(db);
+  const webPush = hasWebPushArtifacts(db);
+  const custom =
+    fx ||
+    guest ||
+    webPush ||
+    hasTable(db, 'trip_exchange_rates') ||
+    hasTable(db, 'global_exchange_rate_snapshots') ||
+    hasTable(db, 'exchange_rate_batch_previews') ||
+    hasColumn(db, 'budget_items', 'exchange_rate_source') ||
+    hasColumn(db, 'budget_settlements', 'exchange_rate_source');
+  if (version <= 175) return custom ? 'custom-3.4.1' : 'clean-3.4.x';
+  if (version <= 180 && custom) return 'custom-3.4.1';
+  if (version < 198) return 'partial-upstream-v4';
+  if (version === 198) return crosswalk ? 'official-v4.0' : 'mixed-or-unsupported';
+
+  const official199 = hasColumn(db, 'reservations', 'ingest_state');
+  const official200 = hasColumn(db, 'mcp_tokens', 'kind');
+  const tail = [
+    [202, hasColumn(db, 'journeys', 'show_trip_tracks')],
+    [203, hasColumn(db, 'plugin_settings_fields', 'default_value')],
+    [204, hasColumn(db, 'plugin_actions', 'scope')],
+    [205, hasColumn(db, 'journey_entries', 'stats_excluded')],
+  ] as const;
+
+  // Old fork 201/202 and official 201/202 are different histories. The old
+  // history lacks BOTH official v4.1.1 additions and all v4.2 additions.
+  const legacy =
+    !hasLedger &&
+    crosswalk &&
+    !official199 &&
+    !official200 &&
+    tail.every(([, present]) => !present) &&
+    (version === 199 ||
+      (version === 200 && fx) ||
+      (version === 201 && fx && guest) ||
+      (version === 202 && fx && guest && webPush));
+  if (legacy) return 'legacy-fork-numeric';
+
+  if (!crosswalk || !official199 || official200 !== version >= 200) return 'mixed-or-unsupported';
+  if (tail.some(([introduced, present]) => present !== version >= introduced)) return 'mixed-or-unsupported';
+  const naver = db.prepare("SELECT type FROM addons WHERE id = 'naver_list_import'").get() as
+    | { type: string }
+    | undefined;
+  if (version >= 201 && naver && naver.type !== 'integration') return 'mixed-or-unsupported';
+  if (!hasLedger && custom) return 'mixed-or-unsupported';
+
+  const artifacts = [crosswalk, fx, guest, webPush];
+  if (ids.some((id) => !artifacts[FORK_SCHEMA_MIGRATION_IDS.indexOf(id as ForkSchemaMigrationId)])) {
+    return 'mixed-or-unsupported';
+  }
+  const release = version >= 201 ? 'v4.2' : 'v4.1';
+  if (!hasLedger) return `official-${release}`;
+  return `dual-lineage-${release}${ids.length < FORK_SCHEMA_MIGRATION_IDS.length ? '-partial' : ''}`;
+}
+
 /**
  * The released fork used numeric slots 199-202 for its own schemas. v4.1.1
  * uses 199-200 for upstream additions, so a verified legacy fork must be
@@ -94,34 +164,22 @@ export function normalizeLegacyForkLineage(
     throw new Error(`Fork lineage bridge expected upstream schema ${UPSTREAM_SCHEMA_VERSION}, got ${upstreamVersion}.`);
   }
 
-  const hasLedger = hasTable(db, 'fork_schema_migrations');
-  const official199 = hasColumn(db, 'reservations', 'ingest_state');
-  const official200 = hasColumn(db, 'mcp_tokens', 'kind');
-  const crosswalk = hasCrosswalkArtifacts(db);
-  const fx = hasEnhancedFxArtifacts(db);
-  const guest = hasGuestIdentityArtifacts(db);
-  const webPush = hasWebPushArtifacts(db);
-
-  const legacyFork =
-    !hasLedger &&
-    ((currentVersion === 199 && crosswalk && !official199) ||
-      (currentVersion === 200 && crosswalk && fx && !official200) ||
-      (currentVersion === 201 && crosswalk && fx && guest) ||
-      (currentVersion === 202 && crosswalk && fx && guest && webPush));
-
-  if (legacyFork) {
+  const classification = classifyForkLineage(db, currentVersion);
+  if (classification === 'legacy-fork-numeric') {
     db.transaction(() => {
       ensureOfficialV411Tail(db);
       ensureLedger(db);
-      db.prepare('UPDATE schema_version SET version = ?').run(upstreamVersion);
+      db.prepare('UPDATE schema_version SET version = ?').run(LEGACY_FORK_BRIDGE_VERSION);
     })();
-    console.log(`[DB] Normalized legacy fork schema ${currentVersion} to upstream schema ${upstreamVersion}`);
-    return upstreamVersion;
+    console.log(
+      `[DB] Normalized legacy fork schema ${currentVersion} to upstream schema ${LEGACY_FORK_BRIDGE_VERSION}`,
+    );
+    return LEGACY_FORK_BRIDGE_VERSION;
   }
 
-  if (currentVersion > upstreamVersion) {
+  if (classification === 'mixed-or-unsupported') {
     throw new Error(
-      `Unsupported schema version ${currentVersion}: it is newer than upstream ${upstreamVersion} but does not match the legacy fork lineage.`,
+      `Unsupported schema version ${currentVersion}: schema artifacts do not prove a supported official or fork lineage (upstream ${upstreamVersion}).`,
     );
   }
 

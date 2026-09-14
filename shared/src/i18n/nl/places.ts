@@ -77,6 +77,8 @@ const places: TranslationStrings = {
   'places.formWebsite': 'Website',
   'places.formNotes': 'Notities',
   'places.formNotesPlaceholder': 'Persoonlijke notities...',
+  'places.assignmentNotes': 'Notities voor deze dag',
+  'places.assignmentNotesPlaceholder': 'Notities voor deze plek alleen op deze dag...',
   'places.formReservation': 'Reservering',
   'places.reservationNotesPlaceholder': 'Reserveringsnotities, bevestigingsnummer...',
   'places.mapsSearchPlaceholder': 'Plaatsen zoeken...',
@@ -98,7 +100,8 @@ const places: TranslationStrings = {
   'places.details.facts': 'Goed om te weten',
   'places.details.nothing': 'Niets gevonden voor deze plaats.',
   'places.details.noKeyTitle': 'Meer details beschikbaar',
-  'places.details.noKeyHint': 'Zonder Google API-sleutel gebruikt deze installatie alleen vrije bronnen. Vraag je TREK-beheerder er een toe te voegen voor beoordelingen, openingstijden en foto\'s.',
+  'places.details.noKeyHint':
+    "Zonder Google API-sleutel gebruikt deze installatie alleen vrije bronnen. Vraag je TREK-beheerder er een toe te voegen voor beoordelingen, openingstijden en foto's.",
   'places.details.aboutBrand': 'Over de keten',
   'places.details.aboutBrandNote': 'Beschrijft de keten, niet deze vestiging.',
   'places.details.fact.rating': 'Beoordeling',

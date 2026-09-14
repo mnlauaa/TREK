@@ -191,6 +191,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Naam',
   'journey.settings.subtitle': 'Ondertitel',
   'journey.settings.subtitlePlaceholder': 'bijv. Thailand, Vietnam & Cambodja',
+  'journey.settings.tracks': 'GPX-tracks',
+  'journey.settings.showTripTracks': 'Alle GPX-tracks van reizen tonen',
+  'journey.settings.showTripTracksHint': 'Tekent de opgenomen routes van de gekoppelde reizen op de kaart.',
   'journey.settings.endJourney': 'Reis archiveren',
   'journey.settings.reopenJourney': 'Reis herstellen',
   'journey.settings.archived': 'Reis gearchiveerd',
@@ -273,7 +276,8 @@ const journey: TranslationStrings = {
   'journey.studio.exportFinishing': 'Afwerking',
   'journey.studio.exportMarks': 'Snijtekens',
   'journey.studio.exportMarksHint': 'Voegt {bleed} mm afloop toe aan elke rand en markeert waar gesneden wordt',
-  'journey.studio.exportNote': '{sheets} bladen van {width} × {height} mm. De browser maakt van de afdrukweergave een PDF.',
+  'journey.studio.exportNote':
+    '{sheets} bladen van {width} × {height} mm. De browser maakt van de afdrukweergave een PDF.',
   'journey.studio.exportOpen': 'Afdrukweergave',
   'journey.studio.exportSave': 'Opslaan als PDF',
   'journey.studio.exportPreparing': 'Wordt voorbereid',
@@ -284,12 +288,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Deze dubbele pagina downloaden',
-  'journey.studio.downloadSpreadHint': 'Slaat het ontwerp van deze dubbele pagina op als bestand, zonder de foto\'s, om te delen of opnieuw te gebruiken',
+  'journey.studio.downloadSpreadHint':
+    "Slaat het ontwerp van deze dubbele pagina op als bestand, zonder de foto's, om te delen of opnieuw te gebruiken",
   'journey.studio.importSpread': 'Importeren',
   'journey.studio.importSpreadHint': 'Voegt een dubbele pagina toe uit een gedownload ontwerpbestand',
   'journey.studio.importSpreadFailed': 'Dat bestand is geen TREK Studio-pagina',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Een boek opmaken vraagt om ruimte, dus Studio is alleen voor de desktop, en de pdf ook. Al het andere van je reis werkt hier gewoon.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Een boek opmaken vraagt om ruimte, dus Studio is alleen voor de desktop, en de pdf ook. Al het andere van je reis werkt hier gewoon.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -353,7 +359,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -535,7 +542,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Omtrekken',
   'journey.studio.mapSourceRelief': 'Reliëf',
   'journey.studio.mapSourceSatellite': 'Satelliet',
-  'journey.studio.mapSourceSatelliteHint': 'Wolkenvrije Sentinel-2, met bronvermelding vrij te drukken. Scherp tot op de straat in een stad.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Wolkenvrije Sentinel-2, met bronvermelding vrij te drukken. Scherp tot op de straat in een stad.',
   'journey.studio.routeLook': 'De lijn',
   'journey.studio.routeStyle': 'Lijnstijl',
   'journey.studio.routePlain': 'Effen',
@@ -558,14 +566,16 @@ const journey: TranslationStrings = {
   'journey.studio.roadsAgain': 'Opnieuw ophalen',
   'journey.studio.roadsClear': 'Wissen',
   'journey.studio.roadsBusy': 'Ophalen',
-  'journey.studio.roadsHint': 'Vraagt een routedienst welke weg er per traject is gereden. Lange trajecten blijven zoals ze zijn.',
+  'journey.studio.roadsHint':
+    'Vraagt een routedienst welke weg er per traject is gereden. Lange trajecten blijven zoals ze zijn.',
   'journey.studio.roadsHave': 'De wegen staan opgeslagen in dit boek, dus offline drukt het dezelfde lijn.',
   'journey.studio.mapPerTrip': 'Eén reis per keer',
   'journey.studio.mapWholeJourney': 'Hele reisverslag',
   'journey.studio.mapScope': 'Weergave',
   'journey.studio.mapPrintDpi': 'Drukt af op ongeveer',
   'journey.studio.mapPrintDpiLow': 'onscherp op dit formaat, probeer een ruimere uitsnede of een andere bron',
-  'journey.studio.mapSourceReliefHint': 'NASA-schaduwreliëf, rechtenvrij te drukken. Goed voor een land of een continent, te grof voor één stad.',
+  'journey.studio.mapSourceReliefHint':
+    'NASA-schaduwreliëf, rechtenvrij te drukken. Goed voor een land of een continent, te grof voor één stad.',
   'journey.studio.mapSourceTiles': 'Kaarttegels',
   'journey.studio.mapSourceStatic': 'Mapbox',
   'journey.studio.mapSourceHint': 'Wordt bij het renderen opgehaald en met bronvermelding gedrukt',
@@ -594,5 +604,35 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Naar links draaien',
   'journey.studio.rotateRight': 'Naar rechts draaien',
   'journey.studio.saveReadOnly': 'Alleen lezen, wordt niet opgeslagen',
+  'journey.studio.filterPhotos': "Foto's filteren",
+  'journey.studio.filterAll': "Alle foto's",
+  'journey.studio.filterLoose': 'Niet in een vermelding',
+  'journey.studio.filterRecent': 'Net geüpload',
+  'journey.studio.filterThisPage': 'Deze pagina',
+  'journey.studio.entryPhotos': "Foto's",
+  'journey.studio.noEntryPhotos': "Deze vermelding heeft nog geen foto's.",
+  'journey.studio.noLoosePhotos': 'Elke foto hier hoort bij een vermelding.',
+  'journey.studio.uploadPhotos': "Foto's uploaden",
+  'journey.studio.uploadHint': 'Sleep afbeeldingen hierheen of klik om ze te kiezen',
+  'journey.studio.uploadToEntry': 'Nieuwe afbeeldingen komen in deze vermelding',
+  'journey.studio.uploadToGallery': 'Nieuwe afbeeldingen komen in de galerij',
+  'journey.studio.uploading': '{done} van {total} wordt geüpload',
+  'journey.studio.dropFilesHere': 'Laat los om de afbeeldingen toe te voegen',
+  'journey.studio.videosSkipped': "{count} video's zijn overgeslagen. Een boek bevat afbeeldingen.",
+  'journey.studio.fillPage': 'Pagina vullen',
+  'journey.studio.fillSpread': 'Dubbele pagina vullen',
+  'journey.studio.fillHint':
+    'Rekt de afbeelding uit over de hele pagina, afloop inbegrepen, en zet haar achter al het andere.',
+  'journey.studio.stops': 'Stops',
+  'journey.studio.stopsHint':
+    'Elke stop telt mee voor de route, de afstand en de landen. Zet er een uit om hem weg te laten, bijvoorbeeld je thuisluchthaven.',
+  'journey.studio.stopOn': 'Telt mee',
+  'journey.studio.stopOff': 'Weggelaten',
+  'journey.studio.stopToggle': 'Deze stop meetellen',
+  'journey.studio.stopsFailed': 'De stop kon niet worden gewijzigd.',
+  'journey.editor.statsExcluded': 'Weglaten uit de route',
+  'journey.editor.statsExcludedHint':
+    'De stop blijft in het dagboek maar telt niet mee voor de afstand, de landen of de kaart in Studio.',
+  'journey.entry.offRoute': 'Buiten de route',
 };
 export default journey;
