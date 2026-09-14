@@ -195,6 +195,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Namn',
   'journey.settings.subtitle': 'Undertext',
   'journey.settings.subtitlePlaceholder': 't.ex. Thailand, Vietnam och Kambodja',
+  'journey.settings.tracks': 'GPX-spår',
+  'journey.settings.showTripTracks': 'Visa alla GPX-spår från resor',
+  'journey.settings.showTripTracksHint': 'Ritar de inspelade rutterna från de länkade resorna på kartan.',
   'journey.settings.endJourney': 'Arkivera Journey',
   'journey.settings.reopenJourney': 'Återställ Journey',
   'journey.settings.archived': 'Journey arkiverad',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Ladda ner det här uppslaget',
-  'journey.studio.downloadSpreadHint': 'Sparar uppslagets design som en fil, utan fotografierna, att dela eller återanvända',
+  'journey.studio.downloadSpreadHint':
+    'Sparar uppslagets design som en fil, utan fotografierna, att dela eller återanvända',
   'journey.studio.importSpread': 'Importera',
   'journey.studio.importSpreadHint': 'Lägger till ett uppslag från en nedladdad designfil',
   'journey.studio.importSpreadFailed': 'Filen är inte ett uppslag från TREK Studio',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Att formge en bok kräver plats, så Studio finns bara på datorn, och det gör pdf:en också. Allt annat i resan fungerar som vanligt här.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Att formge en bok kräver plats, så Studio finns bara på datorn, och det gör pdf:en också. Allt annat i resan fungerar som vanligt här.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -534,7 +540,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Konturer',
   'journey.studio.mapSourceRelief': 'Relief',
   'journey.studio.mapSourceSatellite': 'Satellit',
-  'journey.studio.mapSourceSatelliteHint': 'Molnfri Sentinel-2, får tryckas fritt med källhänvisning. Skarp ända ner till en gata i staden.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Molnfri Sentinel-2, får tryckas fritt med källhänvisning. Skarp ända ner till en gata i staden.',
   'journey.studio.routeLook': 'Linjen',
   'journey.studio.routeStyle': 'Linjestil',
   'journey.studio.routePlain': 'Vanlig',
@@ -564,7 +571,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapScope': 'Visning',
   'journey.studio.mapPrintDpi': 'Trycks i ungefär',
   'journey.studio.mapPrintDpiLow': 'oskarpt i den här storleken, prova ett vidare utsnitt eller en annan källa',
-  'journey.studio.mapSourceReliefHint': 'NASA:s reliefskuggning, får tryckas fritt. Bra för ett land eller en kontinent, för grov för en stad.',
+  'journey.studio.mapSourceReliefHint':
+    'NASA:s reliefskuggning, får tryckas fritt. Bra för ett land eller en kontinent, för grov för en stad.',
   'journey.studio.mapSourceTiles': 'Kartrutor',
   'journey.studio.mapSourceStatic': 'Mapbox',
   'journey.studio.mapSourceHint': 'Hämtas vid rendering och trycks med sin källhänvisning',
@@ -593,5 +601,34 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Rotera åt vänster',
   'journey.studio.rotateRight': 'Rotera åt höger',
   'journey.studio.saveReadOnly': 'Skrivskyddad, sparas inte',
+  'journey.studio.filterPhotos': 'Filtrera foton',
+  'journey.studio.filterAll': 'Alla foton',
+  'journey.studio.filterLoose': 'Inte i något inlägg',
+  'journey.studio.filterRecent': 'Nyss uppladdade',
+  'journey.studio.filterThisPage': 'Den här sidan',
+  'journey.studio.entryPhotos': 'Foton',
+  'journey.studio.noEntryPhotos': 'Det här inlägget har inga foton än.',
+  'journey.studio.noLoosePhotos': 'Alla foton här hör till ett inlägg.',
+  'journey.studio.uploadPhotos': 'Ladda upp foton',
+  'journey.studio.uploadHint': 'Släpp bilder här eller klicka för att välja',
+  'journey.studio.uploadToEntry': 'Nya bilder hamnar i det här inlägget',
+  'journey.studio.uploadToGallery': 'Nya bilder hamnar i galleriet',
+  'journey.studio.uploading': 'Laddar upp {done} av {total}',
+  'journey.studio.dropFilesHere': 'Släpp för att lägga till bilderna',
+  'journey.studio.videosSkipped': '{count} videor lämnades utanför. En bok rymmer bilder.',
+  'journey.studio.fillPage': 'Fyll sidan',
+  'journey.studio.fillSpread': 'Fyll uppslaget',
+  'journey.studio.fillHint': 'Sträcker ut bilden över hela sidan, utfall inräknat, och lägger den bakom allt annat.',
+  'journey.studio.stops': 'Stopp',
+  'journey.studio.stopsHint':
+    'Varje stopp räknas med i rutten, sträckan och länderna. Stäng av ett för att utelämna det, till exempel din hemmaflygplats.',
+  'journey.studio.stopOn': 'Räknas',
+  'journey.studio.stopOff': 'Utelämnat',
+  'journey.studio.stopToggle': 'Räkna med det här stoppet',
+  'journey.studio.stopsFailed': 'Stoppet kunde inte ändras.',
+  'journey.editor.statsExcluded': 'Utelämna från rutten',
+  'journey.editor.statsExcludedHint':
+    'Stoppet finns kvar i dagboken men räknas inte med i sträckan, länderna eller kartan i Studio.',
+  'journey.entry.offRoute': 'Utanför rutten',
 };
 export default journey;

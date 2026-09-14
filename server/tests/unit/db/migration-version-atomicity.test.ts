@@ -5,10 +5,11 @@
  * schema advanced and the version stale, and the next boot replays a step that
  * is not idempotent (an INSERT INTO app_settings, say) and exits 1 forever.
  */
-import { describe, it, expect, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { createTables } from '../../../src/db/schema';
 import { runMigrations } from '../../../src/db/migrations';
+import { createTables } from '../../../src/db/schema';
+
+import Database from 'better-sqlite3';
+import { describe, it, expect, vi } from 'vitest';
 
 function migratedDb(): Database.Database {
   const db = new Database(':memory:');
@@ -25,7 +26,9 @@ describe('migration version bump atomicity', () => {
     const db = migratedDb();
     try {
       const { version } = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number };
-      // Rewind one slot so exactly the last migration replays.
+      // Recreate the actual version-204 tail, not a version-205 schema with
+      // stale metadata (which the fork's lineage preflight correctly refuses).
+      db.exec('ALTER TABLE journey_entries DROP COLUMN stats_excluded');
       db.prepare('UPDATE schema_version SET version = ?').run(version - 1);
 
       const realPrepare = db.prepare.bind(db);

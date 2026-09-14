@@ -32,21 +32,25 @@ export function frozenAmountToDisplay(
   amount: number,
   currency: string | null | undefined,
   exchangeRate: number | null | undefined,
-  ctx: CostsCtx
+  ctx: CostsCtx,
+  source?: string | null
 ): number {
-  return frozenTransactionAmountToDisplay(amount, currency, exchangeRate, ctx.tripCurrency, ctx.convert);
+  return frozenTransactionAmountToDisplay(amount, currency, exchangeRate, ctx.tripCurrency, ctx.convert, source);
 }
 
 /** Expense total converted to the display/base currency. */
 export function baseTotal(e: BudgetItem, ctx: CostsCtx): number {
-  return frozenAmountToDisplay(e.total_price || 0, currencyOf(e, ctx), e.exchange_rate, ctx);
+  return frozenAmountToDisplay(e.total_price || 0, currencyOf(e, ctx), e.exchange_rate, ctx, e.exchange_rate_source);
 }
 
 /** How much `ctx.me` personally fronted for this expense, in the base currency. */
 export function myPaidOf(e: BudgetItem, ctx: CostsCtx): number {
   return (e.payers || [])
     .filter((p) => p.user_id === ctx.me)
-    .reduce((a, p) => a + frozenAmountToDisplay(p.amount, currencyOf(e, ctx), e.exchange_rate, ctx), 0);
+    .reduce(
+      (a, p) => a + frozenAmountToDisplay(p.amount, currencyOf(e, ctx), e.exchange_rate, ctx, e.exchange_rate_source),
+      0
+    );
 }
 
 /** A given member's share of this expense (explicit custom amount, else equal split), base currency. */
@@ -54,10 +58,10 @@ export function memberShareOf(e: BudgetItem, userId: number, ctx: CostsCtx): num
   const member = (e.members || []).find((m) => m.user_id === userId);
   if (!member) return 0;
   if (member.amount !== null && member.amount !== undefined) {
-    return frozenAmountToDisplay(member.amount, currencyOf(e, ctx), e.exchange_rate, ctx);
+    return frozenAmountToDisplay(member.amount, currencyOf(e, ctx), e.exchange_rate, ctx, e.exchange_rate_source);
   }
   const shares = splitEqualShares(e.total_price || 0, e.members || [], e.id);
-  return frozenAmountToDisplay(shares[userId] || 0, currencyOf(e, ctx), e.exchange_rate, ctx);
+  return frozenAmountToDisplay(shares[userId] || 0, currencyOf(e, ctx), e.exchange_rate, ctx, e.exchange_rate_source);
 }
 
 /** `ctx.me`'s own share — the common case of {@link memberShareOf}. */
@@ -65,9 +69,13 @@ export function myShareOf(e: BudgetItem, ctx: CostsCtx): number {
   return memberShareOf(e, ctx.me, ctx);
 }
 
-/** A recorded total nobody has actually paid yet — counts toward the trip total but stays out of settlement. */
+/**
+ * A recorded total nobody has actually paid yet — counts toward the trip total
+ * but stays out of settlement. A negative total (a refund, #2176) is just as
+ * unfinished until its recipient is recorded as the (negative) payer.
+ */
 export function isUnfinished(e: BudgetItem, ctx: CostsCtx): boolean {
-  return baseTotal(e, ctx) > 0 && (e.payers || []).filter((p) => p.amount > 0).length === 0;
+  return baseTotal(e, ctx) !== 0 && (e.payers || []).filter((p) => p.amount !== 0).length === 0;
 }
 
 // ── settlement (server-computed; these types describe what MCostsTab reads from it) ──
@@ -186,6 +194,65 @@ export function groupByDay(items: BudgetItem[]): CostsDayGroup[] {
   return keys.map((dateKey) => ({ dateKey, items: byDate.get(dateKey) as BudgetItem[] }));
 }
 
+/**
+ * Settlements ("payments") shown inline in the ledger, mirroring the desktop
+ * `CostsPanel.tsx`'s `filteredSettlements`: they have no name/category, so a
+ * text or category filter hides them; "owed" excludes them; "mine" keeps only
+ * transfers the current user is part of.
+ */
+export function filterSettlements(
+  settlements: CostsRecordedSettlement[],
+  f: CostsFilterState,
+  me: number
+): CostsRecordedSettlement[] {
+  if (f.search.trim() || f.categoryKey) return [];
+  if (f.segment === 'owed') return [];
+  let list = settlements.slice();
+  if (f.segment === 'mine') list = list.filter((s) => s.from_user_id === me || s.to_user_id === me);
+  if (f.dayKey) list = list.filter((s) => (s.created_at || '').slice(0, 10) === f.dayKey);
+  return list;
+}
+
+export type CostsLedgerEntry =
+  | { kind: 'expense'; date: string; item: BudgetItem }
+  | { kind: 'payment'; date: string; settlement: CostsRecordedSettlement };
+
+export interface CostsLedgerDayGroup {
+  /** '' = no date (spec's "NO DATE" group) */
+  dateKey: string;
+  entries: CostsLedgerEntry[];
+}
+
+/**
+ * Like {@link groupByDay}, but also folds in settlement payments (see
+ * {@link filterSettlements}) as their own ledger entries, keyed by the day
+ * they were recorded — the mobile counterpart to desktop's unified
+ * `LedgerEntry` grouping, so a payment shows up even on a day with no expense.
+ */
+export function groupLedgerByDay(items: BudgetItem[], settlements: CostsRecordedSettlement[]): CostsLedgerDayGroup[] {
+  const entries: CostsLedgerEntry[] = [
+    ...items.map((item) => ({ kind: 'expense' as const, date: item.expense_date || '', item })),
+    ...settlements.map((settlement) => ({
+      kind: 'payment' as const,
+      date: (settlement.created_at || '').slice(0, 10),
+      settlement,
+    })),
+  ];
+  const byDate = new Map<string, CostsLedgerEntry[]>();
+  for (const en of entries) {
+    const bucket = byDate.get(en.date);
+    if (bucket) bucket.push(en);
+    else byDate.set(en.date, [en]);
+  }
+  const keys = Array.from(byDate.keys()).sort((a, b) => {
+    if (a === b) return 0;
+    if (a === '') return 1;
+    if (b === '') return -1;
+    return b.localeCompare(a);
+  });
+  return keys.map((dateKey) => ({ dateKey, entries: byDate.get(dateKey) as CostsLedgerEntry[] }));
+}
+
 /** Categories present among `items`, canonical order — the dropdown only lists categories in use (spec §3.6). */
 export function categoryFilterKeys(items: BudgetItem[]): CostCategory[] {
   const present = new Set(items.map((e) => catMeta(e.category).key));
@@ -208,16 +275,20 @@ export interface CostsCategoryBar {
 }
 
 export function categoryBreakdown(items: BudgetItem[], ctx: CostsCtx): CostsCategoryBar[] {
+  // Categories net refunds against spend (#2176): a negative entry lowers its
+  // category's sum. A category that nets negative keeps its own row at the
+  // bottom, with widthPct 0 — the bars rank positive spend, and a negative
+  // CSS width would be dropped and render as a full bar.
   const totals = new Map<CostCategory, number>();
   for (const e of items) {
     const key = catMeta(e.category).key;
     totals.set(key, (totals.get(key) || 0) + baseTotal(e, ctx));
   }
   const rows = COST_CATEGORY_LIST.map((c) => ({ key: c.key, amount: totals.get(c.key) || 0 }))
-    .filter((r) => r.amount > 0)
+    .filter((r) => r.amount !== 0)
     .sort((a, b) => b.amount - a.amount);
   const max = Math.max(0, ...rows.map((r) => r.amount));
-  return rows.map((r) => ({ ...r, widthPct: max > 0 ? (r.amount / max) * 100 : 0 }));
+  return rows.map((r) => ({ ...r, widthPct: max > 0 && r.amount > 0 ? (r.amount / max) * 100 : 0 }));
 }
 
 // ── presentation helpers ─────────────────────────────────────────────────

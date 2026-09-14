@@ -191,6 +191,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': '이름',
   'journey.settings.subtitle': '부제목',
   'journey.settings.subtitlePlaceholder': '예: 태국, 베트남 & 캄보디아',
+  'journey.settings.tracks': 'GPX 트랙',
+  'journey.settings.showTripTracks': '여행의 모든 GPX 트랙 표시',
+  'journey.settings.showTripTracksHint': '연결된 여행의 기록된 경로를 지도에 그립니다.',
   'journey.settings.endJourney': 'Journey 보관',
   'journey.settings.reopenJourney': 'Journey 복원',
   'journey.settings.archived': 'Journey가 보관되었습니다',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': '이 펼침면 내려받기',
-  'journey.studio.downloadSpreadHint': '이 펼침면의 디자인을 사진 없이 파일로 저장합니다. 공유하거나 다시 쓸 수 있습니다',
+  'journey.studio.downloadSpreadHint':
+    '이 펼침면의 디자인을 사진 없이 파일로 저장합니다. 공유하거나 다시 쓸 수 있습니다',
   'journey.studio.importSpread': '가져오기',
   'journey.studio.importSpreadHint': '내려받은 디자인 파일에서 펼침면을 추가합니다',
   'journey.studio.importSpreadFailed': '이 파일은 TREK 스튜디오 펼침면이 아닙니다',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': '책을 만들려면 작업할 공간이 필요해서 스튜디오는 데스크톱에서만 쓸 수 있고, PDF 만들기도 마찬가지입니다. 여정의 나머지 기능은 여기에서도 평소처럼 작동합니다.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    '책을 만들려면 작업할 공간이 필요해서 스튜디오는 데스크톱에서만 쓸 수 있고, PDF 만들기도 마찬가지입니다. 여정의 나머지 기능은 여기에서도 평소처럼 작동합니다.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -534,7 +540,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': '윤곽선',
   'journey.studio.mapSourceRelief': '음영 지형',
   'journey.studio.mapSourceSatellite': '위성 사진',
-  'journey.studio.mapSourceSatelliteHint': '구름 없는 Sentinel-2 이미지로, 출처를 밝히면 무료로 인쇄할 수 있습니다. 도시의 거리까지 선명합니다.',
+  'journey.studio.mapSourceSatelliteHint':
+    '구름 없는 Sentinel-2 이미지로, 출처를 밝히면 무료로 인쇄할 수 있습니다. 도시의 거리까지 선명합니다.',
   'journey.studio.routeLook': '경로 선',
   'journey.studio.routeStyle': '그리기 방식',
   'journey.studio.routePlain': '단선',
@@ -559,7 +566,8 @@ const journey: TranslationStrings = {
   'journey.studio.roadsBusy': '요청 중',
   'journey.studio.roadsHint': '경로 안내 서비스에 각 구간을 실제로 달린 길을 요청합니다. 긴 구간은 그대로 둡니다.',
   'journey.studio.roadsHave': '도로는 이 책에 저장되므로 오프라인에서도 같은 선으로 인쇄됩니다.',
-  'journey.studio.mapSourceReliefHint': 'NASA 음영 기복 이미지로 라이선스 없이 인쇄할 수 있습니다. 국가나 대륙에 적합하고 도시 하나에는 너무 거칩니다.',
+  'journey.studio.mapSourceReliefHint':
+    'NASA 음영 기복 이미지로 라이선스 없이 인쇄할 수 있습니다. 국가나 대륙에 적합하고 도시 하나에는 너무 거칩니다.',
   'journey.studio.mapPrintDpi': '인쇄 해상도 약',
   'journey.studio.mapPrintDpiLow': '이 크기에서는 흐릿합니다. 범위를 넓히거나 다른 소스를 사용해 보세요',
   'journey.studio.mapPerTrip': '여행별',
@@ -593,5 +601,33 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': '왼쪽으로 회전',
   'journey.studio.rotateRight': '오른쪽으로 회전',
   'journey.studio.saveReadOnly': '읽기 전용, 저장되지 않음',
+  'journey.studio.filterPhotos': '사진 필터',
+  'journey.studio.filterAll': '모든 사진',
+  'journey.studio.filterLoose': '항목에 없음',
+  'journey.studio.filterRecent': '방금 업로드됨',
+  'journey.studio.filterThisPage': '이 페이지',
+  'journey.studio.entryPhotos': '사진',
+  'journey.studio.noEntryPhotos': '이 항목에는 아직 사진이 없습니다.',
+  'journey.studio.noLoosePhotos': '여기 있는 사진은 모두 항목에 속해 있습니다.',
+  'journey.studio.uploadPhotos': '사진 업로드',
+  'journey.studio.uploadHint': '여기에 이미지를 놓거나 클릭해서 선택하세요',
+  'journey.studio.uploadToEntry': '새 이미지는 이 항목에 추가됩니다',
+  'journey.studio.uploadToGallery': '새 이미지는 갤러리에 추가됩니다',
+  'journey.studio.uploading': '{total}장 중 {done}장 업로드 중',
+  'journey.studio.dropFilesHere': '놓아서 이미지 추가',
+  'journey.studio.videosSkipped': '동영상 {count}개는 제외되었습니다. 책에는 이미지만 들어갑니다.',
+  'journey.studio.fillPage': '페이지 채우기',
+  'journey.studio.fillSpread': '펼침면 채우기',
+  'journey.studio.fillHint': '도련을 포함해 페이지 전체에 이미지를 펼치고 다른 모든 요소의 뒤로 보냅니다.',
+  'journey.studio.stops': '경유지',
+  'journey.studio.stopsHint':
+    '모든 경유지는 경로, 거리, 국가에 포함됩니다. 제외하려면 끄세요. 예를 들어 출발 공항이 있습니다.',
+  'journey.studio.stopOn': '포함',
+  'journey.studio.stopOff': '제외됨',
+  'journey.studio.stopToggle': '이 경유지 포함',
+  'journey.studio.stopsFailed': '경유지를 변경할 수 없습니다.',
+  'journey.editor.statsExcluded': '경로에서 제외',
+  'journey.editor.statsExcludedHint': '경유지는 일기에 남지만 Studio의 거리, 국가, 지도에는 포함되지 않습니다.',
+  'journey.entry.offRoute': '경로 외',
 };
 export default journey;

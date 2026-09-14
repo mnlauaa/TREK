@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import {
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   Download,
@@ -54,7 +55,8 @@ export type MTripCollabTab = 'chat' | 'notes' | 'polls';
 /**
  * Currently open bottom/floating sheet. Well-known ids (owned by the sheets
  * screen): 'day' (payload { dayId }), 'days', 'mehr', 'note' (payload
- * { dayId, note? }), 'transport' (payload { reservationId }), 'bract'
+ * { dayId, note? }), 'accommodation' (payload { dayId?, accId?, from? }),
+ * 'transport' (payload { reservationId }), 'bract'
  * (payload { placeId, dayPicker? }), 'import', 'export', 'members',
  * 'tripedit', 'bags', 'task'. The place inspector keys off the planner's
  * place selection instead of a sheet id, and planner-backed editors (place
@@ -211,6 +213,7 @@ export default function MTripShell({
   const [exportCostsCsvSignal, setExportCostsCsvSignal] = useState(0);
   const [uploadFilesSignal, setUploadFilesSignal] = useState(0);
   const [openFilesTrashSignal, setOpenFilesTrashSignal] = useState(0);
+  const lastDayRef = useRef<number | null>(null);
 
   // The mobile plan is single-day: make sure a valid day is active once days
   // arrive. loadTrip() resets the shared selection while fetching, and this
@@ -221,11 +224,16 @@ export default function MTripShell({
   // still ahead, and fall back to day one once the whole trip is behind us.
   useEffect(() => {
     if (days.length === 0) return;
+    // A null day is intentional in the map's All days view, not a lost timeline selection.
+    if (view === 'map' && planner.selectedDayId == null) return;
     if (planner.selectedDayId != null && days.some((day) => day.id === planner.selectedDayId)) return;
     // Off the same helper file as the desktop day plan (#1567), so the two
     // cannot drift on what "today" means.
-    planner.tripActions.setSelectedDay(findFocusDayId(days) ?? days[0].id);
-  }, [planner.selectedDayId, days, planner.tripActions]);
+    const previous = lastDayRef.current;
+    planner.tripActions.setSelectedDay(
+      previous != null && days.some((day) => day.id === previous) ? previous : (findFocusDayId(days) ?? days[0].id)
+    );
+  }, [view, planner.selectedDayId, days, planner.tripActions]);
 
   // Swiping the day panel (#2051) can move the day well past the chips on
   // screen — the rail overflows from roughly six days on — so the active chip
@@ -271,6 +279,37 @@ export default function MTripShell({
     planner.setExpandedDayIds(dayId == null ? null : new Set([dayId]));
   };
 
+  // The map's day selection: frame the day, draw its route, drop the other days'
+  // pins. Shared by the chip tap and the all-days toggle so the two cannot drift.
+  const selectDayOnMap = (dayId: number) => {
+    planner.handleSelectDay(dayId, false);
+    planner.autoShowRoute();
+    focusMapOnDay(dayId);
+  };
+
+  // The day an "all days" deselect came from, so the toggle can put it back.
+  // A remote day:deleted can retire it while it is parked here, hence the
+  // membership check before it is trusted.
+  const dayToRestore = (): number | null =>
+    (lastDayRef.current != null && days.some((d) => d.id === lastDayRef.current)
+      ? lastDayRef.current
+      : (findFocusDayId(days) ?? days[0]?.id)) ?? null;
+
+  // Whole trip ⇄ one day on the map (#2257). Its own control rather than a
+  // second tap on the active chip: that tap already opens the day sheet, the
+  // only route to it that also exists in map view. Never skipFit — changing
+  // what the map is filtered to is exactly when it should reframe.
+  const toggleAllDays = () => {
+    if (planner.selectedDayId != null) {
+      lastDayRef.current = planner.selectedDayId;
+      focusMapOnDay(null);
+      planner.handleSelectDay(null, false);
+      return;
+    }
+    const back = dayToRestore();
+    if (back != null) selectDayOnMap(back);
+  };
+
   const toggleView = () => {
     const next = view === 'plan' ? 'map' : 'plan';
     setView(next);
@@ -285,6 +324,13 @@ export default function MTripShell({
       // Leaving the map: nothing is filtered while the timeline is up, so the next
       // visit starts from the whole trip unless a day is picked again.
       focusMapOnDay(null);
+      // The timeline is single-day and renders empty without one, so an "all days"
+      // deselect on the map must not follow the user back into the plan. Same day
+      // the toggle would restore, so the two ways back agree.
+      if (planner.selectedDayId == null) {
+        const back = dayToRestore();
+        if (back != null) planner.handleSelectDay(back, true);
+      }
     }
   };
 
@@ -331,15 +377,10 @@ export default function MTripShell({
 
   const onDayChipTap = (dayId: number) => {
     if (dayId === planner.selectedDayId) openSheet('day', { dayId });
-    else {
-      planner.handleSelectDay(dayId, view !== 'map');
-      // In map mode a day tap fits to that day's places, draws its route and drops
-      // the other days' pins, so the day it framed is the day it shows.
-      if (view === 'map') {
-        planner.autoShowRoute();
-        focusMapOnDay(dayId);
-      }
-    }
+    // In map mode a day tap fits to that day's places, draws its route and drops
+    // the other days' pins, so the day it framed is the day it shows.
+    else if (view === 'map') selectDayOnMap(dayId);
+    else planner.handleSelectDay(dayId, true);
   };
 
   const packedCount = packingItems.filter((i) => i.checked).length;
@@ -371,7 +412,7 @@ export default function MTripShell({
 
       {/* ── Day chips (z-25 — covered by non-plan tab overlays, stays mounted) ── */}
       {days.length > 0 && (
-        <div className="absolute left-4 right-4 top-[calc(var(--m-safe-top,12px)+50px)] z-[25] flex">
+        <div className="absolute left-4 right-4 top-[calc(var(--m-safe-top,12px)+50px)] z-[25] flex gap-[6px]">
           <div className="flex flex-1 items-center gap-[2px] overflow-x-auto rounded-full border border-[color:var(--m-gbr)] bg-[color:var(--m-glass)] p-[3px] backdrop-blur-[24px] backdrop-saturate-[1.7]">
             {days.map((day, idx) => {
               const active = day.id === planner.selectedDayId;
@@ -405,6 +446,26 @@ export default function MTripShell({
               );
             })}
           </div>
+          {/* Drop the day filter and show the whole trip (#2257). Map only: the
+              plan timeline is single-day, so there is nothing to widen there.
+              Stays mounted while a day is active rather than appearing on
+              selection, which would shove the rail sideways under the thumb. */}
+          {view === 'map' && (
+            <button
+              type="button"
+              onClick={toggleAllDays}
+              aria-pressed={planner.selectedDayId == null}
+              aria-label={t('mobileTrip.allDays')}
+              title={t('mobileTrip.allDays')}
+              className={`flex w-9 flex-none items-center justify-center rounded-full border border-[color:var(--m-gbr)] backdrop-blur-[24px] backdrop-saturate-[1.7] ${
+                planner.selectedDayId == null
+                  ? 'bg-m-act text-m-actfg shadow-[0_6px_16px_-6px_rgba(0,0,0,.4)]'
+                  : 'bg-[color:var(--m-glass)] text-m-ink'
+              }`}
+            >
+              <CalendarDays size={15} strokeWidth={2.4} aria-hidden="true" />
+            </button>
+          )}
         </div>
       )}
 

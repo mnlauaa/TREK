@@ -41,6 +41,7 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'packing:bag-members-updated': { bagId: 1, members: [{ user_id: 1 }] },
   'packing:assignees': { category: 'clothes', assignees: [1, 2] },
   'packing:template-applied': { items: [{ id: 7 }] },
+  'packing:bag-totals': {},
   'todo:created': { item: { id: 4 } },
   'todo:updated': { item: { id: 4 } },
   'todo:deleted': { itemId: 4 },
@@ -137,10 +138,10 @@ const DRIFT_VARIANTS: Partial<Record<TrekWsEventName, Record<string, unknown>[]>
 };
 
 describe('@trek/shared realtime event registry', () => {
-  it('WSEVT-REG-001: pins the authoritative inventory counts (68 trip + 32 user = 100)', () => {
-    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(68);
+  it('WSEVT-REG-001: pins the authoritative inventory counts (69 trip + 32 user = 101)', () => {
+    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(69);
     expect(TREK_WS_USER_EVENT_NAMES).toHaveLength(32);
-    expect(TREK_WS_EVENT_NAMES).toHaveLength(100);
+    expect(TREK_WS_EVENT_NAMES).toHaveLength(101);
   });
 
   it('WSEVT-REG-002: every name is domain:action shaped and outside the reserved plugin: namespace', () => {

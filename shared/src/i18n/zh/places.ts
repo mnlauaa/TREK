@@ -76,6 +76,8 @@ const places: TranslationStrings = {
   'places.formWebsite': '网站',
   'places.formNotes': '备注',
   'places.formNotesPlaceholder': '个人备注...',
+  'places.assignmentNotes': '当天备注',
+  'places.assignmentNotesPlaceholder': '仅针对这一天此地点的备注...',
   'places.formReservation': '预订',
   'places.reservationNotesPlaceholder': '预订备注、确认号...',
   'places.mapsSearchPlaceholder': '搜索地点...',
@@ -96,7 +98,8 @@ const places: TranslationStrings = {
   'places.details.facts': '值得一看',
   'places.details.nothing': '未找到该地点的信息。',
   'places.details.noKeyTitle': '可获取更多详情',
-  'places.details.noKeyHint': '没有 Google API 密钥时，此实例仅使用免费来源。请联系 TREK 管理员添加密钥，以获取评分、营业时间和照片。',
+  'places.details.noKeyHint':
+    '没有 Google API 密钥时，此实例仅使用免费来源。请联系 TREK 管理员添加密钥，以获取评分、营业时间和照片。',
   'places.details.aboutBrand': '关于该连锁品牌',
   'places.details.aboutBrandNote': '描述的是连锁品牌，而非本门店。',
   'places.details.fact.rating': '评分',

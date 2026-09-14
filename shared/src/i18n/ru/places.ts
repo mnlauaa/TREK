@@ -77,6 +77,8 @@ const places: TranslationStrings = {
   'places.formWebsite': 'Сайт',
   'places.formNotes': 'Заметки',
   'places.formNotesPlaceholder': 'Личные заметки...',
+  'places.assignmentNotes': 'Заметки на этот день',
+  'places.assignmentNotesPlaceholder': 'Заметки для этого места только на этот день...',
   'places.formReservation': 'Бронирование',
   'places.reservationNotesPlaceholder': 'Заметки о бронировании, номер подтверждения...',
   'places.mapsSearchPlaceholder': 'Поиск мест...',
@@ -98,7 +100,8 @@ const places: TranslationStrings = {
   'places.details.facts': 'Полезно знать',
   'places.details.nothing': 'Для этого места ничего не найдено.',
   'places.details.noKeyTitle': 'Доступно больше подробностей',
-  'places.details.noKeyHint': 'Без ключа Google API этот экземпляр использует только свободные источники. Попросите администратора TREK добавить ключ для оценок, часов работы и фотографий.',
+  'places.details.noKeyHint':
+    'Без ключа Google API этот экземпляр использует только свободные источники. Попросите администратора TREK добавить ключ для оценок, часов работы и фотографий.',
   'places.details.aboutBrand': 'О сети',
   'places.details.aboutBrandNote': 'Описывает сеть, а не это заведение.',
   'places.details.fact.rating': 'Рейтинг',

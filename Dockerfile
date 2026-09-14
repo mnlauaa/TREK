@@ -110,7 +110,8 @@ ENV NODE_USE_ENV_PROXY=1
 ENV PORT=3000
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
-ARG SOURCE_CODE_URL=https://github.com/mnlauaa/TREK/tree/fork-v4.1.1-r1
+# Release builds override this with the immutable fork revision they build.
+ARG SOURCE_CODE_URL=https://github.com/mnlauaa/TREK
 ENV SOURCE_CODE_URL=${SOURCE_CODE_URL}
 
 EXPOSE 3000

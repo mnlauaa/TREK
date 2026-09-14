@@ -15,6 +15,7 @@ import {
   WebPushRenameDto,
 } from './notifications.dto';
 import { NotificationsService } from './notifications.service';
+import { resolveNtfyToken } from './transports/ntfy.service';
 import { WebPushService, WebPushServiceError } from './web-push.service';
 import {
   Body,
@@ -167,7 +168,13 @@ export class NotificationsController {
     const resolvedTopic = topic || userCfg?.topic || undefined;
     const resolvedServer = server || userCfg?.server || adminCfg.server || undefined;
     // Reuse the saved token when the request sends null, empty, or the masked placeholder.
-    const resolvedToken = token && token !== MASKED ? token : (userCfg?.token ?? adminCfg.token ?? null);
+    // Not `?? adminCfg.token`: the caller picks `server`, so that handed the
+    // operator's decrypted token to any host an authenticated user named
+    // (GHSA-7pqc-fj3c-9346). Same rule as the live send path, and target-based
+    // rather than role-based on purpose — an admin-only gate here would take a
+    // working button away from every user with their own ntfy config.
+    const resolvedToken =
+      token && token !== MASKED ? token : resolveNtfyToken(adminCfg, userCfg, resolvedServer ?? null);
 
     if (!resolvedTopic) {
       throw new HttpException({ error: 'No ntfy topic configured' }, 400);

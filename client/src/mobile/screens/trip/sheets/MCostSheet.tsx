@@ -6,6 +6,7 @@ import { COST_CATEGORY_LIST, catMeta } from '../../../../components/Budget/costs
 import type { ExpensePrefill } from '../../../../components/Budget/CostsPanel';
 import {
   NOTE_MAX,
+  amountPattern,
   calculateTicketShares,
   hasTicketSplit,
   payersBalanced,
@@ -29,7 +30,7 @@ import { useExchangeRates } from '../../../../hooks/useExchangeRates';
 import { useTranslation } from '../../../../i18n';
 import { useTripStore } from '../../../../store/tripStore';
 import type { BudgetItem } from '../../../../types';
-import { cleanAmount, formatMoney, localizeAmountInput } from '../../../../utils/formatters';
+import { amountToInputString, formatMoney, localizeAmountInput } from '../../../../utils/formatters';
 import MSheet from '../../../components/MSheet';
 import { Eyebrow, FIELD_AREA_CLS, FIELD_CLS, FormSheetFooter, FormSheetHeader } from './PlSheetChrome';
 
@@ -105,9 +106,15 @@ export default function MCostSheet({
   const [note, setNote] = useState(() => readUserNote(editing));
   const [currency, setCurrency] = useState((editing?.currency || base).toUpperCase());
   const [day, setDay] = useState(editing?.expense_date || localToday());
+  // Edit and prefill seeds are padded to the currency's decimals (#2175), same
+  // as the desktop modal: a saved 4,90 must reopen as "4,90", not "4,9". A
+  // prefill has no currency of its own and is read as `base`.
   const [total, setTotal] = useState<string>(() => {
-    if (editing) return editing.total_price ? String(cleanAmount(editing.total_price)) : '';
-    if (prefill?.amount != null) return String(prefill.amount);
+    if (editing)
+      return editing.total_price
+        ? amountToInputString(editing.total_price, (editing.currency || base).toUpperCase())
+        : '';
+    if (prefill?.amount != null) return amountToInputString(prefill.amount, base);
     return '';
   });
   const [participants, setParticipants] = useState<Set<number>>(() =>
@@ -115,7 +122,8 @@ export default function MCostSheet({
   );
 
   // Payer state — same model as the desktop modal. 0 = "Nobody (planning entry)".
-  const initialPayers = (editing?.payers || []).filter((p) => p.amount > 0);
+  // A negative payer (the recipient of a refund, #2176) must survive the reopen.
+  const initialPayers = (editing?.payers || []).filter((p) => p.amount !== 0);
   const [payerId, setPayerId] = useState<number>(() => {
     const existingPayer = initialPayers[0];
     if (existingPayer) return existingPayer.user_id;
@@ -125,7 +133,7 @@ export default function MCostSheet({
   const [payerIds, setPayerIds] = useState<Set<number>>(() => new Set(initialPayers.map((p) => p.user_id)));
   const [payerAmounts, setPayerAmounts] = useState<Record<number, string>>(() => {
     const m: Record<number, string> = {};
-    for (const p of initialPayers) m[p.user_id] = String(p.amount);
+    for (const p of initialPayers) m[p.user_id] = amountToInputString(p.amount, currency);
     return m;
   });
   const [pinnedPayers, setPinnedPayers] = useState<Set<number>>(() => new Set(initialPayers.map((p) => p.user_id)));
@@ -145,7 +153,8 @@ export default function MCostSheet({
     const m: Record<number, string> = {};
     if (editing && editing.members) {
       for (const member of editing.members) {
-        if (member.amount !== null && member.amount !== undefined) m[member.user_id] = String(member.amount);
+        if (member.amount !== null && member.amount !== undefined)
+          m[member.user_id] = amountToInputString(member.amount, currency);
       }
     }
     return m;
@@ -178,7 +187,10 @@ export default function MCostSheet({
     const enteredSum = [...participants]
       .filter((id) => customAmounts[id])
       .reduce((sum, id) => sum + (Number.parseFloat(customAmounts[id]) || 0), 0);
-    const remaining = Math.max(0, totalNum - enteredSum);
+    // Clamped toward zero on the total's own side so a negative total (#2176)
+    // still previews its negative equal shares — same as the desktop modal.
+    const rest = totalNum - enteredSum;
+    const remaining = totalNum >= 0 ? Math.max(0, rest) : Math.min(0, rest);
     return splitEqualShares(
       remaining,
       emptyParts.map((id) => ({ user_id: id })),
@@ -192,13 +204,14 @@ export default function MCostSheet({
       (item) => item.name.trim().length > 0 && (Number.parseFloat(item.price) || 0) > 0 && item.participants.size > 0
     );
   const payersOk = !multiPayer || (payerIds.size > 0 && payersBalanced(payerAmounts, payerIds, totalNum));
+  // A negative total is a valid entry (a refund, #2176); only zero has nothing to say.
   const valid =
     name.trim().length > 0 &&
     payersOk &&
     rate.valid &&
     (isTicketMode
       ? ticketValid
-      : totalNum > 0 && (participants.size === 0 || splitMode === 'equally' || customBalanced));
+      : totalNum !== 0 && (participants.size === 0 || splitMode === 'equally' || customBalanced));
 
   const onTotalChange = (v: string) => setTotal(v.replace(',', '.'));
 
@@ -248,7 +261,7 @@ export default function MCostSheet({
 
   const handleCustomAmountChange = (id: number, val: string) => {
     val = val.replace(',', '.');
-    if (/^\d*\.?\d{0,2}$/.test(val) || val === '') setCustomAmounts((prev) => ({ ...prev, [id]: val }));
+    if (val === '' || amountPattern(currency, true).test(val)) setCustomAmounts((prev) => ({ ...prev, [id]: val }));
   };
 
   const handleAddEmptyItem = () => {
@@ -261,7 +274,7 @@ export default function MCostSheet({
     setTicketItems((prev) => prev.map((item) => (item.id === id ? { ...item, name: itemName } : item)));
   const handleUpdateItemPrice = (id: string, price: string) => {
     price = price.replace(',', '.');
-    if (/^\d*\.?\d{0,2}$/.test(price) || price === '')
+    if (price === '' || amountPattern(currency, false).test(price))
       setTicketItems((prev) => prev.map((item) => (item.id === id ? { ...item, price } : item)));
   };
   const handleRemoveItem = (id: string) => setTicketItems((prev) => prev.filter((item) => item.id !== id));
@@ -301,7 +314,7 @@ export default function MCostSheet({
     const payerList = multiPayer
       ? [...payerIds]
           .map((id) => ({ user_id: id, amount: Number.parseFloat(payerAmounts[id]) || 0 }))
-          .filter((p) => p.amount > 0)
+          .filter((p) => p.amount !== 0)
       : payerId > 0
         ? [{ user_id: payerId, amount: totalNum }]
         : [];
@@ -428,7 +441,8 @@ export default function MCostSheet({
         >
           <span className="text-[0.84375rem] font-medium text-m-faint">{sym(currency)}</span>
           <NumericInput
-            mode="decimal"
+            mode="signed-decimal"
+            signToggleLabel={t('costs.toggleSign')}
             placeholder={localizeAmountInput('0.00', currency)}
             value={localizeAmountInput(isTicketMode ? ticketInfo.total.toFixed(2) : total, currency)}
             onValueChange={onTotalChange}
@@ -460,7 +474,7 @@ export default function MCostSheet({
         />
 
         {/* Display-currency conversion is separate from Trip accounting FX. */}
-        {base !== tripCurrency && currency !== base && totalNum > 0 && (
+        {base !== tripCurrency && currency !== base && totalNum !== 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[12px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 py-[9px] text-[0.71875rem] text-m-muted">
             {t('costs.exchangeRates.displayApprox', {
               amount: formatMoney(convert(totalNum, currency), base, locale),
@@ -563,7 +577,8 @@ export default function MCostSheet({
                       <div className={`${MINI_INPUT_WRAP} w-[120px] flex-none`}>
                         <span className="text-[0.75rem] text-m-faint">{sym(currency)}</span>
                         <NumericInput
-                          mode="decimal"
+                          mode="signed-decimal"
+                          signToggleLabel={t('costs.toggleSign')}
                           placeholder={localizeAmountInput('0.00', currency)}
                           value={localizeAmountInput(payerAmounts[p.id] || '', currency)}
                           onValueChange={(v) => onPayerAmountChange(p.id, v)}

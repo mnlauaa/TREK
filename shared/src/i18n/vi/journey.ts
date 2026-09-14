@@ -195,6 +195,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Tên',
   'journey.settings.subtitle': 'Phụ đề',
   'journey.settings.subtitlePlaceholder': 'ví dụ. Thái Lan, Việt Nam và Campuchia',
+  'journey.settings.tracks': 'Tuyến GPX',
+  'journey.settings.showTripTracks': 'Hiện tất cả tuyến GPX của chuyến đi',
+  'journey.settings.showTripTracksHint': 'Vẽ lên bản đồ các tuyến đường đã ghi từ những chuyến đi được liên kết.',
   'journey.settings.endJourney': 'Hành trình lưu trữ',
   'journey.settings.reopenJourney': 'Khôi phục hành trình',
   'journey.settings.archived': 'Đã lưu trữ hành trình',
@@ -283,12 +286,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Tải trang đôi này về',
-  'journey.studio.downloadSpreadHint': 'Lưu thiết kế của trang đôi này thành tệp, không kèm ảnh, để chia sẻ hoặc dùng lại',
+  'journey.studio.downloadSpreadHint':
+    'Lưu thiết kế của trang đôi này thành tệp, không kèm ảnh, để chia sẻ hoặc dùng lại',
   'journey.studio.importSpread': 'Nhập',
   'journey.studio.importSpreadHint': 'Thêm một trang đôi từ tệp thiết kế đã tải về',
   'journey.studio.importSpreadFailed': 'Tệp đó không phải trang đôi của TREK Studio',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Dàn một cuốn sách cần chỗ để làm việc, nên Studio chỉ có trên máy tính, và việc tạo PDF cũng vậy. Mọi thứ khác của hành trình vẫn dùng bình thường ở đây.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Dàn một cuốn sách cần chỗ để làm việc, nên Studio chỉ có trên máy tính, và việc tạo PDF cũng vậy. Mọi thứ khác của hành trình vẫn dùng bình thường ở đây.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -352,7 +357,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -534,7 +540,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Đường viền',
   'journey.studio.mapSourceRelief': 'Địa hình',
   'journey.studio.mapSourceSatellite': 'Vệ tinh',
-  'journey.studio.mapSourceSatelliteHint': 'Ảnh Sentinel-2 không mây, được in miễn phí nếu ghi công. Rõ đến từng con phố.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Ảnh Sentinel-2 không mây, được in miễn phí nếu ghi công. Rõ đến từng con phố.',
   'journey.studio.routeLook': 'Nét lộ trình',
   'journey.studio.routeStyle': 'Kiểu nét',
   'journey.studio.routePlain': 'Đơn giản',
@@ -564,7 +571,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapScope': 'Hiển thị',
   'journey.studio.mapPrintDpi': 'In ở khoảng',
   'journey.studio.mapPrintDpiLow': 'hơi mờ ở kích thước này, thử khung nhìn rộng hơn hoặc nguồn khác',
-  'journey.studio.mapSourceReliefHint': 'Ảnh địa hình đổ bóng của NASA, được in miễn phí. Hợp cho một quốc gia hay châu lục, quá thô cho một thành phố.',
+  'journey.studio.mapSourceReliefHint':
+    'Ảnh địa hình đổ bóng của NASA, được in miễn phí. Hợp cho một quốc gia hay châu lục, quá thô cho một thành phố.',
   'journey.studio.mapSourceTiles': 'Ô bản đồ',
   'journey.studio.mapSourceStatic': 'Mapbox',
   'journey.studio.mapSourceHint': 'Tải khi kết xuất và in kèm ghi công',
@@ -593,5 +601,34 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Xoay trái',
   'journey.studio.rotateRight': 'Xoay phải',
   'journey.studio.saveReadOnly': 'Chỉ đọc, không lưu',
+  'journey.studio.filterPhotos': 'Lọc ảnh',
+  'journey.studio.filterAll': 'Tất cả ảnh',
+  'journey.studio.filterLoose': 'Không thuộc mục nào',
+  'journey.studio.filterRecent': 'Vừa tải lên',
+  'journey.studio.filterThisPage': 'Trang này',
+  'journey.studio.entryPhotos': 'Ảnh',
+  'journey.studio.noEntryPhotos': 'Mục này chưa có ảnh.',
+  'journey.studio.noLoosePhotos': 'Mọi ảnh ở đây đều thuộc về một mục.',
+  'journey.studio.uploadPhotos': 'Tải ảnh lên',
+  'journey.studio.uploadHint': 'Thả ảnh vào đây hoặc nhấp để chọn',
+  'journey.studio.uploadToEntry': 'Ảnh mới sẽ được đưa vào mục này',
+  'journey.studio.uploadToGallery': 'Ảnh mới sẽ được đưa vào thư viện',
+  'journey.studio.uploading': 'Đang tải lên {done} trên {total}',
+  'journey.studio.dropFilesHere': 'Thả để thêm ảnh',
+  'journey.studio.videosSkipped': 'Đã bỏ qua {count} video. Sách chỉ chứa ảnh.',
+  'journey.studio.fillPage': 'Phủ kín trang',
+  'journey.studio.fillSpread': 'Phủ kín trang đôi',
+  'journey.studio.fillHint': 'Kéo giãn ảnh phủ kín cả trang, bao gồm cả tràn lề, và đưa ảnh ra sau mọi thứ khác.',
+  'journey.studio.stops': 'Điểm dừng',
+  'journey.studio.stopsHint':
+    'Mỗi điểm dừng đều được tính vào lộ trình, quãng đường và các quốc gia. Tắt một điểm để loại nó ra, chẳng hạn sân bay nhà của bạn.',
+  'journey.studio.stopOn': 'Được tính',
+  'journey.studio.stopOff': 'Đã loại ra',
+  'journey.studio.stopToggle': 'Tính điểm dừng này',
+  'journey.studio.stopsFailed': 'Không thể thay đổi điểm dừng.',
+  'journey.editor.statsExcluded': 'Loại khỏi lộ trình',
+  'journey.editor.statsExcludedHint':
+    'Điểm dừng vẫn nằm trong nhật ký nhưng không được tính vào quãng đường, các quốc gia hay bản đồ trong Studio.',
+  'journey.entry.offRoute': 'Ngoài lộ trình',
 };
 export default journey;

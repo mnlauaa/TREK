@@ -189,6 +189,9 @@ const journey: TranslationStrings = {
   'journey.settings.name': 'Nama',
   'journey.settings.subtitle': 'Subjudul',
   'journey.settings.subtitlePlaceholder': 'mis. Thailand, Vietnam & Kamboja',
+  'journey.settings.tracks': 'Jalur GPX',
+  'journey.settings.showTripTracks': 'Tampilkan semua jalur GPX perjalanan',
+  'journey.settings.showTripTracksHint': 'Menggambar rute terekam dari perjalanan yang tertaut pada peta.',
   'journey.settings.endJourney': 'Arsipkan Perjalanan',
   'journey.settings.reopenJourney': 'Pulihkan Perjalanan',
   'journey.settings.archived': 'Perjalanan diarsipkan',
@@ -282,12 +285,14 @@ const journey: TranslationStrings = {
   'journey.studio.zoomOut': 'Zoom out', // en-fallback
   'journey.studio.zoomFit': 'Fit to view', // en-fallback
   'journey.studio.downloadSpread': 'Unduh halaman ganda ini',
-  'journey.studio.downloadSpreadHint': 'Menyimpan desain halaman ganda ini sebagai berkas, tanpa foto, untuk dibagikan atau dipakai lagi',
+  'journey.studio.downloadSpreadHint':
+    'Menyimpan desain halaman ganda ini sebagai berkas, tanpa foto, untuk dibagikan atau dipakai lagi',
   'journey.studio.importSpread': 'Impor',
   'journey.studio.importSpreadHint': 'Menambahkan halaman ganda dari berkas desain yang diunduh',
   'journey.studio.importSpreadFailed': 'Berkas itu bukan halaman ganda TREK Studio',
   'journey.studio.desktopOnly': 'Studio needs a bigger screen', // en-fallback
-  'journey.studio.desktopOnlyHint': 'Menyusun buku butuh ruang kerja, jadi Studio hanya ada di desktop, begitu juga pembuatan PDF. Bagian lain dari perjalananmu tetap berjalan seperti biasa di sini.', // en-fallback
+  'journey.studio.desktopOnlyHint':
+    'Menyusun buku butuh ruang kerja, jadi Studio hanya ada di desktop, begitu juga pembuatan PDF. Bagian lain dari perjalananmu tetap berjalan seperti biasa di sini.', // en-fallback
   'journey.studio.formatA5Landscape': 'A5 landscape', // en-fallback
   'journey.studio.bookView': 'Book view', // en-fallback
   'journey.studio.multiple': 'Several', // en-fallback
@@ -351,7 +356,8 @@ const journey: TranslationStrings = {
   'journey.studio.sampleSubheading': 'A subheading', // en-fallback
   'journey.studio.sampleBody': 'Write something about this day.', // en-fallback
   'journey.studio.sampleCaption': 'Caption', // en-fallback
-  'journey.studio.templatesCoverHint': 'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
+  'journey.studio.templatesCoverHint':
+    'Layouts apply to the inside spreads. The cover and the back are designed on their own.', // en-fallback
   'journey.studio.tpl.heroStory': 'Hero and story', // en-fallback
   'journey.studio.tpl.fullBleed': 'One picture, full spread', // en-fallback
   'journey.studio.tpl.twoUp': 'Two full pages', // en-fallback
@@ -533,7 +539,8 @@ const journey: TranslationStrings = {
   'journey.studio.mapSourceVector': 'Garis luar',
   'journey.studio.mapSourceRelief': 'Relief',
   'journey.studio.mapSourceSatellite': 'Satelit',
-  'journey.studio.mapSourceSatelliteHint': 'Sentinel-2 bebas awan, bebas dicetak dengan atribusi. Tajam sampai ke jalan kota.',
+  'journey.studio.mapSourceSatelliteHint':
+    'Sentinel-2 bebas awan, bebas dicetak dengan atribusi. Tajam sampai ke jalan kota.',
   'journey.studio.routeLook': 'Garis rute',
   'journey.studio.routeStyle': 'Gaya garis',
   'journey.studio.routePlain': 'Biasa',
@@ -556,14 +563,16 @@ const journey: TranslationStrings = {
   'journey.studio.roadsAgain': 'Ambil lagi',
   'journey.studio.roadsClear': 'Hapus',
   'journey.studio.roadsBusy': 'Meminta',
-  'journey.studio.roadsHint': 'Minta layanan rute untuk jalur yang dilalui tiap segmen. Segmen panjang dibiarkan apa adanya.',
+  'journey.studio.roadsHint':
+    'Minta layanan rute untuk jalur yang dilalui tiap segmen. Segmen panjang dibiarkan apa adanya.',
   'journey.studio.roadsHave': 'Jalannya tersimpan di buku ini, jadi garis yang tercetak sama walau offline.',
   'journey.studio.mapPerTrip': 'Perjalanan satu per satu',
   'journey.studio.mapWholeJourney': 'Seluruh Journey',
   'journey.studio.mapScope': 'Tampilkan',
   'journey.studio.mapPrintDpi': 'Hasil cetak sekitar',
   'journey.studio.mapPrintDpiLow': 'kurang tajam pada ukuran ini, coba tampilan lebih lebar atau sumber lain',
-  'journey.studio.mapSourceReliefHint': 'Relief berbayang NASA, bebas dicetak. Cocok untuk negara atau benua, terlalu kasar untuk satu kota.',
+  'journey.studio.mapSourceReliefHint':
+    'Relief berbayang NASA, bebas dicetak. Cocok untuk negara atau benua, terlalu kasar untuk satu kota.',
   'journey.studio.mapSourceTiles': 'Ubin peta',
   'journey.studio.mapSourceStatic': 'Mapbox',
   'journey.studio.mapSourceHint': 'Diambil saat render dan dicetak dengan atribusinya',
@@ -592,5 +601,35 @@ const journey: TranslationStrings = {
   'journey.studio.rotateLeft': 'Putar ke kiri',
   'journey.studio.rotateRight': 'Putar ke kanan',
   'journey.studio.saveReadOnly': 'Hanya baca, tidak disimpan',
+  'journey.studio.filterPhotos': 'Filter foto',
+  'journey.studio.filterAll': 'Semua foto',
+  'journey.studio.filterLoose': 'Tidak dalam entri',
+  'journey.studio.filterRecent': 'Baru diunggah',
+  'journey.studio.filterThisPage': 'Halaman ini',
+  'journey.studio.entryPhotos': 'Foto',
+  'journey.studio.noEntryPhotos': 'Entri ini belum punya foto.',
+  'journey.studio.noLoosePhotos': 'Semua foto di sini milik sebuah entri.',
+  'journey.studio.uploadPhotos': 'Unggah foto',
+  'journey.studio.uploadHint': 'Letakkan gambar di sini atau klik untuk memilih',
+  'journey.studio.uploadToEntry': 'Gambar baru akan masuk ke entri ini',
+  'journey.studio.uploadToGallery': 'Gambar baru akan masuk ke galeri',
+  'journey.studio.uploading': 'Mengunggah {done} dari {total}',
+  'journey.studio.dropFilesHere': 'Lepaskan untuk menambahkan gambar',
+  'journey.studio.videosSkipped': '{count} video dilewati. Buku berisi gambar.',
+  'journey.studio.fillPage': 'Isi halaman',
+  'journey.studio.fillSpread': 'Isi halaman ganda',
+  'journey.studio.fillHint':
+    'Merentangkan gambar ke seluruh halaman, termasuk bleed, dan menaruhnya di belakang semua yang lain.',
+  'journey.studio.stops': 'Perhentian',
+  'journey.studio.stopsHint':
+    'Setiap perhentian dihitung untuk rute, jarak, dan negara. Matikan salah satunya untuk mengecualikannya, misalnya bandara asal Anda.',
+  'journey.studio.stopOn': 'Dihitung',
+  'journey.studio.stopOff': 'Dikecualikan',
+  'journey.studio.stopToggle': 'Hitung perhentian ini',
+  'journey.studio.stopsFailed': 'Perhentian tidak dapat diubah.',
+  'journey.editor.statsExcluded': 'Kecualikan dari rute',
+  'journey.editor.statsExcludedHint':
+    'Perhentian tetap ada di jurnal tetapi tidak dihitung untuk jarak, negara, atau peta di Studio.',
+  'journey.entry.offRoute': 'Di luar rute',
 };
 export default journey;
