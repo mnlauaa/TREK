@@ -330,7 +330,7 @@ export function createMcpTestRegistry(): McpRegistry {
         authService,
         captureBackfill,
       ),
-      new MemoriesMcp(immichService, synologyService, dbService),
+      new MemoriesMcp(immichService, synologyService, dbService, addonsService),
       new NotificationsMcp(makeNotificationsService(dbService, realtimeService), authService),
       new AirtrailMcp(new AirtrailService(dbService, new AuditService(dbService), new AirtrailClient()), addonsService),
       new ReservationImportMcp(

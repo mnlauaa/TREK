@@ -196,5 +196,6 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.frozenHint': '儲存後此匯率會凍結；之後的旅程或全域匯率變更不會自動改動這筆交易。',
   'costs.exchangeRates.displayApprox': '顯示貨幣：約 {amount}',
   'costs.confirm.deletePayment': '要刪除這筆已記錄的付款嗎？未結清餘額將重新計算。',
+  'costs.toggleSign': '在支出與退款之間切換',
 };
 export default budget;

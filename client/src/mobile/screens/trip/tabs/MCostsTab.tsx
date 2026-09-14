@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ArrowDown,
+  ArrowLeftRight,
   ArrowRight,
   ArrowUp,
   Check,
@@ -41,8 +42,9 @@ import {
   currencyOf,
   dayFilterKeys,
   filterBudgetItems,
+  filterSettlements,
   frozenAmountToDisplay,
-  groupByDay,
+  groupLedgerByDay,
   isUnfinished,
   memberShareOf,
   tint,
@@ -120,13 +122,21 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   const [confirmDeletePayment, setConfirmDeletePayment] = useState<CostsRecordedSettlement | null>(null);
 
   const flows = useMemo(() => settlement?.flows || [], [settlement]);
-  const recordedPayments = useMemo(() => settlement?.settlements || [], [settlement]);
   const totals = useMemo(() => computeTotals(budgetItems, flows, ctx), [budgetItems, flows, ctx]);
   const filtered = useMemo(
     () => filterBudgetItems(budgetItems, { search, segment, categoryKey: catFilter, dayKey: dayFilter }, ctx),
     [budgetItems, search, segment, catFilter, dayFilter, ctx]
   );
-  const groups = useMemo(() => groupByDay(filtered), [filtered]);
+  const filteredSettlements = useMemo(
+    () =>
+      filterSettlements(
+        settlement?.settlements || [],
+        { search, segment, categoryKey: catFilter, dayKey: dayFilter },
+        me
+      ),
+    [settlement, search, segment, catFilter, dayFilter, me]
+  );
+  const groups = useMemo(() => groupLedgerByDay(filtered, filteredSettlements), [filtered, filteredSettlements]);
   const catBreakdown = useMemo(() => categoryBreakdown(budgetItems, ctx), [budgetItems, ctx]);
   const catKeys = useMemo(() => categoryFilterKeys(budgetItems), [budgetItems]);
   const dayKeys = useMemo(() => dayFilterKeys(budgetItems), [budgetItems]);
@@ -549,9 +559,9 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
         </div>
       )}
 
-      {/* Expense groups (spec §3.7) */}
+      {/* Expense groups (spec §3.7) — expenses and recorded settle-up payments, day-merged */}
       {groups.map((g) => {
-        const groupTotal = g.items.reduce((a, e) => a + baseTotal(e, ctx), 0);
+        const groupTotal = g.entries.reduce((a, en) => (en.kind === 'expense' ? a + baseTotal(en.item, ctx) : a), 0);
         return (
           <div key={g.dateKey || 'no-date'}>
             <div className="mt-[14px] flex items-baseline gap-2 px-[2px]">
@@ -562,23 +572,41 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
                 {t('costs.spent', { amount: formatMoney(groupTotal, base, locale) })}
               </span>
             </div>
-            {g.items.map((item) => (
-              <ExpenseRow
-                key={item.id}
-                item={item}
-                ctx={ctx}
-                base={base}
-                locale={locale}
-                t={t}
-                canEdit={canEdit}
-                onEdit={() => {
-                  setEditingExpense(item);
-                  setExpenseModalOpen(true);
-                }}
-                onDelete={() => setConfirmDelete(item)}
-                onTogglePaid={(userId, paid) => handleTogglePaid(item.id, userId, paid)}
-              />
-            ))}
+            {g.entries.map((en) =>
+              en.kind === 'expense' ? (
+                <ExpenseRow
+                  key={'e' + en.item.id}
+                  item={en.item}
+                  ctx={ctx}
+                  base={base}
+                  locale={locale}
+                  t={t}
+                  canEdit={canEdit}
+                  onEdit={() => {
+                    setEditingExpense(en.item);
+                    setExpenseModalOpen(true);
+                  }}
+                  onDelete={() => setConfirmDelete(en.item)}
+                  onTogglePaid={(userId, paid) => handleTogglePaid(en.item.id, userId, paid)}
+                />
+              ) : (
+                <PaymentRow
+                  key={'s' + en.settlement.id}
+                  settlement={en.settlement}
+                  ctx={ctx}
+                  base={base}
+                  locale={locale}
+                  t={t}
+                  personName={personName}
+                  canEdit={canEdit}
+                  onEdit={() => {
+                    setEditingPayment(en.settlement);
+                    setAddPaymentOpen(true);
+                  }}
+                  onDelete={() => setConfirmDeletePayment(en.settlement)}
+                />
+              )
+            )}
           </div>
         );
       })}
@@ -592,62 +620,6 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
         ) : (
           <p className="py-6 text-center font-geist text-[0.6875rem] text-m-faint">{t('costs.noMatch')}</p>
         ))}
-
-      {recordedPayments.length > 0 && (
-        <section className="mt-4">
-          <h2 className="text-[1.0625rem] font-extrabold text-m-ink">{t('costs.payment')}</h2>
-          <div className="mt-2 space-y-2">
-            {recordedPayments.map((payment) => {
-              const paymentCurrency = (payment.currency || base).toUpperCase();
-              return (
-                <div
-                  key={payment.id}
-                  className="flex items-center gap-3 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[0.8125rem] font-semibold text-m-ink">
-                      {personName(payment.from_user_id)} <ArrowRight size={12} className="inline" />{' '}
-                      {personName(payment.to_user_id)}
-                    </div>
-                    <div className="mt-1 text-[0.6875rem] text-m-faint">
-                      {formatMoney(payment.amount, paymentCurrency, locale)}
-                      {paymentCurrency !== base &&
-                        ` → ${formatMoney(
-                          frozenAmountToDisplay(payment.amount, paymentCurrency, payment.exchange_rate, ctx),
-                          base,
-                          locale
-                        )}`}
-                    </div>
-                  </div>
-                  {canEdit && (
-                    <div className="flex flex-none gap-1">
-                      <button
-                        type="button"
-                        aria-label={t('common.edit')}
-                        onClick={() => {
-                          setEditingPayment(payment);
-                          setAddPaymentOpen(true);
-                        }}
-                        className="rounded-full p-2 text-m-muted"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={t('common.delete')}
-                        onClick={() => setConfirmDeletePayment(payment)}
-                        className="rounded-full p-2 text-danger"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Add / edit expense — the shared desktop modal (spec §3.9); not rebuilt here. */}
       {expenseModalOpen && (
@@ -864,6 +836,90 @@ function ExpenseRow({
             className="flex h-[26px] w-[26px] items-center justify-center rounded-full text-m-muted"
           >
             <Trash2 size={12} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A recorded settle-up payment mixed into the day-grouped ledger (spec 03
+ * §3.7 desktop parity — see `CostsPanel.tsx`'s `SettlementRow`), retaining the
+ * fork's frozen conversion and edit/delete actions.
+ */
+function PaymentRow({
+  settlement,
+  ctx,
+  base,
+  locale,
+  t,
+  personName,
+  canEdit,
+  onEdit,
+  onDelete,
+}: {
+  settlement: CostsRecordedSettlement;
+  ctx: CostsCtx;
+  base: string;
+  locale: string;
+  t: TFn;
+  personName: (id: number) => string;
+  canEdit: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const cur = (settlement.currency || base).toUpperCase();
+  const amount = frozenAmountToDisplay(
+    settlement.amount,
+    cur,
+    settlement.exchange_rate,
+    ctx,
+    settlement.exchange_rate_source
+  );
+  return (
+    <div className="mt-2 flex items-center gap-[6px]">
+      <div className="relative min-w-0 flex-1 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card px-3 py-[12px]">
+        <div className="flex items-center gap-[10px]">
+          <span
+            className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[12px]"
+            style={{ background: 'rgba(47,163,122,.12)', color: STATUS_COLOR.confirmed }}
+          >
+            <ArrowLeftRight size={17} strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[0.8125rem] font-bold text-m-ink">{t('costs.payment')}</div>
+            <div className="truncate font-geist text-[0.65625rem] text-m-faint">
+              {personName(settlement.from_user_id)} → {personName(settlement.to_user_id)}
+            </div>
+            {cur !== base && (
+              <div className="font-geist text-[0.65625rem] text-m-faint">
+                {formatMoney(settlement.amount, cur, locale)}
+              </div>
+            )}
+          </div>
+          <span className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
+            {formatMoney(amount, base, locale)}
+          </span>
+        </div>
+      </div>
+      {canEdit && (
+        <div className="flex flex-none flex-col gap-1">
+          <button
+            type="button"
+            aria-label={t('common.edit')}
+            onClick={onEdit}
+            className="rounded-full p-2 text-m-muted"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label={t('common.delete')}
+            onClick={onDelete}
+            className="rounded-full p-2 text-danger"
+          >
+            <Trash2 size={14} />
           </button>
         </div>
       )}

@@ -667,8 +667,11 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
           {/* Right column — when it happens, in what currency, with whom. */}
           <div className={columnCls}>
             <div className={panelCls}>
+              {/* min-w-0 on both cells: a grid item defaults to min-width:auto, so a
+            long date ("12. Sept. 2026" and the keyboard button beside it) pushed
+            the cell past its track and the two columns overlapped (#2267). */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div className="min-w-0">
                   <label className={labelCls}>
                     <Calendar className="h-3.5 w-3.5" />
                     {t('dashboard.startDate')}
@@ -679,7 +682,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                     placeholder={t('dashboard.startDate')}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className={labelCls}>
                     <Calendar className="h-3.5 w-3.5" />
                     {t('dashboard.endDate')}

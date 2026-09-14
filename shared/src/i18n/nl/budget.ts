@@ -200,5 +200,6 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Wisselen tussen uitgave en terugbetaling',
 };
 export default budget;

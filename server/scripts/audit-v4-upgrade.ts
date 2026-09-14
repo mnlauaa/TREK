@@ -1,4 +1,4 @@
-import { FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
+import { classifyForkLineage, FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
 
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
@@ -43,6 +43,10 @@ const officialArtifacts: Array<[string, boolean]> = [
   ['vacay_holiday_calendars.type', hasColumn('vacay_holiday_calendars', 'type')],
   ['reservations.ingest_state', hasColumn('reservations', 'ingest_state')],
   ['mcp_tokens.kind', hasColumn('mcp_tokens', 'kind')],
+  ['journeys.show_trip_tracks', hasColumn('journeys', 'show_trip_tracks')],
+  ['plugin_settings_fields.default_value', hasColumn('plugin_settings_fields', 'default_value')],
+  ['plugin_actions.scope', hasColumn('plugin_actions', 'scope')],
+  ['journey_entries.stats_excluded', hasColumn('journey_entries', 'stats_excluded')],
 ];
 
 const customArtifacts: Array<[string, boolean]> = [
@@ -60,7 +64,6 @@ const customArtifacts: Array<[string, boolean]> = [
 
 const missingOfficialArtifacts = officialArtifacts.filter(([, present]) => !present).map(([name]) => name);
 const missingCustomArtifacts = customArtifacts.filter(([, present]) => !present).map(([name]) => name);
-const hasAnyCustomArtifact = customArtifacts.some(([, present]) => present);
 
 const forkMigrations = hasTable('fork_schema_migrations')
   ? (db.prepare('SELECT id, applied_at FROM fork_schema_migrations ORDER BY applied_at, id').all() as Array<{
@@ -74,58 +77,22 @@ const unknownForkMigrations = forkMigrationIds.filter(
   (id) => !(FORK_SCHEMA_MIGRATION_IDS as readonly string[]).includes(id),
 );
 
-const official199 = hasColumn('reservations', 'ingest_state');
-const official200 = hasColumn('mcp_tokens', 'kind');
-const crosswalk = officialArtifacts.slice(0, 8).every(([, present]) => present);
-const enhancedFx = customArtifacts.slice(0, 5).every(([, present]) => present);
-const guestIdentity = customArtifacts[5][1];
-const webPush = customArtifacts[6][1];
-const legacyForkNumeric =
-  forkMigrations.length === 0 &&
-  ((upstreamSchemaVersion === 199 && crosswalk && !official199) ||
-    (upstreamSchemaVersion === 200 && crosswalk && enhancedFx && !official200) ||
-    (upstreamSchemaVersion === 201 && crosswalk && enhancedFx && guestIdentity) ||
-    (upstreamSchemaVersion === 202 && crosswalk && enhancedFx && guestIdentity && webPush));
-
-type Classification =
-  | 'clean-3.4.x'
-  | 'custom-3.4.1'
-  | 'official-v4.0'
-  | 'official-v4.1'
-  | 'legacy-fork-numeric'
-  | 'dual-lineage-v4.1'
-  | 'mixed-or-unsupported';
-
-let classification: Classification;
-if (upstreamSchemaVersion <= 175 && !hasAnyCustomArtifact) classification = 'clean-3.4.x';
-else if (upstreamSchemaVersion >= 176 && upstreamSchemaVersion <= 180 && hasAnyCustomArtifact)
-  classification = 'custom-3.4.1';
-else if (legacyForkNumeric) classification = 'legacy-fork-numeric';
-else if (upstreamSchemaVersion === 198 && crosswalk && forkMigrations.length === 0) classification = 'official-v4.0';
-else if (
-  upstreamSchemaVersion >= 199 &&
-  upstreamSchemaVersion <= UPSTREAM_SCHEMA_VERSION &&
-  crosswalk &&
-  official199 &&
-  (upstreamSchemaVersion < 200 || official200) &&
-  forkMigrations.length === 0
-)
-  classification = 'official-v4.1';
-else if (
+const classification = classifyForkLineage(db, upstreamSchemaVersion);
+const schemaReady =
+  classification === 'dual-lineage-v4.2' &&
   upstreamSchemaVersion === UPSTREAM_SCHEMA_VERSION &&
   missingOfficialArtifacts.length === 0 &&
   missingCustomArtifacts.length === 0 &&
   missingForkMigrations.length === 0 &&
-  unknownForkMigrations.length === 0
-)
-  classification = 'dual-lineage-v4.1';
-else classification = 'mixed-or-unsupported';
+  unknownForkMigrations.length === 0;
 
 const integrity = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
 const foreignKeyFailures = db.pragma('foreign_key_check') as Array<Record<string, unknown>>;
+const ready = schemaReady && integrity.every((row) => row.integrity_check === 'ok') && foreignKeyFailures.length === 0;
 const report = {
   database: dbPath,
   classification,
+  ready,
   upstreamSchemaVersion,
   expectedUpstreamSchemaVersion: UPSTREAM_SCHEMA_VERSION,
   forkMigrations,
@@ -156,6 +123,7 @@ db.close();
 
 if (
   classification === 'mixed-or-unsupported' ||
+  (process.argv.includes('--require-current') && !ready) ||
   integrity.some((row) => row.integrity_check !== 'ok') ||
   foreignKeyFailures.length > 0
 ) {
