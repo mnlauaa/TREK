@@ -10,8 +10,15 @@ import { useAuthStore } from '../../../../store/authStore';
 import { useSettingsStore } from '../../../../store/settingsStore';
 import { useTripStore } from '../../../../store/tripStore';
 import type { BudgetItem } from '../../../../types';
+import MDayImpactList from '../../../components/MDayImpactList';
 import MConfirmSheet from '../../settings/MConfirmSheet';
 import type { MTripSheetsProps } from '../MTripShell';
+import MRtCorridorSheet from '../roadtrip/MRtCorridorSheet';
+import MRtDraftSheet from '../roadtrip/MRtDraftSheet';
+import MRtInfoSheet from '../roadtrip/MRtInfoSheet';
+import MRtKindSheet from '../roadtrip/MRtKindSheet';
+import MRtStaySheet from '../roadtrip/MRtStaySheet';
+import MRtStopSheet from '../roadtrip/MRtStopSheet';
 import MAccommodationSheet from './MAccommodationSheet';
 import MBrowseActionsSheet from './MBrowseActionsSheet';
 import MCostSheet from './MCostSheet';
@@ -67,6 +74,17 @@ export default function MTripSheets({ planner, shell }: MTripSheetsProps) {
       <MBrowseActionsSheet planner={planner} shell={shell} />
       <MMehrSheet planner={planner} shell={shell} />
       <MExchangeRateSheet planner={planner} shell={shell} />
+      {/* The stage's own sheets. Each one checks shell.sheet?.id itself, the draft
+          sheet hangs off planner.stopDraft the way the place editor hangs off its flag. */}
+      <MRtStopSheet planner={planner} shell={shell} />
+      <MRtStaySheet planner={planner} shell={shell} />
+      <MRtKindSheet planner={planner} shell={shell} />
+      <MRtInfoSheet planner={planner} shell={shell} />
+      {/* Before the draft sheet, not after: both sit at the same z, so the one mounted
+          later paints on top, and taking a hit onto the trip opens the draft OVER the
+          search it came from. */}
+      <MRtCorridorSheet planner={planner} shell={shell} />
+      <MRtDraftSheet planner={planner} />
       <MExportSheet planner={planner} shell={shell} />
       <MNoteSheet
         planner={planner}
@@ -117,13 +135,14 @@ export default function MTripSheets({ planner, shell }: MTripSheetsProps) {
           onEditDetails={() => {
             // Hand off to the full transport editor for the booking fields —
             // same target as the transports tab's pencil (#2148).
-            const journey = planner.reservations.find(r => r.id === planner.transitJourney!.id) ?? planner.transitJourney!
-            planner.setEditingTransport(journey)
-            planner.setTransportModalDayId(journey.day_id ?? null)
-            planner.setTransportModalAutomated(false)
-            planner.setTransitPrefill(null)
-            planner.setTransitJourney(null)
-            planner.setShowTransportModal(true)
+            const journey =
+              planner.reservations.find((r) => r.id === planner.transitJourney!.id) ?? planner.transitJourney!;
+            planner.setEditingTransport(journey);
+            planner.setTransportModalDayId(journey.day_id ?? null);
+            planner.setTransportModalAutomated(false);
+            planner.setTransitPrefill(null);
+            planner.setTransitJourney(null);
+            planner.setShowTransportModal(true);
           }}
         />
       )}
@@ -182,12 +201,24 @@ export default function MTripSheets({ planner, shell }: MTripSheetsProps) {
       />
 
       {/* Delete-place confirm behind handleDeletePlace (the place edit sheet
-          arms the same flag for its own two-tap delete — skip it there). */}
+          arms the same flag for its own two-tap delete — skip it there).
+          A night booked at the place goes down with it, and with the night
+          the booking and its expense: the planner adds that as a second
+          sentence, the same one the desktop question carries. */}
       <MConfirmSheet
         open={planner.deletePlaceId != null && !planner.showPlaceForm}
         onClose={() => planner.setDeletePlaceId(null)}
         title={t('common.delete')}
-        message={t('trip.confirm.deletePlace')}
+        message={
+          planner.deletePlaceNote ? (
+            <>
+              <span className="block">{t('trip.confirm.deletePlace')}</span>
+              <span className="mt-1 block">{planner.deletePlaceNote}</span>
+            </>
+          ) : (
+            t('trip.confirm.deletePlace')
+          )
+        }
         confirmLabel={t('common.delete')}
         cancelLabel={t('common.cancel')}
         danger
@@ -196,6 +227,24 @@ export default function MTripSheets({ planner, shell }: MTripSheetsProps) {
           planner.setDeletePlaceId(null);
         }}
       />
+
+      {/* Delete-day confirm behind the days sheet's delete buttons. Mounted
+          last, so it opens over that sheet; the list of what goes with the day
+          comes ready made from the planner, the same one the desktop shows. */}
+      <MConfirmSheet
+        open={planner.deleteDayId != null}
+        onClose={() => planner.setDeleteDayId(null)}
+        title={planner.deleteDayTitle}
+        message={t('dayplan.deleteDayBody')}
+        confirmLabel={t('dayplan.deleteDay')}
+        cancelLabel={t('common.cancel')}
+        danger
+        onConfirm={() => {
+          void planner.confirmDeleteDay();
+        }}
+      >
+        <MDayImpactList lines={planner.deleteDayLines} label={planner.deleteDayTitle} />
+      </MConfirmSheet>
     </>
   );
 }

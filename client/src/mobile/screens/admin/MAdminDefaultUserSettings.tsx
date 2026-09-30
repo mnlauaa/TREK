@@ -1,6 +1,7 @@
 import { ChevronDown, Settings2 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { adminApi } from '../../../api/client';
+import RoutingInstanceFields, { type RoutingDefaults } from '../../../components/Admin/RoutingInstanceFields';
 import { SYMBOLS, currenciesWith } from '../../../components/Budget/BudgetPanel.constants';
 import {
   MAPBOX_DEFAULT_STYLE,
@@ -39,7 +40,7 @@ const MAP_PRESETS = [
   { name: 'Stadia Smooth', url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png' },
 ];
 
-type Defaults = {
+type Defaults = RoutingDefaults & {
   temperature_unit?: string;
   distance_unit?: DistanceUnit;
   dark_mode?: string | boolean;
@@ -410,6 +411,15 @@ export default function MAdminDefaultUserSettings(): React.ReactElement {
                 autoComplete="off"
               />
             </MAdminField>
+          )}
+
+          {!managed && (
+            <RoutingInstanceFields
+              defaults={defaults}
+              onSave={save}
+              onReset={reset}
+              hintClassName="font-geist text-[0.625rem] leading-relaxed text-m-muted"
+            />
           )}
 
           {/* Live tile preview */}

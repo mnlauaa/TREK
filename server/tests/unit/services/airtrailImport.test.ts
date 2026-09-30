@@ -19,6 +19,7 @@ import { ReservationsReadRepository } from '../../../src/nest/reservations/reser
 import { ReservationsService } from '../../../src/nest/reservations/reservations.service';
 import { createUser, createTrip } from '../../helpers/factories';
 import { notificationsStub } from '../../helpers/notifications';
+import { accommodationsOver } from '../../helpers/accommodations-service';
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -42,6 +43,7 @@ function makeImportService(): AirtrailImportService {
       realtime,
       notificationsStub(),
       new ReservationsReadRepository(dbs()),
+      accommodationsOver(dbs()),
     ),
     { listFlights } as unknown as AirtrailClient,
     {

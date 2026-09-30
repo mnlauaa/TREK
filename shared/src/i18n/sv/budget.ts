@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'betalar',
   'costs.settle': 'Lösa',
   'costs.balances': 'Balanser',
+  'costs.finalBudget': 'Slutlig budget',
+  'costs.finalExpenses': 'Betalda utgifter',
+  'costs.finalReimbursed': 'Återbetalningar netto',
+  'costs.finalPending': 'Väntande återbetalningar',
   'costs.byCategory': 'Via kategori',
   'costs.noCategories': 'Inga utgifter än.',
   'costs.settleHistory': 'Historik över reglering',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'resans standardvärde',
   'costs.exchangeRates.source.explicit': 'manuell kurs',
   'costs.exchangeRates.source.legacy': 'äldre kurs',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'inte tillgänglig',
   'costs.exchangeRates.item.expense': 'Utgift',
   'costs.exchangeRates.item.settlement': 'Betalning',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Växla mellan utgift och återbetalning',
+  'costs.receipts': 'Kvitton',
+  'costs.receiptsTitle': 'Kvitton & fakturor',
+  'costs.attachReceipt': 'Bifoga kvitto / faktura',
+  'costs.noReceipts': 'Inga bifogade kvitton',
+  'costs.deleteReceipt': 'Ta bort kvitto',
+  'costs.viewReceipt': 'Visa kvitto',
+  'costs.receiptLeftBehind':
+    'Sparandet misslyckades och {count} uppladdade kvitton finns kvar. Ta bort dem under Filer.',
 };
 export default budget;

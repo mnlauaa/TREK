@@ -1,4 +1,4 @@
-import { classifyForkLineage, FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
+import { officialV43Artifacts, classifyForkLineage, FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
 
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
@@ -62,6 +62,8 @@ const customArtifacts: Array<[string, boolean]> = [
   ['web_push_subscriptions', hasTable('web_push_subscriptions')],
 ];
 
+officialArtifacts.push(...officialV43Artifacts(db).map(([, name, present]): [string, boolean] => [name, present]), ['users.amap_api_key', hasColumn('users', 'amap_api_key')]);
+
 const missingOfficialArtifacts = officialArtifacts.filter(([, present]) => !present).map(([name]) => name);
 const missingCustomArtifacts = customArtifacts.filter(([, present]) => !present).map(([name]) => name);
 
@@ -79,7 +81,7 @@ const unknownForkMigrations = forkMigrationIds.filter(
 
 const classification = classifyForkLineage(db, upstreamSchemaVersion);
 const schemaReady =
-  classification === 'dual-lineage-v4.2' &&
+  classification === 'dual-lineage-v4.3' &&
   upstreamSchemaVersion === UPSTREAM_SCHEMA_VERSION &&
   missingOfficialArtifacts.length === 0 &&
   missingCustomArtifacts.length === 0 &&

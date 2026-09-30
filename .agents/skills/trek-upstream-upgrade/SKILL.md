@@ -70,6 +70,12 @@ Rehearse before committing to either strategy. Count unique conflict paths and c
 - Drop superseded patches and document why they are no longer carried.
 - Keep each core and SDK/package version at the value shipped by the chosen upstream release unless the user explicitly chooses otherwise; independently versioned packages need not share the core version number.
 
+## TREK FX upgrade contract
+
+The v4.3.3 integration deliberately keeps **preview, then manual apply** instead of upstream's automatic freeze-on-open. Preserve explicit → trip → global priority and provenance across REST, MCP, plugin RPC, reservations and imports. Intentional 1:1 rates are identified by provenance; the legacy default 1 is not evidence of freezing. Missing legacy rates are excluded from settlement and shown as awaiting conversion, never silently assumed to be 1:1. New foreign writes require a valid rate, while unrelated edits preserve the freeze. Keep nullable preview amounts/deltas and reject stale previews before writing.
+
+Use the [v4.3.3 evidence ledger](../../../docs/agents/upgrades/v4.3.3.md) for this decision and schema 244, not as proof of a deployed baseline. The earlier uncommitted v4.3.0 attempt is not an integration baseline. During implementation use persistent worktrees and commit checkpoints so an expired temporary directory cannot lose the only copy of work.
+
 ## Protect database lineages and production data
 
 Never edit published upstream migrations to make a fork database fit. Detect overlapping or divergent migration histories explicitly.

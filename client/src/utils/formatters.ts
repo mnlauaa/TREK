@@ -138,6 +138,7 @@ export function formatMoney(
   locale: string,
   opts?: { decimals?: number },
 ): string {
+  if (!Number.isFinite(value)) return '—'
   const cur = (currency || 'EUR').toUpperCase()
   const decimals = opts?.decimals ?? currencyDecimals(cur)
   // Format in the currency's home convention, not the app language, so the symbol

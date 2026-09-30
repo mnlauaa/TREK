@@ -18,6 +18,12 @@ describe('mapsSearchRequestSchema', () => {
     expect(mapsSearchRequestSchema.safeParse({}).success).toBe(false);
   });
 
+  it('takes "google" as the one provider a search can be sent to alone, and nothing else', () => {
+    expect(mapsSearchRequestSchema.safeParse({ query: 'berlin', provider: 'google' }).success).toBe(true);
+    expect(mapsSearchRequestSchema.safeParse({ query: 'berlin', provider: 'osm' }).success).toBe(false);
+    expect(mapsSearchRequestSchema.safeParse({ query: 'berlin', provider: '' }).success).toBe(false);
+  });
+
   it('allows an optional circle locationBias with numeric lat/lng and optional radius', () => {
     expect(mapsSearchRequestSchema.safeParse({ query: 'berlin', locationBias: { lat: 52.5, lng: 13.4 } }).success).toBe(
       true,

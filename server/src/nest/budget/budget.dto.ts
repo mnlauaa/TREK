@@ -11,6 +11,8 @@ import {
   setTripExchangeRateRequestSchema,
   previewTripExchangeRateRequestSchema,
   applyTripExchangeRateRequestSchema,
+  budgetFreezeRatesRequestSchema,
+  budgetSettlementQuerySchema,
 } from '@trek/shared';
 
 import { createZodDto } from 'nestjs-zod';
@@ -33,3 +35,6 @@ export class BudgetUpdateSettlementDto extends createZodDto(budgetUpdateSettleme
 export class SetTripExchangeRateDto extends createZodDto(setTripExchangeRateRequestSchema) {}
 export class PreviewTripExchangeRateDto extends createZodDto(previewTripExchangeRateRequestSchema) {}
 export class ApplyTripExchangeRateDto extends createZodDto(applyTripExchangeRateRequestSchema) {}
+export class BudgetFreezeRatesDto extends createZodDto(budgetFreezeRatesRequestSchema) {}
+/** GET …/settlement query (`base`, and `base_rate` coerced from the query string). */
+export class BudgetSettlementQueryDto extends createZodDto(budgetSettlementQuerySchema) {}

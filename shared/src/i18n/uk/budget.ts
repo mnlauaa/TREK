@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'платить',
   'costs.settle': 'Розрахувати',
   'costs.balances': 'Баланси',
+  'costs.finalBudget': 'Підсумковий бюджет',
+  'costs.finalExpenses': 'Оплачені витрати',
+  'costs.finalReimbursed': 'Відшкодування нетто',
+  'costs.finalPending': 'Очікувані відшкодування',
   'costs.byCategory': 'За категоріями',
   'costs.noCategories': 'Витрат ще немає.',
   'costs.settleHistory': 'Історія розрахунків',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'типовий курс подорожі',
   'costs.exchangeRates.source.explicit': 'курс вручну',
   'costs.exchangeRates.source.legacy': 'старий курс',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'недоступно',
   'costs.exchangeRates.item.expense': 'Витрата',
   'costs.exchangeRates.item.settlement': 'Платіж',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Перемкнути між витратою та поверненням',
+  'costs.receipts': 'Чеки',
+  'costs.receiptsTitle': 'Чеки та рахунки',
+  'costs.attachReceipt': 'Додати чек / рахунок',
+  'costs.noReceipts': 'Немає доданих чеків',
+  'costs.deleteReceipt': 'Видалити чек',
+  'costs.viewReceipt': 'Переглянути чек',
+  'costs.receiptLeftBehind':
+    'Не вдалося зберегти, {count} завантажених чеків залишилися. Видаліть їх на вкладці «Файли».',
 };
 export default budget;

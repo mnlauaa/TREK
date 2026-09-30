@@ -27,6 +27,7 @@ import CategoryManager from '../components/Admin/CategoryManager';
 import DefaultUserSettingsTab from '../components/Admin/DefaultUserSettingsTab';
 import DevNotificationsPanel from '../components/Admin/DevNotificationsPanel';
 import PackingTemplateManager from '../components/Admin/PackingTemplateManager';
+import SchoolHolidayCatalog from '../components/Admin/SchoolHolidayCatalog';
 import AdminStoragePanel from '../components/Admin/storage/AdminStoragePanel';
 import PageShell from '../components/Layout/PageShell';
 import PageSidebar, { type PageSidebarTab } from '../components/Layout/PageSidebar';
@@ -175,6 +176,7 @@ function AdminPageDesktop(): React.ReactElement {
             <div className="space-y-6">
               <PackingTemplateManager />
               <CategoryManager />
+              <SchoolHolidayCatalog />
             </div>
           )}
 

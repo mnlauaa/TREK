@@ -50,6 +50,12 @@ on:
       - 'package-lock.json'
       - 'sonar-project.properties'
       - '.github/workflows/test.yml'
+      # The image's start-up shape is pinned by a unit test
+      # (server/tests/unit/docker-entrypoint.test.ts), so a change to the
+      # Dockerfile or to the entrypoint script has to run the suite — that is
+      # exactly the change the test exists to catch.
+      - 'Dockerfile'
+      - 'server/scripts/**'
       # Docs inside the workspaces (CLAUDE.md, READMEs, PATTERN.md) affect
       # neither the tests nor the scan — no test reads checked-in markdown
       # and SonarCloud has no markdown analyzer. Negations must stay last.
@@ -68,6 +74,12 @@ on:
       - 'package-lock.json'
       - 'sonar-project.properties'
       - '.github/workflows/test.yml'
+      # The image's start-up shape is pinned by a unit test
+      # (server/tests/unit/docker-entrypoint.test.ts), so a change to the
+      # Dockerfile or to the entrypoint script has to run the suite — that is
+      # exactly the change the test exists to catch.
+      - 'Dockerfile'
+      - 'server/scripts/**'
       # Docs inside the workspaces (CLAUDE.md, READMEs, PATTERN.md) affect
       # neither the tests nor the scan — no test reads checked-in markdown
       # and SonarCloud has no markdown analyzer. Negations must stay last.
@@ -249,25 +261,45 @@ jobs:
       - name: Build shared
         run: npm run build --workspace=shared
 
+      # Community MinIO is source-only now; both official image registries refuse
+      # the old pinned image. Build the SAME release from its peeled commit.
+      - name: Checkout pinned community MinIO
+        uses: actions/checkout@v6
+        with:
+          repository: minio/minio
+          ref: 0d7408fc9969caf07de6a8c3a84f9fbb10a6739e # RELEASE.2025-04-22T22-12-26Z
+          path: .ci-minio
+          persist-credentials: false
+
+      - name: Set up MinIO compiler
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.2'
+          cache-dependency-path: .ci-minio/go.sum
+
+      - name: Build pinned MinIO
+        working-directory: .ci-minio
+        run: go build -trimpath -o "$RUNNER_TEMP/minio" .
+
       - name: Start MinIO
-        # Keep the fork's contract test independent of a proprietary AIStor
-        # license secret. 127.0.0.1 is load-bearing: aws-lite picks path-style
-        # only for IP/localhost hosts, which is what community MinIO expects.
+        # Bind only to loopback; these credentials/data exist for this job only.
+        env:
+          MINIO_ROOT_USER: trekci
+          MINIO_ROOT_PASSWORD: trekci-secret
         run: |
-          docker run -d --name minio -p 127.0.0.1:9000:9000 \
-            -e MINIO_ROOT_USER=trekci -e MINIO_ROOT_PASSWORD=trekci-secret \
-            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e server /data
+          mkdir -p "$RUNNER_TEMP/minio-data"
+          "$RUNNER_TEMP/minio" server --address 127.0.0.1:9000 "$RUNNER_TEMP/minio-data" > "$RUNNER_TEMP/minio.log" 2>&1 &
 
       - name: Wait for MinIO
         # Poll from the runner so the check does not depend on tools in the image.
-        # 60 x 2s leaves enough margin for a cold image pull.
+        # 60 x 2s leaves enough margin for initial storage setup.
         run: |
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:9000/minio/health/live && exit 0
             sleep 2
           done
           echo "MinIO never became healthy" >&2
-          docker logs minio >&2
+          cat "$RUNNER_TEMP/minio.log" >&2
           exit 1
 
       - name: Run the S3 driver contract suite

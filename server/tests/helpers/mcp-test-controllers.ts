@@ -31,6 +31,7 @@ import { RateLimitService } from '../../src/nest/common/rate-limit.service';
 import { DatabaseService } from '../../src/nest/database/database.service';
 import { DayNotesMcp } from '../../src/nest/day-notes/day-notes.mcp';
 import { DayNotesService } from '../../src/nest/day-notes/day-notes.service';
+import { DayRemovalService } from '../../src/nest/days/day-removal.service';
 import { DaysMcp } from '../../src/nest/days/days.mcp';
 import { DaysService } from '../../src/nest/days/days.service';
 import { FeedsMcp } from '../../src/nest/feeds/feeds.mcp';
@@ -70,6 +71,7 @@ import { TrekPhotosRepository } from '../../src/nest/photos/trek-photos.reposito
 import { PlacePhotoCacheService } from '../../src/nest/place-photos/place-photo-cache.service';
 import { PlacesMcp } from '../../src/nest/places/places.mcp';
 import { PlacesService } from '../../src/nest/places/places.service';
+import { PluginSearchMcp } from '../../src/nest/plugins/contributions/plugin-search.mcp';
 // No plugin supervisor in this harness, so PluginHooks is built over an inert runtime
 // and the warnings tool answers empty by default; the trip-warnings suite spies on
 // PluginHooks.prototype to play the provider fan-out.
@@ -82,6 +84,12 @@ import { ReservationImportMcp } from '../../src/nest/reservation-import/reservat
 import { ReservationsReadRepository } from '../../src/nest/reservations/reservations-read.repository';
 import { ReservationsMcp } from '../../src/nest/reservations/reservations.mcp';
 import { ReservationsService } from '../../src/nest/reservations/reservations.service';
+import { RoadtripPreferencesMcp } from '../../src/nest/roadtrip/roadtrip-preferences.mcp';
+import { RoadtripPreferencesService } from '../../src/nest/roadtrip/roadtrip-preferences.service';
+import { RoadtripMcp } from '../../src/nest/roadtrip/roadtrip.mcp';
+import { RoadtripService } from '../../src/nest/roadtrip/roadtrip.service';
+import { SchoolHolidaysMcp } from '../../src/nest/school-holidays/school-holidays.mcp';
+import { SchoolHolidaysService } from '../../src/nest/school-holidays/school-holidays.service';
 import { SettingsMcp } from '../../src/nest/settings/settings.mcp';
 import { SettingsService } from '../../src/nest/settings/settings.service';
 import { ShareMcp } from '../../src/nest/share/share.mcp';
@@ -90,6 +98,7 @@ import { TagsMcp } from '../../src/nest/tags/tags.mcp';
 import { TagsService } from '../../src/nest/tags/tags.service';
 import { TodoMcp } from '../../src/nest/todo/todo.mcp';
 import { TodoService } from '../../src/nest/todo/todo.service';
+import { GoogleTransitProvider } from '../../src/nest/transit/google-transit.provider';
 import { TransitMcp } from '../../src/nest/transit/transit.mcp';
 import { TransitService } from '../../src/nest/transit/transit.service';
 import { TripInviteMcp } from '../../src/nest/trip-invite/trip-invite.mcp';
@@ -161,6 +170,22 @@ export function createMcpTestRegistry(): McpRegistry {
   // the journey skeleton hooks landed on the place write paths. tsconfig.tests.json
   // covers `tests` now and CI runs it (npm run typecheck:tests), so a missed
   // dependency fails the build — pass them for real regardless of the gate.
+  // One instance, four consumers: AssignmentsMcp, ReservationsMcp, PlacesMcp and
+  // AccommodationsService, which writes the day stop a booked night implies.
+  const assignmentsService = new AssignmentsService(
+    dbService,
+    permissionsService,
+    realtimeService,
+    queryHelpersService,
+    journeyDomain,
+  );
+  const accommodationsService = new AccommodationsService(
+    dbService,
+    permissionsService,
+    realtimeService,
+    assignmentsService,
+  );
+  // Built after it: deleting a place cancels the nights booked at it through this one.
   const placesService = new PlacesService(
     dbService,
     permissionsService,
@@ -171,7 +196,9 @@ export function createMcpTestRegistry(): McpRegistry {
     placePhotoCache,
     journeyDomain,
     generalStorage,
+    accommodationsService,
   );
+  // Built after it: a hotel booking writes the stay's day stop through this one.
   const reservationsService = new ReservationsService(
     dbService,
     permissionsService,
@@ -179,8 +206,10 @@ export function createMcpTestRegistry(): McpRegistry {
     realtimeService,
     notificationsStub(),
     new ReservationsReadRepository(dbService),
+    accommodationsService,
   );
-  const accommodationsService = new AccommodationsService(dbService, permissionsService, realtimeService);
+  // Deleting a day cancels the stays on it through the same accommodations service.
+  const dayRemovalService = new DayRemovalService(dbService, daysService, accommodationsService, assignmentsService);
   const membersService = new TripMembersService(
     dbService,
     budgetService,
@@ -199,6 +228,7 @@ export function createMcpTestRegistry(): McpRegistry {
     realtimeService,
     new UnsplashService(dbService, new RuntimeEnvService(), generalStorage),
     generalStorage,
+    new SettingsService(dbService),
   );
   const readModelService = new TripReadModelService(
     dbService,
@@ -219,14 +249,6 @@ export function createMcpTestRegistry(): McpRegistry {
   // one — against the same test DB, which is what makes the `when:` gates
   // answer truthfully here instead of against the process-wide singleton.
   const addonsService = new AddonsService(dbService);
-  // One instance, three consumers: AssignmentsMcp, ReservationsMcp and PlacesMcp.
-  const assignmentsService = new AssignmentsService(
-    dbService,
-    permissionsService,
-    realtimeService,
-    queryHelpersService,
-    journeyDomain,
-  );
   // The two photo providers, shared by MemoriesMcp (which browses them) and by
   // the capture backfill JourneyMcp schedules after a provider photo is attached
   // (which asks them when and where it was taken). Built for real rather than
@@ -272,7 +294,15 @@ export function createMcpTestRegistry(): McpRegistry {
       ),
       new ReservationsMcp(reservationsService, daysService, budgetService, authService, assignmentsService, guards),
       new DayNotesMcp(new DayNotesService(dbService, permissionsService, realtimeService), authService, guards),
-      new DaysMcp(daysService, authService, guards),
+      new DaysMcp(daysService, authService, guards, dayRemovalService),
+      new RoadtripMcp(new RoadtripService(dbService, realtimeService), dbService, guards, authService, addonsService),
+      new RoadtripPreferencesMcp(
+        new RoadtripPreferencesService(dbService, realtimeService),
+        authService,
+        addonsService,
+        dbService,
+        guards,
+      ),
       new FilesMcp(
         new FilesService(dbService, permissionsService, realtimeService, new EphemeralTokenService(), generalStorage),
         authService,
@@ -282,6 +312,7 @@ export function createMcpTestRegistry(): McpRegistry {
       new AssignmentsMcp(assignmentsService, daysService, authService, guards),
       new CollabMcp(collabService, authService, addonsService, guards),
       new VacayMcp(new VacayService(dbService, realtimeService, notificationsStub()), authService, addonsService),
+      new SchoolHolidaysMcp(new SchoolHolidaysService(dbService), guards),
       new TripsMcp(
         tripsService,
         todoService,
@@ -321,7 +352,14 @@ export function createMcpTestRegistry(): McpRegistry {
         authService,
         addonsService,
       ),
-      new TransitMcp(new TransitService(), daysService, reservationsService, dbService, authService, guards),
+      new TransitMcp(
+        new TransitService(new GoogleTransitProvider(dbService)),
+        daysService,
+        reservationsService,
+        dbService,
+        authService,
+        guards,
+      ),
       new AtlasMcp(new AtlasService(dbService), addonsService, authService),
       new JourneyMcp(
         journeyDomain,
@@ -352,6 +390,9 @@ export function createMcpTestRegistry(): McpRegistry {
       new TripWarningsMcp(
         new PluginHooks({ providersOf: () => [], invokeHook: async () => [] } as unknown as PluginRuntimeService),
         dbService,
+      ),
+      new PluginSearchMcp(
+        new PluginHooks({ providersOf: () => [], invokeHook: async () => [] } as unknown as PluginRuntimeService),
       ),
     ],
     { accessPolicy: trekMcpAccessPolicy, validateAccess: trekMcpValidateAccess },

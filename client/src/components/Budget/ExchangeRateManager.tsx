@@ -18,9 +18,9 @@ interface PreviewRow {
   source: string;
   old_exchange_rate: number;
   new_exchange_rate: number;
-  old_trip_value: number;
+  old_trip_value: number | null;
   new_trip_value: number;
-  trip_value_delta: number;
+  trip_value_delta: number | null;
   selected: boolean;
 }
 
@@ -347,7 +347,7 @@ export default function ExchangeRateManager({
                     {t(`costs.exchangeRates.item.${row.type}`)} #{row.id} · {sourceLabel(t, row.source)}
                   </span>
                   <span className="font-mono">
-                    {row.old_trip_value.toPrecision(6)} → {row.new_trip_value.toPrecision(6)}
+                    {(row.old_trip_value === null ? t('costs.exchangeRates.awaitingConversion') : row.old_trip_value.toPrecision(6))} → {row.new_trip_value.toPrecision(6)}
                   </span>
                 </label>
               );

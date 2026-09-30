@@ -16,6 +16,9 @@ import { splitManagedKeys } from '../common/managed';
 import { validatePassword } from '../common/passwordPolicy';
 import { DatabaseService } from '../database/database.service';
 import { AllowedFileTypesService } from '../files/allowed-file-types.service';
+// Type-and-guard only: the app-config read reports the provider choice, it does
+// not construct one, so this does not pull the maps domain into auth.
+import { isPlacesProviderChoice } from '../maps/providers/places-provider';
 import { MailerService } from '../notifications/mailer/mailer.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { resolveApiKey } from '../settings/instance-api-keys';
@@ -259,7 +262,8 @@ export class AuthService {
     if (cfg.rpID !== 'localhost' || cfg.explicitOrigins) return true;
     const env = readEnv();
     const declaredRpId = (
-      env.webauthn.rpId || this.db.get<{ value: string }>("SELECT value FROM app_settings WHERE key = 'webauthn_rp_id'")?.value
+      env.webauthn.rpId ||
+      this.db.get<{ value: string }>("SELECT value FROM app_settings WHERE key = 'webauthn_rp_id'")?.value
     )?.trim();
     return !!(declaredRpId || env.app.appUrl || env.http.allowedOriginsRaw);
   }
@@ -284,6 +288,15 @@ export class AuthService {
       authenticatedUser?.id ?? 0,
       readEnv().maps.placesApiKey,
     ).key;
+    // The same question for Amap, asked the same way. The client needs both to
+    // tell "search is unavailable" from "search runs on OpenStreetMap", and to
+    // know whether the provider the admin selected actually has a credential.
+    const hasAmapKey = !!resolveApiKey(this.db, 'amap_api_key', authenticatedUser?.id ?? 0, readEnv().maps.amapApiKey)
+      .key;
+    const placesProviderRow = this.db.get<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key = 'places_provider'",
+    )?.value;
+    const placesProvider = isPlacesProviderChoice(placesProviderRow) ? placesProviderRow : 'auto';
     const oidcDisplayName =
       readEnv().oidc.displayName ||
       this.db.get<{ value: string }>("SELECT value FROM app_settings WHERE key = 'oidc_display_name'")?.value ||
@@ -333,6 +346,13 @@ export class AuthService {
       "SELECT value FROM app_settings WHERE key = 'places_enrich_enabled'",
     )?.value;
     const placesEnrichEnabled = placesEnrichSetting !== 'false';
+    // Fail-closed, and deliberately on this unauthenticated endpoint: whether an
+    // instance records what its users search for is something a visitor is
+    // entitled to know before logging in, not a detail to keep behind the door.
+    const placeShadowSetting = this.db.get<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key = 'place_shadow_enabled'",
+    )?.value;
+    const placeShadowEnabled = placeShadowSetting === 'true';
     const setupComplete =
       userCount > 0 && !this.db.get("SELECT id FROM users WHERE role = 'admin' AND must_change_password = 1 LIMIT 1");
 
@@ -358,6 +378,8 @@ export class AuthService {
       source_code_url: readEnv().app.sourceCodeUrl || 'https://github.com/mnlauaa/TREK',
       is_prerelease: version.includes('-pre.'),
       has_maps_key: hasGoogleKey,
+      has_amap_key: hasAmapKey,
+      places_provider: placesProvider,
       oidc_configured: oidcConfigured,
       oidc_display_name: oidcConfigured ? oidcDisplayName || 'SSO' : undefined,
       require_mfa: requireMfaRow?.value === 'true',
@@ -388,6 +410,7 @@ export class AuthService {
       places_autocomplete_enabled: placesAutocompleteEnabled,
       places_details_enabled: placesDetailsEnabled,
       places_enrich_enabled: placesEnrichEnabled,
+      place_shadow_enabled: placeShadowEnabled,
       permissions: authenticatedUser ? this.permissions.getAllPermissions() : undefined,
       // Case-sensitive on purpose (legacy parity).
       dev_mode: readEnv().app.nodeEnv === 'development',
@@ -825,6 +848,10 @@ export class AuthService {
         if (key === 'require_mfa') {
           val = body[key] === true || val === 'true' ? 'true' : 'false';
         }
+        // An unknown provider name is dropped, not stored: the maps service
+        // degrades an unrecognised row to 'auto', so writing one would show the
+        // admin a saved setting that quietly does nothing.
+        if (key === 'places_provider' && !isPlacesProviderChoice(val)) continue;
         if (key === 'smtp_pass' && val === '••••••••') continue;
         if (key === 'smtp_pass') val = encrypt_api_key(val);
         if (key === 'admin_webhook_url' && val === '••••••••') continue;
