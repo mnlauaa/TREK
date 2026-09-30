@@ -73,7 +73,7 @@ const SPLIT_MODES = [
 export default function MCostSheet({
   tripId,
   base,
-  tripCurrency = base,
+  tripCurrency: suppliedTripCurrency,
   people,
   me,
   editing,
@@ -87,6 +87,7 @@ export default function MCostSheet({
   const sym = (c: string) => SYMBOLS[c] || c + ' ';
   // A saved expense without a currency opens in the trip's own (#2525), as on desktop.
   const { tripCurrency: tripCur, editingCurrency, preview } = useExpenseFx(base, editing);
+  const tripCurrency = suppliedTripCurrency || tripCur;
 
   // Internal open flag so the exit animation still plays even though the parent
   // unmounts us on close.

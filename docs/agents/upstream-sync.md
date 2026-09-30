@@ -4,15 +4,17 @@ The repository includes the [TREK Upstream Upgrade skill](../../.agents/skills/t
 
 `origin` is the downstream fork and `upstream` is `https://github.com/liketrek/TREK.git`. Upgrade from official stable release tags, never from upstream `dev`. Record tag and commit signatures separately from release provenance. An unsigned release requires a recorded user acceptance and a pinned full commit SHA.
 
-## Release-baseline workflow
+## Release integration workflow
 
-1. Fetch and verify the requested upstream tag and record the current fork tips with `pre-vX/` safety tags.
-2. Create `codex/upgrade-trek-vX` from the tag and run the unmodified upstream baseline tests.
-3. Port the customization inventory below by contract and regression test; do not replay historical implementation commits.
-4. Rehearse database migration on a restored production backup and run the read-only upgrade audit.
-5. After verification and reconciliation of every unique downstream change, bridge the preserved old tips with the `ours` strategy only when necessary, and verify the tree hash did not change. Target `dev`; branch promotion and deployment are separately authorized actions.
+1. Resolve the requested official release and full commit SHA; record the signature status and current fork tips. Use a read-only merge simulation for planning.
+2. For compatible 4.x upgrades, create a persistent `codex/upgrade-trek-vX` worktree from the latest `origin/dev` and incrementally merge the pinned release. Validate an independent, unmodified upstream worktree.
+3. Resolve by feature contract, including automatically merged overlapping files. Preserve custom commit ancestry and save implementation checkpoints.
+4. Test real migration prefixes, old fork lineages, partial/repeated upgrades and an isolated data copy. Do not relabel a current database as an old schema.
+5. Deliver validation evidence in a PR to `dev`. A fresh production-backup restore and live-plugin checks gate later promotion/deployment, not independently testable PR work.
 
-v4.2.1 is this branch's upstream baseline (`515398f8ee3000b36a5f5b80365d6214f3f1a723`), merged incrementally from v4.1.1 (`33a33e7`). Both the v4.2.1 tag and commit are unsigned; the user accepted the official release pinned to that SHA. Compatible 4.x tags use an incremental release-tag merge from the last adopted tag. Return to the baseline-port workflow for a major version, an upstream migration-lineage change, a delete/replace conflict in a customized subsystem, or a merge whose behavior cannot be proven by the customization regressions. Always rehearse the merge first and record exact conflict and overlapping-path counts. See [the v4.2.1 evidence ledger](upgrades/v4.2.1.md).
+This upgrade branch adopts v4.3.3 (`1c05ee4b3ac9523c41ccdd3baad989ba48a7409a`) directly from the fork's v4.2.1 baseline (`515398f8ee3000b36a5f5b80365d6214f3f1a723`). Its unsigned tag and commit are accepted on official release provenance plus the pinned SHA. See [v4.3.3 evidence and remaining gates](upgrades/v4.3.3.md) and [the preceding v4.2.1 ledger](upgrades/v4.2.1.md). The unsubmitted v4.3.0 attempt is not a delivered baseline.
+
+Use the release-baseline port described by the project skill only for incompatible architecture/lineage changes or an unprovable merge. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
 
 ## Customization inventory
 
@@ -34,4 +36,4 @@ Superseded: the Mapbox reservation-source teardown patch, which is already prese
 
 The old fork used migrations 176–180 for different schemas than upstream v4, then used 199–202 while upstream v4.1 assigned 199–200 to other changes. `schema_version` now tracks only the official upstream chain; named rows in `fork_schema_migrations` track the crosswalk, enhanced FX, Guest identity, and Web Push schemas. The historical normalization bridge still ends at 200. The official runner subsequently applies migrations 201–205; never normalize a legacy database directly to 205. Startup and the read-only audit share artifact-based lineage classification and reject mixed or unknown histories.
 
-Never boot an unmodified upstream image against a fork database. Run `npm run audit:v4-upgrade --workspace=server -- --db <copy>` before migration and add `--require-current` afterward to require schema 205, all fork migrations, and clean integrity/foreign-key checks. Rehearse against an isolated restored backup. If no production backup is available, a tested PR can still be prepared, but production rehearsal remains a merge/deployment gate. Roll back only by restoring the complete pre-upgrade database, uploads, encryption material, plugin data, configuration, and old image.
+Never boot an unmodified upstream image against a fork database. Run `npm run audit:v4-upgrade --workspace=server -- --db <copy>` before migration and add `--require-current` afterward to require schema 244, all fork migrations, and clean integrity/foreign-key checks. Rehearse against an isolated restored backup. If no production backup is available, a tested PR can still be prepared, but production rehearsal remains a merge/deployment gate. Roll back only by restoring the complete pre-upgrade database, uploads, encryption material, plugin data, configuration, and old image.

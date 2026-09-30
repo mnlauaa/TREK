@@ -1,3 +1,4 @@
+import { localIsoDate } from '../../../../src/utils/localDate'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '../../../helpers/render'
 import { buildPlanner, buildShell } from '../../../helpers/mobileTrip'
@@ -152,7 +153,7 @@ function renderTab(p: TripPlanner = planner(), shell: MTripShellApi = buildShell
 function freezeAt(hour: number, minute: number): string {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2026, 4, 2, hour, minute))
-  return new Date().toISOString().slice(0, 10)
+  return localIsoDate()
 }
 
 function today(date: string): Partial<TripPlanner> {

@@ -1,4 +1,4 @@
-import { classifyForkLineage, FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
+import { officialV43Artifacts, classifyForkLineage, FORK_SCHEMA_MIGRATION_IDS, UPSTREAM_SCHEMA_VERSION } from '../src/db/fork-migrations';
 
 import Database from 'better-sqlite3';
 import fs from 'node:fs';

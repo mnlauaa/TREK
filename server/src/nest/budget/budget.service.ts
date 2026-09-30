@@ -466,16 +466,10 @@ export class BudgetService {
    * "units of the item/display currency per 1 trip currency" — the settlement
    * converts with it via `amount / rate`.
    *
-   * Only freezes for a foreign currency with no explicit rate. The server's own rate
-   * comes first; `fallback_fx`, rates the caller lent for this write, only fills a
-   * currency the server cannot quote (resolveRate). With neither, a new row is
-   * stored unfrozen and left out of every figure until a rate turns up. On update it
-   * (re)freezes only when the currency changes (checked against `budget_items`), so
-   * an unrelated edit never moves money, and a change with no rate at all resets the
-   * row to unfrozen instead of keeping the old currency's rate. `fallback_fx` is taken
-   * off `data` either way, so it never reaches the write. Callers must invoke this
-   * *before* the (synchronous) DB write: the raw create/update stay sync because
-   * better-sqlite3 transactions can't await.
+   * Explicit input wins, then the trip default, then the global snapshot. A client
+   * fallback only fills a missing server quote. New foreign writes without a rate
+   * are rejected; unrelated edits retain the existing freeze and provenance.
+   * Freeze before the synchronous write because SQLite transactions cannot await.
    */
   async freezeForeignRate(
     tripId: string | number,
@@ -633,23 +627,33 @@ export class BudgetService {
       return r && r > 0 ? r : 1;
     };
 
+    const bridge = rates?.[prev];
+    const defaults = this.db.all<{ currency: string; exchange_rate: number }>(
+      'SELECT currency, exchange_rate FROM trip_exchange_rates WHERE trip_id = ?', tripId);
+    const hasCustomForeignRows = ['budget_items', 'budget_settlements'].some(table => this.db.get(
+      `SELECT 1 FROM ${table} WHERE trip_id = ? AND UPPER(COALESCE(currency, ?)) != ?
+       AND exchange_rate_source IN ('identity','explicit','trip','global') AND exchange_rate > 0 LIMIT 1`, tripId, prev, next));
+    if ((defaults.length || hasCustomForeignRows) && !(bridge && Number.isFinite(bridge) && bridge > 0)) {
+      throw new ExchangeRateUnavailableError();
+    }
+    const rebasedAt = new Date().toISOString();
+
     const rebase = (table: 'budget_items' | 'budget_settlements') => {
       this.db.run(
         `UPDATE ${table} SET currency = ? WHERE trip_id = ? AND (currency IS NULL OR currency = '')`,
         prev,
         tripId,
       );
-      const rows = this.db.all<{ cur: string }>(
-        `SELECT DISTINCT currency AS cur FROM ${table} WHERE trip_id = ? AND currency IS NOT NULL`,
-        tripId,
-      );
-      for (const { cur } of rows) {
-        this.db.run(
-          `UPDATE ${table} SET exchange_rate = ? WHERE trip_id = ? AND currency = ?`,
-          rateFor(cur.toUpperCase()),
-          tripId,
-          cur,
-        );
+      const rows = this.db.all<{ id: number; currency: string; exchange_rate: number; exchange_rate_source: string | null; exchange_rate_source_version: string | null }>(
+        `SELECT id, currency, exchange_rate, exchange_rate_source, exchange_rate_source_version FROM ${table} WHERE trip_id = ?`, tripId);
+      for (const row of rows) {
+        const cur = row.currency.toUpperCase();
+        const custom = ['identity','explicit','trip','global'].includes(row.exchange_rate_source ?? '') && isFrozenRate(row.exchange_rate, row.exchange_rate_source);
+        const rate = cur === next ? 1 : custom && bridge ? row.exchange_rate * bridge : rateFor(cur);
+        const source = cur === next ? 'identity' : custom ? row.exchange_rate_source : rates?.[cur] ? 'global' : 'legacy';
+        this.db.run(`UPDATE ${table} SET exchange_rate = ?, exchange_rate_source = ?, exchange_rate_source_version = ?,
+          exchange_rate_effective_date = NULL, exchange_rate_set_at = ?, exchange_rate_set_by_user_id = NULL WHERE id = ?`,
+          rate, source, `rebase:${prev}:${next}:${row.exchange_rate_source_version ?? rebasedAt}`, rebasedAt, row.id);
       }
     };
 
@@ -670,6 +674,12 @@ export class BudgetService {
     this.db.transaction(() => {
       rebase('budget_items');
       rebase('budget_settlements');
+      for (const row of defaults) {
+        if (row.currency.toUpperCase() === next) this.db.run('DELETE FROM trip_exchange_rates WHERE trip_id = ? AND currency = ?', tripId, row.currency);
+        else this.db.run(`UPDATE trip_exchange_rates SET exchange_rate = ?, source_version = ?, effective_date = NULL,
+          set_at = ?, set_by_user_id = NULL WHERE trip_id = ? AND currency = ?`,
+          row.exchange_rate * bridge!, `rebase:${prev}:${next}:${rebasedAt}`, rebasedAt, tripId, row.currency);
+      }
       pinPlaces();
     });
   }
@@ -829,7 +839,7 @@ export class BudgetService {
   linkBudgetItemToReservation(
     tripId: string | number,
     reservationId: number,
-    data: { name: string; category?: string; total_price: number; currency?: string | null; exchange_rate?: number },
+    data: { name: string; category?: string; total_price: number } & ExchangeRateWrite,
   ) {
     // createBudgetItem accepts reservation_id directly — the legacy separate
     // UPDATE after the insert was redundant (and non-atomic).

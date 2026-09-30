@@ -41,7 +41,7 @@ export class ReservationsRpc {
     this.requireOwnReferences(tripId, input);
     const i = input as { title?: string; type?: string; create_budget_entry?: unknown };
     // Same as the REST route: the price keeps its currency, at a rate frozen now (#2525).
-    const budgetEntry = await this.reservations.withFrozenRate(tripId, i.create_budget_entry as never);
+    const budgetEntry = await this.reservations.withFrozenRate(tripId, i.create_budget_entry as never, actor);
     const { reservation, accommodationCreated } = this.reservations.create(String(tripId), input as never);
     if (accommodationCreated) this.realtime.broadcast(tripId, 'accommodation:created', {}, undefined);
     this.reservations.syncBudgetOnCreate(String(tripId), reservation.id, i.title ?? '', i.type, budgetEntry, undefined);

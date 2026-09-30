@@ -139,13 +139,15 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
   // Display/base currency = the user's preferred currency (Settings), falling back
   // to the trip's own currency. Everything in Costs is converted to and shown in it.
   const displayCurrency = useSettingsStore((s) => s.settings.default_currency);
-  const base = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
+  const requestedBase = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
+  const [settlement, setSettlement] = useState<SettlementData | null>(null);
+  const base = settlement?.currency || requestedBase;
   // Pre-rework rows stored currency = NULL, meaning "the trip's own currency".
   const tripCurrency = (trip?.currency || base).toUpperCase();
   // Anchored on the trip currency's quote, the one the server books with (#2525).
-  const { convert, displayPerTrip } = useExchangeRates(base, tripCurrency);
+  const { displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
+  const { convert } = useExchangeRates(base, tripCurrency);
   const curOf = useCallback((e: BudgetItem) => e.currency || tripCurrency, [tripCurrency]);
-  const [settlement, setSettlement] = useState<SettlementData | null>(null);
   // A failed settlement read leaves `settlement` null, which the empty views would
   // otherwise present as "everyone is square", a balance claim we cannot make.
   const [settlementError, setSettlementError] = useState(false);
@@ -201,13 +203,13 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
   // answer in it when it cannot fetch a quote itself.
   const loadSettlement = useCallback(() => {
     budgetApi
-      .settlement(tripId, base, base !== tripCurrency ? displayPerTrip : null)
+      .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
       .then((s) => {
         setSettlement(s);
         setSettlementError(false);
       })
       .catch(() => setSettlementError(true));
-  }, [tripId, base, tripCurrency, displayPerTrip]);
+  }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
 
   useEffect(() => {
     loadBudgetItems(tripId);
@@ -217,8 +219,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
     loadSettlement();
   }, [budgetItems.length, loadSettlement]);
 
-  // Rows the server could not count get a rate frozen from the browser's, and the
-  // settlement is read again once they count.
+  // Missing rates are repaired only through the explicit preview/apply flow.
 
   // The bottom-nav "+" on the Costs tab opens the add-expense modal via ?create=expense.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -501,8 +502,8 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
           esc(t(catMeta(e.category).labelKey)),
           (e.total_price || 0).toFixed(currencyDecimals(cur)),
           cur,
-          ...(tripCol ? [inTrip.toFixed(currencyDecimals(tripCurrency))] : []),
-          baseTotal(e).toFixed(currencyDecimals(base)),
+          ...(tripCol ? [Number.isFinite(inTrip) ? inTrip.toFixed(currencyDecimals(tripCurrency)) : t('costs.exchangeRates.awaitingConversion')] : []),
+          Number.isFinite(baseTotal(e)) ? baseTotal(e).toFixed(currencyDecimals(base)) : t('costs.exchangeRates.awaitingConversion'),
           esc(note),
         ].join(sep)
       );
@@ -662,7 +663,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
       style={{ minHeight: '100%', background: 'var(--c-bg)', padding: isMobile ? '6px 14px 28px' : '40px 24px 48px' }}
     >
       {!!settlement?.unconverted?.currencies.length && (
-        <div role="status" className="mb-3 rounded-lg border border-amber-500 p-3 text-sm">
+        <div role="status" className="mb-3 rounded-lg border border-[var(--warning)] bg-warning-soft p-3 text-caption text-warning">
           {t('costs.exchangeRates.excluded', { currencies: settlement.unconverted.currencies.join(', ') })}
         </div>
       )}
@@ -2987,7 +2988,7 @@ export interface ExpensePrefill {
 export function ExpenseModal({
   tripId,
   base,
-  tripCurrency = base,
+  tripCurrency: suppliedTripCurrency,
   people,
   me,
   editing,
@@ -3012,6 +3013,7 @@ export function ExpenseModal({
   const sym = (c: string) => SYMBOLS[c] || c + ' ';
   // A saved expense without a currency opens in the trip's own (#2525).
   const { tripCurrency: tripCur, editingCurrency, preview } = useExpenseFx(base, editing);
+  const tripCurrency = suppliedTripCurrency || tripCur;
 
   const [name, setName] = useState(editing?.name || prefill?.name || '');
   const [cat, setCat] = useState<string>(editing ? catMeta(editing.category).key : prefill?.category || 'food');

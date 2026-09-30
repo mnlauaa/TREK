@@ -279,7 +279,7 @@ export class BudgetMcp {
   @Tool({
     name: 'create_budget_item',
     description:
-      'Add a budget/expense item to a trip. The cost is split equally among member_ids (omit to split across all trip members, or pass [] for a planning-only entry with no split); for an uneven split, give `members` the amount each participant owes instead. Use `payers` to record who actually paid and how much. Ask the user which trip members share this expense and who paid (resolve user IDs with list_trip_members) rather than guessing. A foreign currency is frozen at the exchange rate the server quotes today; when the server has none, the expense counts in no balance or total and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Add a budget/expense item to a trip. The cost is split equally among member_ids (omit to split across all trip members, or pass [] for a planning-only entry with no split); for an uneven split, give `members` the amount each participant owes instead. Use `payers` to record who actually paid and how much. Ask the user which trip members share this expense and who paid (resolve user IDs with list_trip_members) rather than guessing. Foreign writes use an explicit exchange_rate, then the trip default, then the global quote. Supply a manual exchange_rate when no quote is available; unrelated edits preserve the existing rate.',
     inputSchema: {
       tripId: z.number().int().positive(),
       name: z.string().min(1).max(200),
@@ -428,7 +428,7 @@ export class BudgetMcp {
   @Tool({
     name: 'update_budget_item',
     description:
-      'Update an existing budget/expense item in a trip. You can also re-split it (equally via member_ids, unevenly via members), change the currency it was entered in, move it to another date, and record who actually paid via payers (amounts in the expense currency). When changing who shares an expense or who paid, ask the user rather than guessing; resolve user IDs with list_trip_members. A foreign currency is frozen at the exchange rate the server quotes today; when the server has none, the expense counts in no balance or total and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Update an existing budget/expense item in a trip. You can also re-split it (equally via member_ids, unevenly via members), change the currency it was entered in, move it to another date, and record who actually paid via payers (amounts in the expense currency). When changing who shares an expense or who paid, ask the user rather than guessing; resolve user IDs with list_trip_members. Foreign writes use an explicit exchange_rate, then the trip default, then the global quote. Supply a manual exchange_rate when no quote is available; unrelated edits preserve the existing rate.',
     inputSchema: {
       tripId: z.number().int().positive(),
       itemId: z.number().int().positive(),
@@ -745,7 +745,7 @@ export class BudgetMcp {
   @Tool({
     name: 'create_settlement',
     description:
-      "Record a settle-up payment: from_user_id paid to_user_id the given amount to settle shared expenses. The amount is in the trip's base currency unless `currency` says otherwise. Use get_settlement_summary first to find who owes whom and how much. When the server has no exchange rate for a foreign `currency`, the payment counts in no balance and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.",
+      "Record a settle-up payment: from_user_id paid to_user_id the given amount to settle shared expenses. The amount is in the trip's base currency unless `currency` says otherwise. Use get_settlement_summary first to find who owes whom and how much. Foreign writes require an explicit exchange_rate or an available trip/global quote. Unrelated edits preserve the existing rate.",
     inputSchema: {
       tripId: z.number().int().positive(),
       from_user_id: z.number().int().positive().describe('User ID of the member who paid'),
@@ -819,7 +819,7 @@ export class BudgetMcp {
   @Tool({
     name: 'update_settlement',
     description:
-      'Update a recorded settle-up payment (who paid, who received, the amount and the currency it was made in). Every field is a full replace, so restate the ones that stay the same. When the server has no exchange rate for a foreign `currency`, the payment counts in no balance and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Update a recorded settle-up payment (who paid, who received, the amount and the currency it was made in). Every field is a full replace, so restate the ones that stay the same. Foreign writes require an explicit exchange_rate or an available trip/global quote. Unrelated edits preserve the existing rate.',
     inputSchema: {
       tripId: z.number().int().positive(),
       settlementId: z.number().int().positive(),

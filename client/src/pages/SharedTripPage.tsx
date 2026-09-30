@@ -1013,7 +1013,7 @@ export default function SharedTripPage() {
               convertBooked(amountOf(i), i.currency, i.exchange_rate, tripCurrency, convert, i.exchange_rate_source);
             // Whole cents: a converted amount otherwise printed a third decimal.
             const money = (v: number) =>
-              v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              Number.isFinite(v) ? v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : t('costs.exchangeRates.awaitingConversion');
             // What was entered, beside a row shown converted, as the Costs list prints it.
             const enteredOf = (i: Expense): string | null => {
               const entered = convertedLine(

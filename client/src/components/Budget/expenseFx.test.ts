@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { convertBooked, bookedInTrip } from '../../hooks/useExchangeRates'
 import { formatMoney } from '../../utils/formatters'
 import { editingCurrencyOf, expenseFxPreview, splitShareLabel } from './expenseFx'
 
@@ -61,3 +62,13 @@ describe('splitShareLabel', () => {
     expect(splitShareLabel(0, 'USD', { inTrip: null, shown: 10 }, 0, 'USD', sym, 'en-US')).toBe('$0.00')
   })
 })
+
+
+describe('explicit parity provenance', () => {
+  it('keeps a known 1:1 while legacy sentinel rows still use live conversion', () => {
+    const live = (amount: number, from: string | null | undefined) => from === 'USD' ? amount / 2 : amount;
+    expect(convertBooked(100, 'USD', 1, 'EUR', live, 'explicit')).toBe(100);
+    expect(convertBooked(100, 'USD', 1, 'EUR', live, 'legacy')).toBe(50);
+    expect(bookedInTrip(-100, 'USD', 1, 'EUR', 'trip')).toBe(-100);
+  });
+});

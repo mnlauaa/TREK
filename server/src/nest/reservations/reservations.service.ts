@@ -7,12 +7,13 @@ import { ReservationsReadRepository, toTraveler } from './reservations-read.repo
 import { keepMirroredPrice } from './reservation-metadata';
 import type { Reservation, User } from '../../types';
 import { BudgetService } from '../budget/budget.service';
+import type { ExchangeRateWrite } from '../budget/exchange-rates.service';
 import { typeToCostCategory } from '@trek/shared';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AccommodationsService, noStayMirror, type AccommodationMirror } from '../accommodations/accommodations.service';
 
 type Trip = TripAccess;
-type BudgetEntry = { total_price?: number; category?: string; currency?: string | null; exchange_rate?: number } | undefined;
+type BudgetEntry = ({ total_price?: number; category?: string } & ExchangeRateWrite) | undefined;
 
 export interface ReservationEndpoint {
   id?: number;
@@ -1037,14 +1038,14 @@ export class ReservationsService {
    * three-letter code is dropped, which leaves the price in the trip currency as before,
    * and a rate is never taken from the caller.
    */
-  async withFrozenRate(tripId: string | number, entry: BudgetEntry): Promise<BudgetEntry> {
+  async withFrozenRate(tripId: string | number, entry: BudgetEntry, userId?: number): Promise<BudgetEntry> {
     if (!entry || typeof entry !== 'object') return entry;
     const { currency: rawCurrency, exchange_rate: _callerRate, ...rest } = entry;
     const currency = typeof rawCurrency === 'string' ? rawCurrency.trim().toUpperCase() : '';
     if (!/^[A-Z]{3}$/.test(currency)) return rest;
-    const priced: { currency?: string | null; exchange_rate?: number } = { currency };
-    await this.budget.freezeForeignRate(tripId, priced);
-    return { ...rest, currency, ...(priced.exchange_rate != null ? { exchange_rate: priced.exchange_rate } : {}) };
+    const priced: ExchangeRateWrite = { currency };
+    await this.budget.freezeForeignRate(tripId, priced, undefined, undefined, userId);
+    return { ...rest, ...priced };
   }
 
   /** POST side effect: auto-create a linked budget item when a price is provided. */
@@ -1052,6 +1053,7 @@ export class ReservationsService {
     if (!entry || !(Number(entry.total_price) > 0)) return;
     try {
       const item = this.budget.linkBudgetItemToReservation(tripId, reservationId, {
+        ...entry,
         name: title,
         category: entry.category || type || 'Other',
         total_price: entry.total_price!,

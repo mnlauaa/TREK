@@ -358,13 +358,6 @@
     min-width: 0;
   }
 
-  .trek-dash .hero-title {
-    display: -webkit-box;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
 }
 .trek-dash .hero-top {
   display: flex;

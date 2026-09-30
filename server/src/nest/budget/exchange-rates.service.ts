@@ -352,6 +352,7 @@ export class ExchangeRatesService {
     const tripCurrency = upper(trip.currency);
     const currency = upper(data.currency === undefined ? existing?.currency : data.currency, tripCurrency);
     const oldCurrency = existing ? upper(existing.currency, tripCurrency) : null;
+    if (existing && currency === oldCurrency && data.exchange_rate === undefined) return;
     if (currency === tripCurrency) {
       this.applyProvenance(data, 1, 'identity', userId, `identity:${tripCurrency}`, null);
       data.exchange_rate_note = null;
@@ -363,7 +364,6 @@ export class ExchangeRatesService {
       this.applyProvenance(data, data.exchange_rate, 'explicit', userId, `explicit:${randomUUID()}`, null);
       return;
     }
-    if (existing && currency === oldCurrency) return;
     const resolution = await this.resolveExchangeRate(tripId, currency);
     if (!resolution) {
       const lent = fallback?.base.toUpperCase() === tripCurrency ? fallback.rates[currency] : undefined;

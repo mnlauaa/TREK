@@ -807,8 +807,8 @@ describe('MCostSheet', () => {
     renderSheet({ base: 'USD', editing });
 
     expect(totalField()).toHaveValue('100,00');
-    expect(screen.getByRole('button', { name: 'EUR €' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'USD $' })).toBeNull();
+    expect(screen.getByRole('button', { name: /EUR/  })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /USD/  })).toBeNull();
 
     fireEvent.click(saveBtn());
     await waitFor(() =>
@@ -842,7 +842,7 @@ describe('MCostSheet', () => {
     });
     renderSheet({ base: 'USD', editing });
 
-    const hint = screen.getByText(/live rate/).parentElement as HTMLElement;
+    const hint = screen.getByText(/display rate/).parentElement as HTMLElement;
     expect(within(hint).getByText('$801.76')).toBeInTheDocument();
     expect(within(hint).getByText(/^685,26\s€$/)).toBeInTheDocument();
     expect(within(hint).getByText('$791.55')).toBeInTheDocument();

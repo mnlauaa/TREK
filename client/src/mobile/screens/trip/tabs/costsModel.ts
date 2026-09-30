@@ -384,8 +384,8 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
         esc(opts.t(catMeta(e.category).labelKey)),
         (e.total_price || 0).toFixed(currencyDecimals(cur)),
         cur,
-        ...(tripCol ? [inTrip.toFixed(currencyDecimals(trip))] : []),
-        baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)),
+        ...(tripCol ? [Number.isFinite(inTrip) ? inTrip.toFixed(currencyDecimals(trip)) : opts.t('costs.exchangeRates.awaitingConversion')] : []),
+        Number.isFinite(baseTotal(e, opts.ctx)) ? baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)) : opts.t('costs.exchangeRates.awaitingConversion'),
         esc(note),
       ].join(sep)
     );

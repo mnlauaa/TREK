@@ -118,7 +118,7 @@ describe('ReservationsController (parity with the legacy /api/trips/:tripId/rese
       const svc = makeService({ create, syncBudgetOnCreate, withFrozenRate } as Partial<ReservationsService>);
       const body = { title: 'Aparthotel Silver', type: 'hotel', create_budget_entry: { total_price: 801.76, currency: 'usd' } };
       await new ReservationsController(svc, airtrailLink).create(user, '5', body, 'sock');
-      expect(withFrozenRate).toHaveBeenCalledWith('5', { total_price: 801.76, currency: 'usd' });
+      expect(withFrozenRate).toHaveBeenCalledWith('5', { total_price: 801.76, currency: 'usd' }, user.id);
       expect(syncBudgetOnCreate).toHaveBeenCalledWith('5', 9, 'Aparthotel Silver', 'hotel', { total_price: 801.76, currency: 'USD', exchange_rate: 1.17 }, 'sock');
     });
   });

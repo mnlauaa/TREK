@@ -145,8 +145,8 @@ export function convertBooked(
 /**
  * The amount a row was booked at in the trip currency, when it was booked through one: a
  * foreign currency with a frozen rate. Null for a row in the trip currency, and for one
- * written before the freeze existed. A rate of exactly 1 is the column default, not a booked
- * rate, and those rows still convert live, as they always did.
+ * written before the freeze existed. A rate of exactly 1 is frozen only when its source records an intentional rate;
+ * legacy/default 1 still converts live.
  *
  * The lists print it between the amount entered and the amount shown, so a row whose value
  * moved with the rate shows where the move came from instead of a figure nobody typed.
@@ -185,7 +185,7 @@ export function tripAmountOf(
   const cur = (rowCurrency || trip).toUpperCase()
   if (cur === trip) return amount
   const perTrip = convertLive(1, trip)
-  return perTrip > 0 ? convertLive(amount, cur) / perTrip : amount
+  return perTrip > 0 ? convertLive(amount, cur) / perTrip : Number.NaN
 }
 
 /** An amount and the currency it is in. */
@@ -285,7 +285,7 @@ export function useExchangeRates(base: string, tripCurrency?: string | null) {
       const viaAnchor = crossRate(anchorRates, upper, f)
       if (viaAnchor != null) return amount * viaAnchor
       const r = rates?.[f]
-      return r && r > 0 ? amount / r : amount
+      return r && r > 0 ? amount / r : Number.NaN
     },
     [rates, anchorRates, upper],
   )

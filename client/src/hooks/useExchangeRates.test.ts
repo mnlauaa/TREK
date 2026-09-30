@@ -284,6 +284,8 @@ describe('useExchangeRates anchored on the trip currency (#2525)', () => {
     const none = renderHook(() => useExchangeRates('GBP', 'AUD'))
     await waitFor(() => expect(calls).toBe(2))
     expect(none.result.current.displayPerTrip).toBeNull()
+    expect(none.result.current.convert(100, 'AUD')).toBeNaN()
+    expect(none.result.current.convert(100, 'GBP')).toBe(100)
   })
 
   // A trip in gold read in rials: 2.6 billion rials to the ounce is past the 1e9 the
@@ -361,4 +363,14 @@ describe('convertedLine', () => {
     expect(convertedLine(100, null, null, 'EUR', 'USD', 113.98)).toEqual({ entered: { amount: 100, currency: 'EUR' }, into: { amount: 113.98, currency: 'USD' } })
     expect(convertedLine(801.76, 'USD', 1.17, 'EUR', 'EUR', 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } })
   })
+})
+
+// A stored 1 is ambiguous only for legacy rows; provenance makes parity intentional.
+it('preserves explicit parity and distinguishes legacy parity in every booked conversion', () => {
+  const live = (amount: number) => amount / 2
+  expect(bookedInTrip(100, 'USD', 1, 'EUR', 'explicit')).toBe(100)
+  expect(bookedInTrip(100, 'USD', 1, 'EUR', 'legacy')).toBeNull()
+  expect(tripAmountOf(100, 'USD', 1, 'EUR', live, 'explicit')).toBe(100)
+  expect(convertBooked(100, 'USD', 1, 'EUR', live, 'explicit')).toBe(50)
+  expect(tripAmountOf(100, 'USD', 1, 'EUR', () => Number.NaN, 'legacy')).toBeNaN()
 })

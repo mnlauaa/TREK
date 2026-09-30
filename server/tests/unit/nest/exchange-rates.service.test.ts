@@ -449,6 +449,19 @@ describe('enhanced frozen-rate workflow', () => {
     expect(db.prepare('SELECT 1 FROM exchange_rate_batch_previews WHERE id=?').get(preview.preview_id)).toBeUndefined();
   });
 
+  it('previews unknown legacy values without a fabricated difference and preserves explicit parity selection', async () => {
+    vi.spyOn(service, 'getGlobalRateSnapshot').mockResolvedValue(null);
+    const legacy = expense(1, 'legacy');
+    const explicit = expense(1, 'explicit');
+    const preview = await service.previewTripExchangeRateUpdate(tripId, 'USD', 2, ownerId) as {
+      preview_id: string; rows: Array<{id:number; old_trip_value:number|null; trip_value_delta:number|null; selected:boolean}>;
+    };
+    expect(preview.rows.find(r => r.id === legacy)).toMatchObject({ old_trip_value: null, trip_value_delta: null });
+    expect(preview.rows.find(r => r.id === explicit)).toMatchObject({ old_trip_value: 125, selected: false });
+    db.prepare("UPDATE budget_items SET note = 'changed elsewhere' WHERE id = ?").run(legacy);
+    expect(() => service.applyTripExchangeRateUpdate(tripId, preview.preview_id, [{ type: 'expense', id: legacy }], ownerId)).toThrow(ExchangeRateConflictError);
+  });
+
   it('rejects invalid previews and selections before writing', async () => {
     expect(() => service.cleanupExpiredExchangeRatePreviews(Date.now())).not.toThrow();
     await expect(service.previewTripExchangeRateUpdate(tripId, 'USD', 0, ownerId)).rejects.toThrow(

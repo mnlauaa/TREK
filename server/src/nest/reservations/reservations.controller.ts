@@ -71,7 +71,7 @@ export class ReservationsController {
     this.rejectForeignReferences(tripId, body);
     // Before the synchronous writes: the price keeps the currency it was quoted in,
     // at a rate frozen now (#2525).
-    const budgetEntry = await this.reservations.withFrozenRate(tripId, body.create_budget_entry);
+    const budgetEntry = await this.reservations.withFrozenRate(tripId, body.create_budget_entry, user.id);
     const { reservation, accommodationCreated } = this.reservations.create(tripId, body as never);
     if (accommodationCreated) {
       this.reservations.broadcast(tripId, 'accommodation:created', {}, socketId);

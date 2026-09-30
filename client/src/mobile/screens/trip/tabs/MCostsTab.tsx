@@ -89,29 +89,31 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   const me = useAuthStore((s) => s.user?.id ?? -1);
 
   const displayCurrency = useSettingsStore((s) => s.settings.default_currency);
-  const base = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
+  const requestedBase = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
+  const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
+  const base = settlement?.currency || requestedBase;
   const tripCurrency = (trip?.currency || base).toUpperCase();
   // Anchored on the trip currency's quote, the one the server books with (#2525).
-  const { convert, displayPerTrip } = useExchangeRates(base, tripCurrency);
+  const { displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
+  const { convert } = useExchangeRates(base, tripCurrency);
   const ctx: CostsCtx = useMemo(
     () => ({ me, tripCurrency, displayCurrency: base, convert }),
     [me, tripCurrency, base, convert]
   );
 
-  const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
   // A failed settlement read leaves `settlement` null, and the final budget would
   // read that as "the trip cost nobody anything", a claim we cannot make.
   const [settlementError, setSettlementError] = useState(false);
   // Sends the browser's own figure for the display currency, as CostsPanel.tsx does.
   const loadSettlement = useCallback(() => {
     budgetApi
-      .settlement(tripId, base, base !== tripCurrency ? displayPerTrip : null)
+      .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
       .then((s) => {
         setSettlement(s);
         setSettlementError(false);
       })
       .catch(() => setSettlementError(true));
-  }, [tripId, base, tripCurrency, displayPerTrip]);
+  }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
 
   // Mirrors CostsPanel.tsx: items reload on trip change, settlement reloads on
   // trip/base change; further refreshes are explicit after each mutation below
@@ -248,7 +250,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   return (
     <TabScroller>
       {!!settlement?.unconverted?.currencies.length && (
-        <div role="status" className="mb-3 rounded-lg border border-amber-500 p-3 text-sm">
+        <div role="status" className="mb-3 rounded-lg border border-[var(--warning)] bg-warning-soft p-3 text-caption text-warning">
           {t('costs.exchangeRates.excluded', { currencies: settlement.unconverted.currencies.join(', ') })}
         </div>
       )}

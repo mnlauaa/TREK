@@ -1057,7 +1057,7 @@ describe('MCostsTab', () => {
     });
     await renderTab();
 
-    expect(await screen.findByText('costs.exchangeRates.excluded')).toBeInTheDocument();
+    expect(await screen.findByText(/costs.exchangeRates.excluded/)).toBeInTheDocument();
     expect(freeze).not.toHaveBeenCalled();
     expect(settlementBases).toHaveLength(1);
   });

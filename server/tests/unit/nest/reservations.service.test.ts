@@ -549,7 +549,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
       expect(await svc.withFrozenRate('5', { total_price: 801.76, category: 'hotel', currency: ' usd ' })).toEqual({
         total_price: 801.76, category: 'hotel', currency: 'USD', exchange_rate: 1.17,
       });
-      expect(budget.freezeForeignRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate: 1.17 });
+      expect(budget.freezeForeignRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate: 1.17 }, undefined, undefined, undefined);
     });
 
     it('leaves the rate off when none could be frozen, so the cost converts live', async () => {

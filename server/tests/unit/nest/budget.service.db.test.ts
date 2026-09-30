@@ -1932,6 +1932,19 @@ describe('rows no rate can convert, and the rates that heal them', () => {
 });
 
 describe('fork FX provenance with upstream settlement precision', () => {
+  it('re-denominates custom frozen rates and trip defaults together, rejecting an unavailable bridge', async () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    const rates = new ExchangeRatesService(new DatabaseService(testDb));
+    rates.setTripExchangeRate(trip.id, 'GBP', 1, user.id, 'retain');
+    const item = await budget.create(String(trip.id), { name: 'Parity', total_price: 100, currency: 'GBP', exchange_rate: 1 }, user.id);
+    await expect(budget.rebaseTripCurrency(trip.id, 'JPY')).rejects.toThrow('manual exchange rate');
+    expect(budget.getBudgetItem(item.id, trip.id)).toMatchObject({ exchange_rate: 1, exchange_rate_source: 'explicit' });
+    await budget.rebaseTripCurrency(trip.id, 'USD');
+    expect(budget.getBudgetItem(item.id, trip.id)).toMatchObject({ exchange_rate: RATES.USD.EUR, exchange_rate_source: 'explicit' });
+    expect(rates.listTripExchangeRates(trip.id)[0]).toMatchObject({ exchange_rate: RATES.USD.EUR, note: 'retain' });
+  });
+
   it('keeps explicit 1:1 in totals, final budgets and explicit freeze, including a payment date edit', async () => {
     const { user: owner } = createUser(testDb);
     const { user: member } = createUser(testDb);

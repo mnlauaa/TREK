@@ -192,6 +192,19 @@ describe('v4 fork migration lineages', () => {
     expectFinalLineage(db);
   });
 
+  it.each([205, 220, 243, 244])('resumes each partial named ledger at official %i', version => {
+    for (let completed = 0; completed <= FORK_SCHEMA_MIGRATION_IDS.length; completed++) {
+      db = createMigrationPrefix(version);
+      runForkMigrations(db);
+      for (const id of FORK_SCHEMA_MIGRATION_IDS.slice(completed)) db.prepare('DELETE FROM fork_schema_migrations WHERE id = ?').run(id);
+      const retained = db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all();
+      runMigrations(db);
+      expectFinalLineage(db);
+      expect(db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all()).toEqual(expect.arrayContaining(retained));
+      db.close(); db = null;
+    }
+  });
+
   it('rejects a current version whose migration artifacts are missing without changing metadata', () => {
     db = createTestDb();
     db.exec('ALTER TABLE journey_entries DROP COLUMN stats_excluded');
