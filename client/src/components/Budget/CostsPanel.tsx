@@ -72,7 +72,6 @@ import {
   type TicketItem,
 } from './CostsPanel.helpers';
 import ExchangeRateManager from './ExchangeRateManager';
-import { frozenTransactionAmountToDisplay } from './exchangeRateMath';
 import ItemExchangeRateFields from './ItemExchangeRateFields';
 import { useItemExchangeRate } from './useItemExchangeRate';
 import { splitShareLabel, useExpenseFx } from './expenseFx';
@@ -236,14 +235,6 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
       );
     }
   }, [searchParams]);
-
-  // Convert frozen transaction values into the Trip currency first, then apply
-  // the user's presentation-only Display currency. This mirrors the server's
-  // integer-cent settlement path; using a current quote per expense would make
-  // the visible ledger drift away from the balances it is meant to explain.
-  const frozenToDisplay = (amount: number, itemCurrency: string, frozenRate?: number, source?: string | null) => {
-    return frozenTransactionAmountToDisplay(amount, itemCurrency, frozenRate, tripCurrency, convert, source);
-  };
 
   // ── derived expense maths (everything converted to the base currency) ────
   // Booked, not live: an expense entered in a foreign currency keeps the rate it was

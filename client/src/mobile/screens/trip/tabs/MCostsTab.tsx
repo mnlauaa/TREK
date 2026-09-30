@@ -56,7 +56,6 @@ import {
   dayFilterKeys,
   filterBudgetItems,
   filterSettlements,
-  frozenAmountToDisplay,
   groupLedgerByDay,
   isUnfinished,
   lineOf,

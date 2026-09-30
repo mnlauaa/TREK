@@ -3383,3 +3383,19 @@ describe('CostsPanel: a bill the server cannot convert', () => {
     expect(asked.every((a) => a.base === 'IRR' && a.baseRate === null)).toBe(true);
   });
 });
+
+it('labels balances in the currency returned by settlement when the display quote is unavailable', async () => {
+  clearExchangeRateCache();
+  seedStore(useSettingsStore, { settings: { ...useSettingsStore.getState().settings, default_currency: 'USD' } });
+  server.use(
+    http.get('https://api.frankfurter.dev/v2/rates', () => HttpResponse.error()),
+    http.get('/api/trips/1/budget', () => HttpResponse.json({ items: [] })),
+    http.get('/api/trips/1/budget/settlement', () => HttpResponse.json({
+      currency: 'EUR', balances: [], settlements: [], finalBudgets: [],
+      flows: [{ from: { user_id: 1, username: 'alice' }, to: { user_id: 2, username: 'bob' }, amount: 25 }],
+    })),
+  );
+  render(<CostsPanel tripId={1} tripMembers={tripMembers} />);
+  await waitFor(() => expect(screen.getAllByText('25,00 €').length).toBeGreaterThan(0));
+  expect(screen.queryByText('$25.00')).not.toBeInTheDocument();
+});

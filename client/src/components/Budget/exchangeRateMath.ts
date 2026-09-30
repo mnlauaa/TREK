@@ -1,3 +1,5 @@
+import { convertBooked } from '../../hooks/useExchangeRates';
+
 export function frozenTransactionAmountToDisplay(
   amount: number,
   currency: string | null | undefined,
@@ -6,11 +8,5 @@ export function frozenTransactionAmountToDisplay(
   convertToDisplay: (amount: number, currency: string | null | undefined) => number,
   source?: string | null
 ): number {
-  const trip = tripCurrency.toUpperCase();
-  const current = (currency || trip).toUpperCase();
-  if (current === trip) return convertToDisplay(amount, trip);
-  if (exchangeRate != null && exchangeRate > 0 && (exchangeRate !== 1 || (source != null && source !== 'legacy'))) {
-    return convertToDisplay(amount / exchangeRate, trip);
-  }
-  return convertToDisplay(amount, current);
+  return convertBooked(amount, currency, exchangeRate, tripCurrency, convertToDisplay, source);
 }
