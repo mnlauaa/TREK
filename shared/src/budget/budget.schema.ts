@@ -116,9 +116,9 @@ export type BudgetItemReceipt = z.infer<typeof budgetItemReceiptSchema>;
  * plus the embedded `members` (equal-split participants), `payers` and `receipts` arrays.
  * total_price is the sum of payer amounts in `currency`; `exchange_rate` converts
  * that to the trip base currency (NULL currency + rate 1 = base currency).
- * On a row in another currency, rate 1 means the rate was never frozen: the
- * server converts it with today's rate, and without one leaves it out of every
- * figure and lists it under the settlement's `unconverted`.
+ * On a foreign row, rate 1 without recognized provenance is the legacy unfrozen
+ * default. Explicit/trip/global/identity provenance makes 1 an intentional freeze.
+ * Unfrozen rows use live quotes or appear under `unconverted` when none exists.
  */
 export const budgetItemSchema = z.object({
   id: z.number(),
@@ -251,8 +251,9 @@ export type BudgetUpdatePayersRequest = z.infer<typeof budgetUpdatePayersRequest
  * live rate frozen at settle time (units of that currency per 1 trip currency), so
  * a settled position stays balanced when live rates drift (#1445). Legacy rows
  * have currency = null / exchange_rate = 1 and convert with live rates. A row in
- * another currency with rate 1 was never frozen: without a live rate it is left
- * out of the balances and listed under the settlement's `unconverted`. Creating
+ * another currency with rate 1 and legacy/missing provenance was never frozen:
+ * without a live rate it is excluded and listed under `unconverted`. Intentional
+ * parity is recognized by provenance. New foreign writes require a rate. Creating
  * one marks a suggested flow as paid; deleting it (undo) brings the flow back.
  */
 export const budgetSettlementSchema = z.object({
