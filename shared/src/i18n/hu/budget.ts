@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'fizet',
   'costs.settle': 'Elszámol',
   'costs.balances': 'Egyenlegek',
+  'costs.finalBudget': 'Végső költségvetés',
+  'costs.finalExpenses': 'Kifizetett kiadások',
+  'costs.finalReimbursed': 'Nettó visszatérítések',
+  'costs.finalPending': 'Függőben lévő visszatérítések',
   'costs.byCategory': 'Kategóriánként',
   'costs.noCategories': 'Még nincs költség.',
   'costs.settleHistory': 'Elszámolási előzmények',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'utazási alapérték',
   'costs.exchangeRates.source.explicit': 'kézi árfolyam',
   'costs.exchangeRates.source.legacy': 'régi árfolyam',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'nem érhető el',
   'costs.exchangeRates.item.expense': 'Kiadás',
   'costs.exchangeRates.item.settlement': 'Fizetés',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Váltás kiadás és visszatérítés között',
+  'costs.receipts': 'Nyugták',
+  'costs.receiptsTitle': 'Nyugták és számlák',
+  'costs.attachReceipt': 'Nyugta / számla csatolása',
+  'costs.noReceipts': 'Nincsenek csatolt nyugták',
+  'costs.deleteReceipt': 'Nyugta eltávolítása',
+  'costs.viewReceipt': 'Nyugta megtekintése',
+  'costs.receiptLeftBehind':
+    'A mentés nem sikerült, és {count} feltöltött blokk még ott van. Törölje őket a Fájlok fülön.',
 };
 export default budget;

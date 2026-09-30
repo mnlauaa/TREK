@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-export const UPSTREAM_SCHEMA_VERSION = 205;
+export const UPSTREAM_SCHEMA_VERSION = 244;
 // The bridge installs only the v4.1.1 tail. Later official migrations must run.
 export const LEGACY_FORK_BRIDGE_VERSION = 200;
 
@@ -80,6 +80,39 @@ function hasWebPushArtifacts(db: Database.Database): boolean {
   return hasTable(db, 'web_push_subscriptions');
 }
 
+/** Structural markers of the official 4.3 chain, shared by startup and audit.
+ * Data-only steps (210, 229/230, 234, 240, 242) are verified by migration tests. */
+export function officialV43Artifacts(db: Database.Database): Array<[number, string, boolean]> {
+  const columns: Array<[number, string, string]> = [
+    [207, 'places', 'stop_type'], [211, 'file_links', 'budget_item_id'],
+    [212, 'trip_files', 'message_id'], [215, 'places', 'fill_percent'],
+    [217, 'day_assignments', 'end_day'], [220, 'budget_settlements', 'settled_at'],
+    [221, 'places', 'amap_poi_id'], [224, 'bucket_list', 'visited_at'],
+    [224, 'bucket_list', 'visited_source'], [225, 'visited_countries', 'source'],
+    [226, 'mcp_tokens', 'scope_mode'], [226, 'mcp_tokens', 'api_scopes'],
+    [227, 'places', 'source'], [228, 'day_assignments', 'accommodation_id'],
+    [231, 'journey_entries', 'dismissed'], [232, 'journey_entries', 'country_code'],
+    [233, 'journeys', 'show_verdict'], [233, 'journeys', 'show_mood'], [233, 'journeys', 'show_weather'],
+    [235, 'journey_entries', 'source_assignment_id'], [239, 'document_sync_items', 'remote_trashed_at'],
+    [243, 'users', 'immich_allow_insecure_tls'],
+  ];
+  const tables: Array<[number, string]> = [
+    [206, 'place_shadow_picks'], [208, 'roadtrip_vias'], [209, 'roadtrip_day_tracks'],
+    [213, 'collab_links'], [214, 'route_usage_daily'], [216, 'school_holiday_countries'],
+    [216, 'school_holiday_regions'], [216, 'school_holiday_periods'], [218, 'roadtrip_day_boundaries'],
+    [219, 'roadtrip_preferences'], [222, 'dawarich_connections'], [223, 'dawarich_visit_suggestions'],
+    [236, 'document_providers'], [236, 'document_provider_fields'], [237, 'document_connections'],
+    [237, 'trip_document_links'], [238, 'document_sync_items'],
+  ];
+  const boundary = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='roadtrip_day_boundaries'").get() as {sql: string} | undefined;
+  return [
+    ...columns.map(([version, table, column]): [number, string, boolean] => [version, `${table}.${column}`, hasColumn(db, table, column)]),
+    ...tables.map(([version, table]): [number, string, boolean] => [version, table, hasTable(db, table)]),
+    [241, 'roadtrip_day_boundaries.unbounded_day_number', !!boundary && /CHECK\s*\(day_number\s*>=\s*1\)/i.test(boundary.sql)],
+    [244, 'trg_place_regions_follow_place', !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_place_regions_follow_place'").get()],
+  ];
+}
+
 /** Read-only classification shared by startup and the standalone upgrade audit. */
 export function classifyForkLineage(db: Database.Database, version: number): string {
   if (!Number.isInteger(version) || version < 0 || version > UPSTREAM_SCHEMA_VERSION) return 'mixed-or-unsupported';
@@ -103,6 +136,9 @@ export function classifyForkLineage(db: Database.Database, version: number): str
     hasTable(db, 'exchange_rate_batch_previews') ||
     hasColumn(db, 'budget_items', 'exchange_rate_source') ||
     hasColumn(db, 'budget_settlements', 'exchange_rate_source');
+  if (officialV43Artifacts(db).some(([introduced, , present]) => present !== (version >= introduced))) return 'mixed-or-unsupported';
+  // Fresh createTables already includes amap_api_key, so only require its presence after 221.
+  if (version >= 221 && !hasColumn(db, 'users', 'amap_api_key')) return 'mixed-or-unsupported';
   if (version <= 175) return custom ? 'custom-3.4.1' : 'clean-3.4.x';
   if (version <= 180 && custom) return 'custom-3.4.1';
   if (version < 198) return 'partial-upstream-v4';
@@ -143,7 +179,7 @@ export function classifyForkLineage(db: Database.Database, version: number): str
   if (ids.some((id) => !artifacts[FORK_SCHEMA_MIGRATION_IDS.indexOf(id as ForkSchemaMigrationId)])) {
     return 'mixed-or-unsupported';
   }
-  const release = version >= 201 ? 'v4.2' : 'v4.1';
+  const release = version >= 206 ? 'v4.3' : version >= 201 ? 'v4.2' : 'v4.1';
   if (!hasLedger) return `official-${release}`;
   return `dual-lineage-${release}${ids.length < FORK_SCHEMA_MIGRATION_IDS.length ? '-partial' : ''}`;
 }

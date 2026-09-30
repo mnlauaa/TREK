@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'paie',
   'costs.settle': 'Régler',
   'costs.balances': 'Soldes',
+  'costs.finalBudget': 'Budget final',
+  'costs.finalExpenses': 'Dépenses payées',
+  'costs.finalReimbursed': 'Remboursements nets',
+  'costs.finalPending': 'Remboursements en attente',
   'costs.byCategory': 'Par catégorie',
   'costs.noCategories': 'Aucune dépense pour le moment.',
   'costs.settleHistory': 'Historique des règlements',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'valeur par défaut du voyage',
   'costs.exchangeRates.source.explicit': 'taux manuel',
   'costs.exchangeRates.source.legacy': 'ancien taux',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'indisponible',
   'costs.exchangeRates.item.expense': 'Dépense',
   'costs.exchangeRates.item.settlement': 'Paiement',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Basculer entre dépense et remboursement',
+  'costs.receipts': 'Reçus',
+  'costs.receiptsTitle': 'Reçus et factures',
+  'costs.attachReceipt': 'Joindre un reçu / une facture',
+  'costs.noReceipts': 'Aucun reçu joint',
+  'costs.deleteReceipt': 'Supprimer le reçu',
+  'costs.viewReceipt': 'Voir le reçu',
+  'costs.receiptLeftBehind':
+    'Échec de la sauvegarde, {count} reçus téléversés sont toujours là. Supprimez-les dans les Fichiers.',
 };
 export default budget;

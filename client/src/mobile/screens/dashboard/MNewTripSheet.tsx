@@ -1,19 +1,23 @@
-import type { Trip, TripCreateRequest } from '@trek/shared';
+import { MAX_TRIP_DAYS, tripSpanDays, type Trip, type TripCreateRequest } from '@trek/shared';
 import { Archive, ArchiveRestore, Camera, Search, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { tripsApi } from '../../../api/client';
 import CurrencySelect from '../../../components/shared/CurrencySelect';
 import { CustomDatePicker } from '../../../components/shared/CustomDateTimePicker';
 import { useToast } from '../../../components/shared/Toast';
+import { useTripRangeGuard, type RangeRemoval } from '../../../hooks/useTripRangeGuard';
 import { useTranslation } from '../../../i18n';
 import type { DashboardTrip } from '../../../pages/dashboard/dashboardModel';
 import { useCanDo } from '../../../store/permissionsStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { getApiErrorMessage } from '../../../types';
 import { normalizeImageFile } from '../../../utils/convertHeic';
+import { dayChips, shrinkTripLines } from '../../../utils/dayImpactLines';
+import MDayImpactList from '../../components/MDayImpactList';
 import MIconBtn from '../../components/MIconBtn';
 import MListRow from '../../components/MListRow';
 import MSheet from '../../components/MSheet';
+import MConfirmSheet from '../settings/MConfirmSheet';
 
 interface CoverSearchPhoto {
   id: string;
@@ -76,6 +80,14 @@ export default function MNewTripSheet({
   const [searchResults, setSearchResults] = useState<CoverSearchPhoto[]>([]);
   const [searchError, setSearchError] = useState('');
   const [searching, setSearching] = useState(false);
+  // A save whose new dates remove days with something on them, held until the
+  // traveller confirms. The phone has no shift step, so bookings keep their dates.
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    payload: TripCreateRequest;
+    removal: RangeRemoval | 'unknown';
+  } | null>(null);
+  const rangeGuard = useTripRangeGuard();
+  const busy = isSaving || rangeGuard.checking;
 
   useEffect(() => {
     if (!open) return;
@@ -91,6 +103,7 @@ export default function MNewTripSheet({
     setSearchResults([]);
     setSearchError('');
     setError('');
+    setPendingRemoval(null);
   }, [trip, open]);
 
   // The local file preview is a blob url; release it once a new cover replaces it
@@ -117,26 +130,52 @@ export default function MNewTripSheet({
     setStartDate(value);
   };
 
-  const handleSave = async () => {
+  /** The payload the form stands for, or null after putting the reason on screen. */
+  const validPayload = (): TripCreateRequest | null => {
     setError('');
     if (!title.trim()) {
       setError(t('dashboard.titleRequired'));
+      return null;
+    }
+    if (startDate && endDate) {
+      const span = tripSpanDays(startDate, endDate);
+      if (span < 1) {
+        setError(t('dashboard.endDateError'));
+        return null;
+      }
+      const datesTouched = !trip || startDate !== (trip.start_date || '') || endDate !== (trip.end_date || '');
+      if (datesTouched && span > MAX_TRIP_DAYS) {
+        setError(t('dashboard.tripTooLong', { days: MAX_TRIP_DAYS }));
+        return null;
+      }
+    }
+    return {
+      title: title.trim(),
+      description: description.trim() || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      currency,
+      ...(!startDate && !endDate && !isEditing ? { day_count: 7 } : {}),
+    };
+  };
+
+  const handleSave = async () => {
+    const payload = validPayload();
+    if (!payload) return;
+    // New dates that remove days with something on them ask first, the same
+    // question the desktop dialog asks, with the same list.
+    const removal = isEditing && trip ? await rangeGuard.check(trip, payload) : null;
+    if (removal) {
+      setPendingRemoval({ payload, removal });
       return;
     }
-    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
-      setError(t('dashboard.endDateError'));
-      return;
-    }
+    await save(payload);
+  };
+
+  const save = async (payload: TripCreateRequest) => {
     setIsSaving(true);
     try {
-      const result = await onSave({
-        title: title.trim(),
-        description: description.trim() || null,
-        start_date: startDate || null,
-        end_date: endDate || null,
-        currency,
-        ...(!startDate && !endDate && !isEditing ? { day_count: 7 } : {}),
-      });
+      const result = await onSave(payload);
       const created = result ? result.trip : undefined;
       if (pendingCoverFile && created?.id) {
         try {
@@ -254,82 +293,55 @@ export default function MNewTripSheet({
   const inputCls =
     'w-full border-none bg-transparent pt-[2px] font-[inherit] text-[0.9375rem] font-semibold text-m-ink outline-none placeholder:text-m-faint';
 
+  const removalList = pendingRemoval && pendingRemoval.removal !== 'unknown' ? pendingRemoval.removal : null;
+
   return (
-    <MSheet
-      open={open}
-      onClose={onClose}
-      variant="card"
-      material="opaque"
-      ariaLabel={isEditing ? t('dashboard.editTrip') : t('dashboard.createTrip')}
-    >
-      <div className="flex items-center gap-[11px] p-[16px_16px_0]">
-        <div className="min-w-0 flex-1 truncate text-[1.0625rem] font-bold">
-          {isEditing ? t('dashboard.editTrip') : t('dashboard.createTrip')}
-        </div>
-        <MIconBtn ariaLabel={t('common.cancel')} variant="neutral" size={34} onClick={onClose}>
-          <X size={16} strokeWidth={2.2} />
-        </MIconBtn>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {error && (
-          <div className="mb-3 rounded-[14px] bg-[color:var(--m-ic)] p-[11px_12px] text-[0.75rem] font-semibold text-[color:var(--m-st-danger)]">
-            {error}
+    <>
+      <MSheet
+        open={open}
+        onClose={onClose}
+        variant="card"
+        material="opaque"
+        ariaLabel={isEditing ? t('dashboard.editTrip') : t('dashboard.createTrip')}
+      >
+        <div className="flex items-center gap-[11px] p-[16px_16px_0]">
+          <div className="min-w-0 flex-1 truncate text-[1.0625rem] font-bold">
+            {isEditing ? t('dashboard.editTrip') : t('dashboard.createTrip')}
           </div>
-        )}
-
-        <div className={boxCls}>
-          <FieldLabel>{t('dashboard.tripTitle')}</FieldLabel>
-          <input
-            value={title}
-            onChange={(e) => canEditTrip && setTitle(e.target.value)}
-            readOnly={!canEditTrip}
-            placeholder={t('dashboard.tripTitlePlaceholder')}
-            className={inputCls}
-          />
+          <MIconBtn ariaLabel={t('common.cancel')} variant="neutral" size={34} onClick={onClose}>
+            <X size={16} strokeWidth={2.2} />
+          </MIconBtn>
         </div>
 
-        <div className={`${boxCls} mt-2`}>
-          <FieldLabel>{t('dashboard.tripDescription')}</FieldLabel>
-          <textarea
-            value={description}
-            onChange={(e) => canEditTrip && setDescription(e.target.value)}
-            readOnly={!canEditTrip}
-            placeholder={t('dashboard.tripDescriptionPlaceholder')}
-            rows={2}
-            className={`${inputCls} resize-none text-[0.8125rem] font-medium`}
-          />
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {error && (
+            <div className="mb-3 rounded-[14px] bg-[color:var(--m-ic)] p-[11px_12px] text-[0.75rem] font-semibold text-[color:var(--m-st-danger)]">
+              {error}
+            </div>
+          )}
 
-        <div className="mt-2 flex gap-2">
-          <div className={`${boxCls} min-w-0 flex-1`}>
-            <FieldLabel>{t('dashboard.startDate')}</FieldLabel>
-            <CustomDatePicker
-              value={startDate}
-              onChange={(v) => {
-                if (canEditTrip) changeStart(v);
-              }}
-              placeholder={t('dashboard.startDate')}
-              borderless
-              style={{ marginTop: 3 }}
+          <div className={boxCls}>
+            <FieldLabel>{t('dashboard.tripTitle')}</FieldLabel>
+            <input
+              value={title}
+              onChange={(e) => canEditTrip && setTitle(e.target.value)}
+              readOnly={!canEditTrip}
+              placeholder={t('dashboard.tripTitlePlaceholder')}
+              className={inputCls}
             />
           </div>
-          <div className={`${boxCls} min-w-0 flex-1`}>
-            <FieldLabel>{t('dashboard.endDate')}</FieldLabel>
-            <CustomDatePicker
-              value={endDate}
-              onChange={(v) => {
-                if (canEditTrip) setEndDate(v);
-              }}
-              placeholder={t('dashboard.endDate')}
-              borderless
-              style={{ marginTop: 3 }}
+
+          <div className={`${boxCls} mt-2`}>
+            <FieldLabel>{t('dashboard.tripDescription')}</FieldLabel>
+            <textarea
+              value={description}
+              onChange={(e) => canEditTrip && setDescription(e.target.value)}
+              readOnly={!canEditTrip}
+              placeholder={t('dashboard.tripDescriptionPlaceholder')}
+              rows={2}
+              className={`${inputCls} resize-none text-[0.8125rem] font-medium`}
             />
           </div>
-        </div>
-        {!isEditing && !startDate && !endDate && (
-          <div className="mt-[6px] px-1 font-geist text-[0.625rem] text-m-faint">{t('dashboard.noDateHint')}</div>
-        )}
 
         <div className="mt-2">
           <FieldLabel>{t('dashboard.currency')}</FieldLabel>
@@ -343,145 +355,201 @@ export default function MNewTripSheet({
             style={{ width: '100%', marginTop: 5 }}
           />
         </div>
-
-        {canUploadCover && (
-          <div className="mt-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                handleCoverFile(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-            {coverPreview ? (
-              <div className="relative h-[130px] overflow-hidden rounded-[16px]">
-                <img src={coverPreview} alt="" className="h-full w-full object-cover" />
-                <div className="absolute bottom-2 right-2 flex gap-[6px]">
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    disabled={uploadingCover}
-                    className="flex h-[34px] items-center gap-1 rounded-full border border-white/30 bg-white/[.22] px-3 text-[0.6875rem] font-semibold text-white backdrop-blur-[8px]"
-                  >
-                    <Camera size={13} strokeWidth={2.1} />
-                    {uploadingCover ? t('common.uploading') : t('common.change')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={removeCover}
-                    aria-label={t('common.delete')}
-                    className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-white/30 bg-white/[.22] text-white backdrop-blur-[8px]"
-                  >
-                    <X size={14} strokeWidth={2.1} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploadingCover}
-                className="flex w-full items-center justify-center gap-[6px] rounded-[14px] border border-dashed border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] p-[18px] text-[0.8125rem] font-medium text-m-muted"
-              >
-                <Camera size={15} strokeWidth={2} />
-                {uploadingCover ? t('common.uploading') : t('dashboard.mobile.addCoverImage')}
-              </button>
-            )}
-
-            <div className="mt-2 flex gap-2">
-              <div className={`${boxCls} min-w-0 flex-1 py-[9px]`}>
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleSearch();
-                    }
-                  }}
-                  placeholder={t('dashboard.unsplashSearchPlaceholder')}
-                  className={`${inputCls} pt-0 text-[0.8125rem] font-medium`}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleSearch}
-                disabled={searching || (!searchQuery.trim() && !title.trim())}
-                aria-label={t('dashboard.searchUnsplash')}
-                className="flex h-auto w-[42px] flex-none items-center justify-center rounded-[14px] bg-m-act text-m-actfg disabled:opacity-50"
-              >
-                <Search size={15} strokeWidth={2.2} />
-              </button>
+          <div className="mt-2 flex gap-2">
+            <div className={`${boxCls} min-w-0 flex-1`}>
+              <FieldLabel>{t('dashboard.startDate')}</FieldLabel>
+              <CustomDatePicker
+                value={startDate}
+                onChange={(v) => {
+                  if (canEditTrip) changeStart(v);
+                }}
+                placeholder={t('dashboard.startDate')}
+                borderless
+                style={{ marginTop: 3 }}
+              />
             </div>
-            {searchError && (
-              <p className="mt-[6px] px-1 text-[0.6875rem] font-medium text-[color:var(--m-st-danger)]">
-                {searchError}
-              </p>
-            )}
-            {searchResults.length > 0 && (
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {searchResults.map((photo) => (
-                  <button
-                    key={photo.id}
-                    type="button"
-                    onClick={() => selectUnsplash(photo)}
-                    aria-label={t('dashboard.useUnsplashPhoto', { photographer: photo.photographer || 'Unsplash' })}
-                    className={`relative h-20 overflow-hidden rounded-[12px] border ${
-                      coverPreview === photo.url ? 'border-[color:var(--m-act)]' : 'border-[color:var(--m-rowbr)]'
-                    }`}
-                  >
-                    <img
-                      src={photo.thumb}
-                      alt={photo.description || ''}
-                      loading="lazy"
-                      className="h-full w-full object-cover"
-                    />
-                    {photo.photographer && (
-                      <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-[6px] py-1 text-left font-geist text-[0.625rem] text-white">
-                        {photo.photographer}
-                      </span>
-                    )}
-                  </button>
-                ))}
+            <div className={`${boxCls} min-w-0 flex-1`}>
+              <FieldLabel>{t('dashboard.endDate')}</FieldLabel>
+              <CustomDatePicker
+                value={endDate}
+                onChange={(v) => {
+                  if (canEditTrip) setEndDate(v);
+                }}
+                placeholder={t('dashboard.endDate')}
+                borderless
+                style={{ marginTop: 3 }}
+              />
+            </div>
+          </div>
+          {!isEditing && !startDate && !endDate && (
+            <div className="mt-[6px] px-1 font-geist text-[0.625rem] text-m-faint">{t('dashboard.noDateHint')}</div>
+          )}
+
+          {canUploadCover && (
+            <div className="mt-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  handleCoverFile(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              {coverPreview ? (
+                <div className="relative h-[130px] overflow-hidden rounded-[16px]">
+                  <img src={coverPreview} alt="" className="h-full w-full object-cover" />
+                  <div className="absolute bottom-2 right-2 flex gap-[6px]">
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploadingCover}
+                      className="flex h-[34px] items-center gap-1 rounded-full border border-white/30 bg-white/[.22] px-3 text-[0.6875rem] font-semibold text-white backdrop-blur-[8px]"
+                    >
+                      <Camera size={13} strokeWidth={2.1} />
+                      {uploadingCover ? t('common.uploading') : t('common.change')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeCover}
+                      aria-label={t('common.delete')}
+                      className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-white/30 bg-white/[.22] text-white backdrop-blur-[8px]"
+                    >
+                      <X size={14} strokeWidth={2.1} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploadingCover}
+                  className="flex w-full items-center justify-center gap-[6px] rounded-[14px] border border-dashed border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] p-[18px] text-[0.8125rem] font-medium text-m-muted"
+                >
+                  <Camera size={15} strokeWidth={2} />
+                  {uploadingCover ? t('common.uploading') : t('dashboard.mobile.addCoverImage')}
+                </button>
+              )}
+
+              <div className="mt-2 flex gap-2">
+                <div className={`${boxCls} min-w-0 flex-1 py-[9px]`}>
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
+                    placeholder={t('dashboard.unsplashSearchPlaceholder')}
+                    className={`${inputCls} pt-0 text-[0.8125rem] font-medium`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSearch}
+                  disabled={searching || (!searchQuery.trim() && !title.trim())}
+                  aria-label={t('dashboard.searchUnsplash')}
+                  className="flex h-auto w-[42px] flex-none items-center justify-center rounded-[14px] bg-m-act text-m-actfg disabled:opacity-50"
+                >
+                  <Search size={15} strokeWidth={2.2} />
+                </button>
               </div>
-            )}
-          </div>
-        )}
+              {searchError && (
+                <p className="mt-[6px] px-1 text-[0.6875rem] font-medium text-[color:var(--m-st-danger)]">
+                  {searchError}
+                </p>
+              )}
+              {searchResults.length > 0 && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {searchResults.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => selectUnsplash(photo)}
+                      aria-label={t('dashboard.useUnsplashPhoto', { photographer: photo.photographer || 'Unsplash' })}
+                      className={`relative h-20 overflow-hidden rounded-[12px] border ${
+                        coverPreview === photo.url ? 'border-[color:var(--m-act)]' : 'border-[color:var(--m-rowbr)]'
+                      }`}
+                    >
+                      <img
+                        src={photo.thumb}
+                        alt={photo.description || ''}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                      {photo.photographer && (
+                        <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-[6px] py-1 text-left font-geist text-[0.625rem] text-white">
+                          {photo.photographer}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-        {isEditing && onArchive && (
-          <div className="mt-2 rounded-[14px] bg-[color:var(--m-ic)]">
-            <MListRow
-              icon={trip?.is_archived ? ArchiveRestore : Archive}
-              label={trip?.is_archived ? t('dashboard.restore') : t('dashboard.archive')}
-              onClick={() => {
-                onArchive();
-                onClose();
-              }}
-            />
-          </div>
-        )}
-      </div>
+          {isEditing && onArchive && (
+            <div className="mt-2 rounded-[14px] bg-[color:var(--m-ic)]">
+              <MListRow
+                icon={trip?.is_archived ? ArchiveRestore : Archive}
+                label={trip?.is_archived ? t('dashboard.restore') : t('dashboard.archive')}
+                onClick={() => {
+                  onArchive();
+                  onClose();
+                }}
+              />
+            </div>
+          )}
+        </div>
 
-      <div className="flex gap-2 p-[0_16px_16px]">
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex-1 rounded-full bg-[color:var(--m-ic)] py-[10px] text-[0.8125rem] font-semibold text-m-ink"
-        >
-          {t('common.cancel')}
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex-1 rounded-full bg-m-act py-[10px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-50"
-        >
-          {isSaving ? t('common.saving') : isEditing ? t('common.update') : t('dashboard.createTrip')}
-        </button>
-      </div>
-    </MSheet>
+        <div className="flex gap-2 p-[0_16px_16px]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-full bg-[color:var(--m-ic)] py-[10px] text-[0.8125rem] font-semibold text-m-ink"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy}
+            className="flex-1 rounded-full bg-m-act py-[10px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-50"
+          >
+            {busy ? t('common.saving') : isEditing ? t('common.update') : t('dashboard.createTrip')}
+          </button>
+        </div>
+      </MSheet>
+
+      {/* After the sheet, so it opens on top of it. */}
+      <MConfirmSheet
+        open={pendingRemoval != null}
+        onClose={() => setPendingRemoval(null)}
+        title={t('dashboard.shrinkTitle')}
+        message={t(removalList ? 'dashboard.shrinkIntro' : 'dashboard.shrinkUnknown')}
+        confirmLabel={t('dashboard.shrinkConfirm')}
+        cancelLabel={t('common.cancel')}
+        danger
+        busy={isSaving}
+        onConfirm={() => {
+          if (!pendingRemoval) return;
+          const { payload } = pendingRemoval;
+          setPendingRemoval(null);
+          void save(payload);
+        }}
+      >
+        {removalList && (
+          <MDayImpactList
+            lines={shrinkTripLines(removalList, t)}
+            days={dayChips(removalList.dayLabels, t)}
+            label={t('dashboard.shrinkTitle')}
+          />
+        )}
+      </MConfirmSheet>
+    </>
   );
 }

@@ -24,5 +24,11 @@ const map: TranslationStrings = {
   'map.location.unavailable': 'Không thể xác định vị trí của bạn.',
   'map.location.timeout':
     'Việc xác định vị trí mất quá nhiều thời gian. Hãy thử lại ở nơi nhìn thấy bầu trời thoáng hơn.',
+  'map.overview.show': 'Hiện toàn bộ chuyến đi',
+  'map.overview.hide': 'Ẩn toàn bộ chuyến đi',
+  'map.overview.total': 'Tổng quãng đường',
+  'map.attribution': 'Nguồn bản đồ',
+  'map.overview.unrouted': 'Không thể tính {count} chặng, nên khoảng cách chưa đầy đủ.',
+  'map.overview.dayUnrouted': 'Không thể tính {count} chặng của ngày này',
 };
 export default map;

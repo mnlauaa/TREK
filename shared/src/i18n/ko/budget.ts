@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': '지불',
   'costs.settle': '정산',
   'costs.balances': '잔액',
+  'costs.finalBudget': '최종 부담액',
+  'costs.finalExpenses': '지불한 지출',
+  'costs.finalReimbursed': '정산 (순액)',
+  'costs.finalPending': '미정산 금액',
   'costs.byCategory': '카테고리별',
   'costs.noCategories': '아직 지출이 없습니다.',
   'costs.settleHistory': '정산 내역',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': '여행 기본값',
   'costs.exchangeRates.source.explicit': '수동 환율',
   'costs.exchangeRates.source.legacy': '이전 환율',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': '사용할 수 없음',
   'costs.exchangeRates.item.expense': '지출',
   'costs.exchangeRates.item.settlement': '결제',
@@ -201,5 +208,12 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': '지출과 환불 전환',
+  'costs.receipts': '영수증',
+  'costs.receiptsTitle': '영수증 및 청구서',
+  'costs.attachReceipt': '영수증 / 청구서 첨부',
+  'costs.noReceipts': '첨부된 영수증 없음',
+  'costs.deleteReceipt': '영수증 삭제',
+  'costs.viewReceipt': '영수증 보기',
+  'costs.receiptLeftBehind': '저장에 실패했고 업로드된 영수증 {count}개가 남아 있습니다. 파일 탭에서 삭제하세요.',
 };
 export default budget;

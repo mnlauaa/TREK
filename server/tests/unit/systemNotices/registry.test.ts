@@ -69,7 +69,7 @@ describe('registry integrity', () => {
   });
 
   it('reserves but does not publish upstream promotional notice ids', () => {
-    for (const id of ['release-4-0-0', 'thank-you-support']) {
+    for (const id of ['release-4-0-0', 'thank-you-support', 'release-notes']) {
       expect(RETIRED_NOTICE_IDS).toContain(id);
       expect(SYSTEM_NOTICES.some((notice) => notice.id === id)).toBe(false);
     }

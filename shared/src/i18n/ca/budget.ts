@@ -78,6 +78,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'paga',
   'costs.settle': 'Liquidar',
   'costs.balances': 'Balanços',
+  'costs.finalBudget': 'Pressupost final',
+  'costs.finalExpenses': 'Despeses pagades',
+  'costs.finalReimbursed': 'Reemborsaments nets',
+  'costs.finalPending': 'Reemborsaments pendents',
   'costs.byCategory': 'Per categoria',
   'costs.noCategories': 'Encara no hi ha despeses.',
   'costs.settleHistory': 'Historial de liquidacions',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'valor predeterminat del viatge',
   'costs.exchangeRates.source.explicit': 'tipus manual',
   'costs.exchangeRates.source.legacy': 'tipus antic',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'no disponible',
   'costs.exchangeRates.item.expense': 'Despesa',
   'costs.exchangeRates.item.settlement': 'Pagament',
@@ -201,6 +208,14 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Alterna entre despesa i devolució',
+  'costs.receipts': 'Rebuts',
+  'costs.receiptsTitle': 'Rebuts i factures',
+  'costs.attachReceipt': 'Adjuntar rebut / factura',
+  'costs.noReceipts': 'Cap rebut adjunt',
+  'costs.deleteReceipt': 'Eliminar rebut',
+  'costs.viewReceipt': 'Veure rebut',
+  'costs.receiptLeftBehind':
+    'No es pot desar i encara hi ha {count} rebuts pujats. Elimina aquests fitxers a la pestanya Fitxers.',
 };
 
 export default budget;

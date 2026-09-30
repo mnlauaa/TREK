@@ -1,3 +1,4 @@
+import type { BudgetParticipantFinal } from '@trek/shared';
 import {
   AlertCircle,
   ArrowDown,
@@ -10,23 +11,36 @@ import {
   Layers,
   Pencil,
   Plus,
+  Receipt,
+  RotateCcw,
   StickyNote,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { budgetApi } from '../../../../api/client';
-import { readUserNote } from '../../../../components/Budget/CostsPanel.helpers';
-import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
+import { currenciesWith, SYMBOLS } from '../../../../components/Budget/BudgetPanel.constants';
+import {
+  finalBudgetFor,
+  finalBudgetSources,
+  paidByUser,
+  readUserNote,
+  settlementDate,
+} from '../../../../components/Budget/CostsPanel.helpers';
+import { ReceiptPreviewModal } from '../../../../components/Budget/ReceiptPreviewModal';
 import { catMeta, COST_CAT_META } from '../../../../components/Budget/costsCategories';
+import { localToday } from '../../../../components/Planner/today';
+import { CustomDatePicker } from '../../../../components/shared/CustomDateTimePicker';
+import CustomSelect from '../../../../components/shared/CustomSelect';
+import { convertBooked, convertedLine, useExchangeRates, withFallbackFx } from '../../../../hooks/useExchangeRates';
+import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { useItemExchangeRate } from '../../../../components/Budget/useItemExchangeRate';
 import CurrencySelect from '../../../../components/shared/CurrencySelect';
-import { useExchangeRates } from '../../../../hooks/useExchangeRates';
 import { useTranslation } from '../../../../i18n';
 import { useAuthStore } from '../../../../store/authStore';
 import { useSettingsStore } from '../../../../store/settingsStore';
-import type { BudgetItem, TripMember } from '../../../../types';
+import type { BudgetItem, BudgetItemReceipt, TripMember } from '../../../../types';
 import { downloadBlob } from '../../../../utils/fileDownload';
-import { formatMoney } from '../../../../utils/formatters';
+import { amountToInputString, formatMoney } from '../../../../utils/formatters';
 import MChip from '../../../components/MChip';
 import MDancingTrek from '../../../components/MDancingTrek';
 import MSheet from '../../../components/MSheet';
@@ -39,13 +53,12 @@ import {
   categoryBreakdown,
   categoryFilterKeys,
   computeTotals,
-  currencyOf,
   dayFilterKeys,
   filterBudgetItems,
   filterSettlements,
-  frozenAmountToDisplay,
   groupLedgerByDay,
   isUnfinished,
+  lineOf,
   memberShareOf,
   tint,
   type CostsCtx,
@@ -75,18 +88,31 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   const me = useAuthStore((s) => s.user?.id ?? -1);
 
   const displayCurrency = useSettingsStore((s) => s.settings.default_currency);
-  const base = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
-  const tripCurrency = (trip?.currency || base).toUpperCase();
-  const { convert } = useExchangeRates(base);
-  const ctx: CostsCtx = useMemo(() => ({ me, tripCurrency, convert }), [me, tripCurrency, convert]);
-
+  const requestedBase = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
   const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
+  const base = settlement?.currency || requestedBase;
+  const tripCurrency = (trip?.currency || base).toUpperCase();
+  // Anchored on the trip currency's quote, the one the server books with (#2525).
+  const { displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
+  const { convert } = useExchangeRates(base, tripCurrency);
+  const ctx: CostsCtx = useMemo(
+    () => ({ me, tripCurrency, displayCurrency: base, convert }),
+    [me, tripCurrency, base, convert]
+  );
+
+  // A failed settlement read leaves `settlement` null, and the final budget would
+  // read that as "the trip cost nobody anything", a claim we cannot make.
+  const [settlementError, setSettlementError] = useState(false);
+  // Sends the browser's own figure for the display currency, as CostsPanel.tsx does.
   const loadSettlement = useCallback(() => {
     budgetApi
-      .settlement(tripId, base)
-      .then(setSettlement)
-      .catch(() => {});
-  }, [tripId, base]);
+      .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
+      .then((s) => {
+        setSettlement(s);
+        setSettlementError(false);
+      })
+      .catch(() => setSettlementError(true));
+  }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
 
   // Mirrors CostsPanel.tsx: items reload on trip change, settlement reloads on
   // trip/base change; further refreshes are explicit after each mutation below
@@ -98,14 +124,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   useEffect(() => {
     loadSettlement();
   }, [loadSettlement]);
-  useEffect(() => {
-    const reloadRates = () => {
-      planner.tripActions.loadBudgetItems(tripId);
-      loadSettlement();
-    };
-    window.addEventListener('budget:exchange-rates-changed', reloadRates);
-    return () => window.removeEventListener('budget:exchange-rates-changed', reloadRates);
-  }, [loadSettlement, planner.tripActions, tripId]);
+
 
   const [search, setSearch] = useState('');
   const [segment, setSegment] = useState<CostsSegment>('all');
@@ -114,12 +133,17 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   const [catOpen, setCatOpen] = useState(false);
   const [dayOpen, setDayOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(true);
+  // One traveler's final-budget breakdown open at a time; the list stays scannable.
+  const [expandedFinalId, setExpandedFinalId] = useState<number | null>(null);
   const [addPaymentOpen, setAddPaymentOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<CostsRecordedSettlement | null>(null);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<BudgetItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BudgetItem | null>(null);
-  const [confirmDeletePayment, setConfirmDeletePayment] = useState<CostsRecordedSettlement | null>(null);
+  const [previewReceipts, setPreviewReceipts] = useState<{
+    receipts: BudgetItemReceipt[];
+    initialIndex: number;
+  } | null>(null);
 
   const flows = useMemo(() => settlement?.flows || [], [settlement]);
   const totals = useMemo(() => computeTotals(budgetItems, flows, ctx), [budgetItems, flows, ctx]);
@@ -207,6 +231,13 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
     }
   };
 
+  const [confirmDeletePayment, setConfirmDeletePayment] = useState<CostsRecordedSettlement | null>(null);
+  useEffect(() => {
+    const reloadRates = () => { planner.tripActions.loadBudgetItems(tripId); loadSettlement(); };
+    window.addEventListener('budget:exchange-rates-changed', reloadRates);
+    return () => window.removeEventListener('budget:exchange-rates-changed', reloadRates);
+  }, [tripId, planner.tripActions, loadSettlement]);
+
   const handleTogglePaid = async (itemId: number, userId: number, paid: boolean) => {
     try {
       await planner.tripActions.toggleBudgetMemberPaid(tripId, itemId, userId, paid);
@@ -217,6 +248,11 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
 
   return (
     <TabScroller>
+      {!!settlement?.unconverted?.currencies.length && (
+        <div role="status" className="mb-3 rounded-lg border border-[var(--warning)] bg-warning-soft p-3 text-caption text-warning">
+          {t('costs.exchangeRates.excluded', { currencies: settlement.unconverted.currencies.join(', ') })}
+        </div>
+      )}
       {/* Hero — "Total Trip Spend" (spec §3.1). Fixed dark card, both themes. */}
       <div
         className="rounded-[20px] p-4 shadow-[0_18px_44px_-18px_rgba(0,0,0,.5)]"
@@ -409,6 +445,62 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
         )}
       </div>
 
+      {/* Final budget — what the trip costs each traveler; the arithmetic opens on tap */}
+      <div className="mt-2 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
+        <div className="font-geist text-[0.625rem] font-bold uppercase tracking-[.09em] text-m-faint">
+          {t('costs.finalBudget')}
+        </div>
+        {settlementError ? (
+          <p className="py-[14px] text-center font-geist text-[0.71875rem] text-m-muted">{t('common.unknownError')}</p>
+        ) : (
+          tripMembers.map((p) => {
+            const row = finalBudgetFor(settlement?.finalBudgets || [], p);
+            const open = expandedFinalId === p.id;
+            return (
+              <div key={p.id} className="border-b border-[color:var(--m-rowbr)] last:border-b-0">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setExpandedFinalId(open ? null : p.id)}
+                  className="flex w-full items-center gap-[9px] py-[7px] text-left font-[inherit]"
+                >
+                  <MemberAvatar
+                    name={p.username}
+                    avatarUrl={p.avatar_url}
+                    isMe={p.id === me}
+                    variant="neutral"
+                    size={24}
+                    t={t}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">
+                    {personName(p.id)}
+                  </span>
+                  <span className="ml-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
+                    {formatMoney(row.final, base, locale)}
+                  </span>
+                  {open ? (
+                    <ChevronUp size={13} strokeWidth={2.2} className="flex-none text-m-faint" />
+                  ) : (
+                    <ChevronDown size={13} strokeWidth={2.2} className="flex-none text-m-faint" />
+                  )}
+                </button>
+                {open && (
+                  <FinalBudgetBreakdown
+                    row={row}
+                    items={budgetItems}
+                    ctx={ctx}
+                    base={base}
+                    locale={locale}
+                    t={t}
+                    personName={personName}
+                  />
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
       {/* By category (spec §3.5) */}
       <div className="mt-2 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
         <div className="font-geist text-[0.625rem] font-bold uppercase tracking-[.09em] text-m-faint">
@@ -588,6 +680,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
                   }}
                   onDelete={() => setConfirmDelete(en.item)}
                   onTogglePaid={(userId, paid) => handleTogglePaid(en.item.id, userId, paid)}
+                  onPreviewReceipts={(receipts) => setPreviewReceipts({ receipts, initialIndex: 0 })}
                 />
               ) : (
                 <PaymentRow
@@ -693,6 +786,13 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
             .catch(() => toast.error(t('common.unknownError')));
         }}
       />
+      {previewReceipts && (
+        <ReceiptPreviewModal
+          receipts={previewReceipts.receipts}
+          initialIndex={previewReceipts.initialIndex}
+          onClose={() => setPreviewReceipts(null)}
+        />
+      )}
     </TabScroller>
   );
 }
@@ -708,6 +808,7 @@ function ExpenseRow({
   onEdit,
   onDelete,
   onTogglePaid,
+  onPreviewReceipts,
 }: {
   item: BudgetItem;
   ctx: CostsCtx;
@@ -718,11 +819,12 @@ function ExpenseRow({
   onEdit: () => void;
   onDelete: () => void;
   onTogglePaid: (userId: number, paid: boolean) => void;
+  onPreviewReceipts: (receipts: BudgetItemReceipt[]) => void;
 }) {
   const meta = catMeta(item.category);
   const Icon = meta.Icon;
-  const cur = currencyOf(item, ctx);
   const total = baseTotal(item, ctx);
+  const line = lineOf(item.total_price || 0, item, ctx, total);
   const unfinished = isUnfinished(item, ctx);
   const borderColor = tint(meta.color, 0.55);
   const members = item.members || [];
@@ -755,10 +857,30 @@ function ExpenseRow({
 
         <div className="flex items-center gap-[10px]">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[0.8125rem] font-bold text-m-ink">{item.name}</div>
-            {cur !== base && (
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[0.8125rem] font-bold text-m-ink">{item.name}</span>
+              {(item.receipts || []).length > 0 && (
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onPreviewReceipts(item.receipts!);
+                  }}
+                  title={t('costs.viewReceipt')}
+                  className="inline-flex items-center gap-1 rounded-full border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-2 py-0.5 text-[0.625rem] font-semibold text-m-muted transition-all active:scale-95"
+                >
+                  <Receipt size={11} className="text-m-faint" />
+                  <span>
+                    {t('costs.receipts') || 'Beleg'}
+                    {item.receipts!.length > 1 ? ` (${item.receipts!.length})` : ''}
+                  </span>
+                </button>
+              )}
+            </div>
+            {line && (
               <div className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
-                {formatMoney(item.total_price, cur, locale)} {'→'} {formatMoney(total, base, locale)}
+                {formatMoney(line.entered.amount, line.entered.currency, locale)} {'→'}{' '}
+                {formatMoney(line.into.amount, line.into.currency, locale)}
               </div>
             )}
             {members.length > 0 && (
@@ -870,13 +992,10 @@ function PaymentRow({
   onDelete: () => void;
 }) {
   const cur = (settlement.currency || base).toUpperCase();
-  const amount = frozenAmountToDisplay(
-    settlement.amount,
-    cur,
-    settlement.exchange_rate,
-    ctx,
-    settlement.exchange_rate_source
-  );
+  // At the rate it was settled at, not today's (#1445), matching the desktop ledger.
+  // A transfer without a currency was entered in the display currency, not the trip's.
+  const amount = convertBooked(settlement.amount, cur, settlement.exchange_rate, ctx.tripCurrency, ctx.convert, settlement.exchange_rate_source);
+  const line = convertedLine(settlement.amount, cur, settlement.exchange_rate, ctx.tripCurrency, base, amount, settlement.exchange_rate_source);
   return (
     <div className="mt-2 flex items-center gap-[6px]">
       <div className="relative min-w-0 flex-1 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card px-3 py-[12px]">
@@ -892,9 +1011,10 @@ function PaymentRow({
             <div className="truncate font-geist text-[0.65625rem] text-m-faint">
               {personName(settlement.from_user_id)} → {personName(settlement.to_user_id)}
             </div>
-            {cur !== base && (
-              <div className="font-geist text-[0.65625rem] text-m-faint">
-                {formatMoney(settlement.amount, cur, locale)}
+            {line && (
+              <div className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
+                {formatMoney(line.entered.amount, line.entered.currency, locale)} {'→'}{' '}
+                {formatMoney(line.into.amount, line.into.currency, locale)}
               </div>
             )}
           </div>
@@ -922,6 +1042,73 @@ function PaymentRow({
             <Trash2 size={14} />
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The three lines behind one traveler's final budget, then the rows they come
+ * from. Figures and rows are the server's, in the display currency and netted
+ * with the balances; each line is signed by what it does to the final, so the
+ * column reads as a subtraction and the rows add up to the line above them.
+ */
+function FinalBudgetBreakdown({
+  row,
+  items,
+  ctx,
+  base,
+  locale,
+  t,
+  personName,
+}: {
+  row: BudgetParticipantFinal;
+  items: BudgetItem[];
+  ctx: CostsCtx;
+  base: string;
+  locale: string;
+  t: TFn;
+  personName: (id: number) => string;
+}) {
+  const signed = (v: number) => (v < 0 ? '−' : '+') + formatMoney(Math.abs(v), base, locale);
+  const { fronted, moved, outstanding } = finalBudgetSources(row, items);
+  const transfer = (fromId: number, toId: number) => `${personName(fromId)} → ${personName(toId)}`;
+  // Beside a converted row's name, what was entered, as the list above names it (#2525).
+  const nameOf = (itemId: number, name: string, shown: number) => {
+    const e = items.find((i) => i.id === itemId);
+    const entered = e ? lineOf(paidByUser(e, row.user_id), e, ctx, shown)?.entered : null;
+    return entered ? `${name} · ${formatMoney(entered.amount, entered.currency, locale)}` : name;
+  };
+  const line = (key: string, label: string, value: string) => (
+    <div key={key} className="flex items-baseline gap-2 py-[2px] font-geist text-[0.6875rem]">
+      <span className="min-w-0 flex-1 truncate text-m-muted">{label}</span>
+      <span className="flex-none font-semibold tabular-nums text-m-ink">{value}</span>
+    </div>
+  );
+  // Capped and scrollable so a long trip's list can't push the page away.
+  const section = (title: string, rows: ReactNode[]) =>
+    rows.length > 0 && (
+      <div className="mt-2">
+        <div className="font-geist text-[0.5625rem] font-bold uppercase tracking-[.09em] text-m-faint">{title}</div>
+        <div className="mt-1 max-h-[160px] overflow-y-auto">{rows}</div>
+      </div>
+    );
+  return (
+    <div className="mb-2 rounded-xl bg-[color:var(--m-ic)] px-[11px] py-[9px]">
+      {line('expenses', t('costs.finalExpenses'), signed(row.expenses))}
+      {line('reimbursed', t('costs.finalReimbursed'), signed(-row.reimbursed))}
+      {line('pending', t('costs.finalPending'), signed(-row.pending))}
+      {section(
+        t('costs.finalExpenses'),
+        fronted.map((r) => line(`e${r.item_id}`, nameOf(r.item_id, r.name, r.amount), signed(r.amount)))
+      )}
+      {section(
+        t('costs.finalReimbursed'),
+        moved.map((r) => line(`s${r.settlement_id}`, transfer(r.from_user_id, r.to_user_id), signed(-r.amount)))
+      )}
+      {section(
+        t('costs.finalPending'),
+        outstanding.map((r, i) => line(`f${i}`, transfer(r.from_user_id, r.to_user_id), signed(-r.amount)))
       )}
     </div>
   );
@@ -966,14 +1153,20 @@ function MemberAvatar({
 }
 
 /**
- * "Add payment" — records a manual settle-up transfer (`budgetApi.createSettlement`).
- * No pixel spec exists for this form (the demo only toasts "Demo: add payment",
- * 03-trip-tabs.md §3.8) and no mobile/exported-desktop sheet covers it, so this
- * is a small local sheet built from the trip form-sheet chrome, kept to the
- * fields the settle-up card itself needs: from, to, amount in the display currency.
+ * "Add/edit payment" — records or updates a manual settle-up transfer
+ * (`budgetApi.createSettlement`/`updateSettlement`). No pixel spec exists for
+ * this form (the demo only toasts "Demo: add payment", 03-trip-tabs.md §3.8)
+ * and no mobile/exported-desktop sheet covers it, so this is a small local
+ * sheet built from the trip form-sheet chrome, kept to the fields the
+ * settle-up card itself needs: from, to, amount plus its currency (a new
+ * payment starts in the display currency, a reopened one keeps the currency
+ * it was recorded in, like the desktop modal), and the day it happened
+ * (editable like an expense's, unlike the legacy created_at-only date, see
+ * `settlementDate` in CostsPanel.helpers.ts).
  */
 function AddPaymentSheet({
   open,
+  editing,
   onClose,
   tripId,
   base,
@@ -982,10 +1175,10 @@ function AddPaymentSheet({
   me,
   toast,
   t,
-  editing,
   onSaved,
 }: {
   open: boolean;
+  editing: CostsRecordedSettlement | null;
   onClose: () => void;
   tripId: number;
   base: string;
@@ -994,7 +1187,6 @@ function AddPaymentSheet({
   me: number;
   toast: { error: (message: string) => void };
   t: TFn;
-  editing: CostsRecordedSettlement | null;
   onSaved: () => void;
 }) {
   const { locale } = useTranslation();
@@ -1003,32 +1195,32 @@ function AddPaymentSheet({
   const [toId, setToId] = useState(() => editing?.to_user_id ?? people.find((p) => p.id !== me)?.id ?? me);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState((editing?.currency || base).toUpperCase());
+  const [day, setDay] = useState(localToday());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    const cur = (editing?.currency || base).toUpperCase();
     setFromId(editing?.from_user_id ?? me);
     setToId(editing?.to_user_id ?? people.find((p) => p.id !== me)?.id ?? me);
-    setAmount(editing ? String(editing.amount) : '');
-    setCurrency((editing?.currency || base).toUpperCase());
+    setAmount(editing ? amountToInputString(editing.amount, cur) : '');
+    setCurrency(cur);
+    setDay(editing ? settlementDate(editing) : localToday());
     setSaving(false);
-  }, [open, me, people, base, editing]);
+  }, [open, editing, me, base, people]);
 
   const amt = Number.parseFloat(amount.replace(',', '.')) || 0;
   const rate = useItemExchangeRate(tripId, currency, tripCurrency, editing);
-  const valid = amt > 0 && fromId !== toId && rate.valid;
+  const valid = amt > 0 && fromId !== toId && !!day && rate.valid;
 
   const save = async () => {
     if (!valid || saving) return;
     setSaving(true);
+    const data = withFallbackFx(
+      { from_user_id: fromId, to_user_id: toId, amount: amt, currency, settled_at: day, ...rate.write },
+      tripCurrency
+    );
     try {
-      const data = {
-        from_user_id: fromId,
-        to_user_id: toId,
-        amount: amt,
-        currency,
-        ...rate.write,
-      };
       if (editing) await budgetApi.updateSettlement(tripId, editing.id, data);
       else await budgetApi.createSettlement(tripId, data);
       onSaved();
@@ -1038,6 +1230,8 @@ function AddPaymentSheet({
       setSaving(false);
     }
   };
+
+  const title = editing ? t('costs.editPayment') : t('costs.addPayment');
 
   return (
     <MSheet open={open} onClose={onClose} ariaLabel={editing ? t('costs.editPayment') : t('costs.addPayment')}>
@@ -1092,6 +1286,10 @@ function AddPaymentSheet({
             className={FIELD_CLS}
           />
           <CurrencySelect value={currency} onChange={setCurrency} size="sm" style={{ minWidth: 132 }} />
+        </div>
+        <div className="mt-3">
+          <Eyebrow>{t('costs.day')}</Eyebrow>
+          <CustomDatePicker value={day} onChange={setDay} style={{width: '100%'}} />
         </div>
         <ItemExchangeRateFields
           rate={rate}

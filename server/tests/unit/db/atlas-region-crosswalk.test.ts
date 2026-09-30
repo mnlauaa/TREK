@@ -1,3 +1,4 @@
+import { createMigrationPrefix } from '../../helpers/migration-prefix';
 /**
  * Unit test for the Atlas region-code reconciliation migration (#1119).
  *
@@ -16,11 +17,7 @@ import { runMigrations } from '../../../src/db/migrations';
 import { createUser } from '../../helpers/factories';
 
 function freshDb() {
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  createTables(db);
-  runMigrations(db);
+  const db = createMigrationPrefix(134);
   return db;
 }
 
@@ -37,7 +34,6 @@ function mark(db: Database.Database, userId: number, code: string, name: string,
 // any effect on the seeded rows here.
 const RECONCILIATION_VERSION = 135;
 function rerunLastMigration(db: Database.Database) {
-  db.prepare('UPDATE schema_version SET version = ?').run(RECONCILIATION_VERSION - 1);
   runMigrations(db);
 }
 

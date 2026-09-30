@@ -1,4 +1,4 @@
-import { Settings2 } from 'lucide-react';
+import { Map as MapIcon, Settings2 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { adminApi } from '../../api/client';
 import { useTranslation } from '../../i18n';
@@ -20,6 +20,7 @@ import Section from '../Settings/Section';
 import CurrencySelect from '../shared/CurrencySelect';
 import CustomSelect from '../shared/CustomSelect';
 import { useToast } from '../shared/Toast';
+import RoutingInstanceFields, { type RoutingDefaults } from './RoutingInstanceFields';
 
 const MAP_PRESETS = [
   { name: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
@@ -35,7 +36,7 @@ const MAP_PRESETS = [
   { name: 'Stadia Smooth', url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png' },
 ];
 
-type Defaults = {
+type Defaults = RoutingDefaults & {
   temperature_unit?: string;
   distance_unit?: DistanceUnit;
   dark_mode?: string | boolean;
@@ -238,111 +239,121 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
   };
 
   return (
-    <Section title={t('admin.defaultSettings.title')} icon={Settings2}>
-      <p className="text-sm text-content-faint" style={{ marginTop: -8 }}>
-        {t('admin.defaultSettings.description')}
-      </p>
+    <div>
+      <p className="mb-4 text-sm text-content-faint">{t('admin.defaultSettings.description')}</p>
 
-      {/* Color Mode */}
-      <OptionRow
-        label={
-          <>
-            {t('settings.colorMode')} <ResetButton field="dark_mode" />
-          </>
-        }
-      >
-        {(
-          [
-            { value: 'light', label: t('settings.light') },
-            { value: 'dark', label: t('settings.dark') },
-            { value: 'auto', label: t('settings.auto') },
-          ] as const
-        ).map((opt) => (
-          <OptionButton
-            key={opt.value}
-            active={
-              darkMode === opt.value ||
-              (opt.value === 'light' && darkMode === false) ||
-              (opt.value === 'dark' && darkMode === true)
+      {/* Two columns from xl up, the same idea as the Settings tab: as one flat list
+          the map fields sat a screen below the units while the right half of the page
+          stayed empty. Grouped by subject rather than by height — what a user ends up
+          seeing on the left, everything that configures the map on the right.
+          The columns are deliberately uneven: the left one never needs more than the
+          widest option row, while the right one holds four text fields whose values
+          are 60-character tile URLs. Only the column gap is set, because Section
+          carries its own bottom margin and a row gap would double it once the grid
+          collapses. Two cards can sit straight in the grid; a third would need the
+          explicit per-column stacks the Settings tab uses, or it leaves a hole. */}
+      <div className="grid grid-cols-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] xl:items-start">
+        <Section title={t('admin.defaultSettings.title')} icon={Settings2}>
+          {/* Color Mode */}
+          <OptionRow
+            label={
+              <>
+                {t('settings.colorMode')} <ResetButton field="dark_mode" />
+              </>
             }
-            onClick={() => save({ dark_mode: opt.value })}
           >
-            {opt.label}
-          </OptionButton>
-        ))}
-      </OptionRow>
+            {(
+              [
+                { value: 'light', label: t('settings.light') },
+                { value: 'dark', label: t('settings.dark') },
+                { value: 'auto', label: t('settings.auto') },
+              ] as const
+            ).map((opt) => (
+              <OptionButton
+                key={opt.value}
+                active={
+                  darkMode === opt.value ||
+                  (opt.value === 'light' && darkMode === false) ||
+                  (opt.value === 'dark' && darkMode === true)
+                }
+                onClick={() => save({ dark_mode: opt.value })}
+              >
+                {opt.label}
+              </OptionButton>
+            ))}
+          </OptionRow>
 
-      {/* Temperature */}
-      <OptionRow
-        label={
-          <>
-            {t('settings.temperature')} <ResetButton field="temperature_unit" />
-          </>
-        }
-      >
-        {(
-          [
-            { value: 'celsius', label: '°C Celsius' },
-            { value: 'fahrenheit', label: '°F Fahrenheit' },
-          ] as const
-        ).map((opt) => (
-          <OptionButton
-            key={opt.value}
-            active={defaults.temperature_unit === opt.value}
-            onClick={() => save({ temperature_unit: opt.value })}
+          {/* Temperature */}
+          <OptionRow
+            label={
+              <>
+                {t('settings.temperature')} <ResetButton field="temperature_unit" />
+              </>
+            }
           >
-            {opt.label}
-          </OptionButton>
-        ))}
-      </OptionRow>
+            {(
+              [
+                { value: 'celsius', label: '°C Celsius' },
+                { value: 'fahrenheit', label: '°F Fahrenheit' },
+              ] as const
+            ).map((opt) => (
+              <OptionButton
+                key={opt.value}
+                active={defaults.temperature_unit === opt.value}
+                onClick={() => save({ temperature_unit: opt.value })}
+              >
+                {opt.label}
+              </OptionButton>
+            ))}
+          </OptionRow>
 
-      {/* Distance */}
-      <OptionRow
-        label={
-          <>
-            {t('settings.distance')} <ResetButton field="distance_unit" />
-          </>
-        }
-      >
-        {(
-          [
-            { value: 'metric', label: 'km Metric' },
-            { value: 'imperial', label: 'mi Imperial' },
-          ] as const
-        ).map((opt) => (
-          <OptionButton
-            key={opt.value}
-            active={defaults.distance_unit === opt.value}
-            onClick={() => save({ distance_unit: opt.value })}
+          {/* Distance */}
+          <OptionRow
+            label={
+              <>
+                {t('settings.distance')} <ResetButton field="distance_unit" />
+              </>
+            }
           >
-            {opt.label}
-          </OptionButton>
-        ))}
-      </OptionRow>
+            {(
+              [
+                { value: 'metric', label: 'km Metric' },
+                { value: 'imperial', label: 'mi Imperial' },
+              ] as const
+            ).map((opt) => (
+              <OptionButton
+                key={opt.value}
+                active={defaults.distance_unit === opt.value}
+                onClick={() => save({ distance_unit: opt.value })}
+              >
+                {opt.label}
+              </OptionButton>
+            ))}
+          </OptionRow>
 
-      {/* Time Format */}
-      <OptionRow
-        label={
-          <>
-            {t('settings.timeFormat')} <ResetButton field="time_format" />
-          </>
-        }
-      >
-        {(
-          [
-            { value: '24h', label: '24h (14:30)' },
-            { value: '12h', label: '12h (2:30 PM)' },
-          ] as const
-        ).map((opt) => (
-          <OptionButton
-            key={opt.value}
-            active={defaults.time_format === opt.value}
-            onClick={() => save({ time_format: opt.value })}
+          {/* Time Format */}
+          <OptionRow
+            label={
+              <>
+                {t('settings.timeFormat')} <ResetButton field="time_format" />
+              </>
+            }
           >
-            {opt.label}
-          </OptionButton>
-        ))}
-      </OptionRow>
+            {(
+              [
+                { value: '24h', label: '24h (14:30)' },
+                { value: '12h', label: '12h (2:30 PM)' },
+              ] as const
+            ).map((opt) => (
+              <OptionButton
+                key={opt.value}
+                active={defaults.time_format === opt.value}
+                onClick={() => save({ time_format: opt.value })}
+              >
+                {opt.label}
+              </OptionButton>
+            ))}
+          </OptionRow>
 
       {/* Default Currency */}
       <div>
@@ -382,234 +393,247 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
         />
       </div>
 
-      {/* Blur Booking Codes */}
-      <OptionRow
-        label={
-          <>
-            {t('settings.blurBookingCodes')} <ResetButton field="blur_booking_codes" />
-          </>
-        }
-      >
-        {(
-          [
-            { value: true, label: t('settings.on') || 'On' },
-            { value: false, label: t('settings.off') || 'Off' },
-          ] as const
-        ).map((opt) => (
-          <OptionButton
-            key={String(opt.value)}
-            active={defaults.blur_booking_codes === opt.value}
-            onClick={() => save({ blur_booking_codes: opt.value })}
-          >
-            {opt.label}
-          </OptionButton>
-        ))}
-      </OptionRow>
-
-      {/* Map Tile URL */}
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-content-secondary">
-          {t('settings.mapTemplate')}
-          <ResetButton field="map_tile_url" />
-        </label>
-        <CustomSelect
-          value={mapTileUrl}
-          onChange={(value: string) => {
-            if (value) {
-              setMapTileUrl(value);
-              save({ map_tile_url: value });
+          {/* Blur Booking Codes */}
+          <OptionRow
+            label={
+              <>
+                {t('settings.blurBookingCodes')} <ResetButton field="blur_booking_codes" />
+              </>
             }
-          }}
-          placeholder={t('settings.mapTemplatePlaceholder.select')}
-          options={MAP_PRESETS.map((p) => ({ value: p.url, label: p.name }))}
-          size="sm"
-          style={{ marginBottom: 8 }}
-        />
-        <input
-          type="text"
-          value={mapTileUrl}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapTileUrl(e.target.value)}
-          onBlur={() => save({ map_tile_url: mapTileUrl })}
-          placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
-        />
-        <p className="mt-1 text-xs text-content-faint">{t('settings.mapDefaultHint')}</p>
-        {/* The key comes with the instance on a managed install, injected when the
-            settings are read. A field here would only let somebody save a worse one. */}
-        {!managed && (
-          <div style={{ marginTop: 14 }}>
+          >
+            {(
+              [
+                { value: true, label: t('settings.on') || 'On' },
+                { value: false, label: t('settings.off') || 'Off' },
+              ] as const
+            ).map((opt) => (
+              <OptionButton
+                key={String(opt.value)}
+                active={defaults.blur_booking_codes === opt.value}
+                onClick={() => save({ blur_booking_codes: opt.value })}
+              >
+                {opt.label}
+              </OptionButton>
+            ))}
+          </OptionRow>
+        </Section>
+
+        <Section title={t('settings.map')} icon={MapIcon}>
+          {/* Map Tile URL */}
+          <div>
             <label className="mb-1.5 block text-sm font-medium text-content-secondary">
-              {t('admin.defaultSettings.cartoKey')}
-              <ResetButton field="carto_api_key" />
+              {t('settings.mapTemplate')}
+              <ResetButton field="map_tile_url" />
             </label>
+            <CustomSelect
+              value={mapTileUrl}
+              onChange={(value: string) => {
+                if (value) {
+                  setMapTileUrl(value);
+                  save({ map_tile_url: value });
+                }
+              }}
+              placeholder={t('settings.mapTemplatePlaceholder.select')}
+              options={MAP_PRESETS.map((p) => ({ value: p.url, label: p.name }))}
+              size="sm"
+              style={{ marginBottom: 8 }}
+            />
             <input
               type="text"
-              value={cartoKey}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCartoKey(e.target.value)}
-              onBlur={() => save({ carto_api_key: cartoKey })}
-              spellCheck={false}
-              autoComplete="off"
+              value={mapTileUrl}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapTileUrl(e.target.value)}
+              onBlur={() => save({ map_tile_url: mapTileUrl })}
+              placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
             />
-            <p className="mt-1 text-xs text-content-faint">{t('admin.defaultSettings.cartoKeyHint')}</p>
-          </div>
-        )}
-        <div style={{ position: 'relative', height: '200px', width: '100%', marginTop: 12 }}>
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {React.createElement(MapView as any, {
-            places: mapPreviewPlaces,
-            dayPlaces: [],
-            route: null,
-            routeSegments: null,
-            selectedPlaceId: null,
-            onMarkerClick: null,
-            onMapClick: null,
-            onMapContextMenu: null,
-            center: [48.8566, 2.3522],
-            zoom: 10,
-            // Same as the user-facing map tab: the field holds what is being
-            // edited, so the key goes back on before the preview resolves it.
-            tileUrl: withTileApiKey(mapTileUrl, cartoKey),
-            fitKey: null,
-            dayOrderMap: [],
-            leftWidth: 0,
-            rightWidth: 0,
-            hasInspector: false,
-          })}
-        </div>
-      </div>
-
-      {/* ── Map provider / instance-wide Mapbox ───────────────────────── */}
-      <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 20, marginTop: 4 }}>
-        <OptionRow
-          label={
-            <>
-              {t('admin.defaultSettings.mapProvider')} <ResetButton field="map_provider" />
-            </>
-          }
-          hint={t('admin.defaultSettings.mapProviderHint')}
-        >
-          {(
-            [
-              { value: 'leaflet', label: t('admin.defaultSettings.providerLeaflet') },
-              { value: 'mapbox-gl', label: t('admin.defaultSettings.providerMapbox') },
-              { value: 'maplibre-gl', label: t('admin.defaultSettings.providerMapLibre') },
-            ] as const
-          ).map((opt) => (
-            <OptionButton key={opt.value} active={mapProvider === opt.value} onClick={() => saveMapProvider(opt.value)}>
-              {opt.label}
-            </OptionButton>
-          ))}
-        </OptionRow>
-
-        {mapProvider !== 'leaflet' && (
-          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
-            {/* The token comes with the instance on a managed install, injected when the
-              settings are read. A field here would only let somebody save a worse one. */}
-            {mapProvider === 'mapbox-gl' && !managed && (
-              <div>
+            <p className="mt-1 text-xs text-content-faint">{t('settings.mapDefaultHint')}</p>
+            {/* The key comes with the instance on a managed install, injected when the
+            settings are read. A field here would only let somebody save a worse one. */}
+            {!managed && (
+              <div style={{ marginTop: 14 }}>
                 <label className="mb-1.5 block text-sm font-medium text-content-secondary">
-                  {t('admin.defaultSettings.mapboxToken')}
-                  <ResetButton field="mapbox_access_token" />
+                  {t('admin.defaultSettings.cartoKey')}
+                  <ResetButton field="carto_api_key" />
                 </label>
                 <input
                   type="text"
-                  value={mapboxToken}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapboxToken(e.target.value)}
-                  onBlur={() => save({ mapbox_access_token: mapboxToken })}
-                  placeholder="pk.eyJ…"
+                  value={cartoKey}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCartoKey(e.target.value)}
+                  onBlur={() => save({ carto_api_key: cartoKey })}
                   spellCheck={false}
                   autoComplete="off"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
                 />
-                <p className="mt-1 text-xs text-content-faint">{t('admin.defaultSettings.mapboxTokenHint')}</p>
+                <p className="mt-1 text-xs text-content-faint">{t('admin.defaultSettings.cartoKeyHint')}</p>
               </div>
             )}
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-content-secondary">
-                {t('admin.defaultSettings.mapboxStyle')}
-                <ResetButton field={styleKey} />
-              </label>
-              <CustomSelect
-                value={mapboxStyle}
-                onChange={(value: string) => {
-                  if (value) {
-                    setMapboxStyle(value);
-                    save({ [styleKey]: value });
-                  }
-                }}
-                placeholder={t('admin.defaultSettings.mapboxStylePlaceholder')}
-                options={glStylePresets.map((p) => ({ value: p.url, label: p.name }))}
-                size="sm"
-                style={{ marginBottom: 8 }}
-              />
-              <input
-                type="text"
-                value={mapboxStyle}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapboxStyle(e.target.value)}
-                onBlur={() => {
-                  const nextStyle = normalizeStyleForProvider(mapProvider, mapboxStyle);
-                  setMapboxStyle(nextStyle);
-                  save({ [styleKey]: nextStyle });
-                }}
-                placeholder={defaultStyleForProvider(mapProvider)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
-              />
+            {!managed && (
+              <div className="mt-3.5">
+                <RoutingInstanceFields defaults={defaults} onSave={save} onReset={reset} />
+              </div>
+            )}
+            <div style={{ position: 'relative', height: '200px', width: '100%', marginTop: 12 }}>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {React.createElement(MapView as any, {
+                places: mapPreviewPlaces,
+                dayPlaces: [],
+                route: null,
+                routeSegments: null,
+                selectedPlaceId: null,
+                onMarkerClick: null,
+                onMapClick: null,
+                onMapContextMenu: null,
+                center: [48.8566, 2.3522],
+                zoom: 10,
+                // Same as the user-facing map tab: the field holds what is being
+                // edited, so the key goes back on before the preview resolves it.
+                tileUrl: withTileApiKey(mapTileUrl, cartoKey),
+                fitKey: null,
+                dayOrderMap: [],
+                leftWidth: 0,
+                rightWidth: 0,
+                hasInspector: false,
+              })}
             </div>
+          </div>
 
-            {mapProvider === 'mapbox-gl' && (
-              <>
-                <OptionRow
-                  label={
-                    <>
-                      {t('admin.defaultSettings.mapbox3d')} <ResetButton field="mapbox_3d_enabled" />
-                    </>
-                  }
+          {/* ── Map provider / instance-wide Mapbox ───────────────────────── */}
+          <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 20, marginTop: 4 }}>
+            <OptionRow
+              label={
+                <>
+                  {t('admin.defaultSettings.mapProvider')} <ResetButton field="map_provider" />
+                </>
+              }
+              hint={t('admin.defaultSettings.mapProviderHint')}
+            >
+              {(
+                [
+                  { value: 'leaflet', label: t('admin.defaultSettings.providerLeaflet') },
+                  { value: 'mapbox-gl', label: t('admin.defaultSettings.providerMapbox') },
+                  { value: 'maplibre-gl', label: t('admin.defaultSettings.providerMapLibre') },
+                ] as const
+              ).map((opt) => (
+                <OptionButton
+                  key={opt.value}
+                  active={mapProvider === opt.value}
+                  onClick={() => saveMapProvider(opt.value)}
                 >
-                  {(
-                    [
-                      { value: true, label: t('settings.on') || 'On' },
-                      { value: false, label: t('settings.off') || 'Off' },
-                    ] as const
-                  ).map((opt) => (
-                    <OptionButton
-                      key={String(opt.value)}
-                      active={(defaults.mapbox_3d_enabled ?? true) === opt.value}
-                      onClick={() => save({ mapbox_3d_enabled: opt.value })}
-                    >
-                      {opt.label}
-                    </OptionButton>
-                  ))}
-                </OptionRow>
+                  {opt.label}
+                </OptionButton>
+              ))}
+            </OptionRow>
 
-                <OptionRow
-                  label={
-                    <>
-                      {t('admin.defaultSettings.mapboxQuality')} <ResetButton field="mapbox_quality_mode" />
-                    </>
-                  }
-                >
-                  {(
-                    [
-                      { value: true, label: t('settings.on') || 'On' },
-                      { value: false, label: t('settings.off') || 'Off' },
-                    ] as const
-                  ).map((opt) => (
-                    <OptionButton
-                      key={String(opt.value)}
-                      active={(defaults.mapbox_quality_mode ?? false) === opt.value}
-                      onClick={() => save({ mapbox_quality_mode: opt.value })}
+            {mapProvider !== 'leaflet' && (
+              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* The token comes with the instance on a managed install, injected when the
+              settings are read. A field here would only let somebody save a worse one. */}
+                {mapProvider === 'mapbox-gl' && !managed && (
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-content-secondary">
+                      {t('admin.defaultSettings.mapboxToken')}
+                      <ResetButton field="mapbox_access_token" />
+                    </label>
+                    <input
+                      type="text"
+                      value={mapboxToken}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapboxToken(e.target.value)}
+                      onBlur={() => save({ mapbox_access_token: mapboxToken })}
+                      placeholder="pk.eyJ…"
+                      spellCheck={false}
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
+                    />
+                    <p className="mt-1 text-xs text-content-faint">{t('admin.defaultSettings.mapboxTokenHint')}</p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-content-secondary">
+                    {t('admin.defaultSettings.mapboxStyle')}
+                    <ResetButton field={styleKey} />
+                  </label>
+                  <CustomSelect
+                    value={mapboxStyle}
+                    onChange={(value: string) => {
+                      if (value) {
+                        setMapboxStyle(value);
+                        save({ [styleKey]: value });
+                      }
+                    }}
+                    placeholder={t('admin.defaultSettings.mapboxStylePlaceholder')}
+                    options={glStylePresets.map((p) => ({ value: p.url, label: p.name }))}
+                    size="sm"
+                    style={{ marginBottom: 8 }}
+                  />
+                  <input
+                    type="text"
+                    value={mapboxStyle}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMapboxStyle(e.target.value)}
+                    onBlur={() => {
+                      const nextStyle = normalizeStyleForProvider(mapProvider, mapboxStyle);
+                      setMapboxStyle(nextStyle);
+                      save({ [styleKey]: nextStyle });
+                    }}
+                    placeholder={defaultStyleForProvider(mapProvider)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-slate-400"
+                  />
+                </div>
+
+                {mapProvider === 'mapbox-gl' && (
+                  <>
+                    <OptionRow
+                      label={
+                        <>
+                          {t('admin.defaultSettings.mapbox3d')} <ResetButton field="mapbox_3d_enabled" />
+                        </>
+                      }
                     >
-                      {opt.label}
-                    </OptionButton>
-                  ))}
-                </OptionRow>
-              </>
+                      {(
+                        [
+                          { value: true, label: t('settings.on') || 'On' },
+                          { value: false, label: t('settings.off') || 'Off' },
+                        ] as const
+                      ).map((opt) => (
+                        <OptionButton
+                          key={String(opt.value)}
+                          active={(defaults.mapbox_3d_enabled ?? true) === opt.value}
+                          onClick={() => save({ mapbox_3d_enabled: opt.value })}
+                        >
+                          {opt.label}
+                        </OptionButton>
+                      ))}
+                    </OptionRow>
+
+                    <OptionRow
+                      label={
+                        <>
+                          {t('admin.defaultSettings.mapboxQuality')} <ResetButton field="mapbox_quality_mode" />
+                        </>
+                      }
+                    >
+                      {(
+                        [
+                          { value: true, label: t('settings.on') || 'On' },
+                          { value: false, label: t('settings.off') || 'Off' },
+                        ] as const
+                      ).map((opt) => (
+                        <OptionButton
+                          key={String(opt.value)}
+                          active={(defaults.mapbox_quality_mode ?? false) === opt.value}
+                          onClick={() => save({ mapbox_quality_mode: opt.value })}
+                        >
+                          {opt.label}
+                        </OptionButton>
+                      ))}
+                    </OptionRow>
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
+        </Section>
       </div>
-    </Section>
+    </div>
   );
 }

@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'paga',
   'costs.settle': 'Acertar',
   'costs.balances': 'Saldos',
+  'costs.finalBudget': 'Orçamento final',
+  'costs.finalExpenses': 'Despesas pagas',
+  'costs.finalReimbursed': 'Reembolsos líquidos',
+  'costs.finalPending': 'Reembolsos pendentes',
   'costs.byCategory': 'Por categoria',
   'costs.noCategories': 'Nenhuma despesa ainda.',
   'costs.settleHistory': 'Histórico de acertos',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'padrão da viagem',
   'costs.exchangeRates.source.explicit': 'taxa manual',
   'costs.exchangeRates.source.legacy': 'taxa antiga',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'indisponível',
   'costs.exchangeRates.item.expense': 'Despesa',
   'costs.exchangeRates.item.settlement': 'Pagamento',
@@ -201,5 +208,12 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Alternar entre despesa e reembolso',
+  'costs.receipts': 'Comprovantes',
+  'costs.receiptsTitle': 'Comprovantes e notas',
+  'costs.attachReceipt': 'Anexar comprovante / nota',
+  'costs.noReceipts': 'Nenhum comprovante anexado',
+  'costs.deleteReceipt': 'Remover comprovante',
+  'costs.viewReceipt': 'Ver comprovante',
+  'costs.receiptLeftBehind': 'Falha ao salvar, e {count} recibos enviados ainda estão lá. Remova-os na aba Arquivos.',
 };
 export default budget;

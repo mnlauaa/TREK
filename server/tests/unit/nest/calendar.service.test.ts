@@ -16,6 +16,7 @@ import { PermissionsService } from '../../../src/nest/permissions/permissions.se
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import { ReservationsReadRepository } from '../../../src/nest/reservations/reservations-read.repository';
 import { ReservationsService } from '../../../src/nest/reservations/reservations.service';
+import { accommodationsOver } from '../../helpers/accommodations-service';
 import {
   createUser,
   createTrip,
@@ -87,6 +88,7 @@ const svc = new CalendarService(
     new RealtimeService(),
     notificationsStub(),
     new ReservationsReadRepository(dbs()),
+    accommodationsOver(dbs()),
   ),
 );
 
@@ -1238,6 +1240,31 @@ describe('accommodations', () => {
     expect(ics).toContain('SUMMARY:Check-in: Hotel Bellevue\r\n');
     expect(ics).not.toContain('Check-in: Bellevue second room');
     expect(ics).toContain('SUMMARY:Bellevue second room');
+  });
+
+  it('CAL-060: the stop a booking puts on its check-in day does not list the hotel a second time', () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id, { title: 'Paris' });
+    const { stayId, placeId } = createStay(trip.id, { start: '2026-07-07', end: '2026-07-12' });
+    const stay = testDb.prepare('SELECT start_day_id FROM day_accommodations WHERE id = ?').get(stayId) as {
+      start_day_id: number;
+    };
+    // The stop a booked night puts on its check-in day, so the route can reach
+    // the hotel. It belongs to the stay, not to the day's plan, and the stay
+    // block already carries the hotel.
+    testDb
+      .prepare('INSERT INTO day_assignments (day_id, place_id, order_index, accommodation_id) VALUES (?, ?, 0, ?)')
+      .run(stay.start_day_id, placeId, stayId);
+    // A place the traveller planned by hand on the same day stays on it.
+    const museum = createPlace(testDb, trip.id, { name: 'Louvre' });
+    createDayAssignment(testDb, stay.start_day_id, museum.id);
+
+    const { ics } = svc.exportICS(trip.id);
+
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260707\r\nDTEND;VALUE=DATE:20260713');
+    expect(ics.match(/Hotel Bellevue/g)).toHaveLength(1);
+    expect(ics).toContain('• Louvre');
+    expect(ics).not.toContain('• Hotel Bellevue');
   });
 });
 

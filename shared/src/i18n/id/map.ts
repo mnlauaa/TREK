@@ -24,5 +24,11 @@ const map: TranslationStrings = {
   'map.location.unavailable': 'Lokasi Anda tidak dapat ditentukan.',
   'map.location.timeout':
     'Penentuan lokasi terlalu lama. Coba lagi di tempat dengan pandangan langit yang lebih terbuka.',
+  'map.overview.show': 'Tampilkan seluruh perjalanan',
+  'map.overview.hide': 'Sembunyikan seluruh perjalanan',
+  'map.overview.total': 'Jarak total',
+  'map.attribution': 'Kredit peta',
+  'map.overview.unrouted': '{count} ruas tidak dapat dihitung, jadi jaraknya belum lengkap.',
+  'map.overview.dayUnrouted': '{count} ruas pada hari ini tidak dapat dihitung',
 };
 export default map;

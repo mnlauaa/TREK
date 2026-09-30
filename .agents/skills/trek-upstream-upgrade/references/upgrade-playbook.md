@@ -56,7 +56,7 @@ List retired and superseded changes as deliberately as retained ones. This preve
 
 For read-only assessment or planning, use `git merge-tree --write-tree --name-only <fork-tip> <pinned-upstream-commit>` in an isolated object cache. Its output tree is diagnostic only and may contain conflict markers; never promote it as an audited result.
 
-For authorized implementation, use an isolated worktree and attempt the exact tag merge without committing. Never rehearse against the user's active dirty tree. Capture:
+For authorized implementation, use a persistent isolated worktree with progress commits (keep a separate immutable upstream baseline). Never keep the only uncommitted implementation in an ephemeral temporary directory. Use an isolated worktree and attempt the exact tag merge without committing. Never rehearse against the user's active dirty tree. Capture:
 
 - total conflict records and unique paths;
 - content, add/add, rename, and modify/delete conflicts;
@@ -135,6 +135,8 @@ Typical gates:
 - separate SDK install/build/test cycle;
 - migration matrix and restored-backup rehearsal;
 - application smoke tests against a private staging restore.
+
+For FX changes, test an intentional frozen 1:1 separately from legacy default 1, negative refunds, missing quotes, response currency fallback, nullable preview differences, stale preview rejection, unrelated edits, and reservation/import/plugin/MCP writes. Opening a read view must not trigger an FX write when the fork's manual-apply contract is active. Currency rebasing must preserve custom frozen economic values and reject unavailable bridge quotes before any mutation.
 
 Do not lower a coverage ratchet to land the upgrade. Add tests for the ported domain or document a pre-existing repository-wide advisory separately.
 

@@ -83,6 +83,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'zahlt',
   'costs.settle': 'Ausgleichen',
   'costs.balances': 'Salden',
+  'costs.finalBudget': 'Endbudget',
+  'costs.finalExpenses': 'Bezahlte Ausgaben',
+  'costs.finalReimbursed': 'Rückzahlungen netto',
+  'costs.finalPending': 'Ausstehende Rückzahlungen',
   'costs.byCategory': 'Nach Kategorie',
   'costs.noCategories': 'Noch keine Ausgaben.',
   'costs.settleHistory': 'Ausgleichs-Verlauf',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'Reise-Standardwert',
   'costs.exchangeRates.source.explicit': 'manueller Kurs',
   'costs.exchangeRates.source.legacy': 'alter Kurs',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'nicht verfügbar',
   'costs.exchangeRates.item.expense': 'Ausgabe',
   'costs.exchangeRates.item.settlement': 'Zahlung',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Zwischen Ausgabe und Erstattung wechseln',
+  'costs.receipts': 'Belege',
+  'costs.receiptsTitle': 'Belege & Rechnungen',
+  'costs.attachReceipt': 'Beleg / Rechnung anhängen',
+  'costs.noReceipts': 'Keine Belege angehängt',
+  'costs.deleteReceipt': 'Beleg entfernen',
+  'costs.viewReceipt': 'Beleg ansehen',
+  'costs.receiptLeftBehind':
+    'Speichern fehlgeschlagen, {count} hochgeladene Belege liegen noch da. Im Dateien-Tab entfernen.',
 };
 export default budget;
