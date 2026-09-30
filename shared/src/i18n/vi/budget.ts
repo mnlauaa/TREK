@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'trả tiền',
   'costs.settle': 'Thanh toán',
   'costs.balances': 'Số dư',
+  'costs.finalBudget': 'Ngân sách cuối cùng',
+  'costs.finalExpenses': 'Chi phí đã trả',
+  'costs.finalReimbursed': 'Hoàn trả ròng',
+  'costs.finalPending': 'Khoản hoàn trả đang chờ',
   'costs.byCategory': 'Theo danh mục',
   'costs.noCategories': 'Chưa có chi phí nào.',
   'costs.settleHistory': 'Lịch sử thanh toán',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'mặc định của chuyến đi',
   'costs.exchangeRates.source.explicit': 'tỷ giá thủ công',
   'costs.exchangeRates.source.legacy': 'tỷ giá cũ',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'không có sẵn',
   'costs.exchangeRates.item.expense': 'Chi phí',
   'costs.exchangeRates.item.settlement': 'Thanh toán',
@@ -201,6 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'Chuyển giữa khoản chi và khoản hoàn',
+  'costs.receipts': 'Hóa đơn',
+  'costs.receiptsTitle': 'Hóa đơn & Biên lai',
+  'costs.attachReceipt': 'Đính kèm hóa đơn / biên lai',
+  'costs.noReceipts': 'Chưa đính kèm hóa đơn nào',
+  'costs.deleteReceipt': 'Xóa hóa đơn',
+  'costs.viewReceipt': 'Xem hóa đơn',
+  'costs.receiptLeftBehind': 'Lưu thất bại và {count} biên lai đã tải lên vẫn còn. Hãy xoá chúng trong tab Tệp.',
 };
 
 export default budget;

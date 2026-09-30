@@ -6,6 +6,7 @@ import {
   UPSTREAM_SCHEMA_VERSION,
 } from '../../../src/db/fork-migrations';
 import { runMigrations } from '../../../src/db/migrations';
+import { createMigrationPrefix } from '../../helpers/migration-prefix';
 import { createTestDb } from '../../helpers/test-db';
 
 import Database from 'better-sqlite3';
@@ -117,10 +118,9 @@ describe('v4 fork migration lineages', () => {
   it.each([175, 176, 177, 178, 179, 180])(
     'converges a clean/custom version %i baseline through the named crosswalk',
     (version) => {
-      db = createTestDb();
+      db = createMigrationPrefix(175);
+      runForkMigrations(db);
       dropLedger(db);
-      removeOfficial176To180Artifacts(db);
-      removeLaterOfficialArtifacts(db, version);
       db.prepare('UPDATE schema_version SET version = ?').run(version);
 
       runMigrations(db);
@@ -138,7 +138,8 @@ describe('v4 fork migration lineages', () => {
   );
 
   it.each([199, 200, 201, 202])('normalizes a verified legacy fork schema %i without replacing data', (version) => {
-    db = createTestDb();
+    db = createMigrationPrefix(205);
+    runForkMigrations(db);
     db.prepare(
       "INSERT INTO users (username,email,password_hash,role) VALUES ('owner','owner@example.test','x','admin')",
     ).run();
@@ -172,23 +173,18 @@ describe('v4 fork migration lineages', () => {
     ).toEqual({ exchange_rate: 1.2, source_version: 'custom:before-v4.1', note: 'keep me' });
   });
 
-  it.each([199, 200, 201, 202, 203, 204, 205])('adds fork schemas to a clean official schema %i', (version) => {
-    db = createTestDb();
-    removeForkArtifacts(db);
-    removeLaterOfficialArtifacts(db, version);
-    if (version === 199) db.exec('ALTER TABLE mcp_tokens DROP COLUMN kind');
-    db.prepare('UPDATE schema_version SET version = ?').run(version);
-    expect(classifyForkLineage(db, version)).toBe(version >= 201 ? 'official-v4.2' : 'official-v4.1');
+  it.each(Array.from({ length: 46 }, (_, i) => 199 + i))('adds fork schemas to a clean official schema %i', (version) => {
+    db = createMigrationPrefix(version);
+    expect(classifyForkLineage(db, version)).toBe(version >= 206 ? 'official-v4.3' : version >= 201 ? 'official-v4.2' : 'official-v4.1');
 
     runMigrations(db);
     expectFinalLineage(db);
   });
 
-  it.each([200, 201, 202, 203, 204])('resumes the existing dual lineage at official version %i', (version) => {
-    db = createTestDb();
+  it.each(Array.from({ length: 45 }, (_, i) => 200 + i))('resumes the existing dual lineage at official version %i', (version) => {
+    db = createMigrationPrefix(version);
+    runForkMigrations(db);
     const ledger = db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all();
-    removeLaterOfficialArtifacts(db, version);
-    db.prepare('UPDATE schema_version SET version = ?').run(version);
     runMigrations(db);
     expectFinalLineage(db);
     expect(db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all()).toEqual(ledger);
@@ -199,13 +195,13 @@ describe('v4 fork migration lineages', () => {
   it('rejects a current version whose migration artifacts are missing without changing metadata', () => {
     db = createTestDb();
     db.exec('ALTER TABLE journey_entries DROP COLUMN stats_excluded');
-    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 205/);
-    expect(db.prepare('SELECT version FROM schema_version').get()).toEqual({ version: 205 });
+    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 244/);
+    expect(db.prepare('SELECT version FROM schema_version').get()).toEqual({ version: 244 });
   });
 
   it('preserves v4.1.1 financial provenance, guest identity and encrypted push state byte-for-byte', () => {
-    db = createTestDb();
-    removeLaterOfficialArtifacts(db, 200);
+    db = createMigrationPrefix(200);
+    runForkMigrations(db);
     db.exec(`
       UPDATE schema_version SET version = 200;
       INSERT INTO users (id,username,email,password_hash) VALUES (901,'owner','owner@test.invalid','hash');
@@ -233,8 +229,10 @@ describe('v4 fork migration lineages', () => {
       'web_push_subscriptions',
       'fork_schema_migrations',
     ];
+    const columns = Object.fromEntries(tables.map(table => [table,
+      (db!.pragma(`table_info(${table})`) as Array<{name: string}>).map(c => c.name).join(',')]));
     const snapshot = () =>
-      Object.fromEntries(tables.map((table) => [table, db!.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+      Object.fromEntries(tables.map((table) => [table, db!.prepare(`SELECT ${columns[table]} FROM ${table} ORDER BY rowid`).all()]));
     const before = snapshot();
     runMigrations(db);
     expectFinalLineage(db);
@@ -246,10 +244,10 @@ describe('v4 fork migration lineages', () => {
   it('rejects unknown fork migration IDs and future official versions', () => {
     db = createTestDb();
     db.exec("INSERT INTO fork_schema_migrations (id) VALUES ('fork/unknown')");
-    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 205/);
+    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 244/);
     db.exec("DELETE FROM fork_schema_migrations WHERE id = 'fork/unknown'");
-    db.exec('UPDATE schema_version SET version = 206');
-    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 206/);
+    db.exec('UPDATE schema_version SET version = 245');
+    expect(() => runMigrations(db!)).toThrow(/Unsupported schema version 245/);
   });
 
   it('rejects an ambiguous schema newer than upstream instead of guessing', () => {

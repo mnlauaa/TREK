@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'يدفع',
   'costs.settle': 'تسوية',
   'costs.balances': 'الأرصدة',
+  'costs.finalBudget': 'الميزانية النهائية',
+  'costs.finalExpenses': 'المصاريف المدفوعة',
+  'costs.finalReimbursed': 'صافي المبالغ المستردة',
+  'costs.finalPending': 'المبالغ المستردة المعلقة',
   'costs.byCategory': 'حسب الفئة',
   'costs.noCategories': 'لا توجد مصروفات بعد.',
   'costs.settleHistory': 'سجل التسويات',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'القيمة الافتراضية للرحلة',
   'costs.exchangeRates.source.explicit': 'سعر يدوي',
   'costs.exchangeRates.source.legacy': 'سعر قديم',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'غير متاح',
   'costs.exchangeRates.item.expense': 'مصروف',
   'costs.exchangeRates.item.settlement': 'دفعة',
@@ -201,5 +208,12 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': 'التبديل بين المصروف والاسترداد',
+  'costs.receipts': 'الإيصالات',
+  'costs.receiptsTitle': 'الإيصالات والفواتير',
+  'costs.attachReceipt': 'إرفاق إيصال / فاتورة',
+  'costs.noReceipts': 'لا توجد إيصالات مرفقة',
+  'costs.deleteReceipt': 'حذف الإيصال',
+  'costs.viewReceipt': 'عرض الإيصال',
+  'costs.receiptLeftBehind': 'فشل الحفظ، وما زال هناك {count} إيصالات مرفوعة. احذفها من تبويب الملفات.',
 };
 export default budget;

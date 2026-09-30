@@ -2,6 +2,7 @@ import { DatabaseService } from '../database/database.service';
 import { Injectable } from '@nestjs/common';
 import {
   FRANKFURTER_CURRENCY_SET,
+  type BudgetFallbackFx,
   type ExchangeRateResolution,
   type ExchangeRateSource,
   type ExchangeRateSnapshot as GlobalRateSnapshot,
@@ -10,6 +11,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 
 export interface ExchangeRateWrite {
+  fallback_fx?: BudgetFallbackFx;
   currency?: string | null;
   exchange_rate?: number;
   exchange_rate_note?: string | null;
@@ -106,14 +108,14 @@ export function effectiveTripValue(
   itemRate: number | null | undefined,
   source: string | null | undefined,
   rates: Record<string, number> | null,
-): number {
+): number | null {
   const currency = upper(itemCurrency, tripCurrency);
   const trip = upper(tripCurrency);
   if (currency === trip) return amount;
   if (positive(itemRate) && (itemRate !== 1 || (source != null && source !== 'legacy'))) return amount / itemRate;
   const currencyRate = rates?.[currency];
   const tripRate = rates?.[trip];
-  return positive(currencyRate) && positive(tripRate) ? (amount / currencyRate) * tripRate : amount;
+  return positive(currencyRate) && positive(tripRate) ? (amount / currencyRate) * tripRate : null;
 }
 
 type BatchSelection = { type: 'expense' | 'settlement'; id: number };
@@ -334,6 +336,8 @@ export class ExchangeRatesService {
     userId?: number,
     existing?: { currency?: string | null; exchange_rate?: number } | null,
   ): Promise<void> {
+    const fallback = data.fallback_fx;
+    delete data.fallback_fx;
     for (const field of [
       'exchange_rate_source',
       'exchange_rate_source_version',
@@ -361,7 +365,12 @@ export class ExchangeRatesService {
     }
     if (existing && currency === oldCurrency) return;
     const resolution = await this.resolveExchangeRate(tripId, currency);
-    if (!resolution) throw new ExchangeRateUnavailableError();
+    if (!resolution) {
+      const lent = fallback?.base.toUpperCase() === tripCurrency ? fallback.rates[currency] : undefined;
+      if (!positive(lent)) throw new ExchangeRateUnavailableError();
+      this.applyProvenance(data, lent, 'explicit', userId, `client-fallback:${randomUUID()}`, null);
+      return;
+    }
     this.applyProvenance(
       data,
       resolution.exchange_rate,
@@ -465,7 +474,12 @@ export class ExchangeRatesService {
         currency,
       ) ?? null;
     return createHash('sha256')
-      .update(JSON.stringify({ tripRate, rows: this.batchRows(tripId, currency) }))
+      .update(JSON.stringify({
+        trip: this.db.get('SELECT currency FROM trips WHERE id = ?', tripId),
+        tripRate,
+        expenses: this.db.all("SELECT * FROM budget_items WHERE trip_id = ? AND UPPER(COALESCE(currency, '')) = ? ORDER BY id", tripId, currency),
+        settlements: this.db.all("SELECT * FROM budget_settlements WHERE trip_id = ? AND UPPER(COALESCE(currency, '')) = ? ORDER BY id", tripId, currency),
+      }))
       .digest('hex');
   }
 
@@ -507,7 +521,7 @@ export class ExchangeRatesService {
         new_exchange_rate: exchangeRate,
         old_trip_value: oldValue,
         new_trip_value: newValue,
-        trip_value_delta: newValue - oldValue,
+        trip_value_delta: oldValue === null ? null : newValue - oldValue,
         source,
         selected: source === 'global' || source === 'trip',
       };

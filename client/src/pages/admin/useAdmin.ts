@@ -1,3 +1,4 @@
+import type { TransitKeySource, TransitProvider } from '@trek/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import apiClient, { adminApi, authApi } from '../../api/client';
@@ -57,6 +58,11 @@ export function useAdmin() {
   const mcpEnabled = useAddonStore((s) => s.isEnabled('mcp'));
   const devMode = useAuthStore((s) => s.devMode);
   const managed = useAuthStore((s) => s.managed);
+  // Whether a key is actually behind a provider is app-config's answer, not the
+  // form's: on a managed install the fields below stay empty by design, and an
+  // operator key set through the environment never reaches them either.
+  const hasMapsKey = useAuthStore((s) => s.hasMapsKey);
+  const hasAmapKey = useAuthStore((s) => s.hasAmapKey);
 
   // ?tab= makes a section linkable: a support reply, an onboarding mail or a
   // bookmark can point at the one panel it is about instead of at the top of a
@@ -150,6 +156,43 @@ export function useAdmin() {
       .catch(() => {});
   }, []);
 
+  // Search and suggestions from Google alone. Admin-only state: the search itself
+  // reads the switch on the server, so nothing else in the client needs it.
+  const [placesGoogleOnly, setPlacesGoogleOnlyState] = useState<boolean>(false);
+  useEffect(() => {
+    adminApi
+      .getPlacesGoogleOnly()
+      .then((d) => setPlacesGoogleOnlyState(d.enabled))
+      .catch(() => {});
+  }, []);
+
+  // Transit backend (#1699). googleKeySource says where a Google key would come
+  // from for this admin — null means picking Google changes nothing, since the
+  // request-time fallback to Transitous is silent by design.
+  const [transitProvider, setTransitProviderState] = useState<TransitProvider>('transitous');
+  const [transitGoogleKeySource, setTransitGoogleKeySource] = useState<TransitKeySource>(null);
+  useEffect(() => {
+    adminApi
+      .getTransitProvider()
+      .then((d) => {
+        setTransitProviderState(d.provider);
+        setTransitGoogleKeySource(d.googleKeySource);
+      })
+      .catch(() => {});
+  }, []);
+  // Place shadow log — off unless an admin turns it on, so the initial state is
+  // false rather than the true the four switches above start from.
+  // The index switch. Read fail-open like the server does, so the state shown
+  // before the request lands matches what an unset row actually means.
+
+  const [placeShadowEnabled, setPlaceShadowEnabledState] = useState<boolean>(false);
+  useEffect(() => {
+    adminApi
+      .getPlaceShadow()
+      .then((d) => setPlaceShadowEnabledState(d.enabled))
+      .catch(() => {});
+  }, []);
+
   // Collab features
   const [collabFeatures, setCollabFeatures] = useState<{
     chat: boolean;
@@ -227,6 +270,15 @@ export function useAdmin() {
   const [mapsKey, setMapsKey] = useState<string>('');
   const [weatherKey, setWeatherKey] = useState<string>('');
   const [unsplashKey, setUnsplashKey] = useState<string>('');
+  const [amapKey, setAmapKey] = useState<string>('');
+  /**
+   * Which provider answers place search. Not a key, so it saves through
+   * updateAppSettings rather than with the keys — and it is saved on change
+   * rather than with the Save button, because it is one choice from a list and
+   * the effect is immediate everywhere.
+   */
+  const [placesProvider, setPlacesProvider] = useState<string>('auto');
+  const [savingPlacesProvider, setSavingPlacesProvider] = useState<boolean>(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savingKeys, setSavingKeys] = useState<boolean>(false);
   const [validating, setValidating] = useState<Record<string, boolean>>({});
@@ -245,8 +297,12 @@ export function useAdmin() {
     setPlacesAutocompleteEnabled,
     setPlacesDetailsEnabled,
     setPlacesEnrichEnabled,
+    setPlaceShadowEnabled,
     logout,
   } = useAuthStore();
+  // The store's copy is what the search screens gate the "search Google
+  // instead" line on, so a saved choice lands there the way a saved key does.
+  const setStorePlacesProvider = useAuthStore((s) => s.setPlacesProvider);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -311,6 +367,7 @@ export function useAdmin() {
       setPasskeyLogin(!!config.passkey_login);
       setPasskeyConfigured(!!config.passkey_configured);
       if (config.allowed_file_types) setAllowedFileTypes(config.allowed_file_types);
+      if (config.places_provider) setPlacesProvider(config.places_provider);
     } catch (err: unknown) {
       // ignore
     }
@@ -322,6 +379,7 @@ export function useAdmin() {
       setMapsKey(data.settings?.maps_api_key || '');
       setWeatherKey(data.settings?.openweather_api_key || '');
       setUnsplashKey(data.settings?.unsplash_api_key || '');
+      setAmapKey(data.settings?.amap_api_key || '');
     } catch (err: unknown) {
       // ignore
     }
@@ -377,6 +435,7 @@ export function useAdmin() {
         maps_api_key: mapsKey,
         openweather_api_key: weatherKey,
         unsplash_api_key: unsplashKey,
+        amap_api_key: amapKey,
       });
       toast.success(t('admin.keySaved'));
     } catch (err: unknown) {
@@ -390,7 +449,12 @@ export function useAdmin() {
     setValidating({ maps: true, weather: true });
     try {
       // Save first so validation uses the current values
-      await updateApiKeys({ maps_api_key: mapsKey, openweather_api_key: weatherKey, unsplash_api_key: unsplashKey });
+      await updateApiKeys({
+        maps_api_key: mapsKey,
+        openweather_api_key: weatherKey,
+        unsplash_api_key: unsplashKey,
+        amap_api_key: amapKey,
+      });
       const result = await authApi.validateKeys();
       setValidation(result);
     } catch (err: unknown) {
@@ -404,13 +468,45 @@ export function useAdmin() {
     setValidating((prev) => ({ ...prev, [keyType]: true }));
     try {
       // Save first so validation uses the current values
-      await updateApiKeys({ maps_api_key: mapsKey, openweather_api_key: weatherKey, unsplash_api_key: unsplashKey });
+      await updateApiKeys({
+        maps_api_key: mapsKey,
+        openweather_api_key: weatherKey,
+        unsplash_api_key: unsplashKey,
+        amap_api_key: amapKey,
+      });
       const result = await authApi.validateKeys();
       setValidation((prev) => ({ ...prev, [keyType]: result[keyType] }));
     } catch (err: unknown) {
       toast.error(t('common.error'));
     } finally {
       setValidating((prev) => ({ ...prev, [keyType]: false }));
+    }
+  };
+
+  const handleTogglePlacesGoogleOnly = async () => {
+    const next = !placesGoogleOnly;
+    setPlacesGoogleOnlyState(next);
+    try {
+      await adminApi.updatePlacesGoogleOnly(next);
+    } catch (err: unknown) {
+      setPlacesGoogleOnlyState(!next);
+      toast.error(getApiErrorMessage(err, t('common.error')));
+    }
+  };
+
+  const handleSavePlacesProvider = async (value: string) => {
+    const previous = placesProvider;
+    setPlacesProvider(value);
+    setSavingPlacesProvider(true);
+    try {
+      await authApi.updateAppSettings({ places_provider: value });
+      setStorePlacesProvider(value);
+      toast.success(t('admin.placesProvider.saved'));
+    } catch (err: unknown) {
+      setPlacesProvider(previous);
+      toast.error(getApiErrorMessage(err, t('common.error')));
+    } finally {
+      setSavingPlacesProvider(false);
     }
   };
 
@@ -529,6 +625,7 @@ export function useAdmin() {
     setPlacesAutocompleteEnabled,
     setPlacesDetailsEnabled,
     setPlacesEnrichEnabled,
+    setPlaceShadowEnabled,
     logout,
     navigate,
     toast,
@@ -557,6 +654,14 @@ export function useAdmin() {
     setPlacesDetailsEnabledState,
     placesEnrichEnabled,
     setPlacesEnrichEnabledState,
+    placesGoogleOnly,
+    handleTogglePlacesGoogleOnly,
+    transitProvider,
+    setTransitProviderState,
+    transitGoogleKeySource,
+    setTransitGoogleKeySource,
+    placeShadowEnabled,
+    setPlaceShadowEnabledState,
     collabFeatures,
     setCollabFeatures,
     oidcConfig,
@@ -606,6 +711,13 @@ export function useAdmin() {
     setWeatherKey,
     unsplashKey,
     setUnsplashKey,
+    amapKey,
+    setAmapKey,
+    hasMapsKey,
+    hasAmapKey,
+    placesProvider,
+    savingPlacesProvider,
+    handleSavePlacesProvider,
     showKeys,
     setShowKeys,
     savingKeys,

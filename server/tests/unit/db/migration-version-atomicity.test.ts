@@ -1,3 +1,4 @@
+import { createMigrationPrefix } from '../../helpers/migration-prefix';
 /**
  * The schema_version bump must commit with the migration that earned it.
  *
@@ -23,13 +24,9 @@ function migratedDb(): Database.Database {
 
 describe('migration version bump atomicity', () => {
   it('MIGRATE-ATOMIC-001: writes schema_version inside the migration transaction', () => {
-    const db = migratedDb();
+    const db = createMigrationPrefix(243);
     try {
-      const { version } = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number };
-      // Recreate the actual version-204 tail, not a version-205 schema with
-      // stale metadata (which the fork's lineage preflight correctly refuses).
-      db.exec('ALTER TABLE journey_entries DROP COLUMN stats_excluded');
-      db.prepare('UPDATE schema_version SET version = ?').run(version - 1);
+      const version = 244;
 
       const realPrepare = db.prepare.bind(db);
       const inTransaction: boolean[] = [];

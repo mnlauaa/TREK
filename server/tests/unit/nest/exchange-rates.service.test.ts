@@ -275,7 +275,7 @@ describe('enhanced frozen-rate workflow', () => {
     expect(effectiveTripValue(125, 'USD', 'EUR', 1.25, 'trip', null)).toBe(100);
     expect(effectiveTripValue(125, 'USD', 'EUR', 1, 'legacy', { EUR: 1, USD: 1.25 })).toBe(100);
     expect(effectiveTripValue(125, 'EUR', 'EUR', 999, 'explicit', null)).toBe(125);
-    expect(effectiveTripValue(125, 'USD', 'EUR', null, null, null)).toBe(125);
+    expect(effectiveTripValue(125, 'USD', 'EUR', null, null, null)).toBeNull();
   });
 
   it('reads durable snapshots, rejects corrupt rows, and does not fetch unsupported bases', async () => {

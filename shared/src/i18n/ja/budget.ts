@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': '支払う',
   'costs.settle': '精算',
   'costs.balances': '残高',
+  'costs.finalBudget': '最終負担額',
+  'costs.finalExpenses': '支払った費用',
+  'costs.finalReimbursed': '精算（差引）',
+  'costs.finalPending': '未精算の金額',
   'costs.byCategory': 'カテゴリ別',
   'costs.noCategories': '支出はまだありません。',
   'costs.settleHistory': '精算履歴',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': '旅行の初期値',
   'costs.exchangeRates.source.explicit': '手動レート',
   'costs.exchangeRates.source.legacy': '旧レート',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': '利用不可',
   'costs.exchangeRates.item.expense': '支出',
   'costs.exchangeRates.item.settlement': '支払い',
@@ -201,5 +208,13 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
   'costs.toggleSign': '支出と返金を切り替える',
+  'costs.receipts': 'レシート',
+  'costs.receiptsTitle': 'レシート・請求書',
+  'costs.attachReceipt': 'レシート・請求書を添付',
+  'costs.noReceipts': '添付されたレシートはありません',
+  'costs.deleteReceipt': 'レシートを削除',
+  'costs.viewReceipt': 'レシートを表示',
+  'costs.receiptLeftBehind':
+    '保存に失敗し、アップロード済みの領収書が {count} 件残っています。ファイルタブで削除してください。',
 };
 export default budget;

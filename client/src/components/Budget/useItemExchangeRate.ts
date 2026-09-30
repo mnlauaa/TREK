@@ -42,8 +42,10 @@ export function useItemExchangeRate(
   const sameExistingCurrency = Boolean(
     hasExisting && (existingCurrency || accountingCurrency).toUpperCase() === currentCurrency
   );
+  const hasFrozenRate = existingRate != null && Number.isFinite(existingRate) && existingRate > 0 &&
+    (existingRate !== 1 || (existingSource != null && existingSource !== 'legacy'));
   const existingResolution: ExchangeRateResolution | null =
-    sameExistingCurrency && existingRate
+    sameExistingCurrency && hasFrozenRate
       ? {
           trip_id: tripId,
           trip_currency: accountingCurrency,
@@ -76,7 +78,7 @@ export function useItemExchangeRate(
     setUnavailable(false);
     setLoading(false);
     setNote(unchanged ? existingNote || '' : '');
-    if (unchanged && existingRate) {
+    if (unchanged && hasFrozenRate) {
       const next: ExchangeRateResolution = {
         trip_id: tripId,
         trip_currency: accountingCurrency,
@@ -90,6 +92,12 @@ export function useItemExchangeRate(
       };
       setSuggestion(next);
       setValue(formatDisplayRate(next.exchange_rate));
+      return;
+    }
+    if (unchanged && currentCurrency !== accountingCurrency) {
+      setSuggestion(null);
+      setValue('');
+      setUnavailable(true);
       return;
     }
     if (currentCurrency === accountingCurrency) {
@@ -136,6 +144,7 @@ export function useItemExchangeRate(
     hasExisting,
     existingCurrency,
     existingRate,
+    hasFrozenRate,
     existingSource,
     existingSourceVersion,
     existingEffectiveDate,
@@ -153,7 +162,7 @@ export function useItemExchangeRate(
   };
   const numeric = Number(value);
   const sameCurrency = currentCurrency === accountingCurrency;
-  const valid = sameCurrency || (manual ? Number.isFinite(numeric) && numeric > 0 : suggestion !== null);
+  const valid = sameCurrency || (manual ? Number.isFinite(numeric) && numeric > 0 : sameExistingCurrency || suggestion !== null);
   const storedRate = manual ? displayRateToStored(numeric) : (suggestion?.exchange_rate ?? null);
   const write =
     manual && !sameCurrency && storedRate !== null
