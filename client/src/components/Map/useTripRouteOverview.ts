@@ -83,7 +83,7 @@ export function useTripRouteOverview(
       const next = summariseTripRoute(assembleTripRoute(plan, routed))
       setResult({ ...next, focusPoints: loading ? first.focusPoints : next.focusPoints, loading })
     }
-    routeTripLegs(plan, { tripId, signal: controller.signal, onAnswer: routed => publish(routed, true) })
+    void routeTripLegs(plan, { tripId, signal: controller.signal, onAnswer: routed => publish(routed, true) })
       .then(routed => publish(routed, false))
 
     return () => controller.abort()

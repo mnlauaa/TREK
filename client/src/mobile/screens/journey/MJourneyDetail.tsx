@@ -261,7 +261,7 @@ export default function MJourneyDetail() {
 
   useEffect(() => {
     let active = true
-    ;(async () => {
+    void (async () => {
       try {
         const addonsData = await addonsApi.enabled()
         const enabled = (addonsData.addons || []).filter(

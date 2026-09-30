@@ -306,7 +306,7 @@ export default function ApiKeysSection(): React.ReactElement {
                 {t('settings.apiKeys.modal.name')}
               </label>
               <input id="api-key-name" type="text" value={newName} onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
+                onKeyDown={e => { if (e.key === 'Enter') void handleCreate() }}
                 placeholder={t('settings.apiKeys.modal.namePlaceholder')}
                 maxLength={100}
                 className="w-full rounded-lg border px-3 py-2.5 text-body focus:outline-none focus:ring-2 ring-accent border-edge bg-surface-input text-content"
@@ -343,7 +343,7 @@ export default function ApiKeysSection(): React.ReactElement {
       <ConfirmDialog
         isOpen={deleteId !== null}
         onClose={() => setDeleteId(null)}
-        onConfirm={() => { if (deleteId !== null) handleDelete(deleteId) }}
+        onConfirm={() => { if (deleteId !== null) void handleDelete(deleteId) }}
         title={t('settings.apiKeys.deleteTitle')}
         message={t('settings.apiKeys.deleteMessage')}
         confirmLabel={t('settings.apiKeys.deleteTitle')}

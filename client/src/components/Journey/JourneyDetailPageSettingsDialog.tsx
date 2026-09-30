@@ -196,7 +196,7 @@ export function JourneySettingsDialog({ journey, onClose, onSaved, onOpenInvite,
               </span>
               <ToggleSwitch
                 on={!!journey.show_trip_tracks}
-                onToggle={() => { if (!savingTracks) handleTracksToggle() }}
+                onToggle={() => { if (!savingTracks) void handleTracksToggle() }}
                 label={t('journey.settings.showTripTracks')}
               />
             </div>
@@ -221,7 +221,7 @@ export function JourneySettingsDialog({ journey, onClose, onSaved, onOpenInvite,
                     <span className="flex-1 min-w-0 text-[14px] text-content-primary">{label}</span>
                     <ToggleSwitch
                       on={on}
-                      onToggle={() => { if (savingField === null) handleFieldToggle(field) }}
+                      onToggle={() => { if (savingField === null) void handleFieldToggle(field) }}
                       label={label}
                     />
                   </div>
