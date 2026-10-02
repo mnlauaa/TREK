@@ -8,7 +8,7 @@ import { applyAppearance } from './theme/applyAppearance';
 // The one page that stays in the entry chunk. Anyone logged out lands here, and
 // every other route redirects here first — a chunk round trip in front of the login
 // form would slow down the single screen that has to be there immediately.
-import { authApi } from './api/client';
+import { authApi, isAuthPublicPath } from './api/client';
 import BackgroundTasksWidget from './components/BackgroundTasks/BackgroundTasksWidget';
 import MSaveToCollectionSheet from './components/Collections/MSaveToCollectionSheet';
 import SaveToCollectionModal from './components/Collections/SaveToCollectionModal';
@@ -19,6 +19,7 @@ import { NewMemberIdentityCheck } from './components/Trips/GuestIdentityTransfer
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import { ToastContainer } from './components/shared/Toast';
 import { useInAppNotificationListener } from './hooks/useInAppNotificationListener.ts';
+import { useRoadtripPreferencesSync } from './hooks/useRoadtripPreferencesSync';
 import { TranslationProvider, useTranslation } from './i18n';
 import MobileShell from './mobile/MobileShell';
 import MRouteFallback from './mobile/components/MRouteFallback';
@@ -36,6 +37,7 @@ import {
   START_DESTINATION_ROUTE,
   tripStartPath,
 } from './utils/startDestination';
+import { reconcileAppVersion } from './utils/versionHandover';
 // Notice action registrations (side-effect imports):
 import { managedRoutes } from './managed';
 import './pages/Trips/noticeActions.js';
@@ -315,6 +317,8 @@ export default function App() {
     setIsPrerelease,
     setAppVersion,
     setHasMapsKey,
+    setHasAmapKey,
+    setPlacesProvider,
     setServerTimezone,
     setAppRequireMfa,
     setTripRemindersEnabled,
@@ -322,6 +326,7 @@ export default function App() {
     setPlacesAutocompleteEnabled,
     setPlacesDetailsEnabled,
     setPlacesEnrichEnabled,
+    setPlaceShadowEnabled,
   } = useAuthStore();
   const { loadSettings } = useSettingsStore();
   const { loadAddons } = useAddonStore();
@@ -352,6 +357,8 @@ export default function App() {
           dev_mode?: boolean;
           is_prerelease?: boolean;
           has_maps_key?: boolean;
+          has_amap_key?: boolean;
+          places_provider?: string;
           version?: string;
           timezone?: string;
           require_mfa?: boolean;
@@ -360,6 +367,7 @@ export default function App() {
           places_autocomplete_enabled?: boolean;
           places_details_enabled?: boolean;
           places_enrich_enabled?: boolean;
+          place_shadow_enabled?: boolean;
           permissions?: Record<string, PermissionLevel>;
         }) => {
           setManaged(!!config?.managed);
@@ -368,6 +376,8 @@ export default function App() {
           if (config?.is_prerelease !== undefined) setIsPrerelease(config.is_prerelease);
           if (config?.version) setAppVersion(config.version);
           if (config?.has_maps_key !== undefined) setHasMapsKey(config.has_maps_key);
+          if (config?.has_amap_key !== undefined) setHasAmapKey(config.has_amap_key);
+          if (config?.places_provider) setPlacesProvider(config.places_provider);
           if (config?.timezone) setServerTimezone(config.timezone);
           if (config?.require_mfa !== undefined) setAppRequireMfa(!!config.require_mfa);
           if (config?.trip_reminders_enabled !== undefined) setTripRemindersEnabled(config.trip_reminders_enabled);
@@ -376,27 +386,10 @@ export default function App() {
             setPlacesAutocompleteEnabled(config.places_autocomplete_enabled);
           if (config?.places_details_enabled !== undefined) setPlacesDetailsEnabled(config.places_details_enabled);
           if (config?.places_enrich_enabled !== undefined) setPlacesEnrichEnabled(config.places_enrich_enabled);
+          if (config?.place_shadow_enabled !== undefined) setPlaceShadowEnabled(config.place_shadow_enabled);
           if (config?.permissions) usePermissionsStore.getState().setPermissions(config.permissions);
-
-          if (config?.version) {
-            const storedVersion = localStorage.getItem('trek_app_version');
-            if (storedVersion && storedVersion !== config.version) {
-              try {
-                if ('caches' in window) {
-                  const names = await caches.keys();
-                  await Promise.all(names.map((n) => caches.delete(n)));
-                }
-                if ('serviceWorker' in navigator) {
-                  const regs = await navigator.serviceWorker.getRegistrations();
-                  await Promise.all(regs.map((r) => r.unregister()));
-                }
-              } catch {}
-              localStorage.setItem('trek_app_version', config.version);
-              window.location.reload();
-              return;
-            }
-            localStorage.setItem('trek_app_version', config.version);
-          }
+          // Last, since a new release reloads the page from here.
+          await reconcileAppVersion(config?.version);
         }
       )
       .catch(() => {});
@@ -405,6 +398,7 @@ export default function App() {
   const { settings } = useSettingsStore();
 
   useInAppNotificationListener();
+  useRoadtripPreferencesSync();
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -446,10 +440,19 @@ export default function App() {
     location.pathname.startsWith('/forgot-password') ||
     location.pathname.startsWith('/reset-password') ||
     location.pathname.startsWith('/legal');
+  // No session on these, so authenticated-only widgets (system notices,
+  // background tasks, save-to-collection) have nothing to do and would only fire
+  // a doomed authenticated request on mount.
+  //
+  // Off isAuthPublicPath rather than a second hand-kept list: the two had already
+  // drifted, this one naming only /public/journey/ while the response
+  // interceptor's covers all of /public/. A route that is public to one and not
+  // to the other is exactly the seam that puts a 401 back.
+  const hideAuthedWidgets = isAuthPage || isAuthPublicPath(location.pathname);
 
   return (
     <TranslationProvider>
-      {!isAuthPage && (
+      {!hideAuthedWidgets && (
         <ErrorBoundary boundaryId="widget:system-notice" fallback={null}>
           <SystemNoticeHost />
         </ErrorBoundary>
@@ -457,12 +460,12 @@ export default function App() {
       <ErrorBoundary boundaryId="widget:toast" fallback={null}>
         <ToastContainer />
       </ErrorBoundary>
-      {!isAuthPage && (
+      {!hideAuthedWidgets && (
         <ErrorBoundary boundaryId="widget:background-tasks" fallback={null}>
           <BackgroundTasksWidget />
         </ErrorBoundary>
       )}
-      {!isAuthPage && (isPhone ? <MSaveToCollectionSheet /> : <SaveToCollectionModal />)}
+      {!hideAuthedWidgets && (isPhone ? <MSaveToCollectionSheet /> : <SaveToCollectionModal />)}
       <ErrorBoundary boundaryId="widget:offline-banner" fallback={null}>
         <OfflineBanner />
       </ErrorBoundary>

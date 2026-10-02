@@ -1,7 +1,7 @@
 import { registerChannel } from '../channel-registry';
 import type { MailerService } from '../mailer/mailer.service';
 import type { ChannelMessage, ExternalChannel } from '../notification-events';
-import { resolveAdminNtfyUrl, resolveNtfyUrl, type NtfyService } from '../transports/ntfy.service';
+import { resolveAdminNtfyUrl, resolveNtfyToken, resolveNtfyUrl, type NtfyService } from '../transports/ntfy.service';
 import type { WebhookService } from '../transports/webhook.service';
 import type { WebPushService } from '../web-push.service';
 
@@ -100,7 +100,10 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
       const adminCfg = ntfy.getAdminNtfyConfig();
       const url = resolveNtfyUrl(adminCfg, userCfg);
       if (!url) return false;
-      return ntfy.sendNtfy(url, userCfg?.token ?? adminCfg.token, {
+      // Not `?? adminCfg.token`: the user picks their own ntfy_server, so that
+      // handed the operator's decrypted token to whatever host they named, on
+      // every ordinary send and with no test route involved (GHSA-7pqc-fj3c-9346).
+      return ntfy.sendNtfy(url, resolveNtfyToken(adminCfg, userCfg), {
         event: msg.event,
         title: msg.title,
         body: msg.body,

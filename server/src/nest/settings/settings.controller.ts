@@ -8,7 +8,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { isManagedLockedKey, splitManagedKeys } from '../common/managed';
 import { SettingUpsertDto, SettingsBulkDto } from './settings.dto';
-import { SettingsService, isAdminOnlyLlmSetting } from './settings.service';
+import { SettingsService, isAdminOnlyEndpointSetting } from './settings.service';
 import {
   Body,
   Controller,
@@ -64,9 +64,9 @@ export class SettingsController {
    * behind AdminGuard. A personal row would be a second, invisible place for
    * the same value.
    */
-  private assertMayWriteLlmEndpoint(settings: Record<string, unknown>) {
+  private assertMayWriteInstanceEndpoint(settings: Record<string, unknown>) {
     for (const [key, value] of Object.entries(settings)) {
-      if (isAdminOnlyLlmSetting(key, value)) {
+      if (isAdminOnlyEndpointSetting(key, value)) {
         throw new HttpException({ error: 'Admin access required' }, 403);
       }
     }
@@ -79,8 +79,8 @@ export class SettingsController {
 
   @Put()
   upsert(@CurrentUser() user: User, @Body() body: SettingUpsertDto) {
-    this.assertMayWriteLlmEndpoint({ [body.key]: body.value });
-    // assertMayWriteLlmEndpoint only covers llm_base_url and provider 'local'.
+    this.assertMayWriteInstanceEndpoint({ [body.key]: body.value });
+    // assertMayWriteInstanceEndpoint only covers llm_base_url and provider 'local'.
     // llm_api_key and llm_model are writable by every user, and on a managed
     // install both cost the operator money, so the key list decides here.
     if (isManagedLockedKey(body.key) && this.env.isManaged()) {
@@ -98,7 +98,7 @@ export class SettingsController {
   @Post('bulk')
   @HttpCode(200) // Express answers bulk with res.json (200), not the POST-default 201.
   bulk(@CurrentUser() user: User, @Body() body: SettingsBulkDto) {
-    this.assertMayWriteLlmEndpoint(body.settings);
+    this.assertMayWriteInstanceEndpoint(body.settings);
     const values = { ...body.settings };
     if ('common_currencies' in values) values.common_currencies = this.parseCommonCurrencies(values.common_currencies);
     const { allowed, blocked } = splitManagedKeys(values, this.env.isManaged());

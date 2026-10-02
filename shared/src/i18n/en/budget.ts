@@ -83,6 +83,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'pays',
   'costs.settle': 'Settle',
   'costs.balances': 'Balances',
+  'costs.finalBudget': 'Final budget',
+  'costs.finalExpenses': 'Expenses paid',
+  'costs.finalReimbursed': 'Net reimbursements',
+  'costs.finalPending': 'Pending reimbursements',
   'costs.byCategory': 'By category',
   'costs.noCategories': 'No expenses yet.',
   'costs.settleHistory': 'Settle history',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'trip default',
   'costs.exchangeRates.source.explicit': 'explicit rate',
   'costs.exchangeRates.source.legacy': 'legacy rate',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'unavailable',
   'costs.exchangeRates.item.expense': 'Expense',
   'costs.exchangeRates.item.settlement': 'Payment',
@@ -200,6 +207,15 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Switch between expense and refund',
+  'costs.receipts': 'Receipts',
+  'costs.receiptsTitle': 'Receipts & Invoices',
+  'costs.attachReceipt': 'Attach receipt / invoice',
+  'costs.noReceipts': 'No receipts attached',
+  'costs.deleteReceipt': 'Remove receipt',
+  'costs.viewReceipt': 'View receipt',
+  'costs.receiptLeftBehind':
+    'Save failed, and {count} uploaded receipts are still there. Remove them in the Files tab.',
 };
 
 export default budget;

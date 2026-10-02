@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'betaalt',
   'costs.settle': 'Afrekenen',
   'costs.balances': 'Saldi',
+  'costs.finalBudget': 'Eindbudget',
+  'costs.finalExpenses': 'Betaalde uitgaven',
+  'costs.finalReimbursed': 'Terugbetalingen netto',
+  'costs.finalPending': 'Openstaande terugbetalingen',
   'costs.byCategory': 'Per categorie',
   'costs.noCategories': 'Nog geen uitgaven.',
   'costs.settleHistory': 'Afrekengeschiedenis',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'standaardwaarde voor reis',
   'costs.exchangeRates.source.explicit': 'handmatige koers',
   'costs.exchangeRates.source.legacy': 'oude koers',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'niet beschikbaar',
   'costs.exchangeRates.item.expense': 'Uitgave',
   'costs.exchangeRates.item.settlement': 'Betaling',
@@ -200,5 +207,14 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Wisselen tussen uitgave en terugbetaling',
+  'costs.receipts': 'Bonnetjes',
+  'costs.receiptsTitle': 'Bonnetjes & facturen',
+  'costs.attachReceipt': 'Bon / factuur bijvoegen',
+  'costs.noReceipts': 'Geen bonnetjes bijgevoegd',
+  'costs.deleteReceipt': 'Bonnetje verwijderen',
+  'costs.viewReceipt': 'Bonnetje bekijken',
+  'costs.receiptLeftBehind':
+    'Opslaan mislukt en er staan nog {count} geüploade bonnen. Verwijder ze op het tabblad Bestanden.',
 };
 export default budget;

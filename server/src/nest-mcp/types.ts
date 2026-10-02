@@ -1,6 +1,6 @@
 import type { Scope, ScopeGroup } from '../mcp/scopes';
 
-import type { ZodRawShape } from 'zod';
+import type { ZodRawShape, ZodType } from 'zod';
 
 /**
  * The mode half of every scope: 'read' | 'write' | 'delete' | 'share'.
@@ -126,8 +126,9 @@ export interface McpZodSchema {
 }
 
 /**
- * Mirrors the SDK's `registerTool` config. `inputSchema` is passed straight
- * through — the SDK does the parsing/validation.
+ * Mirrors the SDK's `registerTool` config. A shape `inputSchema` is registered
+ * as a strict object (see registry.ts); a whole schema is passed as written. The
+ * SDK does the parsing/validation either way.
  * `annotations`/`_meta` are kept structural so the package's public d.ts
  * never imports deep SDK subpaths.
  */
@@ -152,9 +153,18 @@ export interface ResourceTemplateOptions extends McpEntryOptionsBase {
   _meta?: Record<string, unknown>;
 }
 
-/** Mirrors the SDK's `registerPrompt` config (argsSchema entries must be string-valued Zod schemas). */
+/**
+ * Prompt arguments cross the wire as strings (GetPromptRequest.arguments is
+ * a Record<string, string>), so every entry has to accept a string and may
+ * transform from there. A bare z.number() type-checks against ZodRawShape but
+ * rejects every real client with "expected number, received string" (#2207);
+ * the input constraint here turns that into a compile error.
+ */
+export type PromptArgsShape = Record<string, ZodType<unknown, string | undefined>>;
+
+/** Mirrors the SDK's `registerPrompt` config. */
 export interface PromptOptions extends McpEntryOptionsBase {
-  argsSchema?: ZodRawShape;
+  argsSchema?: PromptArgsShape;
 }
 
 export type McpEntryKind = 'tool' | 'resource' | 'resourceTemplate' | 'prompt';

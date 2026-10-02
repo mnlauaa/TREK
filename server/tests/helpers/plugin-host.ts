@@ -23,6 +23,7 @@ import { RateLimitService } from '../../src/nest/common/rate-limit.service';
 import { DatabaseService } from '../../src/nest/database/database.service';
 import { DayNotesRpc } from '../../src/nest/day-notes/day-notes.rpc';
 import { DayNotesService } from '../../src/nest/day-notes/day-notes.service';
+import { DayRemovalService } from '../../src/nest/days/day-removal.service';
 import { DaysRpc } from '../../src/nest/days/days.rpc';
 import { DaysService } from '../../src/nest/days/days.service';
 import { FilesRpc } from '../../src/nest/files/files.rpc';
@@ -94,14 +95,6 @@ export function createPluginRpcHostFactory(dbs: DatabaseService): PluginRpcHostF
   const todos = new TodoService(dbs, permissions, realtime);
   const packing = new PackingService(dbs, permissions, realtime, notificationsStub());
   const files = new FilesService(dbs, permissions, realtime, new EphemeralTokenService(), generalStorage);
-  const reservations = new ReservationsService(
-    dbs,
-    permissions,
-    budget,
-    realtime,
-    notificationsStub(),
-    new ReservationsReadRepository(dbs),
-  );
   const collab = new CollabService(
     dbs,
     permissions,
@@ -115,6 +108,16 @@ export function createPluginRpcHostFactory(dbs: DatabaseService): PluginRpcHostF
   const photoCache = new PlacePhotoCacheService(dbs, makeStorageFixture('photos/google/').storage);
   const unsplash = new UnsplashService(dbs, new RuntimeEnvService(), generalStorage);
   const journey = new JourneyDomainService(dbs, realtime, new TrekPhotosRepository(dbs));
+  const collections = new CollectionsService(dbs, permissions, realtime, notificationsStub(), generalStorage);
+  const atlas = new AtlasService(dbs);
+  const dayNotes = new DayNotesService(dbs, permissions, realtime);
+  const assignments = new AssignmentsService(dbs, permissions, realtime, queryHelpers, journey);
+  const membership = new TripMembershipService(dbs);
+  const notifications = makeNotificationsService(dbs, realtime);
+  const llmConfig = new LlmConfigResolver(new SettingsService(dbs), dbs, addons);
+  const oauth = new PluginOAuthService(dbs);
+  const accommodations = new AccommodationsService(dbs, permissions, realtime, assignments);
+  // After it: deleting a place cancels the nights booked at it through this one.
   const places = new PlacesService(
     dbs,
     permissions,
@@ -125,16 +128,18 @@ export function createPluginRpcHostFactory(dbs: DatabaseService): PluginRpcHostF
     photoCache,
     journey,
     generalStorage,
+    accommodations,
   );
-  const collections = new CollectionsService(dbs, permissions, realtime, notificationsStub(), generalStorage);
-  const atlas = new AtlasService(dbs);
-  const dayNotes = new DayNotesService(dbs, permissions, realtime);
-  const assignments = new AssignmentsService(dbs, permissions, realtime, queryHelpers, journey);
-  const membership = new TripMembershipService(dbs);
-  const notifications = makeNotificationsService(dbs, realtime);
-  const llmConfig = new LlmConfigResolver(new SettingsService(dbs), dbs, addons);
-  const oauth = new PluginOAuthService(dbs);
-  const accommodations = new AccommodationsService(dbs, permissions, realtime);
+  // After accommodations: a hotel booking writes the stay's day stop through it.
+  const reservations = new ReservationsService(
+    dbs,
+    permissions,
+    budget,
+    realtime,
+    notificationsStub(),
+    new ReservationsReadRepository(dbs),
+    accommodations,
+  );
   const trips = new TripsService(
     dbs,
     reservations,
@@ -145,6 +150,7 @@ export function createPluginRpcHostFactory(dbs: DatabaseService): PluginRpcHostF
     realtime,
     unsplash,
     generalStorage,
+    new SettingsService(dbs),
   );
   const members = new TripMembersService(
     dbs,
@@ -166,7 +172,7 @@ export function createPluginRpcHostFactory(dbs: DatabaseService): PluginRpcHostF
     new PackingRpc(packing, realtime, guards),
     new FilesRpc(files, realtime, dbs, guards, generalStorage),
     new PlacesRpc(places, journey, realtime, guards),
-    new DaysRpc(days, realtime, guards),
+    new DaysRpc(days, realtime, guards, new DayRemovalService(dbs, days, accommodations, assignments)),
     new AccommodationsRpc(accommodations, realtime, guards),
     new ItineraryRpc(assignments, realtime, guards),
     new TripsRpc(trips, reservations, days, membership, dbs, realtime, guards, accommodations, members),

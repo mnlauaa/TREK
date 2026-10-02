@@ -48,7 +48,7 @@ describe('incoming_leg_transport_mode migration', () => {
     // >>> Appending a migration? Nothing to change here — just write it
     // >>> replay-safe; this replay tells you if it is not.
     // >>> Cutting a release? Bump RELEASED_VERSION to the version it ships.
-    const RELEASED_VERSION = 189;
+    const RELEASED_VERSION = 244;
 
     const upgraded = new Database(':memory:');
     upgraded.exec('PRAGMA foreign_keys = ON');

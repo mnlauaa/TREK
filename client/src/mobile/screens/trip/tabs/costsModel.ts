@@ -1,7 +1,13 @@
-import type { CostCategory } from '@trek/shared';
-import { readUserNote, splitEqualShares } from '../../../../components/Budget/CostsPanel.helpers';
+import type { BudgetParticipantFinal, BudgetUnconverted, CostCategory } from '@trek/shared';
+import {
+  paidByUser,
+  readUserNote,
+  settlementDate,
+  splitEqualShares,
+} from '../../../../components/Budget/CostsPanel.helpers';
 import { catMeta, COST_CATEGORY_LIST } from '../../../../components/Budget/costsCategories';
 import { frozenTransactionAmountToDisplay } from '../../../../components/Budget/exchangeRateMath';
+import { convertBooked, convertedLine, tripAmountOf } from '../../../../hooks/useExchangeRates';
 import type { BudgetItem } from '../../../../types';
 import { currencyDecimals } from '../../../../utils/formatters';
 
@@ -19,6 +25,8 @@ export interface CostsCtx {
   me: number;
   /** The trip's own currency — what a NULL `budget_items.currency` means. */
   tripCurrency: string;
+  /** The currency everything is shown in, the base `convert` converts to. */
+  displayCurrency: string;
   convert: (amount: number, currency: string | null | undefined) => number;
 }
 
@@ -32,21 +40,34 @@ export function frozenAmountToDisplay(
   amount: number,
   currency: string | null | undefined,
   exchangeRate: number | null | undefined,
-  ctx: CostsCtx
+  ctx: CostsCtx,
+  source?: string | null
 ): number {
-  return frozenTransactionAmountToDisplay(amount, currency, exchangeRate, ctx.tripCurrency, ctx.convert);
+  return frozenTransactionAmountToDisplay(amount, currency, exchangeRate, ctx.tripCurrency, ctx.convert, source);
 }
 
-/** Expense total converted to the display/base currency. */
+/** An amount of this expense in the display currency, at the rate the expense was booked at. */
+export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
+  return convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert, e.exchange_rate_source);
+}
+
+/**
+ * The line under an amount of this expense the list shows converted, what was entered and
+ * where it went (#2525); null when there is nothing to explain. `shown` is the display
+ * value printed beside it.
+ */
+export function lineOf(amount: number, e: BudgetItem, ctx: CostsCtx, shown: number) {
+  return convertedLine(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.displayCurrency, shown, e.exchange_rate_source);
+}
+
+/** Expense total converted to the display/base currency, at its booked rate. */
 export function baseTotal(e: BudgetItem, ctx: CostsCtx): number {
-  return frozenAmountToDisplay(e.total_price || 0, currencyOf(e, ctx), e.exchange_rate, ctx);
+  return booked(e.total_price || 0, e, ctx);
 }
 
 /** How much `ctx.me` personally fronted for this expense, in the base currency. */
 export function myPaidOf(e: BudgetItem, ctx: CostsCtx): number {
-  return (e.payers || [])
-    .filter((p) => p.user_id === ctx.me)
-    .reduce((a, p) => a + frozenAmountToDisplay(p.amount, currencyOf(e, ctx), e.exchange_rate, ctx), 0);
+  return booked(paidByUser(e, ctx.me), e, ctx);
 }
 
 /** A given member's share of this expense (explicit custom amount, else equal split), base currency. */
@@ -54,10 +75,10 @@ export function memberShareOf(e: BudgetItem, userId: number, ctx: CostsCtx): num
   const member = (e.members || []).find((m) => m.user_id === userId);
   if (!member) return 0;
   if (member.amount !== null && member.amount !== undefined) {
-    return frozenAmountToDisplay(member.amount, currencyOf(e, ctx), e.exchange_rate, ctx);
+    return booked(member.amount, e, ctx);
   }
   const shares = splitEqualShares(e.total_price || 0, e.members || [], e.id);
-  return frozenAmountToDisplay(shares[userId] || 0, currencyOf(e, ctx), e.exchange_rate, ctx);
+  return booked(shares[userId] || 0, e, ctx);
 }
 
 /** `ctx.me`'s own share — the common case of {@link memberShareOf}. */
@@ -65,9 +86,13 @@ export function myShareOf(e: BudgetItem, ctx: CostsCtx): number {
   return memberShareOf(e, ctx.me, ctx);
 }
 
-/** A recorded total nobody has actually paid yet — counts toward the trip total but stays out of settlement. */
+/**
+ * A recorded total nobody has actually paid yet — counts toward the trip total
+ * but stays out of settlement. A negative total (a refund, #2176) is just as
+ * unfinished until its recipient is recorded as the (negative) payer.
+ */
 export function isUnfinished(e: BudgetItem, ctx: CostsCtx): boolean {
-  return baseTotal(e, ctx) > 0 && (e.payers || []).filter((p) => p.amount > 0).length === 0;
+  return baseTotal(e, ctx) !== 0 && (e.payers || []).filter((p) => p.amount !== 0).length === 0;
 }
 
 // ── settlement (server-computed; these types describe what MCostsTab reads from it) ──
@@ -101,12 +126,19 @@ export interface CostsRecordedSettlement {
   created_at?: string;
   from_username?: string;
   to_username?: string;
+  settled_at?: string | null;
 }
 
 export interface CostsSettlementResponse {
   balances: CostsBalance[];
   flows: CostsSettlementFlow[];
   settlements: CostsRecordedSettlement[];
+  /** What the trip ends up costing each participant — netted server-side off the same ledger as `balances`. */
+  finalBudgets: BudgetParticipantFinal[];
+  /** The currency the figures are in: the display currency, or the trip's own without a quote for it. */
+  currency?: string;
+  /** Rows no rate could convert, left out of every figure above. */
+  unconverted?: BudgetUnconverted;
 }
 
 // ── hero / tile totals (spec §3.1-§3.3) ────────────────────────────────────
@@ -186,6 +218,61 @@ export function groupByDay(items: BudgetItem[]): CostsDayGroup[] {
   return keys.map((dateKey) => ({ dateKey, items: byDate.get(dateKey) as BudgetItem[] }));
 }
 
+/**
+ * Settlements ("payments") shown inline in the ledger, mirroring the desktop
+ * `CostsPanel.tsx`'s `filteredSettlements`: they have no name/category, so a
+ * text or category filter hides them; "owed" excludes them; "mine" keeps only
+ * transfers the current user is part of.
+ */
+export function filterSettlements(
+  settlements: CostsRecordedSettlement[],
+  f: CostsFilterState,
+  me: number
+): CostsRecordedSettlement[] {
+  if (f.search.trim() || f.categoryKey) return [];
+  if (f.segment === 'owed') return [];
+  let list = settlements.slice();
+  if (f.segment === 'mine') list = list.filter((s) => s.from_user_id === me || s.to_user_id === me);
+  if (f.dayKey) list = list.filter((s) => settlementDate(s) === f.dayKey);
+  return list;
+}
+
+export type CostsLedgerEntry =
+  | { kind: 'expense'; date: string; item: BudgetItem }
+  | { kind: 'payment'; date: string; settlement: CostsRecordedSettlement };
+
+export interface CostsLedgerDayGroup {
+  /** '' = no date (spec's "NO DATE" group) */
+  dateKey: string;
+  entries: CostsLedgerEntry[];
+}
+
+/**
+ * Like {@link groupByDay}, but also folds in settlement payments (see
+ * {@link filterSettlements}) as their own ledger entries, keyed by
+ * {@link settlementDate} — the mobile counterpart to desktop's unified
+ * `LedgerEntry` grouping, so a payment shows up even on a day with no expense.
+ */
+export function groupLedgerByDay(items: BudgetItem[], settlements: CostsRecordedSettlement[]): CostsLedgerDayGroup[] {
+  const entries: CostsLedgerEntry[] = [
+    ...items.map((item) => ({ kind: 'expense' as const, date: item.expense_date || '', item })),
+    ...settlements.map((settlement) => ({ kind: 'payment' as const, date: settlementDate(settlement), settlement })),
+  ];
+  const byDate = new Map<string, CostsLedgerEntry[]>();
+  for (const en of entries) {
+    const bucket = byDate.get(en.date);
+    if (bucket) bucket.push(en);
+    else byDate.set(en.date, [en]);
+  }
+  const keys = Array.from(byDate.keys()).sort((a, b) => {
+    if (a === b) return 0;
+    if (a === '') return 1;
+    if (b === '') return -1;
+    return b.localeCompare(a);
+  });
+  return keys.map((dateKey) => ({ dateKey, entries: byDate.get(dateKey) as CostsLedgerEntry[] }));
+}
+
 /** Categories present among `items`, canonical order — the dropdown only lists categories in use (spec §3.6). */
 export function categoryFilterKeys(items: BudgetItem[]): CostCategory[] {
   const present = new Set(items.map((e) => catMeta(e.category).key));
@@ -208,16 +295,20 @@ export interface CostsCategoryBar {
 }
 
 export function categoryBreakdown(items: BudgetItem[], ctx: CostsCtx): CostsCategoryBar[] {
+  // Categories net refunds against spend (#2176): a negative entry lowers its
+  // category's sum. A category that nets negative keeps its own row at the
+  // bottom, with widthPct 0 — the bars rank positive spend, and a negative
+  // CSS width would be dropped and render as a full bar.
   const totals = new Map<CostCategory, number>();
   for (const e of items) {
     const key = catMeta(e.category).key;
     totals.set(key, (totals.get(key) || 0) + baseTotal(e, ctx));
   }
   const rows = COST_CATEGORY_LIST.map((c) => ({ key: c.key, amount: totals.get(c.key) || 0 }))
-    .filter((r) => r.amount > 0)
+    .filter((r) => r.amount !== 0)
     .sort((a, b) => b.amount - a.amount);
   const max = Math.max(0, ...rows.map((r) => r.amount));
-  return rows.map((r) => ({ ...r, widthPct: max > 0 ? (r.amount / max) * 100 : 0 }));
+  return rows.map((r) => ({ ...r, widthPct: max > 0 && r.amount > 0 ? (r.amount / max) * 100 : 0 }));
 }
 
 // ── presentation helpers ─────────────────────────────────────────────────
@@ -266,12 +357,26 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
     }
   };
 
-  const header = ['Date', 'Name', 'Category', 'Amount', 'Currency', `Amount (${opts.base})`, 'Note'];
+  // Read in another currency than the trip's, what each row counts as in the trip currency
+  // too, the figure every sum is built from (#2525). Same columns as the desktop export.
+  const trip = opts.ctx.tripCurrency.toUpperCase();
+  const tripCol = trip !== opts.base.toUpperCase();
+  const header = [
+    'Date',
+    'Name',
+    'Category',
+    'Amount',
+    'Currency',
+    ...(tripCol ? [`Amount (${trip})`] : []),
+    `Amount (${opts.base})`,
+    'Note',
+  ];
   const rows = [header.join(sep)];
   const sorted = items.slice().sort((a, b) => (a.expense_date || '').localeCompare(b.expense_date || ''));
   for (const e of sorted) {
     const cur = currencyOf(e, opts.ctx);
     const note = readUserNote(e);
+    const inTrip = tripAmountOf(e.total_price || 0, e.currency, e.exchange_rate, trip, opts.ctx.convert, e.exchange_rate_source);
     rows.push(
       [
         esc(fmtDate(e.expense_date || '')),
@@ -279,7 +384,8 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
         esc(opts.t(catMeta(e.category).labelKey)),
         (e.total_price || 0).toFixed(currencyDecimals(cur)),
         cur,
-        baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)),
+        ...(tripCol ? [Number.isFinite(inTrip) ? inTrip.toFixed(currencyDecimals(trip)) : opts.t('costs.exchangeRates.awaitingConversion')] : []),
+        Number.isFinite(baseTotal(e, opts.ctx)) ? baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)) : opts.t('costs.exchangeRates.awaitingConversion'),
         esc(note),
       ].join(sep)
     );

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Plus, Trash2, Wallet } from 'lucide-react';
+import { Check, ChevronDown, Paperclip, Plus, Receipt, Trash2, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SPLIT_COLORS, SYMBOLS } from '../../../../components/Budget/BudgetPanel.constants';
 import type { TripMember } from '../../../../components/Budget/BudgetPanelMemberChips';
@@ -6,6 +6,7 @@ import { COST_CATEGORY_LIST, catMeta } from '../../../../components/Budget/costs
 import type { ExpensePrefill } from '../../../../components/Budget/CostsPanel';
 import {
   NOTE_MAX,
+  amountPattern,
   calculateTicketShares,
   hasTicketSplit,
   payersBalanced,
@@ -18,6 +19,9 @@ import {
 } from '../../../../components/Budget/CostsPanel.helpers';
 import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields';
 import { useItemExchangeRate } from '../../../../components/Budget/useItemExchangeRate';
+import { splitShareLabel, useExpenseFx } from '../../../../components/Budget/expenseFx';
+import { ReceiptPreviewModal } from '../../../../components/Budget/ReceiptPreviewModal';
+import { saveWithReceipts } from '../../../../components/Budget/receiptUploads';
 import { localToday } from '../../../../components/Planner/today';
 import CurrencySelect from '../../../../components/shared/CurrencySelect';
 import { CustomDatePicker } from '../../../../components/shared/CustomDateTimePicker';
@@ -25,11 +29,10 @@ import CustomSelect from '../../../../components/shared/CustomSelect';
 import GuestBadge from '../../../../components/shared/GuestBadge';
 import { NumericInput } from '../../../../components/shared/NumericInput';
 import { useToast } from '../../../../components/shared/Toast';
-import { useExchangeRates } from '../../../../hooks/useExchangeRates';
 import { useTranslation } from '../../../../i18n';
 import { useTripStore } from '../../../../store/tripStore';
-import type { BudgetItem } from '../../../../types';
-import { cleanAmount, formatMoney, localizeAmountInput } from '../../../../utils/formatters';
+import type { BudgetItem, BudgetItemReceipt } from '../../../../types';
+import { amountToInputString, formatMoney, localizeAmountInput } from '../../../../utils/formatters';
 import MSheet from '../../../components/MSheet';
 import { Eyebrow, FIELD_AREA_CLS, FIELD_CLS, FormSheetFooter, FormSheetHeader } from './PlSheetChrome';
 
@@ -70,7 +73,7 @@ const SPLIT_MODES = [
 export default function MCostSheet({
   tripId,
   base,
-  tripCurrency = base,
+  tripCurrency: suppliedTripCurrency,
   people,
   me,
   editing,
@@ -81,8 +84,10 @@ export default function MCostSheet({
   const { t, locale } = useTranslation();
   const toast = useToast();
   const { addBudgetItem, updateBudgetItem, deleteBudgetItem } = useTripStore();
-  const { convert } = useExchangeRates(base);
   const sym = (c: string) => SYMBOLS[c] || c + ' ';
+  // A saved expense without a currency opens in the trip's own (#2525), as on desktop.
+  const { tripCurrency: tripCur, editingCurrency, preview } = useExpenseFx(base, editing);
+  const tripCurrency = suppliedTripCurrency || tripCur;
 
   // Internal open flag so the exit animation still plays even though the parent
   // unmounts us on close.
@@ -103,11 +108,14 @@ export default function MCostSheet({
   const [cat, setCat] = useState<string>(editing ? catMeta(editing.category).key : prefill?.category || 'food');
   const [catOpen, setCatOpen] = useState(false);
   const [note, setNote] = useState(() => readUserNote(editing));
-  const [currency, setCurrency] = useState((editing?.currency || base).toUpperCase());
+  const [currency, setCurrency] = useState(editingCurrency);
   const [day, setDay] = useState(editing?.expense_date || localToday());
+  // Edit and prefill seeds are padded to the currency's decimals (#2175), same
+  // as the desktop modal: a saved 4,90 must reopen as "4,90", not "4,9". A
+  // prefill has no currency of its own and is read as `base`.
   const [total, setTotal] = useState<string>(() => {
-    if (editing) return editing.total_price ? String(cleanAmount(editing.total_price)) : '';
-    if (prefill?.amount != null) return String(prefill.amount);
+    if (editing) return editing.total_price ? amountToInputString(editing.total_price, editingCurrency) : '';
+    if (prefill?.amount != null) return amountToInputString(prefill.amount, base);
     return '';
   });
   const [participants, setParticipants] = useState<Set<number>>(() =>
@@ -115,7 +123,8 @@ export default function MCostSheet({
   );
 
   // Payer state — same model as the desktop modal. 0 = "Nobody (planning entry)".
-  const initialPayers = (editing?.payers || []).filter((p) => p.amount > 0);
+  // A negative payer (the recipient of a refund, #2176) must survive the reopen.
+  const initialPayers = (editing?.payers || []).filter((p) => p.amount !== 0);
   const [payerId, setPayerId] = useState<number>(() => {
     const existingPayer = initialPayers[0];
     if (existingPayer) return existingPayer.user_id;
@@ -125,7 +134,7 @@ export default function MCostSheet({
   const [payerIds, setPayerIds] = useState<Set<number>>(() => new Set(initialPayers.map((p) => p.user_id)));
   const [payerAmounts, setPayerAmounts] = useState<Record<number, string>>(() => {
     const m: Record<number, string> = {};
-    for (const p of initialPayers) m[p.user_id] = String(p.amount);
+    for (const p of initialPayers) m[p.user_id] = amountToInputString(p.amount, currency);
     return m;
   });
   const [pinnedPayers, setPinnedPayers] = useState<Set<number>>(() => new Set(initialPayers.map((p) => p.user_id)));
@@ -145,11 +154,33 @@ export default function MCostSheet({
     const m: Record<number, string> = {};
     if (editing && editing.members) {
       for (const member of editing.members) {
-        if (member.amount !== null && member.amount !== undefined) m[member.user_id] = String(member.amount);
+        if (member.amount !== null && member.amount !== undefined)
+          m[member.user_id] = amountToInputString(member.amount, currency);
       }
     }
     return m;
   });
+
+  const [receipts, setReceipts] = useState<BudgetItemReceipt[]>(() => editing?.receipts || []);
+  const [pendingReceiptFiles, setPendingReceiptFiles] = useState<File[]>([]);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [previewReceipts, setPreviewReceipts] = useState<{
+    receipts: BudgetItemReceipt[];
+    initialIndex: number;
+  } | null>(null);
+
+  const handleReceiptFileSelect = (files: FileList | File[] | null) => {
+    if (!files || files.length === 0) return;
+    setPendingReceiptFiles((prev) => [...prev, ...Array.from(files)]);
+  };
+
+  const handleRemoveReceipt = (receiptId: number) => {
+    setReceipts((prev) => prev.filter((r) => r.id !== receiptId));
+  };
+
+  const handleRemovePendingReceipt = (index: number) => {
+    setPendingReceiptFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const [saving, setSaving] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
@@ -159,6 +190,7 @@ export default function MCostSheet({
 
   const totalNum = isTicketMode ? ticketInfo.total : Number.parseFloat(total) || 0;
   const rate = useItemExchangeRate(tripId, currency, tripCurrency, editing);
+  const fx = preview(totalNum, currency, rate.storedRate);
   const splitSum = [...participants].reduce((sum, id) => sum + (Number.parseFloat(customAmounts[id]) || 0), 0);
   const customBalanced = Math.round(splitSum * 100) === Math.round(totalNum * 100);
   const each = participants.size > 0 ? totalNum / participants.size : 0;
@@ -178,7 +210,10 @@ export default function MCostSheet({
     const enteredSum = [...participants]
       .filter((id) => customAmounts[id])
       .reduce((sum, id) => sum + (Number.parseFloat(customAmounts[id]) || 0), 0);
-    const remaining = Math.max(0, totalNum - enteredSum);
+    // Clamped toward zero on the total's own side so a negative total (#2176)
+    // still previews its negative equal shares — same as the desktop modal.
+    const rest = totalNum - enteredSum;
+    const remaining = totalNum >= 0 ? Math.max(0, rest) : Math.min(0, rest);
     return splitEqualShares(
       remaining,
       emptyParts.map((id) => ({ user_id: id })),
@@ -192,13 +227,14 @@ export default function MCostSheet({
       (item) => item.name.trim().length > 0 && (Number.parseFloat(item.price) || 0) > 0 && item.participants.size > 0
     );
   const payersOk = !multiPayer || (payerIds.size > 0 && payersBalanced(payerAmounts, payerIds, totalNum));
+  // A negative total is a valid entry (a refund, #2176); only zero has nothing to say.
   const valid =
     name.trim().length > 0 &&
     payersOk &&
     rate.valid &&
     (isTicketMode
       ? ticketValid
-      : totalNum > 0 && (participants.size === 0 || splitMode === 'equally' || customBalanced));
+      : totalNum !== 0 && (participants.size === 0 || splitMode === 'equally' || customBalanced));
 
   const onTotalChange = (v: string) => setTotal(v.replace(',', '.'));
 
@@ -248,7 +284,7 @@ export default function MCostSheet({
 
   const handleCustomAmountChange = (id: number, val: string) => {
     val = val.replace(',', '.');
-    if (/^\d*\.?\d{0,2}$/.test(val) || val === '') setCustomAmounts((prev) => ({ ...prev, [id]: val }));
+    if (val === '' || amountPattern(currency, true).test(val)) setCustomAmounts((prev) => ({ ...prev, [id]: val }));
   };
 
   const handleAddEmptyItem = () => {
@@ -261,7 +297,7 @@ export default function MCostSheet({
     setTicketItems((prev) => prev.map((item) => (item.id === id ? { ...item, name: itemName } : item)));
   const handleUpdateItemPrice = (id: string, price: string) => {
     price = price.replace(',', '.');
-    if (/^\d*\.?\d{0,2}$/.test(price) || price === '')
+    if (price === '' || amountPattern(currency, false).test(price))
       setTicketItems((prev) => prev.map((item) => (item.id === id ? { ...item, price } : item)));
   };
   const handleRemoveItem = (id: string) => setTicketItems((prev) => prev.filter((item) => item.id !== id));
@@ -301,7 +337,7 @@ export default function MCostSheet({
     const payerList = multiPayer
       ? [...payerIds]
           .map((id) => ({ user_id: id, amount: Number.parseFloat(payerAmounts[id]) || 0 }))
-          .filter((p) => p.amount > 0)
+          .filter((p) => p.amount !== 0)
       : payerId > 0
         ? [{ user_id: payerId, amount: totalNum }]
         : [];
@@ -330,12 +366,20 @@ export default function MCostSheet({
       ...(!editing && prefill?.placeId ? { place_id: prefill.placeId } : {}),
     };
     try {
-      if (editing) await updateBudgetItem(tripId, editing.id, data);
-      else await addBudgetItem(tripId, data);
+      setUploadingReceipt(pendingReceiptFiles.length > 0);
+      await saveWithReceipts(tripId, pendingReceiptFiles, editing ? editing.id : null, (ids) =>
+        editing
+          ? updateBudgetItem(tripId, editing.id, { ...data, receipt_file_ids: [...receipts.map((r) => r.id), ...ids] })
+          : addBudgetItem(tripId, { ...data, receipt_file_ids: ids })
+      );
+      setPendingReceiptFiles([]);
       onSaved();
-    } catch {
-      toast.error(t('common.unknownError'));
+    } catch (err) {
+      const stuck = (err as { stuckReceiptIds?: number[] })?.stuckReceiptIds;
+      toast.error(stuck?.length ? t('costs.receiptLeftBehind', { count: stuck.length }) : t('common.unknownError'));
       setSaving(false);
+    } finally {
+      setUploadingReceipt(false);
     }
   };
 
@@ -428,7 +472,8 @@ export default function MCostSheet({
         >
           <span className="text-[0.84375rem] font-medium text-m-faint">{sym(currency)}</span>
           <NumericInput
-            mode="decimal"
+            mode="signed-decimal"
+            signToggleLabel={t('costs.toggleSign')}
             placeholder={localizeAmountInput('0.00', currency)}
             value={localizeAmountInput(isTicketMode ? ticketInfo.total.toFixed(2) : total, currency)}
             onValueChange={onTotalChange}
@@ -459,13 +504,25 @@ export default function MCostSheet({
           mobile
         />
 
-        {/* Display-currency conversion is separate from Trip accounting FX. */}
-        {base !== tripCurrency && currency !== base && totalNum > 0 && (
+        {/* CONVERSION HINT */}
+        {fx && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[12px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 py-[9px] text-[0.71875rem] text-m-muted">
-            {t('costs.exchangeRates.displayApprox', {
-              amount: formatMoney(convert(totalNum, currency), base, locale),
-              currency: base,
-            })}
+            <span>{formatMoney(totalNum, currency, locale)}</span>
+            {fx.inTrip != null && (
+              <>
+                <span className="text-m-faint">→</span>
+                <span className={fx.shown == null ? 'font-semibold text-m-ink' : undefined}>
+                  {formatMoney(fx.inTrip, tripCur, locale)}
+                </span>
+              </>
+            )}
+            {fx.shown != null && (
+              <>
+                <span className="text-m-faint">≈</span>
+                <span className="font-semibold text-m-ink">{formatMoney(fx.shown, base, locale)}</span>
+                <span className="text-m-faint">· {t('costs.liveRate')}</span>
+              </>
+            )}
           </div>
         )}
 
@@ -563,7 +620,8 @@ export default function MCostSheet({
                       <div className={`${MINI_INPUT_WRAP} w-[120px] flex-none`}>
                         <span className="text-[0.75rem] text-m-faint">{sym(currency)}</span>
                         <NumericInput
-                          mode="decimal"
+                          mode="signed-decimal"
+                          signToggleLabel={t('costs.toggleSign')}
                           placeholder={localizeAmountInput('0.00', currency)}
                           value={localizeAmountInput(payerAmounts[p.id] || '', currency)}
                           onValueChange={(v) => onPayerAmountChange(p.id, v)}
@@ -737,14 +795,20 @@ export default function MCostSheet({
               {splitMode === 'equally' ? (
                 <span className="text-m-faint">
                   {participants.size > 0 &&
-                    t('costs.splitSummary', { count: participants.size, amount: sym(currency) + each.toFixed(2) })}
+                    t('costs.splitSummary', {
+                      count: participants.size,
+                      amount: splitShareLabel(each, currency, fx, participants.size, base, sym, locale),
+                    })}
                 </span>
               ) : (
                 <span
                   className={`font-semibold ${customBalanced ? 'text-[color:var(--m-st-confirmed)]' : 'text-[color:var(--m-st-danger)]'}`}
                 >
                   {customBalanced
-                    ? t('costs.splitSummary', { count: participants.size, amount: sym(currency) + each.toFixed(2) })
+                    ? t('costs.splitSummary', {
+                        count: participants.size,
+                        amount: splitShareLabel(each, currency, fx, participants.size, base, sym, locale),
+                      })
                     : `${sym(currency)}${splitSum.toFixed(2)} / ${sym(currency)}${totalNum.toFixed(2)}`}
                 </span>
               )}
@@ -763,6 +827,71 @@ export default function MCostSheet({
           placeholder={t('costs.notePlaceholder')}
           className={FIELD_AREA_CLS}
         />
+
+        {/* RECEIPTS */}
+        <div className="mb-[6px] mt-4 flex items-center justify-between">
+          <Eyebrow className="uppercase">{t('costs.receiptsTitle') || t('costs.receipts')}</Eyebrow>
+          <label className="flex cursor-pointer items-center gap-1 text-[0.75rem] font-semibold text-m-ink">
+            <input
+              type="file"
+              multiple
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                handleReceiptFileSelect(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            <span className="flex items-center gap-1 rounded-full border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-2.5 py-1 text-m-muted">
+              <Plus size={12} /> {t('costs.attachReceipt')}
+            </span>
+          </label>
+        </div>
+
+        {uploadingReceipt && <div className="mb-2 text-[0.75rem] text-m-faint">{t('common.saving')}...</div>}
+
+        {receipts.length === 0 && pendingReceiptFiles.length === 0 ? (
+          <div className="py-1 text-[0.75rem] text-m-faint">{t('costs.noReceipts')}</div>
+        ) : (
+          <div className="flex flex-col gap-1.5 pb-2">
+            {receipts.map((r, rIdx) => (
+              <div key={r.id} className={ROW_CLS}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewReceipts({ receipts, initialIndex: rIdx })}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <Receipt size={14} className="flex-none text-m-faint" />
+                  <span className="truncate text-[0.8125rem] font-medium text-m-ink">{r.original_name}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveReceipt(r.id)}
+                  title={t('costs.deleteReceipt')}
+                  className="flex-none p-1 text-m-muted hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {pendingReceiptFiles.map((file, idx) => (
+              <div key={idx} className={ROW_CLS}>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Paperclip size={14} className="flex-none text-m-faint" />
+                  <span className="truncate text-[0.8125rem] font-medium text-m-ink">{file.name}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemovePendingReceipt(idx)}
+                  title={t('costs.deleteReceipt')}
+                  className="flex-none p-1 text-m-muted hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <FormSheetFooter
@@ -775,6 +904,14 @@ export default function MCostSheet({
         submitLabel={submitLabel}
         submitDisabled={!valid || saving}
       />
+
+      {previewReceipts && (
+        <ReceiptPreviewModal
+          receipts={previewReceipts.receipts}
+          initialIndex={previewReceipts.initialIndex}
+          onClose={() => setPreviewReceipts(null)}
+        />
+      )}
     </MSheet>
   );
 }

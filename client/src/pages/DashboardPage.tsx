@@ -635,6 +635,9 @@ function BoardingPassHero({
       className="hero-trip"
       onClick={onOpen}
       role="button"
+      // No press-scale on composite cards: shrinking the surface mid-click slides
+      // the inner menu buttons out from under the pointer (#2158).
+      data-no-press
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -943,6 +946,8 @@ function TripCard({
       className="trip-card"
       onClick={onOpen}
       role="button"
+      // Same press-scale opt-out as the hero card (#2158).
+      data-no-press
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -1351,6 +1356,7 @@ function UpcomingTool({
                 key={upcomingKey(r)}
                 onClick={() => onOpen(r.trip_id)}
                 role="button"
+                data-no-press
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {

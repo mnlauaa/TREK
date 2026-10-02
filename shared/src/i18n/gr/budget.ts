@@ -81,6 +81,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'πληρώνει',
   'costs.settle': 'Εξόφληση',
   'costs.balances': 'Υπόλοιπα',
+  'costs.finalBudget': 'Τελικός προϋπολογισμός',
+  'costs.finalExpenses': 'Πληρωμένα έξοδα',
+  'costs.finalReimbursed': 'Καθαρές επιστροφές',
+  'costs.finalPending': 'Εκκρεμείς επιστροφές',
   'costs.byCategory': 'Ανά κατηγορία',
   'costs.noCategories': 'Δεν υπάρχουν έξοδα ακόμη.',
   'costs.settleHistory': 'Ιστορικό εξοφλήσεων',
@@ -187,6 +191,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'προεπιλογή ταξιδιού',
   'costs.exchangeRates.source.explicit': 'μη αυτόματη ισοτιμία',
   'costs.exchangeRates.source.legacy': 'παλιά ισοτιμία',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'μη διαθέσιμη',
   'costs.exchangeRates.item.expense': 'Δαπάνη',
   'costs.exchangeRates.item.settlement': 'Πληρωμή',
@@ -201,5 +208,14 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Εναλλαγή μεταξύ εξόδου και επιστροφής',
+  'costs.receipts': 'Αποδείξεις',
+  'costs.receiptsTitle': 'Αποδείξεις & Τιμολόγια',
+  'costs.attachReceipt': 'Επισύναψη απόδειξης / τιμολογίου',
+  'costs.noReceipts': 'Δεν υπάρχουν συνημμένες αποδείξεις',
+  'costs.deleteReceipt': 'Αφαίρεση απόδειξης',
+  'costs.viewReceipt': 'Προβολή απόδειξης',
+  'costs.receiptLeftBehind':
+    'Η αποθήκευση απέτυχε και {count} ανεβασμένες αποδείξεις παραμένουν. Διαγράψτε τες στην καρτέλα Αρχεία.',
 };
 export default budget;

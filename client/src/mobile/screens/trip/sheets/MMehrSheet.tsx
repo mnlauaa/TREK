@@ -3,12 +3,11 @@ import { BadgeDollarSign, ChevronRight, FileDown, Settings, Share2 } from 'lucid
 import { useTranslation } from '../../../../i18n';
 import MSheet from '../../../components/MSheet';
 import type { MTripSheetsProps } from '../MTripShell';
-
-/** The sections living in the dock — everything else surfaces in this sheet. */
-const DOCK_IDS = new Set(['plan', 'transports', 'buchungen', 'finanzplan', 'listen']);
+import { dockTabIds } from '../dockTabs';
 
 /** Demo tile tints per legacy tab id; plugins share the files neutral. */
 const TILE_COLORS: Record<string, string> = {
+  roadtrip: '#0a84ff',
   transports: '#4A7DDB',
   buchungen: '#9B5DE5',
   listen: '#2FA9A0',
@@ -28,7 +27,10 @@ export default function MMehrSheet({ planner, shell }: MTripSheetsProps) {
   const canEditTrip = planner.can('trip_edit', planner.trip);
   const hasCosts = planner.TRIP_TABS.some((tab) => tab.id === 'finanzplan');
 
-  const gridTabs = planner.TRIP_TABS.filter((tab) => !DOCK_IDS.has(tab.id));
+  // Derived from the same priority list the dock seats itself from, so a section
+  // can never show up in both places at once.
+  const seated = dockTabIds(new Set(planner.TRIP_TABS.map((tab) => tab.id)));
+  const gridTabs = planner.TRIP_TABS.filter((tab) => !seated.has(tab.id));
 
   const tileStat = (id: string): string | null => {
     if (id === 'dateien') {

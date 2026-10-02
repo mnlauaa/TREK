@@ -27,7 +27,7 @@ export default function ItemExchangeRateFields({
     : t('costs.exchangeRates.suggestedLabel', {
         source: t(`costs.exchangeRates.source.${rate.suggestion?.source || 'unavailable'}`),
       });
-  const converted = rate.displayRate && amount > 0 ? amount * rate.displayRate : null;
+  const converted = rate.displayRate && amount !== 0 ? amount * rate.displayRate : null;
   const panelClass = mobile
     ? 'mt-2 rounded-[12px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 py-[9px]'
     : 'rounded-lg border border-edge bg-surface-subtle px-3 py-2';

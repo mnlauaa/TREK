@@ -1,0 +1,4 @@
+interface:
+  display_name: "TREK Upstream Upgrade"
+  short_description: "Upgrade TREK while preserving fork customizations"
+  default_prompt: "Use $trek-upstream-upgrade to assess, plan, or implement the requested TREK upstream release upgrade while preserving the fork's custom contracts."

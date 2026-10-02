@@ -1,3 +1,4 @@
+import { createMigrationPrefix } from '../../helpers/migration-prefix';
 /**
  * The schema_version bump must commit with the migration that earned it.
  *
@@ -5,10 +6,11 @@
  * schema advanced and the version stale, and the next boot replays a step that
  * is not idempotent (an INSERT INTO app_settings, say) and exits 1 forever.
  */
-import { describe, it, expect, vi } from 'vitest';
-import Database from 'better-sqlite3';
-import { createTables } from '../../../src/db/schema';
 import { runMigrations } from '../../../src/db/migrations';
+import { createTables } from '../../../src/db/schema';
+
+import Database from 'better-sqlite3';
+import { describe, it, expect, vi } from 'vitest';
 
 function migratedDb(): Database.Database {
   const db = new Database(':memory:');
@@ -22,11 +24,9 @@ function migratedDb(): Database.Database {
 
 describe('migration version bump atomicity', () => {
   it('MIGRATE-ATOMIC-001: writes schema_version inside the migration transaction', () => {
-    const db = migratedDb();
+    const db = createMigrationPrefix(243);
     try {
-      const { version } = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number };
-      // Rewind one slot so exactly the last migration replays.
-      db.prepare('UPDATE schema_version SET version = ?').run(version - 1);
+      const version = 244;
 
       const realPrepare = db.prepare.bind(db);
       const inTransaction: boolean[] = [];

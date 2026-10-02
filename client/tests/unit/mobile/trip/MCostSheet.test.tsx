@@ -5,8 +5,8 @@ import { clearExchangeRateCache } from '../../../../src/hooks/useExchangeRates';
 import MCostSheet from '../../../../src/mobile/screens/trip/sheets/MCostSheet';
 import { useTripStore, type TripStoreState } from '../../../../src/store/tripStore';
 import type { BudgetItem, BudgetItemMember } from '../../../../src/types';
-import { buildBudgetItem } from '../../../helpers/factories';
-import { act, fireEvent, render, screen, waitFor } from '../../../helpers/render';
+import { buildBudgetItem, buildTrip } from '../../../helpers/factories';
+import { act, fireEvent, render, screen, waitFor, within } from '../../../helpers/render';
 import { resetAllStores } from '../../../helpers/store';
 
 // FE-MOB-COSTSH-001 to FE-MOB-COSTSH-030
@@ -142,6 +142,9 @@ describe('MCostSheet', () => {
       total_price: 85.5,
       note: null,
       ticket_json: null,
+      // Always sent, empty when nothing was attached: the server treats the
+      // array as the full set of receipts for the expense.
+      receipt_file_ids: [],
     });
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
@@ -190,7 +193,8 @@ describe('MCostSheet', () => {
   it('FE-MOB-COSTSH-003: adopts the prefill and carries the reservation link into the payload', async () => {
     renderSheet({ prefill: { name: 'Ryokan', category: 'accommodation', amount: 240, reservationId: 77 } });
     expect(nameField()).toHaveValue('Ryokan');
-    expect(totalField()).toHaveValue('240');
+    // Padded to the base currency's decimals since #2175, localized for EUR.
+    expect(totalField()).toHaveValue('240,00');
     expect(catTrigger()).toHaveTextContent('Accommodation');
 
     fireEvent.click(submit());
@@ -505,10 +509,11 @@ describe('MCostSheet', () => {
     expect(screen.getByRole('button', { name: 'bob' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Custom' })).toHaveClass('bg-m-act');
     // USD renders with a dot, so the total and both shares share this placeholder.
+    // Seeded padded to two decimals since #2175.
     const amounts = screen.getAllByPlaceholderText('0.00');
-    expect(amounts[0]).toHaveValue('60');
-    expect(amounts[1]).toHaveValue('20');
-    expect(amounts[2]).toHaveValue('40');
+    expect(amounts[0]).toHaveValue('60.00');
+    expect(amounts[1]).toHaveValue('20.00');
+    expect(amounts[2]).toHaveValue('40.00');
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
 
@@ -560,8 +565,8 @@ describe('MCostSheet', () => {
 
     expect(screen.getByRole('button', { name: 'One person paid' })).toBeInTheDocument();
     const amounts = screen.getAllByPlaceholderText('0,00');
-    expect(amounts[1]).toHaveValue('40');
-    expect(amounts[2]).toHaveValue('60');
+    expect(amounts[1]).toHaveValue('40,00');
+    expect(amounts[2]).toHaveValue('60,00');
     expect(screen.queryByText(/Payer amounts must add up to/)).not.toBeInTheDocument();
   });
 
@@ -722,6 +727,147 @@ describe('MCostSheet', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('FE-MOB-COSTSH-032: reopens 4,90 as "4,90" instead of "4,9" (#2175)', () => {
+    const editing = buildBudgetItem({
+      id: 10,
+      name: 'Coffee',
+      category: 'food',
+      currency: 'EUR',
+      total_price: 4.9,
+      members: [],
+      payers: [{ user_id: 1, amount: 4.9 }],
+    });
+    renderSheet({ editing });
+    expect(totalField()).toHaveValue('4,90');
+  });
+
+  it('FE-MOB-COSTSH-033: a negative amount can be typed and saves a refund (#2176)', async () => {
+    const { onSaved } = renderSheet();
+    // The '-' used to be stripped by the input sanitizer, making this untypeable.
+    fillBasics('Hotel refund', '-100');
+
+    expect(submit()).toBeEnabled();
+    fireEvent.click(submit());
+    await waitFor(() => expect(addBudgetItem).toHaveBeenCalledTimes(1));
+    expect(addBudgetItem).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        total_price: -100,
+        payers: [{ user_id: 1, amount: -100 }],
+      })
+    );
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
+  it('FE-MOB-COSTSH-034: a negative payer survives the reopen and the save (#2176)', async () => {
+    const editing = buildBudgetItem({
+      id: 11,
+      name: 'Refund',
+      category: 'other',
+      currency: 'EUR',
+      total_price: -60,
+      members: [member(1, null), member(2, null)],
+      payers: [{ user_id: 1, amount: -60 }],
+    });
+    renderSheet({ editing });
+
+    expect(totalField()).toHaveValue('-60,00');
+    // Alice is still the recorded (negative) payer — not reset to "No one paid yet".
+    expect(screen.getByRole('button', { name: 'You' })).toBeInTheDocument();
+
+    fireEvent.click(saveBtn());
+    await waitFor(() =>
+      expect(updateBudgetItem).toHaveBeenCalledWith(
+        1,
+        11,
+        expect.objectContaining({
+          total_price: -60,
+          payers: [{ user_id: 1, amount: -60 }],
+        })
+      )
+    );
+  });
+
+  it('FE-MOB-COSTSH-035: an expense saved without a currency reopens in the trip currency (#2525)', async () => {
+    // No currency on the row means the trip's own. Seeding the display currency
+    // instead labelled 100 euro as 100 dollars, and a plain save stored it so.
+    localStorage.setItem('trek_fx_USD', JSON.stringify({ rates: { USD: 1, EUR: 0.8 }, ts: Date.now() }));
+    useTripStore.setState({ trip: buildTrip({ id: 1, currency: 'EUR' }) } as unknown as Partial<TripStoreState>);
+    const editing = buildBudgetItem({
+      id: 12,
+      name: 'Tram pass',
+      category: 'transport',
+      currency: null,
+      total_price: 100,
+      members: [member(1, null)],
+      payers: [{ user_id: 1, amount: 100 }],
+    });
+    renderSheet({ base: 'USD', editing });
+
+    expect(totalField()).toHaveValue('100,00');
+    expect(screen.getByRole('button', { name: /EUR/  })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /USD/  })).toBeNull();
+
+    fireEvent.click(saveBtn());
+    await waitFor(() =>
+      expect(updateBudgetItem).toHaveBeenCalledWith(
+        1,
+        12,
+        expect.objectContaining({
+          total_price: 100,
+          currency: 'EUR',
+        })
+      )
+    );
+  });
+
+  it('FE-MOB-COSTSH-036: editing a booked bill previews the rate the save keeps (#2525)', () => {
+    // A euro trip read in dollars, the bill entered in dollars at 1.17 to the euro.
+    // Same currency as the list, so the sheet said nothing, while the list showed the
+    // booked euros at today's rate beside the 801.76 typed here.
+    localStorage.setItem('trek_fx_USD', JSON.stringify({ rates: { USD: 1, EUR: 0.865706 }, ts: Date.now() }));
+    localStorage.setItem('trek_fx_EUR', JSON.stringify({ rates: { EUR: 1, USD: 1.1551 }, ts: Date.now() }));
+    useTripStore.setState({ trip: buildTrip({ id: 1, currency: 'EUR' }) } as unknown as Partial<TripStoreState>);
+    const editing = buildBudgetItem({
+      id: 13,
+      name: 'Aparthotel Silver',
+      category: 'accommodation',
+      currency: 'USD',
+      exchange_rate: 1.17,
+      total_price: 801.76,
+      members: [member(1, null), member(2, null)],
+      payers: [{ user_id: 1, amount: 801.76 }],
+    });
+    renderSheet({ base: 'USD', editing });
+
+    const hint = screen.getByText(/display rate/).parentElement as HTMLElement;
+    expect(within(hint).getByText('$801.76')).toBeInTheDocument();
+    expect(within(hint).getByText(/^685,26\s€$/)).toBeInTheDocument();
+    expect(within(hint).getByText('$791.55')).toBeInTheDocument();
+    // Each share next to what it counts as, the figure the row's "you lent" is made of.
+    expect(screen.getByText(/Split 2 ways · \$400\.88 → \$395\.77 each/)).toBeInTheDocument();
+  });
+
+  it("FE-MOB-COSTSH-037: a bill booked at today's rate has nothing to preview (#2525)", () => {
+    localStorage.setItem('trek_fx_USD', JSON.stringify({ rates: { USD: 1, EUR: 0.87732 }, ts: Date.now() }));
+    localStorage.setItem('trek_fx_EUR', JSON.stringify({ rates: { EUR: 1, USD: 1.1398 }, ts: Date.now() }));
+    useTripStore.setState({ trip: buildTrip({ id: 1, currency: 'EUR' }) } as unknown as Partial<TripStoreState>);
+    const editing = buildBudgetItem({
+      id: 14,
+      name: 'Villa',
+      category: 'accommodation',
+      currency: 'USD',
+      exchange_rate: 1.1398,
+      total_price: 12345.67,
+      members: [member(1, null), member(2, null)],
+      payers: [{ user_id: 1, amount: 12345.67 }],
+    });
+    renderSheet({ base: 'USD', editing });
+
+    expect(screen.queryByText(/live rate/)).toBeNull();
+    expect(screen.queryByText(/→/)).toBeNull();
   });
 
   it('FE-MOB-COSTSH-030: a currency without a known symbol falls back to its code', () => {

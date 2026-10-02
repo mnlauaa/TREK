@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'płaci',
   'costs.settle': 'Rozlicz',
   'costs.balances': 'Salda',
+  'costs.finalBudget': 'Budżet końcowy',
+  'costs.finalExpenses': 'Zapłacone wydatki',
+  'costs.finalReimbursed': 'Zwroty netto',
+  'costs.finalPending': 'Oczekujące zwroty',
   'costs.byCategory': 'Według kategorii',
   'costs.noCategories': 'Brak wydatków.',
   'costs.settleHistory': 'Historia rozliczeń',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'domyślny kurs podróży',
   'costs.exchangeRates.source.explicit': 'kurs ręczny',
   'costs.exchangeRates.source.legacy': 'stary kurs',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'niedostępny',
   'costs.exchangeRates.item.expense': 'Wydatek',
   'costs.exchangeRates.item.settlement': 'Płatność',
@@ -200,5 +207,14 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Przełącz między wydatkiem a zwrotem',
+  'costs.receipts': 'Paragony',
+  'costs.receiptsTitle': 'Paragony i faktury',
+  'costs.attachReceipt': 'Załącz paragon / fakturę',
+  'costs.noReceipts': 'Brak załączonych paragonów',
+  'costs.deleteReceipt': 'Usuń paragon',
+  'costs.viewReceipt': 'Zobacz paragon',
+  'costs.receiptLeftBehind':
+    'Zapis nie powiódł się, a {count} przesłanych paragonów wciąż tam jest. Usuń je w zakładce Pliki.',
 };
 export default budget;

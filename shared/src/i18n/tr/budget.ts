@@ -80,6 +80,10 @@ const budget: TranslationStrings = {
   'costs.pays': 'ödüyor',
   'costs.settle': 'Hesaplaş',
   'costs.balances': 'Bakiyeler',
+  'costs.finalBudget': 'Nihai bütçe',
+  'costs.finalExpenses': 'Ödenen harcamalar',
+  'costs.finalReimbursed': 'Net geri ödemeler',
+  'costs.finalPending': 'Bekleyen geri ödemeler',
   'costs.byCategory': 'Kategoriye göre',
   'costs.noCategories': 'Henüz harcama yok.',
   'costs.settleHistory': 'Hesaplaşma geçmişi',
@@ -186,6 +190,9 @@ const budget: TranslationStrings = {
   'costs.exchangeRates.source.trip': 'gezi varsayılanı',
   'costs.exchangeRates.source.explicit': 'manuel kur',
   'costs.exchangeRates.source.legacy': 'eski kur',
+  'costs.exchangeRates.awaitingConversion': 'Awaiting conversion',
+  'costs.exchangeRates.excluded':
+    'Items without a rate are excluded from settlement. Preview and apply a rate for: {currencies}',
   'costs.exchangeRates.source.unavailable': 'kullanılamıyor',
   'costs.exchangeRates.item.expense': 'Harcama',
   'costs.exchangeRates.item.settlement': 'Ödeme',
@@ -200,5 +207,14 @@ const budget: TranslationStrings = {
     'This rate is frozen on save; later Trip or Global rate changes do not move this transaction.',
   'costs.exchangeRates.displayApprox': 'Display currency: approximately {amount}',
   'costs.confirm.deletePayment': 'Delete this recorded payment? The outstanding balances will be recalculated.',
+  'costs.toggleSign': 'Gider ve iade arasında geçiş yap',
+  'costs.receipts': 'Fişler',
+  'costs.receiptsTitle': 'Fişler ve Faturalar',
+  'costs.attachReceipt': 'Fiş / fatura ekle',
+  'costs.noReceipts': 'Ekli fiş yok',
+  'costs.deleteReceipt': 'Fişi kaldır',
+  'costs.viewReceipt': 'Fişi görüntüle',
+  'costs.receiptLeftBehind':
+    'Kaydetme başarısız oldu ve yüklenen {count} fiş hâlâ duruyor. Dosyalar sekmesinden silin.',
 };
 export default budget;

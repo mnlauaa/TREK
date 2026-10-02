@@ -15,10 +15,22 @@ import type {
 } from './types';
 import { ResourceTemplate as SdkResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { z } from 'zod';
 
 interface BoundEntry {
   entry: McpEntry;
   instance: object;
+}
+
+/**
+ * A shape is registered strict: the SDK's own z.object wrapping would strip an
+ * undeclared key and run the handler as if nothing was wrong, and strict also
+ * puts `additionalProperties: false` into tools/list. A whole schema is the
+ * author's call and passes through untouched.
+ */
+function strictInputSchema(schema: ToolOptions['inputSchema']): unknown {
+  if (schema === undefined || '_zod' in schema) return schema;
+  return z.strictObject(schema);
 }
 
 export interface McpRegistryOptions {
@@ -30,9 +42,9 @@ type AnyHandler = (this: unknown, ...handlerArgs: unknown[]) => unknown;
 
 /**
  * Structural view of the SDK registration surface. The SDK's real signatures
- * are generic over the Zod shapes; the registry passes schemas straight
- * through and binds `ctx` where the SDK would pass `extra`, so it needs (and
- * exposes) none of that type-level machinery.
+ * are generic over the Zod shapes; the registry hands schemas over as objects
+ * and binds `ctx` where the SDK would pass `extra`, so it needs (and exposes)
+ * none of that type-level machinery.
  */
 interface LooseRegistrar {
   registerTool(name: string, config: Record<string, unknown>, cb: (...cbArgs: unknown[]) => unknown): unknown;
@@ -294,7 +306,7 @@ export class McpRegistry {
     const config: Record<string, unknown> = {
       title: options.title,
       description: options.description,
-      inputSchema: options.inputSchema,
+      inputSchema: strictInputSchema(options.inputSchema),
       outputSchema: options.outputSchema,
       annotations: options.annotations,
       _meta: options._meta,
@@ -368,13 +380,19 @@ export class McpRegistry {
     ctx: McpContext,
     opts?: McpAttachOptions,
   ): void {
+    // An empty shape means "no arguments", and is registered as such: with a
+    // shape the SDK parses request.params.arguments, which a client that has
+    // nothing to send may omit entirely, and z.object({}) then rejects the
+    // undefined with -32602.
+    const argsSchema =
+      options.argsSchema !== undefined && Object.keys(options.argsSchema).length > 0 ? options.argsSchema : undefined;
     const config: Record<string, unknown> = {
       title: options.title,
       description: options.description,
-      argsSchema: options.argsSchema,
+      argsSchema,
     };
     const cb =
-      options.argsSchema !== undefined
+      argsSchema !== undefined
         ? (args: unknown, _extra: unknown) => {
             opts?.onInvoke?.({ kind: 'prompt', name: options.name });
             return handler.call(instance, args, ctx);

@@ -6,10 +6,11 @@
  * row that exists before the ALTER has to come out 'live', or the migration
  * would empty a calendar subscription that works today.
  */
-import { describe, it, expect } from 'vitest';
-import Database from 'better-sqlite3';
-import { createTables } from '../../../src/db/schema';
 import { runMigrations } from '../../../src/db/migrations';
+import { createTables } from '../../../src/db/schema';
+
+import Database from 'better-sqlite3';
+import { describe, it, expect } from 'vitest';
 
 function dbWithReservations(): Database.Database {
   const db = new Database(':memory:');
@@ -39,11 +40,9 @@ describe('reservations ingest_state migration', () => {
     const db = dbWithReservations();
     try {
       runMigrations(db);
-      // Rewind the version so the step replays against a table that already has
-      // the column. Without the pragma_table_info guard the ALTER throws and
-      // runMigrations exits the process.
+      // A second boot uses the already-applied lineage; lowering only metadata
+      // would manufacture a mixed schema rather than reproduce a real restart.
       const version = (db.prepare('SELECT version FROM schema_version').get() as { version: number }).version;
-      db.prepare('UPDATE schema_version SET version = ?').run(version - 1);
       runMigrations(db);
 
       const cols = db.prepare("SELECT name FROM pragma_table_info('reservations') WHERE name = 'ingest_state'").all();

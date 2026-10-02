@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { adminApi } from '../../../api/client';
+import SchoolHolidayCatalog from '../../../components/Admin/SchoolHolidayCatalog';
 import { useCountUp } from '../../../hooks/useCountUp';
 import { useTranslation } from '../../../i18n';
 import { useAdmin } from '../../../pages/admin/useAdmin';
@@ -220,6 +221,7 @@ export default function MAdmin() {
         <div className="space-y-4">
           <MAdminPackingTemplateManager />
           <MAdminCategoryManager />
+          <SchoolHolidayCatalog />
         </div>
       )}
       {activeTab === 'addons' && (

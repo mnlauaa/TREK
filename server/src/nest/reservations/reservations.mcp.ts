@@ -14,7 +14,7 @@ import { DaysService } from '../days/days.service';
 import { findByIata } from '../airports/airports.data';
 import type { EndpointInput } from './reservations.service';
 import { AssignmentsService } from '../assignments/assignments.service';
-import { transportLegsInputSchema, reservationUrlSchema, type TransportLegInput } from '@trek/shared';
+import { transportLegInputSchema, reservationUrlSchema, type TransportLegInput } from '@trek/shared';
 
 // What counts as a transport booking, for the update_transport gate. Every value
 // ReservationsPanel renders with a transport icon, so a stored `transit` row is
@@ -47,7 +47,7 @@ const urlField = reservationUrlSchema.max(2000).optional()
 type TransportType = typeof CREATABLE_TRANSPORT_TYPES[number];
 type BookingType = typeof BOOKING_TYPES[number];
 
-const endpointObjectSchema = z.object({
+const endpointObjectSchema = z.strictObject({
   role: z.enum(['from', 'to', 'stop']).describe('Endpoint role: "from" (origin), "to" (destination), or "stop" (intermediate)'),
   sequence: z.number().int().min(0).describe('Order within the route (0-based)'),
   name: z.string().min(1).describe('Location name (e.g. "Paris Gare de Lyon", "ZRH Terminal 2")'),
@@ -115,7 +115,8 @@ function parseId(value: string | string[]): number | null {
 // and the importers write, and keep the two stores in step.
 // ---------------------------------------------------------------------------
 
-const legsSchema = transportLegsInputSchema.optional().describe(
+// Strict at this boundary: a leg written as flightNumber must not save half-empty.
+const legsSchema = z.array(z.strictObject(transportLegInputSchema.shape)).optional().describe(
   'Per-segment detail of a stopover flight or train: one entry per segment, in route order, exactly ONE FEWER than endpoints[]. '
   + 'Each leg carries its own departure and arrival day + local time (dep_day_id/dep_time, arr_day_id/arr_time) plus airline/flight_number (flights) or train_number/platform (trains). '
   + 'A leg may also carry its own confirmation_number when that segment was issued a separate booking reference; leave it out and the booking-level confirmation_number covers the segment. '
@@ -520,7 +521,7 @@ export class ReservationsMcp {
     description: 'Update the display order of reservations within a day.',
     inputSchema: {
       tripId: z.number().int().positive(),
-      positions: z.array(z.object({
+      positions: z.array(z.strictObject({
         id: z.number().int().positive(),
         day_plan_position: z.number().int().min(0),
       })).describe('Array of { id, day_plan_position } pairs'),
@@ -785,7 +786,7 @@ export class ReservationsMcp {
       confirmation_number: z.string().max(100).optional(),
       url: urlField,
       notes: z.string().max(1000).optional(),
-      metadata: z.record(z.string(), z.string()).optional().describe('Type-specific metadata: flights → { airline, flight_number, departure_airport, arrival_airport }; trains → { train_number, platform, seat }. Replaces the stored metadata wholesale. Values are plain strings, so per-segment detail belongs in legs[], not here.'),
+      metadata: z.record(z.string(), z.string()).optional().describe('Type-specific metadata: flights → { airline, flight_number, departure_airport, arrival_airport }; trains → { train_number, platform, seat }. Replaces the stored metadata wholesale, except that a price mirrored from a linked expense survives unless you name the price key yourself. Values are plain strings, so per-segment detail belongs in legs[], not here.'),
       endpoints: endpointSchema,
       legs: legsSchema,
       needs_review: z.boolean().optional(),

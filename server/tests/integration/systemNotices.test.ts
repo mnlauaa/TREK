@@ -6,6 +6,7 @@ import { buildApp } from '../../src/bootstrap';
 import { runMigrations } from '../../src/db/migrations';
 import { createTables } from '../../src/db/schema';
 import { SYSTEM_NOTICES } from '../../src/systemNotices/registry';
+import { getCurrentAppVersion } from '../../src/systemNotices/service';
 import type { SystemNotice } from '../../src/systemNotices/types';
 import { authCookie } from '../helpers/auth';
 import { createUser, createAdmin } from '../helpers/factories';
@@ -97,7 +98,7 @@ describe('GET /api/system-notices/active', () => {
     // login_count > 1 means firstLogin does not match; first_seen_version >= 3.0.0 means
     // existingUserBeforeVersion('3.0.0') does not match either. Notices that gate on
     // nothing but the install being self-hosted still apply, and which ones those are
-    // changes every release — the thank-you modal handed over to release-4-0-0 at 4.0.0.
+    // changes every release (the thank-you modal handed over to the release notes at 4.0.0).
     // Read the set out of the registry rather than naming them, or this ages out again.
     testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
     const alwaysOn = new Set(

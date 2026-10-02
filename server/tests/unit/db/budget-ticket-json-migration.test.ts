@@ -1,3 +1,4 @@
+import { createMigrationPrefix } from '../../helpers/migration-prefix';
 /**
  * Boot migration: move the itemized receipt out of budget_items.note (#1658).
  *
@@ -70,12 +71,7 @@ describe('recovering what the case-insensitive match destroyed', () => {
    * which every later migration must tolerate anyway.
    */
   function makeDamagedDb(): Database.Database {
-    const db = new Database(':memory:');
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA busy_timeout = 5000');
-    db.exec('PRAGMA foreign_keys = ON');
-    createTables(db);
-    runMigrations(db);
+    const db = createMigrationPrefix(196);
     db.prepare("INSERT INTO users (id, username, email, password_hash) VALUES (1, 'u', 'u@example.test', 'x')").run();
     db.prepare("INSERT INTO trips (id, user_id, title) VALUES (1, 1, 'T')").run();
     // Row 1: what the LIKE match left behind for "ticketjson: buy at the door".
@@ -89,7 +85,6 @@ describe('recovering what the case-insensitive match destroyed', () => {
       .run(3, 1, 'Taxi', 'split at the hotel', '{"items":[]}');
 
     // 196 = the version just before the recovery step (migration #197).
-    db.prepare('UPDATE schema_version SET version = ?').run(196);
     return db;
   }
 
