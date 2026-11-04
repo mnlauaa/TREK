@@ -15,6 +15,10 @@ class RenderTests(unittest.TestCase):
         for hook in hooks:
             spec = hook['spec']['template']['spec']
             self.assertEqual(spec['serviceAccountName'],'trek-backup')
+            if hook['metadata']['annotations']['argocd.argoproj.io/hook'] == 'PreSync':
+                self.assertEqual(spec['initContainers'][0]['image'],image)
+                self.assertEqual(spec['initContainers'][0]['command'],['/usr/bin/true'])
+                self.assertNotIn('volumeMounts',spec['initContainers'][0])
             self.assertEqual(hook['spec']['backoffLimit'],0)
             mounts = {m['name']:m for m in spec['containers'][0]['volumeMounts']}
             self.assertTrue(mounts['data']['readOnly'])

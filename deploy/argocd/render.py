@@ -49,6 +49,13 @@ def render(image, source_sha, hook_image):
                         {'name': 'uploads', 'persistentVolumeClaim': {'claimName': 'trek-uploads', 'readOnly': True}},
                         {'name': 'backups', 'hostPath': {'path': '/var/backups/trek', 'type': 'Directory'}},
                         {'name': 'state', 'hostPath': {'path': '/var/lib/trek-gitops', 'type': 'Directory'}}]}}}})
+        if phase == 'PreSync':
+            resources[-1]['spec']['template']['spec']['initContainers'] = [{
+                'name': 'ensure-image-pulled', 'image': image,
+                'command': ['/usr/bin/true'], 'imagePullPolicy': 'IfNotPresent',
+                'securityContext': {'allowPrivilegeEscalation': False,
+                                    'readOnlyRootFilesystem': True,
+                                    'capabilities': {'drop': ['ALL']}}}]
     return {'apiVersion': 'v1', 'kind': 'List', 'items': resources}
 
 

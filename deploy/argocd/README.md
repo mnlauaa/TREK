@@ -6,7 +6,7 @@ The workflow deliberately generates a GitOps branch containing only the deployme
 
 ## Backup and failure behavior
 
-Argo's `PreSync` Job verifies the current app and retained PVC/PV bindings, records its transaction, scales TREK to zero, and waits for all TREK pods to terminate. It archives both `/srv/trek/data` and `/srv/trek/uploads`, including hidden encryption files. It reads the complete archive to verify gzip/tar integrity and persists a SHA-256 checksum plus old/new image metadata. Only then may Argo apply the new image.
+Argo's `PreSync` Job first pulls the candidate image in an init container that runs only `/usr/bin/true`, with no application volumes. A registry failure therefore leaves the old application running. The backup container then verifies the current app and retained PVC/PV bindings, records its transaction, scales TREK to zero, and waits for all TREK pods to terminate. It archives both `/srv/trek/data` and `/srv/trek/uploads`, including hidden encryption files. It reads the complete archive to verify gzip/tar integrity and persists a SHA-256 checksum plus old/new image metadata. Only then may Argo apply the new image.
 
 `PostSync` verifies the running image digest and app health before marking the transaction healthy. A failed or interrupted transaction blocks subsequent upgrades. `SyncFail` stops TREK if the new image may have touched the database. There is no automatic image-only rollback. Backup failure after quiescing also requires operator recovery.
 
