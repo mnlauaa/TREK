@@ -25,7 +25,7 @@ def render(image, source_sha, hook_image):
             'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 2400,
                 'template': {'spec': {
                     'serviceAccountName': 'trek-backup', 'restartPolicy': 'Never',
-                    'nodeSelector': {'kubernetes.io/hostname': 'ip-172-26-7-24'},
+                    'nodeSelector': {'kubernetes.io/hostname': 'homelab-k3s-dev-01'},
                     'containers': [{
                         'name': 'backup', 'image': hook_image,
                         'command': ['python3', '/opt/trek-gitops/backup_hook.py', mode],
