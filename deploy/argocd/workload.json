@@ -1,0 +1,252 @@
+[
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "labels": {
+        "app": "trek"
+      },
+      "name": "trek",
+      "namespace": "trek"
+    },
+    "spec": {
+      "progressDeadlineSeconds": 600,
+      "replicas": 1,
+      "revisionHistoryLimit": 10,
+      "selector": {
+        "matchLabels": {
+          "app": "trek"
+        }
+      },
+      "strategy": {
+        "type": "Recreate"
+      },
+      "template": {
+        "metadata": {
+          "annotations": {
+            "checksum/config": "07a7daa791ab0f86311a9c5a80a0eba3b20cbb719c27006c00dadad1dac14a95",
+            "checksum/secret": "91ebcd7c63e01a067d30778704921d2184d5ff83adeb8cb13f46e19854379679"
+          },
+          "labels": {
+            "app": "trek"
+          }
+        },
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                {
+                  "name": "ENCRYPTION_KEY",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "ENCRYPTION_KEY",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "ADMIN_EMAIL",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "ADMIN_EMAIL",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "ADMIN_PASSWORD",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "ADMIN_PASSWORD",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "OIDC_CLIENT_SECRET",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "OIDC_CLIENT_SECRET",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "UNSPLASH_ACCESS_KEY",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "UNSPLASH_ACCESS_KEY",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "AMAP_API_KEY",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "AMAP_API_KEY",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                },
+                {
+                  "name": "AMAP_API_SECRET",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "AMAP_API_SECRET",
+                      "name": "trek-secret",
+                      "optional": true
+                    }
+                  }
+                }
+              ],
+              "envFrom": [
+                {
+                  "configMapRef": {
+                    "name": "trek-config"
+                  }
+                }
+              ],
+              "image": "localhost/trek:sha-2167e593677f397a128e002dba29ba29ce901f56",
+              "imagePullPolicy": "Never",
+              "livenessProbe": {
+                "failureThreshold": 3,
+                "httpGet": {
+                  "path": "/api/health",
+                  "port": 3000,
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 90,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "name": "trek",
+              "ports": [
+                {
+                  "containerPort": 3000,
+                  "protocol": "TCP"
+                }
+              ],
+              "readinessProbe": {
+                "failureThreshold": 3,
+                "httpGet": {
+                  "path": "/api/health",
+                  "port": 3000,
+                  "scheme": "HTTP"
+                },
+                "initialDelaySeconds": 10,
+                "periodSeconds": 10,
+                "successThreshold": 1,
+                "timeoutSeconds": 1
+              },
+              "resources": {
+                "limits": {
+                  "cpu": "1",
+                  "memory": "768Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "256Mi"
+                }
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/app/data",
+                  "name": "data"
+                },
+                {
+                  "mountPath": "/app/uploads",
+                  "name": "uploads"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "restartPolicy": "Always",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 1000
+          },
+          "terminationGracePeriodSeconds": 30,
+          "volumes": [
+            {
+              "name": "data",
+              "persistentVolumeClaim": {
+                "claimName": "trek-data"
+              }
+            },
+            {
+              "name": "uploads",
+              "persistentVolumeClaim": {
+                "claimName": "trek-uploads"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "data": {
+      "ALLOWED_ORIGINS": "https://trek.sam-lau.dev",
+      "APP_URL": "https://trek.sam-lau.dev",
+      "COOKIE_SECURE": "true",
+      "DEMO_MODE": "false",
+      "FORCE_HTTPS": "true",
+      "HSTS_INCLUDE_SUBDOMAINS": "false",
+      "LOG_LEVEL": "info",
+      "MCP_RATE_LIMIT": "300",
+      "NODE_ENV": "production",
+      "PORT": "3000",
+      "SESSION_DURATION": "7d",
+      "SESSION_DURATION_REMEMBER": "30d",
+      "TRUST_PROXY": "1",
+      "TZ": "Asia/Hong_Kong"
+    },
+    "kind": "ConfigMap",
+    "metadata": {
+      "labels": {
+        "app": "trek",
+        "app.kubernetes.io/managed-by": "Helm"
+      },
+      "name": "trek-config",
+      "namespace": "trek"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "labels": {
+        "app": "trek",
+        "app.kubernetes.io/managed-by": "Helm"
+      },
+      "name": "trek",
+      "namespace": "trek"
+    },
+    "spec": {
+      "ports": [
+        {
+          "name": "http",
+          "port": 3000,
+          "protocol": "TCP",
+          "targetPort": 3000
+        }
+      ],
+      "selector": {
+        "app": "trek"
+      },
+      "type": "ClusterIP"
+    }
+  }
+]
