@@ -532,16 +532,15 @@ describe('SharedTripPage', () => {
   describe('FE-PAGE-SHARED-019: budget renders in the owner\'s baseCurrency, not the EUR trip fallback (#1361)', () => {
     it('labels totals with the payload baseCurrency even when the trip currency is EUR', async () => {
       server.use(
-        // No FX needed when the expense is already in the base; stub frankfurter so
-        // the live-rate fetch never hits the network in tests.
-        http.get('https://api.frankfurter.dev/v2/rates', () => HttpResponse.json([])),
+        // The booked CAD amount converts through the trip's EUR ledger.
+        http.get('https://api.frankfurter.dev/v2/rates', () => HttpResponse.json([{ quote: 'EUR', rate: 0.5 }])),
         http.get('/api/shared/:token', ({ params }) => {
           if (params.token !== 'cad-token') return;
           return HttpResponse.json({
             trip: { id: 1, title: 'Shared Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05', currency: 'EUR' },
             baseCurrency: 'CAD',
             days: [], assignments: {}, dayNotes: {}, places: [], reservations: [], accommodations: [], packing: [],
-            budget: [{ id: 1, name: 'Hotel', total_price: '200', category: 'Accommodation', currency: 'CAD' }],
+            budget: [{ id: 1, name: 'Hotel', total_price: '200', category: 'Accommodation', currency: 'CAD', exchange_rate: 2, exchange_rate_source: 'explicit' }],
             categories: [],
             permissions: { share_bookings: false, share_packing: false, share_budget: true, share_collab: false },
             collab: [],
@@ -555,8 +554,8 @@ describe('SharedTripPage', () => {
 
       await waitFor(() => expect(screen.getByText('Hotel')).toBeInTheDocument());
       // Total + per-row labelled CAD; never the EUR fallback.
-      expect(screen.getAllByText(/200\.00 CAD/).length).toBeGreaterThan(0);
-      expect(screen.queryByText(/EUR/)).toBeNull();
+      await waitFor(() => expect(screen.getAllByText(/200\.00 CAD/).length).toBeGreaterThan(0));
+      expect(screen.queryByText(/200\.00 EUR/)).toBeNull();
     });
   });
 

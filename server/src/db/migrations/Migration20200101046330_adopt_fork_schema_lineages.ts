@@ -186,10 +186,6 @@ function adoptForkMigrations(db: Database.Database): void {
       SELECT user_id, event_type, 'webpush', enabled
       FROM notification_channel_preferences WHERE channel = 'push'
       ON CONFLICT(user_id, event_type, channel) DO NOTHING;
-    INSERT INTO app_settings (key, value)
-      SELECT substr(key, 1, length(key) - 4) || 'webpush', value
-      FROM app_settings WHERE key GLOB 'notif_default_*_push'
-      ON CONFLICT(key) DO NOTHING;
 
     CREATE INDEX IF NOT EXISTS idx_web_push_user_status
       ON web_push_subscriptions(user_id, status, updated_at DESC);
@@ -203,4 +199,11 @@ function adoptForkMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_exchange_rate_batch_previews_trip ON exchange_rate_batch_previews(trip_id);
     CREATE INDEX IF NOT EXISTS idx_exchange_rate_batch_previews_created_by ON exchange_rate_batch_previews(created_by_user_id);
   `);
+  const defaults = db.prepare('SELECT key, value FROM app_settings').all() as { key: string; value: string }[];
+  const copyDefault = db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING');
+  for (const { key, value } of defaults) {
+    if (key.startsWith('notif_default_') && key.endsWith('_push')) {
+      copyDefault.run(`${key.slice(0, -4)}webpush`, value);
+    }
+  }
 }

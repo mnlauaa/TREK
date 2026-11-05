@@ -67,6 +67,8 @@ const paidByBob = () =>
     name: 'Taxi',
     total_price: 40,
     currency: 'usd',
+    exchange_rate: 2,
+    exchange_rate_source: 'explicit',
     members: [member(1), member(2)],
     payers: [payer(2, 40)],
     expense_date: '2026-07-01',
