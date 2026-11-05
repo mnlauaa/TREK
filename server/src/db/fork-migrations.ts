@@ -18,6 +18,41 @@ export const hasTable = (db: Database.Database, table: string): boolean =>
 const hasColumn = (db: Database.Database, table: string, column: string): boolean =>
   hasTable(db, table) && !!db.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?').get(table, column);
 
+function hasColumns(db: Database.Database, table: string, columns: readonly string[]): boolean {
+  if (!hasTable(db, table)) return false;
+  const actual = new Set(db.prepare('SELECT name FROM pragma_table_info(?)').pluck().all(table));
+  return columns.every((column) => actual.has(column));
+}
+
+function hasForeignKey(
+  db: Database.Database,
+  table: string,
+  column: string,
+  target: string,
+  deleteRule: string,
+): boolean {
+  return !!db
+    .prepare('SELECT 1 FROM pragma_foreign_key_list(?) WHERE "from" = ? AND "table" = ? AND "to" = ? AND on_delete = ?')
+    .get(table, column, target, 'id', deleteRule);
+}
+
+function hasUniqueKey(db: Database.Database, table: string, columns: readonly string[]): boolean {
+  const indexes = db
+    .prepare('SELECT name FROM pragma_index_list(?) WHERE "unique" = 1 AND partial = 0')
+    .pluck()
+    .all(table);
+  const indexColumns = db.prepare('SELECT name FROM pragma_index_info(?) ORDER BY seqno').pluck();
+  return indexes.some((name) => {
+    const actual = indexColumns.all(name);
+    return actual.length === columns.length && actual.every((column, index) => column === columns[index]);
+  });
+}
+
+function hasPositiveRateCheck(db: Database.Database, table: string): boolean {
+  const definition = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").pluck().get(table);
+  return typeof definition === 'string' && /CHECK\s*\(\s*exchange_rate\s*>\s*0\s*\)/i.test(definition);
+}
+
 const addColumn = (db: Database.Database, table: string, definition: string): void => {
   const column = definition.trim().split(/\s+/, 1)[0];
   if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
@@ -56,13 +91,52 @@ function hasCrosswalkArtifacts(db: Database.Database): boolean {
 
 function hasEnhancedFxArtifacts(db: Database.Database): boolean {
   return (
-    hasTable(db, 'global_exchange_rate_snapshots') &&
-    hasTable(db, 'trip_exchange_rates') &&
-    hasTable(db, 'exchange_rate_batch_previews') &&
-    ['budget_items', 'budget_settlements'].every((table) =>
-      ['source', 'source_version', 'effective_date', 'set_at', 'set_by_user_id', 'note', 'reset_at'].every((field) =>
-        hasColumn(db, table, `exchange_rate_${field}`),
-      ),
+    hasColumns(db, 'global_exchange_rate_snapshots', [
+      'base_currency',
+      'rates_json',
+      'source_version',
+      'effective_date',
+      'fetched_at',
+    ]) &&
+    hasUniqueKey(db, 'global_exchange_rate_snapshots', ['base_currency']) &&
+    hasColumns(db, 'trip_exchange_rates', [
+      'trip_id',
+      'currency',
+      'exchange_rate',
+      'source_version',
+      'effective_date',
+      'set_at',
+      'set_by_user_id',
+      'note',
+    ]) &&
+    hasUniqueKey(db, 'trip_exchange_rates', ['trip_id', 'currency']) &&
+    hasForeignKey(db, 'trip_exchange_rates', 'trip_id', 'trips', 'CASCADE') &&
+    hasForeignKey(db, 'trip_exchange_rates', 'set_by_user_id', 'users', 'SET NULL') &&
+    hasPositiveRateCheck(db, 'trip_exchange_rates') &&
+    hasColumns(db, 'exchange_rate_batch_previews', [
+      'id',
+      'trip_id',
+      'currency',
+      'exchange_rate',
+      'note',
+      'state_token',
+      'preview_json',
+      'created_by_user_id',
+      'created_at',
+    ]) &&
+    hasUniqueKey(db, 'exchange_rate_batch_previews', ['id']) &&
+    hasForeignKey(db, 'exchange_rate_batch_previews', 'trip_id', 'trips', 'CASCADE') &&
+    hasForeignKey(db, 'exchange_rate_batch_previews', 'created_by_user_id', 'users', 'CASCADE') &&
+    hasPositiveRateCheck(db, 'exchange_rate_batch_previews') &&
+    ['budget_items', 'budget_settlements'].every(
+      (table) =>
+        hasColumns(
+          db,
+          table,
+          ['source', 'source_version', 'effective_date', 'set_at', 'set_by_user_id', 'note', 'reset_at'].map(
+            (field) => `exchange_rate_${field}`,
+          ),
+        ) && hasForeignKey(db, table, 'exchange_rate_set_by_user_id', 'users', 'SET NULL'),
     )
   );
 }
@@ -75,28 +149,34 @@ function hasGuestIdentityArtifacts(db: Database.Database): boolean {
 }
 
 function hasWebPushArtifacts(db: Database.Database): boolean {
-  return [
-    'id',
-    'user_id',
-    'installation_id',
-    'endpoint_hash',
-    'subscription_encrypted',
-    'origin',
-    'vapid_key_fingerprint',
-    'label',
-    'status',
-    'created_at',
-    'updated_at',
-    'last_seen_at',
-    'last_success_at',
-    'last_error_at',
-    'revoked_at',
-  ].every((column) => hasColumn(db, 'web_push_subscriptions', column));
+  const table = 'web_push_subscriptions';
+  return (
+    hasColumns(db, table, [
+      'id',
+      'user_id',
+      'installation_id',
+      'endpoint_hash',
+      'subscription_encrypted',
+      'origin',
+      'vapid_key_fingerprint',
+      'label',
+      'status',
+      'created_at',
+      'updated_at',
+      'last_seen_at',
+      'last_success_at',
+      'last_error_at',
+      'revoked_at',
+    ]) &&
+    hasUniqueKey(db, table, ['endpoint_hash']) &&
+    hasUniqueKey(db, table, ['user_id', 'installation_id']) &&
+    hasForeignKey(db, table, 'user_id', 'users', 'CASCADE')
+  );
 }
 
 /** Structural markers of the official 4.3 chain, shared by startup and audit.
  * Data-only steps (210, 229/230, 234, 240, 242) are verified by migration tests. */
-export function officialV43Artifacts(db: Database.Database): Array<[number, string, boolean]> {
+function officialPositionalArtifacts(db: Database.Database): Array<[number, string, boolean]> {
   const columns: Array<[number, string, string]> = [
     [207, 'places', 'stop_type'],
     [211, 'file_links', 'budget_item_id'],
@@ -120,6 +200,21 @@ export function officialV43Artifacts(db: Database.Database): Array<[number, stri
     [235, 'journey_entries', 'source_assignment_id'],
     [239, 'document_sync_items', 'remote_trashed_at'],
     [243, 'users', 'immich_allow_insecure_tls'],
+    [247, 'day_assignments', 'route_excluded'],
+    [248, 'packing_items', 'packed_quantity'],
+    [249, 'bucket_list', 'region_code'],
+    [250, 'vacay_company_holidays', 'fraction'],
+    [251, 'journey_entries', 'is_draft'],
+    [252, 'share_tokens', 'share_travel_only'],
+    [252, 'share_tokens', 'share_hide_images'],
+    [253, 'budget_settlements', 'note'],
+    [255, 'packing_template_items', 'weight_grams'],
+    [255, 'packing_template_items', 'quantity'],
+    [255, 'packing_template_items', 'bag_name'],
+    [256, 'journeys', 'status_override'],
+    [257, 'places', 'email'],
+    [257, 'places', 'opening_hours'],
+    [258, 'journeys', 'photo_location'],
   ];
   const tables: Array<[number, string]> = [
     [206, 'place_shadow_picks'],
@@ -139,6 +234,8 @@ export function officialV43Artifacts(db: Database.Database): Array<[number, stri
     [237, 'document_connections'],
     [237, 'trip_document_links'],
     [238, 'document_sync_items'],
+    [245, 'push_subscriptions'],
+    [254, 'google_api_usage'],
   ];
   const boundary = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='roadtrip_day_boundaries'")
@@ -219,12 +316,13 @@ export function classifyPositionalLineage(db: Database.Database, version: number
   }
 
   if (version >= 221 && !hasColumn(db, 'users', 'amap_api_key')) return refuse();
-  if (version >= 245 && !hasTable(db, 'push_subscriptions')) return refuse();
   if (
     version >= 198 &&
     (!crosswalk ||
-      officialV43Artifacts(db).some(([step, , present]) => {
-        if (step === 244 && !hasLedger && version === 244 && hasTable(db, 'push_subscriptions')) return false;
+      officialPositionalArtifacts(db).some(([step, , present]) => {
+        if ((step === 244 || step === 245) && !hasLedger && version === 244 && hasTable(db, 'push_subscriptions')) {
+          return false;
+        }
         return present !== version >= step;
       }))
   ) {
@@ -275,7 +373,14 @@ export function classifyPositionalLineage(db: Database.Database, version: number
 }
 
 function enhancedFxV1(db: Database.Database): void {
-  if (hasEnhancedFxArtifacts(db)) return;
+  if (hasEnhancedFxArtifacts(db)) {
+    if (hasTable(db, 'exchange_rate_quotes')) {
+      for (const table of ['budget_items', 'budget_settlements']) {
+        db.exec(`UPDATE ${table} SET exchange_rate_source = 'explicit' WHERE exchange_rate_source = 'manual'`);
+      }
+    }
+    return;
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS global_exchange_rate_snapshots (
       base_currency TEXT PRIMARY KEY,
@@ -431,6 +536,12 @@ export function adoptForkMigrations(db: Database.Database): void {
   }
 
   db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_web_push_user_status
+      ON web_push_subscriptions(user_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_web_push_delivery
+      ON web_push_subscriptions(user_id, status, origin, vapid_key_fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_exchange_rate_batch_previews_created_at
+      ON exchange_rate_batch_previews(created_at);
     CREATE INDEX IF NOT EXISTS idx_budget_items_exchange_rate_set_by ON budget_items(exchange_rate_set_by_user_id);
     CREATE INDEX IF NOT EXISTS idx_budget_settlements_exchange_rate_set_by ON budget_settlements(exchange_rate_set_by_user_id);
     CREATE INDEX IF NOT EXISTS idx_trip_exchange_rates_set_by ON trip_exchange_rates(set_by_user_id);

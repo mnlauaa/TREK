@@ -1,13 +1,13 @@
 import { resolveDbPath } from './db/db-path';
 import { ALL_ENTITIES } from './db/entities';
+import { TrekCliMigrator } from './db/legacy-baseline';
 import { SharedSqliteDriver } from './db/orm-driver';
-import { Migrator } from '@mikro-orm/migrations';
 import { SeedManager } from '@mikro-orm/seeder';
 import { defineConfig } from '@mikro-orm/sqlite';
 
 export default defineConfig({
   entities: ALL_ENTITIES,
-  extensions: [Migrator, SeedManager],
+  extensions: [TrekCliMigrator, SeedManager],
   // Reuses the connection db/database.ts owns rather than opening a second one.
   // See orm-driver.ts — with `:memory:` in tests, a second connection would be a
   // second, empty database.

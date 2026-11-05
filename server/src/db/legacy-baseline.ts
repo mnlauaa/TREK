@@ -10,6 +10,7 @@ import {
 import { knownMigrationNames, unknownMigrations } from './known-migrations';
 import type { MigrationInfo } from '@mikro-orm/core';
 import { Migrator } from '@mikro-orm/migrations';
+import type { SqlEntityManager } from '@mikro-orm/sql';
 import type { SqliteConnection } from '@mikro-orm/sqlite';
 
 import type Database from 'better-sqlite3';
@@ -114,6 +115,22 @@ export function buildLegacyStepMap(
   const baseline = migrations.slice(0, firstNumbered).map((migration) => migration.name);
   if (baseline.length === 0) throw new Error(`${REFUSAL} no baseline migration sorts ahead of legacy step 1`);
   return { baseline, steps, finalStep };
+}
+
+export class TrekCliMigrator extends Migrator {
+  static override register(orm: Parameters<typeof Migrator.register>[0]): void {
+    orm.config.registerExtension('@mikro-orm/migrator', () => new TrekCliMigrator(orm.em as SqlEntityManager));
+  }
+
+  override async init(): Promise<void> {
+    const db = await (this.driver.getConnection() as SqliteConnection).getNativeClient();
+    if (inspectMigrationLineage(db).kind === 'positional') {
+      throw new Error(
+        `${REFUSAL} positional databases must upgrade through TREK startup, which checks the lineage and takes a snapshot.`,
+      );
+    }
+    await super.init();
+  }
 }
 
 export class BootstrapMigrator extends Migrator {
@@ -236,6 +253,11 @@ async function applyMigrations(
     refuseNewerDatabase(executed, known, thisRelease ? await safetyNet.restoreHint(migrationLabel(thisRelease)) : null);
   }
   const baselined = legacyBaseline(lineage, manifest, readSource);
+  if (lineage.kind === 'positional') {
+    console.log(
+      `[DB] Legacy install at schema_version ${lineage.recordedStep} — baselining ${baselined.length} migration(s)`,
+    );
+  }
   const already = new Set([...baselined, ...executed]);
   const pending = manifest.filter(({ name }) => !already.has(name));
   if (pending.length === 0 && baselined.length === 0) return;

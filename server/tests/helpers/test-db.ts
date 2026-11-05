@@ -55,6 +55,7 @@ const KEEP_TABLES = new Set([
   'schema_version',
   'migrations',
   'mikro_orm_migrations',
+  'fork_schema_migrations',
 ]);
 
 const DEFAULT_CATEGORIES = [

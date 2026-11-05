@@ -1,5 +1,5 @@
 import { FORK_RECONCILIATION, FORK_SCHEMA_MIGRATION_IDS } from '../../../src/db/fork-migrations';
-import { BootstrapMigrator, migrateToHead } from '../../../src/db/legacy-baseline';
+import { BootstrapMigrator, migrateToHead, TrekCliMigrator } from '../../../src/db/legacy-baseline';
 import { preMigrateSnapshot } from '../../../src/db/pre-migrate-snapshot';
 import { openLegacyFixture, removeLegacyFixtureFiles } from '../../helpers/legacy-fixture';
 import { MikroORM } from '@mikro-orm/sqlite';
@@ -33,7 +33,7 @@ function catalog(db: Database.Database) {
   return db.prepare('SELECT * FROM sqlite_master ORDER BY name').all();
 }
 
-async function openFixture(step: 180 | 202 | 244) {
+async function openFixture(step: 180 | 199 | 202 | 244) {
   const legacy = openLegacyFixture(`fork-v${step}`);
   const file = legacy.name;
   legacy.close();
@@ -138,10 +138,8 @@ describe('upgrading a populated legacy fork', () => {
   });
 
   it('adopts numeric fork 199 with artifacts already installed by custom v3', async () => {
-    const { orm, db, boot } = await openFixture(202);
+    const { orm, db, boot } = await openFixture(199);
     try {
-      // A v3 fork carried these same capabilities into the v4 crosswalk at 199.
-      db.prepare('UPDATE schema_version SET version = 199').run();
       const values = protectedRows(db);
       await boot();
       expect(protectedRows(db)).toEqual(values);
@@ -184,6 +182,34 @@ describe('upgrading a populated legacy fork', () => {
       await orm.close(true);
     }
   });
+
+  it('refuses direct ORM CLI replay of a positional source', async () => {
+    const { orm, db } = await openFixture(202);
+    try {
+      const before = catalog(db);
+      await expect(new TrekCliMigrator(orm.em).up()).rejects.toThrow(/must upgrade through TREK startup/);
+      expect(catalog(db)).toEqual(before);
+    } finally {
+      await orm.close(true);
+    }
+  });
+
+  it.each(['web_push_subscriptions', 'trip_exchange_rates'] as const)(
+    'rejects a claimed fork table with its required constraints missing (%s)',
+    async (table) => {
+      const { orm, db, boot } = await openFixture(244);
+      try {
+        db.exec(
+          `CREATE TABLE unconstrained AS SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE unconstrained RENAME TO ${table}`,
+        );
+        const before = catalog(db);
+        await expect(boot()).rejects.toThrow(/Unrecognized or incomplete fork migration/);
+        expect(catalog(db)).toEqual(before);
+      } finally {
+        await orm.close(true);
+      }
+    },
+  );
 
   it('refuses a mixed numeric source before snapshot or ledger creation', async () => {
     vi.stubEnv('TREK_DB_PRE_MIGRATE_SNAPSHOT', 'true');
