@@ -1,10 +1,11 @@
+
 import type { DayTiming } from '@trek/shared'
-import { daysApi } from '../../api/client'
 import { dayRepo } from '../../repo/dayRepo'
 import type { StoreApi } from 'zustand'
 import type { TripStoreState } from '../tripStore'
 import type { Day } from '../../types'
 import { getApiErrorMessage } from '../../types'
+import { reorderedDayDates } from '@trek/shared'
 
 type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
@@ -15,6 +16,7 @@ export interface DaysSlice {
   insertDay: (tripId: number | string, position?: number) => Promise<Day | undefined>
   appendDatedDay: (tripId: number | string) => Promise<Day>
   deleteDay: (tripId: number | string, dayId: number) => Promise<void>
+  setDayTransportMode: (tripId: number | string, dayId: number, mode: string | null) => Promise<void>
 }
 
 type DayState = Pick<TripStoreState, 'days' | 'assignments' | 'dayNotes' | 'selectedDayId'>
@@ -41,15 +43,32 @@ export function withoutDay(state: DayState, dayId: number): DayState {
   return { days, assignments, dayNotes, selectedDayId: state.selectedDayId === dayId ? null : state.selectedDayId }
 }
 
-export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
-  setDayTiming: async (tripId, dayId, timing) => {
+function createDayTimingWriter(set: SetState, get: GetState): DaysSlice['setDayTiming'] {
+  const timingWrites = new Map<number, { latest: symbol; confirmed: Day['timing'] }>()
+  return async (tripId, dayId, timing) => {
     const day = get().days.find(d => d.id === dayId)
     if (!day) throw new Error('Day not found')
+    const token = Symbol()
+    const pending = timingWrites.get(dayId) ?? { latest: token, confirmed: day.timing }
+    pending.latest = token
+    timingWrites.set(dayId, pending)
     const replace = (next: Day) => set(state => ({ days: state.days.map(d => d.id === dayId ? { ...d, timing: next.timing } : d) }))
     replace({ ...day, timing })
-    try { replace(await dayRepo.setTiming(tripId, day, timing)) }
-    catch (err) { replace(day); throw err }
-  },
+    try {
+      const saved = await dayRepo.setTiming(tripId, day, timing)
+      pending.confirmed = saved.timing
+      if (pending.latest === token) replace(saved)
+    } catch (err) {
+      if (pending.latest === token) replace({ ...day, timing: pending.confirmed })
+      throw err
+    } finally {
+      if (pending.latest === token) timingWrites.delete(dayId)
+    }
+  }
+}
+
+export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
+  setDayTiming: createDayTimingWriter(set, get),
   // Move whole days. Day rows stay stable (assignments/notes/bookings ride along
   // by id); only positions change and, on a dated trip, dates stay pinned to
   // their slots while the content moves across them. Optimistically reorder the
@@ -57,19 +76,19 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
   reorderDays: async (tripId, orderedIds) => {
     const prevDays = get().days
     const byId = new Map(prevDays.map(d => [d.id, d]))
-    const sortedDates = prevDays.map(d => d.date).filter((d): d is string => !!d).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    const dates = reorderedDayDates(prevDays, orderedIds)
     const optimistic = orderedIds
       .map((id, i) => {
         const d = byId.get(id)
         if (!d) return null
-        return { ...d, day_number: i + 1, date: sortedDates.length ? (sortedDates[i] ?? null) : d.date }
+        return { ...d, day_number: i + 1, date: dates.get(id) ?? null }
       })
       .filter((d): d is NonNullable<typeof d> => d !== null)
 
     set({ days: optimistic })
 
     try {
-      await daysApi.reorder(tripId, orderedIds)
+      await dayRepo.reorder(tripId, orderedIds)
       await get().refreshDays(tripId)
       await get().loadReservations(tripId)
     } catch (err: unknown) {
@@ -82,7 +101,7 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
   // trip this extends the trip by one day and re-pins dates server-side.
   insertDay: async (tripId, position) => {
     try {
-      const result = await daysApi.create(tripId, { position })
+      const result = await dayRepo.insert(tripId, position)
       await get().refreshDays(tripId)
       await get().loadReservations(tripId)
       return result.day
@@ -126,5 +145,23 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
     if (outcome.trip) set({ trip: outcome.trip })
     await get().refreshDays(tripId)
     await get().loadReservations(tripId)
+  },
+
+  // The whole-day default route mode. The day shows it at once; a refusal puts
+  // the previous one back. Offline it waits in the queue.
+  setDayTransportMode: async (tripId, dayId, mode) => {
+    const before = get().days.find(d => d.id === dayId)?.default_transport_mode ?? null
+    const apply = (value: string | null) => set(state => ({
+      days: state.days.map(d => (d.id === dayId ? { ...d, default_transport_mode: value } : d)),
+    }))
+    apply(mode)
+    const outcome = await dayRepo.setTransport(tripId, dayId, mode).then(
+      () => null,
+      (failure: unknown) => ({ failure }),
+    )
+    if (outcome) {
+      apply(before)
+      throw new Error(getApiErrorMessage(outcome.failure, 'Error updating day'))
+    }
   },
 })

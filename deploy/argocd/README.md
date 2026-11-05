@@ -12,6 +12,8 @@ Argo's `PreSync` Job first pulls the candidate image in an init container that r
 
 Backups remain on the instance in `/var/backups/trek`. The transaction is `/var/lib/trek-gitops/state.json`. Existing backups and TREK's in-app scheduled backup settings are retained. These local files do not protect against loss of the entire instance; off-instance replication is a separate task. Pre-deployment archives are not automatically pruned.
 
+The startup probe permits up to ten minutes for snapshots and migrations before liveness checks begin. The deployment progress deadline is fifteen minutes. Rehearse a current production copy before promotion and increase these limits if that measured startup needs more time.
+
 Every deployment has downtime during the offline backup and startup. The existing `Recreate` strategy prevents simultaneous application writers.
 
 ## Ownership and bootstrap

@@ -13,10 +13,17 @@ const map: TranslationStrings = {
   'poi.cat.museums': 'Bảo tàng & văn hóa',
   'poi.cat.nature': 'Thiên nhiên & công viên',
   'poi.cat.activities': 'Các hoạt động',
+  'poi.pluginCategories': 'Danh mục từ plugin',
   'map.showAllConnections': 'Hiển thị tất cả lộ trình đặt chỗ',
   'map.hideAllConnections': 'Ẩn tất cả lộ trình đặt chỗ',
   'map.baseLayer.default': 'Bản đồ',
   'map.baseLayer.satellite': 'Vệ tinh',
+  'map.baseLayer.hiking': 'Đi bộ đường dài',
+  'map.baseLayer.hikingDown':
+    'OpenHikingMap hiện không phản hồi. Hãy chuyển sang bản đồ khác; chuyến đi của bạn vẫn giữ nguyên.',
+  'map.baseLayer.cycle': 'Xe đạp',
+  'map.baseLayer.cycleDown':
+    'CyclOSM hiện không phản hồi. Hãy chuyển sang bản đồ khác; chuyến đi của bạn vẫn giữ nguyên.',
   'map.baseLayer.switchToSatellite': 'Chuyển sang chế độ xem vệ tinh',
   'map.baseLayer.switchToDefault': 'Chuyển sang chế độ xem bản đồ',
   'map.location.denied':
@@ -25,10 +32,17 @@ const map: TranslationStrings = {
   'map.location.timeout':
     'Việc xác định vị trí mất quá nhiều thời gian. Hãy thử lại ở nơi nhìn thấy bầu trời thoáng hơn.',
   'map.overview.show': 'Hiện toàn bộ chuyến đi',
+  'map.lock.lock': 'Khóa góc nhìn bản đồ',
+  'map.lock.unlock': 'Để bản đồ đi theo mục đang chọn',
   'map.overview.hide': 'Ẩn toàn bộ chuyến đi',
   'map.overview.total': 'Tổng quãng đường',
   'map.attribution': 'Nguồn bản đồ',
-  'map.overview.unrouted': 'Không thể tính {count} chặng, nên khoảng cách chưa đầy đủ.',
-  'map.overview.dayUnrouted': 'Không thể tính {count} chặng của ngày này',
+  'map.overview.distanceAtLeast': 'ít nhất {distance}',
+  'map.overview.notRouted': 'chưa tính tuyến',
+  'map.overview.unrouted': 'Không thể tính đường đi cho {count} chặng, nên quãng đường chưa đầy đủ.',
+  'map.overview.dayUnrouted': 'Không thể tính đường đi cho {count} chặng của ngày này',
+  'map.baseLayer.topo': 'Địa hình',
+  'map.webgl2.fallback': 'Trình duyệt này không hỗ trợ WebGL2 mà bản đồ GL cần, nên bản đồ được hiển thị bằng Leaflet.',
+  'map.webgl2.terrain': 'Chế độ 3D cần WebGL2, nhưng trình duyệt này không hỗ trợ. Bản đồ vẫn ở dạng 2D.',
 };
 export default map;

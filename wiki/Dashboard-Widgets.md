@@ -1,6 +1,6 @@
 # Dashboard Widgets
 
-The My Trips dashboard has a widget sidebar holding a currency converter, a timezone clock and a list of upcoming reservations, plus a Collections shortcut when the [Collections](Collections) addon is enabled (it ships disabled). Installed plugins can contribute further widgets to the same sidebar. This page covers the currency converter and the timezone clock.
+The My Trips dashboard has a widget sidebar holding a currency converter, a timezone clock and a list of upcoming reservations, plus a Collections shortcut when the [Collections](Collections) addon is enabled (it ships disabled). Installed plugins can contribute further widgets to the same sidebar. This page covers the currency converter, the timezone clock and the upcoming reservations list.
 
 ![Dashboard Widgets](assets/DashboardWidgets.png)
 
@@ -33,9 +33,7 @@ The currency converter lets you quickly convert an amount between two currencies
 3. Select a target currency from the right selector.
 4. The converted amount appears in the right-hand ("To") field, directly opposite the amount you entered and above the target-currency selector — shown to two decimals, without a currency symbol. Below the row, the current rate is printed as `1 EUR = 1.0850 USD`; if no rate could be fetched, the field shows `—` and the line reads "Rate unavailable".
 
-You can also click the swap arrow to reverse source and target.
-
-Currency selectors show your ordered **Common currencies** first and the remaining available currencies alphabetically. Configure the shortcuts in Settings → General; they only change menu order.
+You can also click the swap arrow to reverse source and target. The selectors show your [Common currencies](Display-Settings#common-currencies) first.
 
 **Exchange rates** are fetched from [Frankfurter](https://frankfurter.dev) using the `https://api.frankfurter.dev/v2/rates?base={from}` endpoint. One request returns every quote for the source currency, so rates are re-fetched when you change the source currency (including via the swap arrow) or click the refresh icon; changing only the target currency re-uses the rates already loaded.
 
@@ -55,6 +53,12 @@ The timezone clock displays live clocks for multiple time zones simultaneously.
 - Hover over a zone row and click **×** to remove it.
 
 Clocks refresh every 30 seconds and are always shown in 24-hour time — the 12-hour display setting does not apply to this widget.
+
+---
+
+## Upcoming reservations
+
+**Upcoming reservations** lists the next six bookings across all your trips that are not archived, soonest first. A booking counts when its time is still ahead, or, without a time, when its day is today or later; cancelled bookings are left out. A hotel stay is not listed as a whole: its **Check-in** and **Check-out** appear as two entries of their own. Public-transit connections planned with the transit search are not listed either; a train or bus you booked is. Each row shows the date, the time in your 12 or 24 hour format, the title with a **Pending** tag while the booking is not confirmed, and the booking's type as an icon. Click a row to open its trip. With nothing ahead the widget reads *Nothing booked yet.*
 
 ---
 

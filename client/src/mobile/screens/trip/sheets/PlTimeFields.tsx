@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Eyebrow } from './PlSheetChrome'
 import CustomTimePicker from '../../../../components/shared/CustomTimePicker'
+import { timeCollisions } from '../../../../components/Planner/PlaceFormModal.helpers'
 import type { Assignment } from '../../../../types'
+import { TourEndHint } from '../../../../components/Tours/TourDayTimeParts'
 import type { TripPlanner } from '../MTripShell'
 
 interface PlTimeFieldsProps {
@@ -34,23 +36,14 @@ export default function PlTimeFields({
   // Both views preserve the same fixed times and derive the stay until End.
   const endIsLeave = planner.activeTab === 'roadtrip'
 
-  const collisions = useMemo(() => {
-    if (!startTime || startTime.length < 5) return []
-    const current = dayAssignments.find(a => a.id === assignmentId)
-    if (!current) return []
-    const myEnd = endTime && endTime.length >= 5 ? endTime : null
-    return dayAssignments.filter(a => {
-      if (a.id === assignmentId || a.day_id !== current.day_id) return false
-      const otherStart = a.place?.place_time
-      const otherEnd = a.place?.end_time
-      if (!otherStart) return false
-      const s1 = startTime
-      const e1 = myEnd || startTime
-      const s2 = otherStart
-      const e2 = otherEnd || otherStart
-      return s1 < (e2 || '23:59') && s2 < (e1 || '23:59') && s1 !== e2 && s2 !== e1
-    })
-  }, [assignmentId, dayAssignments, startTime, endTime])
+  // The other visits of the same day whose times overlap this one's, as the desktop form warns.
+  const collisions = useMemo(
+    () => timeCollisions(assignmentId, dayAssignments, startTime, endTime),
+    [assignmentId, dayAssignments, startTime, endTime],
+  )
+  // TIME-02: a tour's end follows from its start and its time while none is typed.
+  const assignment = dayAssignments.find(a => a.id === assignmentId)
+  const tour = assignment ? planner.tours.find(item => item.place_id === assignment.place_id) : undefined
 
   if (!showFixed && !startTime && !endTime) return <button type="button" className="rounded px-2 py-2 text-caption text-accent-on focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setShowFixed(true)}>{t('timing.fixed')}</button>
 
@@ -69,6 +62,7 @@ export default function PlTimeFields({
           )}
         </div>
       </div>
+      <TourEndHint start={startTime} end={endTime} assignment={assignment} tour={tour} mobile />
       {hasTimeError && (
         <div className={WARNING_CLS}>
           <AlertTriangle size={13} strokeWidth={2} className="mt-px flex-none" />

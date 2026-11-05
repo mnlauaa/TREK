@@ -1,4 +1,6 @@
 import {
+  adminNotificationPreferencesRequestSchema,
+  notificationDefaultsUpdateRequestSchema,
   preferencesUpdateRequestSchema,
   testSmtpRequestSchema,
   testWebhookRequestSchema,
@@ -24,3 +26,7 @@ export class TestNtfyDto extends createZodDto(testNtfyRequestSchema) {}
 export class NotificationRespondDto extends createZodDto(notificationRespondRequestSchema) {}
 export class WebPushCurrentDto extends createZodDto(webPushCurrentRequestSchema) {}
 export class WebPushRenameDto extends createZodDto(webPushRenameRequestSchema) {}
+
+/** The admin-side notification routes NotificationsController serves. */
+export class AdminNotificationPreferencesDto extends createZodDto(adminNotificationPreferencesRequestSchema) {}
+export class NotificationDefaultsUpdateDto extends createZodDto(notificationDefaultsUpdateRequestSchema) {}

@@ -146,9 +146,9 @@ export const KNOWN_METHODS = [
   'costs.delete',
   'costs.listRates',
   'costs.resolveRate',
+  'costs.listSettlements',
   'costs.setRate',
   'costs.deleteRate',
-  'costs.listSettlements',
   'costs.createSettlement',
   'costs.updateSettlement',
   'costs.deleteSettlement',
@@ -293,9 +293,9 @@ export const METHOD_PERMISSION = {
   'costs.delete': 'db:write:costs',
   'costs.listRates': 'db:read:costs',
   'costs.resolveRate': 'db:read:costs',
+  'costs.listSettlements': 'db:read:costs',
   'costs.setRate': 'db:write:costs',
   'costs.deleteRate': 'db:write:costs',
-  'costs.listSettlements': 'db:read:costs',
   'costs.createSettlement': 'db:write:costs',
   'costs.updateSettlement': 'db:write:costs',
   'costs.deleteSettlement': 'db:write:costs',
@@ -375,6 +375,11 @@ export const KNOWN_PERMISSIONS = [
   'hook:calendar-source',
   'hook:place-detail-provider',
   'hook:search-provider',
+  // Adds the plugin's own categories to the explore pill on the trip map and answers
+  // them for the area the user is looking at (#1781). Its own permission, not a reuse
+  // of hook:search-provider: a search provider is asked about words the user typed, this
+  // one is sent the viewport, and the consent screen has to say which is which.
+  'hook:poi-category-provider',
   'hook:trip-warning-provider',
   'hook:table-contributor',
   'hook:map-marker-provider',
@@ -448,6 +453,7 @@ export const HOOK_PERMISSION = {
   calendarSource: 'hook:calendar-source',
   placeDetailProvider: 'hook:place-detail-provider',
   searchProvider: 'hook:search-provider',
+  poiCategoryProvider: 'hook:poi-category-provider',
   warningProvider: 'hook:trip-warning-provider',
   tableContributor: 'hook:table-contributor',
   mapMarkerProvider: 'hook:map-marker-provider',

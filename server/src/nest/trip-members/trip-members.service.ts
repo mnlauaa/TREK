@@ -1,26 +1,31 @@
+import { TripMembers } from '../../db/entities/TripMembers.entity';
+import { Trips } from '../../db/entities/Trips.entity';
+import { Users } from '../../db/entities/Users.entity';
+import type { GuestTransferScope, TripMembersRepository } from '../../db/repositories/TripMembers.repository';
+import type { TripsRepository } from '../../db/repositories/Trips.repository';
+import type { UsersRepository } from '../../db/repositories/Users.repository';
 import { emitUserDeleted } from '../../plugin-user-lifecycle';
 import type { User } from '../../types';
 import { UserCleanupService } from '../auth/user-cleanup.service';
 import { BudgetService } from '../budget/budget.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { NotFoundError, ValidationError } from '../common/domain-errors';
-import { DatabaseService } from '../database/database.service';
+import { inOrder } from '../common/in-order';
+import { toRowId } from '../common/row-id';
+import { UnitOfWork } from '../database/unit-of-work';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { RealtimeService } from '../realtime/realtime.service';
-import { TRIP_SELECT } from '../trips/trips.service';
+import { GuestIdentityTransferError, planGuestFinancialTransfer } from './guest-identity-transfer';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
-import {
-  TICKET_NOTE_PREFIX,
-  ticketPayloadSchema,
-  type GuestIdentityTransferCandidate,
-  type GuestIdentityTransferConflict,
-  type GuestIdentityTransferImpact,
-  type GuestIdentityTransferResponse,
-  type NewMemberIdentityCheckCompletionResponse,
-  type TicketPayload,
-  type TrekWsPayload,
-  type TrekWsTripEventName,
+import type {
+  GuestIdentityTransferCandidate,
+  GuestIdentityTransferResponse,
+  NewMemberIdentityCheckCompletionResponse,
+  NewMemberIdentityCheckResponse,
+  TrekWsPayload,
+  TrekWsTripEventName,
 } from '@trek/shared';
 
 import { randomUUID } from 'crypto';
@@ -42,22 +47,6 @@ export interface TransferOwnershipResult {
   tripTitle: string;
   fromEmail: string;
   toEmail: string;
-}
-
-export type GuestIdentityTransferCode =
-  | 'GUEST_IDENTITY_TRANSFER_CONFLICT'
-  | 'GUEST_ALREADY_TRANSFERRED'
-  | 'GUEST_IDENTITY_TRANSFER_FORBIDDEN';
-
-export class GuestIdentityTransferError extends Error {
-  constructor(
-    public readonly code: GuestIdentityTransferCode,
-    message: string,
-    public readonly conflicts: GuestIdentityTransferConflict[] = [],
-  ) {
-    super(message);
-    this.name = 'GuestIdentityTransferError';
-  }
 }
 
 // ── Guest members (#1362) ───────────────────────────────
@@ -95,23 +84,26 @@ export interface GuestMember {
 @Injectable()
 export class TripMembersService {
   constructor(
-    private readonly dbs: DatabaseService,
     private readonly budget: BudgetService,
     private readonly userCleanup: UserCleanupService,
     private readonly permissions: PermissionsService,
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
+    private readonly uow: UnitOfWork,
+    @InjectRepository(Trips) private readonly tripsRepo: TripsRepository,
+    @InjectRepository(TripMembers) private readonly tripMembersRepo: TripMembersRepository,
+    @InjectRepository(Users) private readonly usersRepo: UsersRepository,
   ) {}
 
-  private get db() {
-    return this.dbs.connection;
+  async canAccessTrip(tripId: string | number, userId: number) {
+    // Plan 4 Task 2 — canAccessTrip's own DatabaseService delegation is
+    // gone: this reuses the TripsRepository already injected for other
+    // reads and calls findAccessible.
+    const access = await this.tripsRepo.findAccessible(tripId, userId);
+    return access as { user_id: number } | null | undefined;
   }
 
-  canAccessTrip(tripId: string | number, userId: number) {
-    return this.dbs.canAccessTrip(tripId, userId) as { user_id: number } | null | undefined;
-  }
-
-  can(action: string, role: string, ownerId: number | null, userId: number, isMember: boolean): boolean {
+  async can(action: string, role: string, ownerId: number | null, userId: number, isMember: boolean): Promise<boolean> {
     return this.permissions.checkPermission(action, role, ownerId, userId, isMember);
   }
 
@@ -125,13 +117,24 @@ export class TripMembersService {
   }
 
   /** The trip in list shape, for the re-read a handover broadcasts. Same query the
-   *  trip routes use, imported rather than copied so the two cannot drift. */
-  getTripForViewer(tripId: string | number, userId: number) {
-    return this.db.prepare(`${TRIP_SELECT} WHERE t.id = :tripId`).get({ userId, tripId });
+   *  trip routes use, imported rather than copied so the two cannot drift.
+   *  Plan 3c Task 7: repointed to `TripsRepository.findForViewer` — the
+   *  SQL-side `NULL AS feed_token` blanking survives the move (Task 6
+   *  review's "for Task 7" note): `findForViewer`'s row always carries
+   *  `feed_token: null`, which is load-bearing for the `trip:updated`
+   *  broadcast a transfer sends. */
+  async getTripForViewer(tripId: string | number, userId: number) {
+    return this.tripsRepo.findForViewer(tripId, userId);
   }
 
   /** Fire-and-forget trip-invite notification (mirrors the route's dynamic import). */
-  notifyInvite(tripId: string, actor: User, targetUserId: number, tripTitle: string, inviteeEmail: string): void {
+  notifyInvite(
+    tripId: string,
+    actor: Pick<User, 'id' | 'username'>,
+    targetUserId: number,
+    tripTitle: string,
+    inviteeEmail: string,
+  ): void {
     // Injected, not a lazy import of the old notifications bridge. The laziness bought
     // nothing the module graph does not already give — NotificationsModule
     // reaches nothing in this direction — and it hid the edge while handing the
@@ -142,95 +145,93 @@ export class TripMembersService {
         actorId: actor.id,
         scope: 'user',
         targetId: targetUserId,
-        params: { trip: tripTitle, actor: actor.email, invitee: inviteeEmail, tripId: String(tripId) },
+        params: { trip: tripTitle, actor: actor.username, invitee: inviteeEmail, tripId: String(tripId) },
       })
       .catch(() => {});
   }
 
   // ── Members ───────────────────────────────────────────────────────────────
 
-  listMembers(tripId: string | number, tripOwnerId: number) {
+  async listMembers(tripId: string | number, tripOwnerId: number) {
     // u.is_guest rides along (#1362) so guests stay assignable everywhere a member is,
     // while the UI can badge them and suppress owner-only actions. The owner is never a guest.
-    const members = this.db
-      .prepare(
-        `
-      SELECT u.id, COALESCE(u.display_name, u.username) AS username, u.email, u.avatar, u.is_guest,
-        CASE WHEN u.id = ? THEN 'owner' ELSE 'member' END as role,
-        m.added_at,
-        COALESCE(ib.display_name, ib.username) as invited_by_username
-      FROM trip_members m
-      JOIN users u ON u.id = m.user_id
-      LEFT JOIN users ib ON ib.id = m.invited_by
-      WHERE m.trip_id = ?
-      ORDER BY m.added_at ASC
-    `,
-      )
-      .all(tripOwnerId, tripId) as {
-      id: number;
-      username: string;
-      email: string;
-      avatar: string | null;
-      is_guest: number;
-      role: string;
-      added_at: string;
-      invited_by_username: string | null;
-    }[];
+    const members = await this.tripMembersRepo.listWithUserAndInviter(tripId, tripOwnerId);
 
     // Quirk fix on top of the 1:1 move: the owner row prefers display_name like
     // every member row does (the legacy query read the raw username only).
-    const owner = this.db
-      .prepare('SELECT id, COALESCE(display_name, username) AS username, email, avatar FROM users WHERE id = ?')
-      .get(tripOwnerId) as Pick<User, 'id' | 'username' | 'email' | 'avatar'>;
+    const owner = await this.usersRepo.findOwnerSummary(tripOwnerId);
 
     return {
-      owner: { ...owner, role: 'owner', is_guest: false, avatar_url: avatarUrl(owner) },
+      owner: { ...owner, role: 'owner', is_guest: false, avatar_url: avatarUrl(owner!) },
       members: members.map((m) => ({ ...m, is_guest: !!m.is_guest, avatar_url: avatarUrl(m) })),
     };
   }
 
-  addMember(
+  /** One member as the roster lists them, for a write that joined them by id (the plugin RPC). */
+  async findMember(tripId: number, userId: number) {
+    const ownerId = await this.tripsRepo.getOwnerId(tripId);
+    if (ownerId === null) return undefined;
+    return (await this.listMembers(tripId, ownerId)).members.find((m) => m.id === userId);
+  }
+
+  async addMember(
     tripId: string | number,
     identifier: string,
     tripOwnerId: number,
     invitedByUserId: number,
-  ): AddMemberResult {
+  ): Promise<AddMemberResult> {
     if (!identifier) throw new ValidationError('Email or username required');
 
     // Guests (#1362) are not invitable accounts — exclude them so a trip-scoped guest
     // can never be resolved (and re-attached to another trip) through the invite box.
-    const target = this.db
-      .prepare(
-        'SELECT id, username, email, avatar FROM users WHERE (email = ? OR username = ?) AND COALESCE(is_guest, 0) = 0',
-      )
-      .get(identifier.trim(), identifier.trim()) as Pick<User, 'id' | 'username' | 'email' | 'avatar'> | undefined;
+    const target = await this.usersRepo.findInvitableByEmailOrUsername(identifier.trim());
 
     if (!target) throw new NotFoundError('User not found');
 
     if (target.id === tripOwnerId) throw new ValidationError('Trip owner is already a member');
 
-    const existing = this.db
-      .prepare('SELECT id FROM trip_members WHERE trip_id = ? AND user_id = ?')
-      .get(tripId, target.id);
+    const existing = await this.tripMembersRepo.exists(tripId, target.id);
     if (existing) throw new ValidationError('User already has access');
 
-    this.db
-      .prepare('INSERT INTO trip_members (trip_id, user_id, invited_by) VALUES (?, ?, ?)')
-      .run(tripId, target.id, invitedByUserId);
+    // `Number(tripId)`, not the raw string: `addMember`'s INSERT needs the
+    // real `Primary<Trips>` type (its docstring). Safe here — `tripId` has
+    // already matched a real trip through the controller's `TripAccessGuard`,
+    // whose own `Number(tripId)` is the seam (Task 9 fix wave, A-L1: this
+    // comment previously and wrongly called it a raw-bind/SQLite-affinity
+    // check — a `Number()` seam is WIDER, since `Number('0x10')`/
+    // `Number('1e1')` coerce to a real integer where SQLite's own text
+    // affinity never converts a hex or exponent literal).
+    await this.tripMembersRepo.addMember(Number(tripId), target.id, invitedByUserId);
+    // Added back by name: the invite link may let them in again (GHSA-wr4c-964p-39jg).
+    await this.tripMembersRepo.clearRemoval(Number(tripId), target.id);
 
-    const tripInfo = this.db.prepare('SELECT title FROM trips WHERE id = ?').get(tripId) as
-      | { title: string }
-      | undefined;
+    const tripTitle = await this.tripsRepo.getTitle(tripId);
 
     return {
       member: { ...target, role: 'member', avatar_url: avatarUrl(target) },
       targetUserId: target.id,
-      tripTitle: tripInfo?.title || 'Untitled',
+      tripTitle: tripTitle || 'Untitled',
     };
   }
 
-  removeMember(tripId: string | number, targetUserId: number): void {
-    this.db.prepare('DELETE FROM trip_members WHERE trip_id = ? AND user_id = ?').run(tripId, targetUserId);
+  /**
+   * `tripId: number` (Plan 4 Task 8a — narrowed from `string | number`):
+   * every caller now passes an already-parsed id — `trips.rpc.ts`'s `num()`,
+   * `trips.mcp.ts`'s Zod-typed tool input, and `TripMembersController
+   * .removeMember`'s own `toRowId` parse (added alongside this narrowing,
+   * the route's one remaining raw-string caller).
+   */
+  async removeMember(tripId: number, targetUserId: number, removedBy: number): Promise<void> {
+    // A linked journal stops being open to someone who left; coming back later
+    // must not quietly reopen it.
+    await this.uow.transactional(async () => {
+      const wasMember = await this.tripMembersRepo.exists(tripId, targetUserId);
+      await this.tripMembersRepo.remove(tripId, targetUserId);
+      await this.tripMembersRepo.leaveJournalLink(tripId, targetUserId);
+      // Taken off by somebody else, they must not walk back in through the
+      // trip's invite link (GHSA-wr4c-964p-39jg). Leaving yourself leaves no note.
+      if (wasMember && removedBy !== targetUserId) await this.tripMembersRepo.recordRemoval(tripId, targetUserId);
+    });
   }
 
   /**
@@ -239,44 +240,45 @@ export class TripMembersService {
    * becomes a regular member, so nobody loses access. Runs in a transaction so the
    * owner pointer and the membership rows never diverge.
    */
-  transferOwnership(tripId: string | number, newOwnerId: number, currentOwnerId: number): TransferOwnershipResult {
-    const trip = this.db.prepare('SELECT id, title, user_id FROM trips WHERE id = ?').get(tripId) as
-      | { id: number; title: string; user_id: number }
-      | undefined;
+  async transferOwnership(
+    tripId: string | number,
+    newOwnerId: number,
+    currentOwnerId: number,
+  ): Promise<TransferOwnershipResult> {
+    const trip = await this.tripsRepo.findIdTitleOwner(tripId);
     if (!trip) throw new NotFoundError('Trip not found');
     if (trip.user_id !== currentOwnerId) throw new ValidationError('Only the owner can transfer ownership');
     if (newOwnerId === currentOwnerId) throw new ValidationError('You already own this trip');
 
-    const newOwner = this.db.prepare('SELECT id, email, is_guest FROM users WHERE id = ?').get(newOwnerId) as
-      | { id: number; email: string; is_guest?: number }
-      | undefined;
+    const newOwner = await this.usersRepo.findIdEmailGuest(newOwnerId);
     if (!newOwner) throw new NotFoundError('User not found');
     // A guest (#1362) can never log in, so it must never become the owner of a trip.
     if (newOwner.is_guest) throw new ValidationError('Cannot transfer ownership to a guest');
 
-    const isMember = this.db
-      .prepare('SELECT id FROM trip_members WHERE trip_id = ? AND user_id = ?')
-      .get(tripId, newOwnerId);
+    const isMember = await this.tripMembersRepo.exists(tripId, newOwnerId);
     if (!isMember) throw new ValidationError('New owner must be a trip member');
 
-    const fromEmail =
-      (this.db.prepare('SELECT email FROM users WHERE id = ?').get(currentOwnerId) as { email: string } | undefined)
-        ?.email || '';
+    const fromEmail = (await this.usersRepo.getEmail(currentOwnerId)) || '';
 
-    const run = this.db.transaction(() => {
-      this.db.prepare('UPDATE trips SET user_id = ? WHERE id = ?').run(newOwnerId, tripId);
+    // Task 9 fix wave (B-L4 / A-L1): all THREE writes below now take
+    // `trip.id` — the real `number` `findIdTitleOwner` already resolved
+    // above, not the route's raw `tripId` string. The comment this replaced
+    // claimed "`Number(tripId)` at the two writes below", but only
+    // `addIgnoringConflict` (which requires a real `Primary<Trips>`) ever
+    // did that; `setOwner`/`remove` used to keep binding the unconverted
+    // string for their OTHER callers' sake. Plan 4 Task 8a narrowed both to
+    // `number` (their last raw-string caller, `TripMembersController
+    // .removeMember`, now parses once itself) — the letter of rule 21 says
+    // one id, parsed once, threaded everywhere, and `trip.id` is already
+    // sitting right here, already proven to be the real row.
+    await this.uow.transactional(async () => {
+      await this.tripsRepo.setOwner(trip.id, newOwnerId);
       // The new owner is no longer a plain member…
-      this.db.prepare('DELETE FROM trip_members WHERE trip_id = ? AND user_id = ?').run(tripId, newOwnerId);
+      await this.tripMembersRepo.remove(trip.id, newOwnerId);
       // …and the former owner keeps access as a member.
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO trip_members
-           (trip_id, user_id, invited_by, new_member_identity_check_completed_at)
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-        )
-        .run(tripId, currentOwnerId, newOwnerId);
+      await this.tripMembersRepo.addIgnoringConflict(trip.id, currentOwnerId, newOwnerId);
+      await this.tripMembersRepo.completeIdentityCheck(trip.id, currentOwnerId);
     });
-    run();
 
     return { tripTitle: trip.title, fromEmail, toEmail: newOwner.email };
   }
@@ -285,7 +287,7 @@ export class TripMembersService {
 
   /** username is UNIQUE across all users — keep the typed name but disambiguate guests
    *  that happen to share it (e.g. two "Anna"s) with a numeric suffix. */
-  createGuest(tripId: string | number, name: string, invitedByUserId: number): { member: GuestMember } {
+  async createGuest(tripId: string | number, name: string, invitedByUserId: number): Promise<{ member: GuestMember }> {
     const display = (name || '').trim();
     if (!display) throw new ValidationError('Guest name is required');
     if (display.length > 50) throw new ValidationError('Guest name must be 50 characters or fewer');
@@ -296,561 +298,176 @@ export class TripMembersService {
     const email = `guest-${randomUUID()}@guests.invalid`;
     const username = `guest-${randomUUID()}`;
 
-    const create = this.db.transaction(() => {
-      const res = this.db
-        .prepare(
-          "INSERT INTO users (username, email, password_hash, role, is_guest, display_name) VALUES (?, ?, '', 'user', 1, ?)",
-        )
-        .run(username, email, display);
-      const guestId = Number(res.lastInsertRowid);
-      this.db
-        .prepare(
-          `INSERT INTO trip_members
-           (trip_id, user_id, invited_by, new_member_identity_check_completed_at)
-         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-        )
-        .run(tripId, guestId, invitedByUserId);
-      return guestId;
+    // `Number(tripId)` for the same reason `addMember`'s docstring gives:
+    // `createGuest`'s route runs behind `TripOwnerGuard`, whose OWN
+    // `Number(tripId)` is the seam that already matched a real trip (Task 9
+    // fix wave, A-L1: corrected from "raw-bind `isOwner` check" — the guard
+    // converts with `Number()` first, a WIDER seam than a raw bind, so a
+    // hex-spelled trip id is authorised here too — L1's accepted widening:
+    // `POST .../guests` with a hex id now creates a real guest, base 500).
+    const guestId = await this.uow.transactional(async () => {
+      const newGuestId = await this.usersRepo.insertGuest({ username, email, display_name: display });
+      await this.tripMembersRepo.addMember(Number(tripId), newGuestId, invitedByUserId);
+      await this.tripMembersRepo.completeIdentityCheck(Number(tripId), newGuestId);
+      return newGuestId;
     });
-    const guestId = create();
 
     return { member: { id: guestId, username: display, email, role: 'member', is_guest: true, avatar_url: null } };
   }
 
   /** Confirms a user id is a guest of THIS trip, so guest mutations stay trip-scoped. */
-  private guestOfTrip(tripId: string | number, guestUserId: number): boolean {
-    return !!this.db
-      .prepare(
-        'SELECT u.id FROM users u JOIN trip_members m ON m.user_id = u.id WHERE u.id = ? AND m.trip_id = ? AND u.is_guest = 1',
-      )
-      .get(guestUserId, tripId);
+  private async guestOfTrip(tripId: string | number, guestUserId: number): Promise<boolean> {
+    return this.tripMembersRepo.isGuestOfTrip(tripId, guestUserId);
   }
 
-  renameGuest(tripId: string | number, guestUserId: number, name: string): boolean {
+  async renameGuest(tripId: string | number, guestUserId: number, name: string): Promise<boolean> {
     const display = (name || '').trim();
     if (!display) throw new ValidationError('Guest name is required');
     if (display.length > 50) throw new ValidationError('Guest name must be 50 characters or fewer');
-    if (!this.guestOfTrip(tripId, guestUserId)) return false;
+    if (!(await this.guestOfTrip(tripId, guestUserId))) return false;
 
     // Rename only the display name — no global-uniqueness dedup, so a rename to a name
     // another trip's guest already uses no longer produces "Name 2" (#1446).
-    this.db
-      .prepare('UPDATE users SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND is_guest = 1')
-      .run(display, guestUserId);
+    await this.usersRepo.renameGuest(guestUserId, display);
     return true;
   }
 
-  deleteGuest(tripId: string | number, guestUserId: number): boolean {
-    if (!this.guestOfTrip(tripId, guestUserId)) return false;
-    // A guest is still a user id a plugin may hold data for, so erase that too — the
-    // host-side per-user tables + a durable own-db erasure per granted plugin — exactly
-    // like a full account deletion (otherwise a deleted guest's plugin data lingers).
-    this.userCleanup.erasePluginUserData(guestUserId);
-    // Quirk fix on top of the 1:1 move: the budget re-split and the user delete
-    // run in one transaction, so a failure mid-flow can't leave the expense
-    // divisors re-derived for a guest that still exists (or vice versa). The
-    // plugin-side erasure/notification keep their order around it.
-    this.db.transaction(() => {
-      // Re-split the expenses they were part of before the cascade takes their member
-      // rows away — the divisor is denormalized and cannot follow a foreign key (#1553).
-      this.budget.removeUserFromBudgetItems(guestUserId);
+  async deleteGuest(tripId: string | number, guestUserId: number): Promise<boolean> {
+    if (!(await this.guestOfTrip(tripId, guestUserId))) return false;
+    // The budget check and re-split, the plugin erasure and the user delete run in one
+    // transaction, so a failure mid-flow can't leave the expense divisors re-derived,
+    // or the guest's plugin rows erased, for a guest that still exists (or vice
+    // versa). The plugin notification goes out after the commit.
+    await this.uow.transactional(async () => {
+      // A guest who paid for something or is part of a recorded payment is refused with a
+      // 409 before anything is touched: the cascade would take that money off the books
+      // (#2604). Otherwise the expenses they were part of are re-split before the cascade
+      // takes their member rows away, the divisor and the custom amounts cannot follow a
+      // foreign key (#1553).
+      await this.budget.releaseGuest(guestUserId);
+      // A guest is still a user id a plugin may hold data for, so erase that too (the
+      // host-side per-user tables plus a durable own-db erasure per granted plugin), exactly
+      // like a full account deletion; otherwise a deleted guest's plugin data lingers.
+      await this.userCleanup.erasePluginUserData(guestUserId);
       // Deleting the guest's users row cascades its membership and every assignment join
       // (trip_members, budget/packing/assignment links) via the ON DELETE foreign keys.
-      this.db.prepare('DELETE FROM users WHERE id = ? AND is_guest = 1').run(guestUserId);
-    })();
-    emitUserDeleted(guestUserId); // deliver the erasure to any active plugin now
+      await this.usersRepo.deleteGuest(guestUserId);
+    });
+    await emitUserDeleted(guestUserId); // deliver the erasure to any active plugin now
     return true;
   }
 
-  // ── New-member identity checks and Guest identity transfers ─────────────
-
-  private requireIdentityTransferMember(tripId: string | number, userId: number): void {
-    const trip = this.db.prepare('SELECT user_id FROM trips WHERE id = ?').get(tripId) as
-      | { user_id: number }
-      | undefined;
-    const member = this.db
-      .prepare(
-        `SELECT tm.id FROM trip_members tm JOIN users u ON u.id = tm.user_id
-       WHERE tm.trip_id = ? AND tm.user_id = ? AND COALESCE(u.is_guest, 0) = 0`,
-      )
-      .get(tripId, userId);
-    if (!trip || trip.user_id === userId || !member) {
+  private async requireIdentityTransferMember(tripId: string | number, memberId: number) {
+    const id = toRowId(tripId);
+    const member = id === null ? undefined : await this.tripMembersRepo.findIdentityCheckMember(id, memberId);
+    if (id === null || !member) {
       throw new GuestIdentityTransferError(
         'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
         'Only non-owner account members can transfer Guest identities',
       );
     }
+    return { tripId: id, completedAt: member.completedAt };
   }
 
-  private scalarCount(sql: string, ...params: Array<string | number>): number {
-    return Number((this.db.prepare(sql).get(...params) as { n: number } | undefined)?.n ?? 0);
-  }
-
-  private parseTicket(row: { note: string | null; ticket_json: string | null }): {
-    present: boolean;
-    payload: TicketPayload | null;
-    storage: 'ticket_json' | 'note' | null;
-  } {
-    const raw =
-      row.ticket_json || (row.note?.startsWith(TICKET_NOTE_PREFIX) ? row.note.slice(TICKET_NOTE_PREFIX.length) : null);
-    if (!raw) return { present: false, payload: null, storage: null };
-    try {
-      const parsed = ticketPayloadSchema.safeParse(JSON.parse(raw));
-      return {
-        present: true,
-        payload: parsed.success ? parsed.data : null,
-        storage: row.ticket_json ? 'ticket_json' : 'note',
-      };
-    } catch {
-      return { present: true, payload: null, storage: row.ticket_json ? 'ticket_json' : 'note' };
-    }
-  }
-
-  private guestIdentityTransferPreview(
-    tripId: string | number,
-    guestUserId: number,
-    accountMemberUserId: number,
-  ): GuestIdentityTransferCandidate {
-    const guest = this.db
-      .prepare(
-        `SELECT u.id, COALESCE(u.display_name, u.username) AS name
-       FROM users u JOIN trip_members tm ON tm.user_id = u.id
-       WHERE u.id = ? AND tm.trip_id = ? AND u.is_guest = 1`,
-      )
-      .get(guestUserId, tripId) as { id: number; name: string } | undefined;
-    if (!guest) {
-      const existingGuest = this.db.prepare('SELECT id FROM users WHERE id = ? AND is_guest = 1').get(guestUserId);
-      if (existingGuest) {
-        throw new GuestIdentityTransferError('GUEST_IDENTITY_TRANSFER_FORBIDDEN', 'Guest does not belong to this trip');
-      }
-      throw new GuestIdentityTransferError('GUEST_ALREADY_TRANSFERRED', 'Guest identity has already been transferred');
-    }
-
-    const conflicts: GuestIdentityTransferConflict[] = [];
-    const addConflict = (type: GuestIdentityTransferConflict['type'], recordId: number): void => {
-      if (!conflicts.some((conflict) => conflict.type === type && conflict.record_id === recordId)) {
-        conflicts.push({ type, record_id: recordId });
-      }
-    };
-    const expenseIds = new Set<number>();
-
-    const shareOverlap = this.db
-      .prepare(
-        `SELECT bi.id FROM budget_items bi
-       WHERE bi.trip_id = ?
-         AND EXISTS (SELECT 1 FROM budget_item_members x WHERE x.budget_item_id = bi.id AND x.user_id = ?)
-         AND EXISTS (SELECT 1 FROM budget_item_members x WHERE x.budget_item_id = bi.id AND x.user_id = ?)`,
-      )
-      .all(tripId, guestUserId, accountMemberUserId) as Array<{ id: number }>;
-    shareOverlap.forEach((row) => addConflict('expense_share_overlap', row.id));
-
-    const financialRows = this.db
-      .prepare(
-        `SELECT bi.id, bi.note, bi.ticket_json, bi.paid_by_user_id
-       FROM budget_items bi
-       WHERE bi.trip_id = ? AND (
-         bi.paid_by_user_id = ? OR
-         EXISTS (SELECT 1 FROM budget_item_members bim WHERE bim.budget_item_id = bi.id AND bim.user_id = ?) OR
-         EXISTS (SELECT 1 FROM budget_item_payers bip WHERE bip.budget_item_id = bi.id AND bip.user_id = ?) OR
-         bi.ticket_json IS NOT NULL OR bi.note GLOB 'TICKETJSON:*'
-       )`,
-      )
-      .all(tripId, guestUserId, guestUserId, guestUserId) as Array<{
-      id: number;
-      note: string | null;
-      ticket_json: string | null;
-      paid_by_user_id: number | null;
-    }>;
-
-    for (const row of financialRows) {
-      const guestPays =
-        row.paid_by_user_id === guestUserId ||
-        !!this.db
-          .prepare('SELECT 1 FROM budget_item_payers WHERE budget_item_id = ? AND user_id = ?')
-          .get(row.id, guestUserId);
-      const memberPays =
-        row.paid_by_user_id === accountMemberUserId ||
-        !!this.db
-          .prepare('SELECT 1 FROM budget_item_payers WHERE budget_item_id = ? AND user_id = ?')
-          .get(row.id, accountMemberUserId);
-      const guestShares = !!this.db
-        .prepare('SELECT 1 FROM budget_item_members WHERE budget_item_id = ? AND user_id = ?')
-        .get(row.id, guestUserId);
-      if (guestPays || guestShares) expenseIds.add(row.id);
-      if (guestPays && memberPays) addConflict('expense_payer_overlap', row.id);
-
-      const ticket = this.parseTicket(row);
-      if (!ticket.present) continue;
-      if (!ticket.payload) {
-        if (guestPays || guestShares) addConflict('invalid_ticket_json', row.id);
-        continue;
-      }
-      for (const item of ticket.payload.items) {
-        if (!item.parts.includes(guestUserId)) continue;
-        expenseIds.add(row.id);
-        if (item.parts.includes(accountMemberUserId)) addConflict('ticket_participant_overlap', row.id);
-      }
-    }
-
-    const settlements = this.db
-      .prepare(
-        `SELECT id, from_user_id, to_user_id FROM budget_settlements
-       WHERE trip_id = ? AND (from_user_id = ? OR to_user_id = ?)`,
-      )
-      .all(tripId, guestUserId, guestUserId) as Array<{
-      id: number;
-      from_user_id: number;
-      to_user_id: number;
-    }>;
-    for (const row of settlements) {
-      if (
-        (row.from_user_id === guestUserId && row.to_user_id === accountMemberUserId) ||
-        (row.to_user_id === guestUserId && row.from_user_id === accountMemberUserId) ||
-        (row.from_user_id === guestUserId && row.to_user_id === guestUserId)
-      )
-        addConflict('settlement_self_payment', row.id);
-    }
-
-    const ratings = this.scalarCount(
-      `SELECT COUNT(*) AS n FROM place_ratings pr JOIN places p ON p.id = pr.place_id
-       WHERE p.trip_id = ? AND pr.user_id = ?`,
-      tripId,
-      guestUserId,
+  private async previewGuestTransfer(scope: GuestTransferScope, name: string) {
+    const { conflicts, tickets, expenses, payments } = planGuestFinancialTransfer(
+      scope,
+      await this.tripMembersRepo.guestTransferFinancials(scope),
     );
-    const ratingOverlaps = this.scalarCount(
-      `SELECT COUNT(*) AS n FROM place_ratings guest_rating
-       JOIN places p ON p.id = guest_rating.place_id
-       WHERE p.trip_id = ? AND guest_rating.user_id = ?
-         AND EXISTS (SELECT 1 FROM place_ratings member_rating
-                     WHERE member_rating.place_id = guest_rating.place_id AND member_rating.user_id = ?)`,
-      tripId,
-      guestUserId,
-      accountMemberUserId,
-    );
-
-    const impact: GuestIdentityTransferImpact = {
-      expenses: expenseIds.size,
-      payments: settlements.length,
-      itinerary: this.scalarCount(
-        `SELECT COUNT(DISTINCT ap.assignment_id) AS n FROM assignment_participants ap
-         JOIN day_assignments da ON da.id = ap.assignment_id JOIN days d ON d.id = da.day_id
-         WHERE d.trip_id = ? AND ap.user_id = ?`,
-        tripId,
-        guestUserId,
-      ),
-      bookings: this.scalarCount(
-        `SELECT COUNT(*) AS n FROM reservation_travelers rt
-         JOIN reservations r ON r.id = rt.reservation_id
-         WHERE r.trip_id = ? AND rt.user_id = ?`,
-        tripId,
-        guestUserId,
-      ),
-      todos:
-        this.scalarCount(
-          'SELECT COUNT(*) AS n FROM todo_items WHERE trip_id = ? AND assigned_user_id = ?',
-          tripId,
-          guestUserId,
-        ) +
-        this.scalarCount(
-          'SELECT COUNT(*) AS n FROM todo_category_assignees WHERE trip_id = ? AND user_id = ?',
-          tripId,
-          guestUserId,
-        ),
-      packing: this.scalarCount(
-        `SELECT COUNT(*) AS n FROM (
-           SELECT 'item:' || pi.id AS record FROM packing_items pi
-            WHERE pi.trip_id = ? AND (pi.owner_id = ?
-              OR EXISTS (SELECT 1 FROM packing_item_recipients r WHERE r.item_id = pi.id AND r.user_id = ?)
-              OR EXISTS (SELECT 1 FROM packing_item_contributors c WHERE c.item_id = pi.id AND c.user_id = ?))
-           UNION SELECT 'category:' || category_name FROM packing_category_assignees
-            WHERE trip_id = ? AND user_id = ?
-           UNION SELECT 'bag:' || pb.id FROM packing_bags pb WHERE pb.trip_id = ? AND (pb.user_id = ?
-              OR EXISTS (SELECT 1 FROM packing_bag_members bm WHERE bm.bag_id = pb.id AND bm.user_id = ?))
-         )`,
-        tripId,
-        guestUserId,
-        guestUserId,
-        guestUserId,
-        tripId,
-        guestUserId,
-        tripId,
-        guestUserId,
-        guestUserId,
-      ),
-      ratings,
-      rating_overlaps: ratingOverlaps,
+    const participation = await this.tripMembersRepo.guestTransferParticipation(scope);
+    const candidate: GuestIdentityTransferCandidate = {
+      guest_user_id: scope.guestId,
+      name,
+      impact: { expenses, payments, ...participation },
+      conflicts,
     };
-    return { guest_user_id: guest.id, name: guest.name, impact, conflicts };
+    return { candidate, tickets };
   }
 
-  listGuestIdentityTransferCandidates(
-    tripId: string | number,
-    accountMemberUserId: number,
-  ): GuestIdentityTransferCandidate[] {
-    this.requireIdentityTransferMember(tripId, accountMemberUserId);
-    const guests = this.db
-      .prepare(
-        `SELECT u.id FROM users u JOIN trip_members tm ON tm.user_id = u.id
-       WHERE tm.trip_id = ? AND u.is_guest = 1 ORDER BY tm.added_at, u.id`,
-      )
-      .all(tripId) as Array<{ id: number }>;
-    return guests.map((guest) => this.guestIdentityTransferPreview(tripId, guest.id, accountMemberUserId));
-  }
-
-  runNewMemberIdentityCheck(
-    tripId: string | number,
-    accountMemberUserId: number,
-  ): { required: boolean; candidates: GuestIdentityTransferCandidate[] } {
-    return this.dbs.transaction(() => {
-      this.requireIdentityTransferMember(tripId, accountMemberUserId);
-      const membership = this.dbs.get<{ completedAt: string | null }>(
-        `SELECT new_member_identity_check_completed_at AS completedAt
-         FROM trip_members WHERE trip_id = ? AND user_id = ?`,
-        tripId,
-        accountMemberUserId,
+  private async guestCandidates(tripId: number, memberId: number): Promise<GuestIdentityTransferCandidate[]> {
+    const guests = await this.tripMembersRepo.listIdentityTransferGuests(tripId);
+    const candidates: GuestIdentityTransferCandidate[] = [];
+    await inOrder(guests, async (guest) => {
+      const { candidate } = await this.previewGuestTransfer(
+        { tripId, guestId: guest.id, memberId },
+        guest.display_name ?? guest.username,
       );
-      if (membership?.completedAt) return { required: false, candidates: [] };
-      const candidates = this.listGuestIdentityTransferCandidates(tripId, accountMemberUserId);
+      candidates.push(candidate);
+    });
+    return candidates;
+  }
+
+  async listGuestIdentityTransferCandidates(tripId: string | number, memberId: number) {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      return this.guestCandidates(member.tripId, memberId);
+    });
+  }
+
+  async runNewMemberIdentityCheck(tripId: string | number, memberId: number): Promise<NewMemberIdentityCheckResponse> {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      if (member.completedAt) return { required: false, candidates: [] };
+      const candidates = await this.guestCandidates(member.tripId, memberId);
       if (candidates.length > 0) return { required: true, candidates };
-      this.completeNewMemberIdentityCheck(tripId, accountMemberUserId);
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
       return { required: false, candidates: [] };
     });
   }
 
-  completeNewMemberIdentityCheck(
+  async completeNewMemberIdentityCheck(
     tripId: string | number,
-    accountMemberUserId: number,
-  ): NewMemberIdentityCheckCompletionResponse {
-    this.requireIdentityTransferMember(tripId, accountMemberUserId);
-    this.dbs.run(
-      `UPDATE trip_members SET new_member_identity_check_completed_at = CURRENT_TIMESTAMP
-       WHERE trip_id = ? AND user_id = ? AND new_member_identity_check_completed_at IS NULL`,
-      tripId,
-      accountMemberUserId,
-    );
-    return { success: true };
+    memberId: number,
+  ): Promise<NewMemberIdentityCheckCompletionResponse> {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
+      return { success: true };
+    });
   }
 
-  private mergeScopedJoin(
-    table: string,
-    parentColumn: string,
-    scopedParentSql: string,
+  async transferGuestIdentity(
     tripId: string | number,
-    guestUserId: number,
-    accountMemberUserId: number,
-  ): void {
-    this.db
-      .prepare(
-        `DELETE FROM ${table} AS guest_row
-       WHERE guest_row.user_id = ? AND guest_row.${parentColumn} IN (${scopedParentSql})
-         AND EXISTS (SELECT 1 FROM ${table} target_row
-                     WHERE target_row.${parentColumn} = guest_row.${parentColumn} AND target_row.user_id = ?)`,
-      )
-      .run(guestUserId, tripId, accountMemberUserId);
-    this.db
-      .prepare(
-        `UPDATE ${table} SET user_id = ?
-       WHERE user_id = ? AND ${parentColumn} IN (${scopedParentSql})`,
-      )
-      .run(accountMemberUserId, guestUserId, tripId);
-  }
-
-  transferGuestIdentity(
-    tripId: string | number,
-    guestUserId: number,
-    accountMemberUserId: number,
-  ): GuestIdentityTransferResponse {
-    const result = this.dbs.transaction(() => {
-      this.requireIdentityTransferMember(tripId, accountMemberUserId);
-      const preview = this.guestIdentityTransferPreview(tripId, guestUserId, accountMemberUserId);
-      if (preview.conflicts.length > 0) {
-        throw new GuestIdentityTransferError(
-          'GUEST_IDENTITY_TRANSFER_CONFLICT',
-          'Guest identity transfer has conflicting financial records',
-          preview.conflicts,
-        );
-      }
-
-      this.dbs.run(
-        `UPDATE budget_item_members SET user_id = ? WHERE user_id = ?
-         AND budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)`,
-        accountMemberUserId,
-        guestUserId,
-        tripId,
-      );
-      this.dbs.run(
-        `UPDATE budget_item_payers SET user_id = ? WHERE user_id = ?
-         AND budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)`,
-        accountMemberUserId,
-        guestUserId,
-        tripId,
-      );
-      this.dbs.run(
-        'UPDATE budget_items SET paid_by_user_id = ? WHERE trip_id = ? AND paid_by_user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.dbs.run(
-        'UPDATE budget_settlements SET from_user_id = ? WHERE trip_id = ? AND from_user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.dbs.run(
-        'UPDATE budget_settlements SET to_user_id = ? WHERE trip_id = ? AND to_user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-
-      const tickets = this.dbs.all<{ id: number; note: string | null; ticket_json: string | null }>(
-        `SELECT id, note, ticket_json FROM budget_items
-         WHERE trip_id = ? AND (ticket_json IS NOT NULL OR note GLOB 'TICKETJSON:*')`,
-        tripId,
-      );
-      for (const row of tickets) {
-        const ticket = this.parseTicket(row);
-        if (!ticket.payload || !ticket.storage) continue;
-        let changed = false;
-        for (const item of ticket.payload.items) {
-          item.parts = item.parts.map((id) => {
-            if (id !== guestUserId) return id;
-            changed = true;
-            return accountMemberUserId;
-          });
-        }
-        if (!changed) continue;
-        const json = JSON.stringify(ticket.payload);
-        if (ticket.storage === 'ticket_json')
-          this.dbs.run('UPDATE budget_items SET ticket_json = ? WHERE id = ?', json, row.id);
-        else this.dbs.run('UPDATE budget_items SET note = ? WHERE id = ?', `${TICKET_NOTE_PREFIX}${json}`, row.id);
-      }
-
-      this.mergeScopedJoin(
-        'assignment_participants',
-        'assignment_id',
-        'SELECT da.id FROM day_assignments da JOIN days d ON d.id = da.day_id WHERE d.trip_id = ?',
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.mergeScopedJoin(
-        'reservation_travelers',
-        'reservation_id',
-        'SELECT id FROM reservations WHERE trip_id = ?',
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.dbs.run(
-        `DELETE FROM todo_category_assignees AS guest_row
-         WHERE guest_row.trip_id = ? AND guest_row.user_id = ?
-           AND EXISTS (SELECT 1 FROM todo_category_assignees target_row
-                       WHERE target_row.trip_id = guest_row.trip_id
-                         AND target_row.category_name = guest_row.category_name AND target_row.user_id = ?)`,
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.dbs.run(
-        'UPDATE todo_category_assignees SET user_id = ? WHERE trip_id = ? AND user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.dbs.run(
-        'UPDATE todo_items SET assigned_user_id = ? WHERE trip_id = ? AND assigned_user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.dbs.run(
-        `DELETE FROM packing_category_assignees AS guest_row
-         WHERE guest_row.trip_id = ? AND guest_row.user_id = ?
-           AND EXISTS (SELECT 1 FROM packing_category_assignees target_row
-                       WHERE target_row.trip_id = guest_row.trip_id
-                         AND target_row.category_name = guest_row.category_name AND target_row.user_id = ?)`,
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.dbs.run(
-        'UPDATE packing_category_assignees SET user_id = ? WHERE trip_id = ? AND user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.mergeScopedJoin(
-        'packing_bag_members',
-        'bag_id',
-        'SELECT id FROM packing_bags WHERE trip_id = ?',
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.mergeScopedJoin(
-        'packing_item_recipients',
-        'item_id',
-        'SELECT id FROM packing_items WHERE trip_id = ?',
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.mergeScopedJoin(
-        'packing_item_contributors',
-        'item_id',
-        'SELECT id FROM packing_items WHERE trip_id = ?',
-        tripId,
-        guestUserId,
-        accountMemberUserId,
-      );
-      this.dbs.run(
-        'UPDATE packing_bags SET user_id = ? WHERE trip_id = ? AND user_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-      this.dbs.run(
-        'UPDATE packing_items SET owner_id = ? WHERE trip_id = ? AND owner_id = ?',
-        accountMemberUserId,
-        tripId,
-        guestUserId,
-      );
-
-      // A signed-in member's explicit opinion wins over the duplicate Guest
-      // rating; non-overlapping ratings move to the member identity.
-      this.dbs.run(
-        `DELETE FROM place_ratings AS guest_rating
-         WHERE guest_rating.user_id = ?
-           AND guest_rating.place_id IN (SELECT id FROM places WHERE trip_id = ?)
-           AND EXISTS (SELECT 1 FROM place_ratings member_rating
-                       WHERE member_rating.place_id = guest_rating.place_id AND member_rating.user_id = ?)`,
-        guestUserId,
-        tripId,
-        accountMemberUserId,
-      );
-      this.dbs.run(
-        `UPDATE place_ratings SET user_id = ?
-         WHERE user_id = ? AND place_id IN (SELECT id FROM places WHERE trip_id = ?)`,
-        accountMemberUserId,
-        guestUserId,
-        tripId,
-      );
-
-      this.userCleanup.erasePluginUserData(guestUserId);
-      this.dbs.run('DELETE FROM trip_members WHERE trip_id = ? AND user_id = ?', tripId, guestUserId);
-      const deleted = this.dbs.run('DELETE FROM users WHERE id = ? AND is_guest = 1', guestUserId);
-      if (deleted.changes !== 1) {
+    guestId: number,
+    memberId: number,
+  ): Promise<GuestIdentityTransferResponse> {
+    const result = await this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      const guest = Number.isSafeInteger(guestId) ? await this.usersRepo.findIdEmailGuest(guestId) : undefined;
+      if (!guest?.is_guest) {
         throw new GuestIdentityTransferError(
           'GUEST_ALREADY_TRANSFERRED',
           'Guest identity has already been transferred',
         );
       }
-      this.completeNewMemberIdentityCheck(tripId, accountMemberUserId);
-      return { success: true as const, transferred_guest_user_id: guestUserId, impact: preview.impact };
+      const guests = await this.tripMembersRepo.listIdentityTransferGuests(member.tripId);
+      const matchingGuest = guests.find((row) => row.id === guestId);
+      if (!matchingGuest || (await this.tripMembersRepo.hasOtherMembership(member.tripId, guestId))) {
+        throw new GuestIdentityTransferError(
+          'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
+          'Guest does not belong exclusively to this trip',
+        );
+      }
+      const scope = { tripId: member.tripId, guestId, memberId };
+      const { candidate, tickets } = await this.previewGuestTransfer(
+        scope,
+        matchingGuest.display_name ?? matchingGuest.username,
+      );
+      if (candidate.conflicts.length > 0) {
+        throw new GuestIdentityTransferError(
+          'GUEST_IDENTITY_TRANSFER_CONFLICT',
+          'Guest identity transfer has conflicting financial records',
+          candidate.conflicts,
+        );
+      }
+      await this.tripMembersRepo.rewriteGuestFinancials(scope, tickets);
+      await this.tripMembersRepo.rewriteGuestParticipation(scope);
+      await this.userCleanup.erasePluginUserData(guestId);
+      await this.usersRepo.deleteGuest(guestId);
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
+      return { success: true as const, transferred_guest_user_id: guestId, impact: candidate.impact };
     });
-    emitUserDeleted(guestUserId);
+    await emitUserDeleted(guestId);
     return result;
   }
 }

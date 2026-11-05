@@ -12,7 +12,7 @@ const oauth: TranslationStrings = {
   'oauth.scope.group.collab': 'Col·laboració',
   'oauth.scope.group.notifications': 'Notificacions',
   'oauth.scope.group.vacay': 'Vacances',
-  'oauth.scope.group.geo': 'Geo',
+  'oauth.scope.group.geo': 'Geo', // same-as-en
   'oauth.scope.group.weather': 'Clima',
   'oauth.scope.group.journey': 'Travesia',
   'oauth.scope.trips:read.label': 'Mostra els viatges i itineraris',
@@ -84,11 +84,12 @@ const oauth: TranslationStrings = {
   'oauth.authorize.loginButton': 'Inicia la sessió a TREK',
   'oauth.authorize.requestLabel': "Sol·licitud d'autorització",
   'oauth.authorize.requestDescription': 'Aquesta aplicació està sol·licitant accés al teu compte de TREK.',
+  'oauth.authorize.verifiedHost': 'Domini verificat: {host}',
   'oauth.authorize.trustNote':
     'Només atorga accés a aplicacions de confiança. Les teves dades es mantenen al teu servidor.',
   'oauth.authorize.selectScope': 'Selecciona almenys un àmbit',
-  'oauth.authorize.approveOneScope': 'Aprova ({count} àmbit)',
-  'oauth.authorize.approveManyScopes': 'Aprova ({count} àmbits)',
+  'oauth.authorize.approveScopes': 'Aprova ({count} àmbits)',
+  'oauth.authorize.approveScopes.one': 'Aprova ({count} àmbit)',
   'oauth.authorize.approveAccess': "Aprova l'accés",
   'oauth.authorize.deny': 'Denega',
   'oauth.authorize.choosePermissions': 'Tria quins permisos atorgar',

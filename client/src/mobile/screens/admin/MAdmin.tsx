@@ -1,4 +1,6 @@
-import type { LucideIcon } from 'lucide-react';
+import MAdminSchoolHolidayCatalog from './MAdminSchoolHolidayCatalog'
+import MAdminPaddleRegionsPanel from './MAdminPaddleRegionsPanel'
+import { useState } from 'react'
 import {
   ArrowUp,
   Bell,
@@ -9,6 +11,7 @@ import {
   ChevronLeft,
   Database,
   FileText,
+  Github,
   HardDrive,
   Map,
   Plug,
@@ -20,33 +23,32 @@ import {
   UserCog,
   UserPlus,
   Users,
-} from 'lucide-react';
-import { useState } from 'react';
-import { adminApi } from '../../../api/client';
-import SchoolHolidayCatalog from '../../../components/Admin/SchoolHolidayCatalog';
-import { useCountUp } from '../../../hooks/useCountUp';
-import { useTranslation } from '../../../i18n';
-import { useAdmin } from '../../../pages/admin/useAdmin';
-import MAdminAddonManager from './MAdminAddonManager';
-import MAdminAuditLogPanel from './MAdminAuditLogPanel';
-import MAdminBackupPanel from './MAdminBackupPanel';
-import MAdminCategoryManager from './MAdminCategoryManager';
-import MAdminDefaultUserSettings from './MAdminDefaultUserSettings';
-import MAdminDevNotificationsPanel from './MAdminDevNotificationsPanel';
-import MAdminMcpTokensPanel from './MAdminMcpTokensPanel';
-import MAdminNotificationsSection from './MAdminNotificationsSection';
-import MAdminPackingTemplateManager from './MAdminPackingTemplateManager';
-import MAdminPluginsPanel from './MAdminPluginsPanel';
-import MAdminSettingsSection from './MAdminSettingsSection';
-import MAdminSheets from './MAdminSheets';
-import MAdminStoragePanel from './MAdminStoragePanel';
-import { MAdminButton } from './MAdminUi';
-import MAdminUsersSection from './MAdminUsersSection';
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useTranslation } from '../../../i18n'
+import { useCountUp } from '../../../hooks/useCountUp'
+import { useAdmin } from '../../../pages/admin/useAdmin'
+import MAdminAddonManager from './MAdminAddonManager'
+import MAdminMcpTokensPanel from './MAdminMcpTokensPanel'
+import MAdminPluginsPanel from './MAdminPluginsPanel'
+import MAdminAuditLogPanel from './MAdminAuditLogPanel'
+import MAdminBackupPanel from './MAdminBackupPanel'
+import MAdminCategoryManager from './MAdminCategoryManager'
+import MAdminDefaultUserSettings from './MAdminDefaultUserSettings'
+import MAdminDevNotificationsPanel from './MAdminDevNotificationsPanel'
+import MAdminGitHubPanel from './MAdminGitHubPanel'
+import MAdminPackingTemplateManager from './MAdminPackingTemplateManager'
+import MAdminNotificationsSection from './MAdminNotificationsSection'
+import MAdminSettingsSection from './MAdminSettingsSection'
+import MAdminSheets from './MAdminSheets'
+import MAdminStoragePanel from './MAdminStoragePanel'
+import MAdminUsersSection from './MAdminUsersSection'
+import { MAdminButton } from './MAdminUi'
 
 // Stat card of the 2×2 grid (design §6.3): 34px icon tile, 19px/800 number,
 // small tracking label. Count-up animation matches the desktop stat cards.
 function MAdminStat({ label, value, icon: Icon }: { label: string; value: number; icon: LucideIcon }) {
-  const animated = useCountUp(value, 900);
+  const animated = useCountUp(value, 900)
   return (
     <div className="flex items-center gap-[11px] rounded-2xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheetop)] px-[14px] py-[13px]">
       <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[11px] bg-[color:var(--m-ic)] text-m-ink">
@@ -57,7 +59,7 @@ function MAdminStat({ label, value, icon: Icon }: { label: string; value: number
         <div className="mt-[2px] font-geist text-[0.59375rem] font-bold tracking-[0.06em] text-m-faint">{label}</div>
       </div>
     </div>
-  );
+  )
 }
 
 /**
@@ -66,28 +68,17 @@ function MAdminStat({ label, value, icon: Icon }: { label: string; value: number
  * desktop admin section stays reachable through the dropdown.
  */
 export default function MAdmin() {
-  const { t, locale } = useTranslation();
-  const admin = useAdmin();
+  const { t, locale } = useTranslation()
+  const admin = useAdmin()
   const {
-    demoMode,
-    mcpEnabled,
-    devMode,
-    managed,
-    toast,
-    navigate,
-    activeTab,
-    setActiveTab,
-    stats,
-    serverTimezone,
-    bagTrackingEnabled,
-    setBagTrackingEnabled,
-    collabFeatures,
-    setCollabFeatures,
+    demoMode, mcpEnabled, devMode, managed, navigate,
+    activeTab, setActiveTab, stats, serverTimezone,
+    bagTrackingEnabled, collabFeatures,
     setShowCreateUser,
-    updateInfo,
-    setShowUpdateModal,
-  } = admin;
-  const [sectionsOpen, setSectionsOpen] = useState(false);
+    updateInfo, setShowUpdateModal,
+    saveDemoBaseline, toggleBagTracking, toggleCollabFeature,
+  } = admin
+  const [sectionsOpen, setSectionsOpen] = useState(false)
 
   // Same sections and gating as the desktop sidebar, ordered and iconed like
   // the design's dropdown (§6.1).
@@ -101,20 +92,14 @@ export default function MAdmin() {
     ...(managed ? [] : [{ id: 'storage', label: t('admin.tabs.storage'), icon: HardDrive }]),
     { id: 'notifications', label: t('admin.tabs.notifications'), icon: Bell },
     ...(mcpEnabled ? [{ id: 'mcp-tokens', label: t('admin.tabs.mcpTokens'), icon: Plug }] : []),
+    // Same two the desktop list drops: releases and backup schedule belong to
+    // whoever operates the install.
+    ...(managed ? [] : [{ id: 'github', label: t('admin.tabs.github'), icon: Github }]),
     ...(managed ? [] : [{ id: 'backup', label: t('admin.tabs.backup'), icon: Database }]),
     { id: 'audit', label: t('admin.tabs.audit'), icon: ScrollText },
     ...(devMode ? [{ id: 'dev-notifications', label: 'Dev: Notifications', icon: Bug }] : []),
-  ];
-  const activeSection = sections.find((s) => s.id === activeTab) ?? sections[0];
-
-  const saveDemoBaseline = async () => {
-    try {
-      await adminApi.saveDemoBaseline();
-      toast.success('Baseline saved! Resets will restore to this state.');
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to save baseline');
-    }
-  };
+  ]
+  const activeSection = sections.find((s) => s.id === activeTab) ?? sections[0]
 
   return (
     // Flow screen: scrolls with the document (#1809), so no height and no
@@ -138,7 +123,7 @@ export default function MAdmin() {
           className="flex h-[38px] min-w-0 flex-1 items-center gap-[7px] rounded-full border border-[color:var(--m-gbr)] bg-[color:var(--m-sheet)] px-[14px] text-[0.8125rem] font-bold text-m-ink shadow-[0_5px_12px_-8px_rgba(0,0,0,.18)]"
         >
           <Shield size={14} strokeWidth={2.2} className="flex-none" />
-          <span className="min-w-0 flex-1 truncate text-left">{activeSection.label}</span>
+          <span className="min-w-0 flex-1 truncate text-start">{activeSection.label}</span>
           <ChevronDown size={13} strokeWidth={2} className="flex-none text-m-faint" />
         </button>
         <button
@@ -159,10 +144,10 @@ export default function MAdmin() {
               key={section.id}
               type="button"
               onClick={() => {
-                setActiveTab(section.id);
-                setSectionsOpen(false);
+                setActiveTab(section.id)
+                setSectionsOpen(false)
               }}
-              className={`flex w-full items-center gap-[10px] rounded-[11px] p-[10px] text-left text-[0.8125rem] font-semibold text-m-ink ${
+              className={`flex w-full items-center gap-[10px] rounded-[11px] p-[10px] text-start text-[0.8125rem] font-semibold text-m-ink ${
                 section.id === activeSection.id ? 'bg-[color:var(--m-ic)]' : ''
               }`}
             >
@@ -193,22 +178,22 @@ export default function MAdmin() {
       {demoMode && (
         <div className="mb-3 flex items-center gap-[10px] rounded-2xl border border-[color:color-mix(in_srgb,var(--m-st-pending)_28%,transparent)] bg-[color:color-mix(in_srgb,var(--m-st-pending)_10%,transparent)] px-[14px] py-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[0.78125rem] font-extrabold text-m-ink">Demo Baseline</div>
+            <div className="text-[0.78125rem] font-extrabold text-m-ink">{t('admin.demoBaseline.title')}</div>
             <div className="font-geist text-[0.625rem] leading-relaxed text-m-muted">
-              Save current state as the hourly reset point. All admin trips and settings will be preserved.
+              {t('admin.demoBaseline.hint')}
             </div>
           </div>
-          <MAdminButton onClick={saveDemoBaseline}>Save Baseline</MAdminButton>
+          <MAdminButton onClick={saveDemoBaseline}>{t('admin.demoBaseline.button')}</MAdminButton>
         </div>
       )}
 
       {/* Stats grid (§6.3) */}
       {stats && (
         <div className="mb-3 grid grid-cols-2 gap-[10px]">
-          <MAdminStat label={t('admin.stats.users')} value={stats.totalUsers} icon={Users} />
-          <MAdminStat label={t('admin.stats.trips')} value={stats.totalTrips} icon={Briefcase} />
-          <MAdminStat label={t('admin.stats.places')} value={stats.totalPlaces} icon={Map} />
-          <MAdminStat label={t('admin.stats.files')} value={stats.totalFiles || 0} icon={FileText} />
+          <MAdminStat label={t('admin.stats.users', { count: stats.totalUsers })} value={stats.totalUsers} icon={Users} />
+          <MAdminStat label={t('admin.stats.trips', { count: stats.totalTrips })} value={stats.totalTrips} icon={Briefcase} />
+          <MAdminStat label={t('admin.stats.places', { count: stats.totalPlaces })} value={stats.totalPlaces} icon={Map} />
+          <MAdminStat label={t('admin.stats.files', { count: stats.totalFiles || 0 })} value={stats.totalFiles || 0} icon={FileText} />
         </div>
       )}
 
@@ -221,43 +206,29 @@ export default function MAdmin() {
         <div className="space-y-4">
           <MAdminPackingTemplateManager />
           <MAdminCategoryManager />
-          <SchoolHolidayCatalog />
+          <MAdminSchoolHolidayCatalog />
         </div>
       )}
       {activeTab === 'addons' && (
-        <MAdminAddonManager
-          bagTrackingEnabled={bagTrackingEnabled}
-          onToggleBagTracking={async () => {
-            const next = !bagTrackingEnabled;
-            setBagTrackingEnabled(next);
-            try {
-              await adminApi.updateBagTracking(next);
-            } catch {
-              setBagTrackingEnabled(!next);
-            }
-          }}
-          collabFeatures={collabFeatures}
-          onToggleCollabFeature={async (key: string) => {
-            const previous = collabFeatures[key];
-            setCollabFeatures({ ...collabFeatures, [key]: !previous });
-            try {
-              await adminApi.updateCollabFeatures({ [key]: !previous });
-            } catch {
-              // Only this key rolls back — a slower request must not undo a toggle
-              // the admin made in the meantime.
-              setCollabFeatures((prev) => ({ ...prev, [key]: previous }));
-            }
-          }}
-        />
+        <div className="space-y-4">
+          <MAdminAddonManager
+            bagTrackingEnabled={bagTrackingEnabled}
+            onToggleBagTracking={toggleBagTracking}
+            collabFeatures={collabFeatures}
+            onToggleCollabFeature={toggleCollabFeature}
+          />
+          <MAdminPaddleRegionsPanel />
+        </div>
       )}
       {activeTab === 'plugins' && <MAdminPluginsPanel />}
       {activeTab === 'storage' && <MAdminStoragePanel />}
       {activeTab === 'mcp-tokens' && <MAdminMcpTokensPanel />}
+      {activeTab === 'github' && <MAdminGitHubPanel isPrerelease={updateInfo?.is_prerelease ?? false} />}
       {activeTab === 'backup' && <MAdminBackupPanel />}
       {activeTab === 'audit' && <MAdminAuditLogPanel serverTimezone={serverTimezone} />}
       {activeTab === 'dev-notifications' && <MAdminDevNotificationsPanel />}
 
       <MAdminSheets admin={admin} t={t} />
     </div>
-  );
+  )
 }

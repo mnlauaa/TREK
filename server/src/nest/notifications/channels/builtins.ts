@@ -1,14 +1,16 @@
 import { registerChannel } from '../channel-registry';
 import type { MailerService } from '../mailer/mailer.service';
-import type { ChannelMessage, ExternalChannel } from '../notification-events';
+import { ADMIN_SCOPED_EVENTS, type ChannelMessage, type ExternalChannel } from '../notification-events';
 import { resolveAdminNtfyUrl, resolveNtfyToken, resolveNtfyUrl, type NtfyService } from '../transports/ntfy.service';
+import type { WebPushService } from '../transports/web-push.service';
 import type { WebhookService } from '../transports/webhook.service';
-import type { WebPushService } from '../web-push.service';
+import { WEB_PUSH_CHANNEL_ID } from '@trek/shared';
 
-// The three built-in external channels, wrapping the transports that were free
-// functions in services/notifications.ts before the fold. No delivery logic is
-// rewritten here - it is only relocated behind the ExternalChannel interface so
-// NotificationsService.send() can iterate instead of branching.
+// The built-in external channels. Email, webhook and ntfy wrap the transports
+// that were free functions in services/notifications.ts before the fold; no
+// delivery logic is rewritten here, it is only relocated behind the
+// ExternalChannel interface so NotificationsService.send() can iterate instead
+// of branching. Web Push (#894) joined later on the same terms.
 
 function supportsAllButSynology(event: string): boolean {
   return event !== 'synology_session_cleared';
@@ -18,11 +20,11 @@ export interface BuiltinChannelDeps {
   mailer: MailerService;
   webhook: WebhookService;
   ntfy: NtfyService;
-  webPush?: WebPushService;
+  push: WebPushService;
 }
 
 /**
- * Build the three built-in channels over the given transports.
+ * Build the built-in channels over the given transports.
  *
  * They take their dependencies as an argument rather than importing them,
  * because the registry they land in is a module singleton while the transports
@@ -34,7 +36,7 @@ export interface BuiltinChannelDeps {
  * preferences; dropping that import would have silenced email, webhook and ntfy
  * without a single error.
  */
-export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: BuiltinChannelDeps): ExternalChannel[] {
+export function buildBuiltinChannels({ mailer, webhook, ntfy, push }: BuiltinChannelDeps): ExternalChannel[] {
   const emailChannel: ExternalChannel = {
     id: 'email',
     source: 'builtin',
@@ -45,14 +47,14 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
     bypassesActiveToggleForAdminEvents: true,
     supportsEvent: supportsAllButSynology,
     isInstanceConfigured: () => mailer.isSmtpConfigured(),
-    isConfiguredFor: (userId) => !!mailer.getUserEmail(userId),
+    isConfiguredFor: async (userId) => !!(await mailer.getUserEmail(userId)),
     async sendToUser(userId, msg) {
-      const email = mailer.getUserEmail(userId);
+      const email = await mailer.getUserEmail(userId);
       if (!email) return false;
       return mailer.sendEmail(email, msg.title, msg.body, userId, msg.navigateTarget);
     },
     async test(userId) {
-      const email = mailer.getUserEmail(userId);
+      const email = await mailer.getUserEmail(userId);
       if (!email) return { success: false, error: 'No email address on file' };
       return mailer.testSmtp(email);
     },
@@ -64,9 +66,9 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
     labelKey: 'settings.notificationPreferences.webhook',
     supportsAdminGlobal: true,
     supportsEvent: supportsAllButSynology,
-    isConfiguredFor: (userId) => !!webhook.getUserWebhookUrl(userId),
+    isConfiguredFor: async (userId) => !!(await webhook.getUserWebhookUrl(userId)),
     async sendToUser(userId, msg) {
-      const url = webhook.getUserWebhookUrl(userId);
+      const url = await webhook.getUserWebhookUrl(userId);
       if (!url) return false;
       return webhook.sendWebhook(url, {
         event: msg.event,
@@ -77,12 +79,12 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
       });
     },
     async sendGlobal(msg: ChannelMessage) {
-      const url = webhook.getAdminWebhookUrl();
+      const url = await webhook.getAdminWebhookUrl();
       if (!url) return false;
       return webhook.sendWebhook(url, { event: msg.event, title: msg.title, body: msg.body, link: msg.url });
     },
     async test(userId, override) {
-      const url = (typeof override?.url === 'string' && override.url) || webhook.getUserWebhookUrl(userId);
+      const url = (typeof override?.url === 'string' && override.url) || (await webhook.getUserWebhookUrl(userId));
       if (!url) return { success: false, error: 'No webhook URL configured' };
       return webhook.testWebhook(url);
     },
@@ -94,10 +96,11 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
     labelKey: 'settings.notificationPreferences.ntfy',
     supportsAdminGlobal: true,
     supportsEvent: supportsAllButSynology,
-    isConfiguredFor: (userId) => !!resolveNtfyUrl(ntfy.getAdminNtfyConfig(), ntfy.getUserNtfyConfig(userId)),
+    isConfiguredFor: async (userId) =>
+      !!resolveNtfyUrl(await ntfy.getAdminNtfyConfig(), await ntfy.getUserNtfyConfig(userId)),
     async sendToUser(userId, msg) {
-      const userCfg = ntfy.getUserNtfyConfig(userId);
-      const adminCfg = ntfy.getAdminNtfyConfig();
+      const userCfg = await ntfy.getUserNtfyConfig(userId);
+      const adminCfg = await ntfy.getAdminNtfyConfig();
       const url = resolveNtfyUrl(adminCfg, userCfg);
       if (!url) return false;
       // Not `?? adminCfg.token`: the user picks their own ntfy_server, so that
@@ -111,13 +114,14 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
       });
     },
     async sendGlobal(msg: ChannelMessage) {
-      const adminCfg = ntfy.getAdminNtfyConfig();
+      const adminCfg = await ntfy.getAdminNtfyConfig();
       const url = resolveAdminNtfyUrl(adminCfg);
       if (!url) return false;
       return ntfy.sendNtfy(url, adminCfg.token, { event: msg.event, title: msg.title, body: msg.body, link: msg.url });
     },
     async test(userId, override) {
-      const topic = typeof override?.topic === 'string' ? override.topic : ntfy.getUserNtfyConfig(userId)?.topic;
+      const topic =
+        typeof override?.topic === 'string' ? override.topic : (await ntfy.getUserNtfyConfig(userId))?.topic;
       if (!topic) return { success: false, error: 'Could not resolve ntfy URL — missing topic' };
       return ntfy.testNtfy({
         topic,
@@ -127,20 +131,27 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, webPush }: Builtin
     },
   };
 
-  const webPushChannel: ExternalChannel | null = webPush
-    ? {
-        id: 'webpush',
-        source: 'builtin',
-        labelKey: 'settings.notificationPreferences.webpush',
-        settingsPath: '/settings?tab=notifications',
-        supportsEvent: supportsAllButSynology,
-        isInstanceConfigured: () => webPush.config().available,
-        isConfiguredFor: (userId) => webPush.hasActiveSubscription(userId),
-        sendToUser: (userId, msg) => webPush.sendToUser(userId, msg),
-      }
-    : null;
+  // Per user and per browser. It carries no admin-scoped events: those have
+  // their own admin-global copy on the channels above, and a push column in
+  // the admin matrix could never be switched on. There is no sendGlobal for the
+  // same reason, and no credentials to check beyond the user having turned it
+  // on in at least one browser. Subscribing is a browser-only act, so there is
+  // no MCP twin for the routes behind it. While the server's key pair cannot be
+  // used, push is not sent and not offered, and every device stays subscribed.
+  const pushChannel: ExternalChannel = {
+    id: WEB_PUSH_CHANNEL_ID,
+    source: 'builtin',
+    labelKey: 'settings.notificationPreferences.webpush',
+    settingsPath: '/settings?tab=notifications',
+    hiddenWhileInstanceUnconfigured: true,
+    supportsEvent: (event) => supportsAllButSynology(event) && !ADMIN_SCOPED_EVENTS.has(event),
+    isInstanceConfigured: () => push.isAvailable(),
+    isConfiguredFor: (userId) => push.hasDevices(userId),
+    sendToUser: async (userId, msg) => (await push.sendToUser(userId, msg)).sent > 0,
+    test: (userId) => push.sendTest(userId),
+  };
 
-  return [emailChannel, webhookChannel, ntfyChannel, ...(webPushChannel ? [webPushChannel] : [])];
+  return [emailChannel, webhookChannel, ntfyChannel, pushChannel];
 }
 
 /** Idempotent - safe to call from every entry point that needs the registry populated. */

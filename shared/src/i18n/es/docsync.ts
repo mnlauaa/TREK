@@ -65,12 +65,13 @@ const docsync: TranslationStrings = {
   'docsync.state.conflict': 'Conflicto',
   'docsync.state.rejected_type': 'Tipo no permitido',
   'docsync.state.too_large': 'Demasiado grande',
-  'docsync.state.error': 'Error',
+  'docsync.state.error': 'Error', // same-as-en
   'docsync.state.remote_missing': 'Falta en el proveedor',
   'docsync.state.local_deleted': 'Eliminado en TREK',
   'docsync.state.scope_drift': 'Fuera de la carpeta',
 
   'docsync.conflict.resolve': 'Resolver {count}',
+  'docsync.conflict.resolve.one': 'Resolver {count}',
 
   'docsync.conflict.title': 'Las dos copias han cambiado',
   'docsync.conflict.keepTrek': 'Conservar la versión de TREK',
@@ -181,6 +182,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'En pausa: un administrador ha desactivado este proveedor. La sincronización se reanuda en cuanto vuelva a activarse.',
   'docsync.binding.reconnect': 'Volver a conectar',
+  'docsync.connection.title': 'Conexión',
+  'docsync.connection.hint': 'La dirección y el inicio de sesión que TREK usa para este almacenamiento.',
+  'docsync.connection.edit': 'Editar conexión',
+  'docsync.connection.remove': 'Eliminar conexión',
+  'docsync.connection.confirmRemove':
+    'TREK olvida la dirección y el inicio de sesión de este almacenamiento, y se detiene toda sincronización de este viaje a través de él. Los documentos se quedan en TREK y en el almacenamiento.',
 };
 
 export default docsync;

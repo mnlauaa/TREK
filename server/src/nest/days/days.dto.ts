@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import {
   dayTimingRequestSchema,
   dayCreateRequestSchema,
@@ -6,6 +5,8 @@ import {
   dayTransportRequestSchema,
   dayUpdateRequestSchema,
 } from '@trek/shared';
+
+import { createZodDto } from 'nestjs-zod';
 
 /**
  * Server-side createZodDto wrappers over the @trek/shared day contracts. The

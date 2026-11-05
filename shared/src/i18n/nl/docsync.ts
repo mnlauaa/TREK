@@ -63,7 +63,7 @@ const docsync: TranslationStrings = {
 
   'docsync.state.pending': 'Wacht',
   'docsync.state.synced': 'Gesynchroniseerd',
-  'docsync.state.conflict': 'Conflict',
+  'docsync.state.conflict': 'Conflict', // same-as-en
   'docsync.state.rejected_type': 'Bestandstype niet toegestaan',
   'docsync.state.too_large': 'Te groot',
   'docsync.state.error': 'Fout',
@@ -72,6 +72,7 @@ const docsync: TranslationStrings = {
   'docsync.state.scope_drift': 'Buiten de map verplaatst',
 
   'docsync.conflict.resolve': '{count} oplossen',
+  'docsync.conflict.resolve.one': '{count} oplossen',
 
   'docsync.conflict.title': 'Beide kopieën zijn gewijzigd',
   'docsync.conflict.keepTrek': 'De TREK-versie behouden',
@@ -178,6 +179,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'Gepauzeerd: een beheerder heeft deze aanbieder uitgeschakeld. De synchronisatie gaat verder zodra hij weer aanstaat.',
   'docsync.binding.reconnect': 'Opnieuw verbinden',
+  'docsync.connection.title': 'Verbinding',
+  'docsync.connection.hint': 'Het adres en de login die TREK voor deze opslag gebruikt.',
+  'docsync.connection.edit': 'Verbinding bewerken',
+  'docsync.connection.remove': 'Verbinding verwijderen',
+  'docsync.connection.confirmRemove':
+    'TREK vergeet het adres en de login van deze opslag, en elke synchronisatie van deze reis via deze opslag stopt. De documenten blijven in TREK en in de opslag.',
 };
 
 export default docsync;

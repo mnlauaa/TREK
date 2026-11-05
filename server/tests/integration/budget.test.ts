@@ -2,74 +2,66 @@
  * Budget Planner integration tests.
  * Covers BUDGET-001 to BUDGET-010.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-import request from 'supertest';
-import type { Application } from 'express';
+import { buildApp } from '../../src/bootstrap';
+import { db as testDb } from '../../src/db/database';
+import { AppSettings } from '../../src/db/entities/AppSettings.entity';
+import { BudgetItems } from '../../src/db/entities/BudgetItems.entity';
+import { BudgetSettlements } from '../../src/db/entities/BudgetSettlements.entity';
+import { GlobalExchangeRateSnapshots } from '../../src/db/entities/GlobalExchangeRateSnapshots.entity';
+import { Reservations } from '../../src/db/entities/Reservations.entity';
+import { authCookie } from '../helpers/auth';
+import { createUser, createTrip, createBudgetItem, addTripMember, createReservation } from '../helpers/factories';
+import { deleteRows, findRow, insertRow } from '../helpers/factories/rows';
+import { setAppSetting } from '../helpers/factories/settings';
+import { resetTestDb, resetRateLimits } from '../helpers/test-db';
+import { MikroORM } from '@mikro-orm/core';
 import type { INestApplication } from '@nestjs/common';
 
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: (placeId: number) => {
-      const place: any = db.prepare(`SELECT p.*, c.name as category_name, c.color as category_color, c.icon as category_icon FROM places p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?`).get(placeId);
-      if (!place) return null;
-      const tags = db.prepare(`SELECT t.* FROM tags t JOIN place_tags pt ON t.id = pt.tag_id WHERE pt.place_id = ?`).all(placeId);
-      return { ...place, category: place.category_id ? { id: place.category_id, name: place.category_name, color: place.category_color, icon: place.category_icon } : null, tags };
-    },
-    canAccessTrip: (tripId: any, userId: number) =>
-      db.prepare(`SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`).get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
+import type { Application } from 'express';
+import request from 'supertest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+
+vi.mock('../../src/db/database', async () => {
+  const { createSnapshotTestDb, buildDbMock } = await import('../helpers/db-mock');
+  return buildDbMock(createSnapshotTestDb());
 });
-
-vi.mock('../../src/db/database', () => dbMock);
-vi.mock('../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-  SESSION_DURATION: '24h',
-  SESSION_DURATION_MS: 86400000,
-  SESSION_DURATION_SECONDS: 86400,
-  DEFAULT_LANGUAGE: 'en',
-}));
-vi.mock('../../src/websocket', () => ({ broadcast: vi.fn(), broadcastToUser: vi.fn() }));
-
-import { buildApp } from '../../src/bootstrap';
-import { createTables } from '../../src/db/schema';
-import { runMigrations } from '../../src/db/migrations';
-import { resetTestDb, resetRateLimits } from '../helpers/test-db';
-import { createUser, createTrip, createBudgetItem, addTripMember, createReservation } from '../helpers/factories';
-import { authCookie } from '../helpers/auth';
 
 let nestApp: INestApplication;
 let app: Application;
+let orm: MikroORM;
 
 beforeAll(async () => {
-  createTables(testDb);
-  runMigrations(testDb);
   nestApp = await buildApp();
   app = nestApp.getHttpAdapter().getInstance();
+  orm = nestApp.get(MikroORM);
 });
 
-beforeEach(() => {
+/** A hotel expense linked to the booking. */
+function seedBookedExpense(tripId: number, reservationId: number, totalPrice: number): Promise<number> {
+  return insertRow(orm, BudgetItems, {
+    trip: tripId,
+    name: 'Hotel Cost',
+    category: 'Accommodation',
+    total_price: totalPrice,
+    reservation: reservationId,
+  });
+}
+
+beforeEach(async () => {
   resetTestDb(testDb);
-  resetRateLimits(nestApp);
+  await resetRateLimits(nestApp);
   // GET /budget/settlement reaches ExchangeRatesService.getRates unconditionally
   // (budget.service.ts settlement()), and that is a real fetch to
   // api.frankfurter.dev with a 10 s abort. Without this stub the suite talks to
   // the internet: slow, offline-dependent, and it makes the run take minutes
   // longer on a machine that cannot reach it. Fail closed — every assertion here
   // is single-currency, so rates never enter the arithmetic.
-  vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new Error('offline');
+    }),
+  );
 });
 
 afterAll(async () => {
@@ -131,9 +123,7 @@ describe('List budget items', () => {
     createBudgetItem(testDb, trip.id, { name: 'Flight', total_price: 300 });
     createBudgetItem(testDb, trip.id, { name: 'Hotel', total_price: 500 });
 
-    const res = await request(app)
-      .get(`/api/trips/${trip.id}/budget`)
-      .set('Cookie', authCookie(user.id));
+    const res = await request(app).get(`/api/trips/${trip.id}/budget`).set('Cookie', authCookie(user.id));
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(2);
   });
@@ -145,9 +135,7 @@ describe('List budget items', () => {
     addTripMember(testDb, trip.id, member.id);
     createBudgetItem(testDb, trip.id, { name: 'Rental', total_price: 200 });
 
-    const res = await request(app)
-      .get(`/api/trips/${trip.id}/budget`)
-      .set('Cookie', authCookie(member.id));
+    const res = await request(app).get(`/api/trips/${trip.id}/budget`).set('Cookie', authCookie(member.id));
     expect(res.status).toBe(200);
     expect(res.body.items).toHaveLength(1);
   });
@@ -194,15 +182,11 @@ describe('Delete budget item', () => {
     const trip = createTrip(testDb, user.id);
     const item = createBudgetItem(testDb, trip.id);
 
-    const del = await request(app)
-      .delete(`/api/trips/${trip.id}/budget/${item.id}`)
-      .set('Cookie', authCookie(user.id));
+    const del = await request(app).delete(`/api/trips/${trip.id}/budget/${item.id}`).set('Cookie', authCookie(user.id));
     expect(del.status).toBe(200);
     expect(del.body.success).toBe(true);
 
-    const list = await request(app)
-      .get(`/api/trips/${trip.id}/budget`)
-      .set('Cookie', authCookie(user.id));
+    const list = await request(app).get(`/api/trips/${trip.id}/budget`).set('Cookie', authCookie(user.id));
     expect(list.body.items).toHaveLength(0);
   });
 
@@ -211,18 +195,13 @@ describe('Delete budget item', () => {
     const trip = createTrip(testDb, user.id);
     const reservation = createReservation(testDb, trip.id, { title: 'Hotel Booking', type: 'hotel' });
 
-    const result = testDb.prepare(
-      'INSERT INTO budget_items (trip_id, name, category, total_price, reservation_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(trip.id, 'Hotel Cost', 'Accommodation', 250, reservation.id);
-    const itemId = result.lastInsertRowid as number;
+    const itemId = await seedBookedExpense(trip.id, reservation.id, 250);
 
-    const del = await request(app)
-      .delete(`/api/trips/${trip.id}/budget/${itemId}`)
-      .set('Cookie', authCookie(user.id));
+    const del = await request(app).delete(`/api/trips/${trip.id}/budget/${itemId}`).set('Cookie', authCookie(user.id));
     expect(del.status).toBe(200);
 
-    const reservationAfter = testDb.prepare('SELECT id FROM reservations WHERE id = ?').get(reservation.id);
-    expect(reservationAfter).toBeDefined();
+    const reservationAfter = await findRow(orm, Reservations, { id: reservation.id });
+    expect(reservationAfter).not.toBeNull();
   });
 });
 
@@ -246,9 +225,7 @@ describe('Budget item members', () => {
     expect(res.body.members).toBeDefined();
 
     // After assigning members, list items should include them (covers loadBudgetItems member loop)
-    const listRes = await request(app)
-      .get(`/api/trips/${trip.id}/budget`)
-      .set('Cookie', authCookie(user.id));
+    const listRes = await request(app).get(`/api/trips/${trip.id}/budget`).set('Cookie', authCookie(user.id));
     expect(listRes.status).toBe(200);
     const foundItem = (listRes.body.items as any[]).find((i: any) => i.id === item.id);
     expect(foundItem).toBeDefined();
@@ -365,9 +342,7 @@ describe('Budget summary and settlement', () => {
       .set('Cookie', authCookie(user.id))
       .send({ payers: [{ user_id: user.id, amount: 60 }] });
 
-    const res = await request(app)
-      .get(`/api/trips/${trip.id}/budget/settlement`)
-      .set('Cookie', authCookie(user.id));
+    const res = await request(app).get(`/api/trips/${trip.id}/budget/settlement`).set('Cookie', authCookie(user.id));
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.balances)).toBe(true);
     expect(Array.isArray(res.body.flows)).toBe(true);
@@ -388,9 +363,7 @@ describe('Budget summary and settlement', () => {
     const trip = createTrip(testDb, user.id);
     createBudgetItem(testDb, trip.id, { name: 'Train', total_price: 40 });
 
-    const res = await request(app)
-      .get(`/api/trips/${trip.id}/budget/settlement`)
-      .set('Cookie', authCookie(user.id));
+    const res = await request(app).get(`/api/trips/${trip.id}/budget/settlement`).set('Cookie', authCookie(user.id));
     expect(res.status).toBe(200);
     expect(res.body.balances).toEqual([]);
     expect(res.body.flows).toEqual([]);
@@ -426,9 +399,9 @@ describe('Reorder budget items', () => {
     const item = createBudgetItem(testDb, trip.id);
 
     // Restrict budget_edit to trip_owner only
-    testDb.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('perm_budget_edit', 'trip_owner')").run();
+    await setAppSetting(orm, 'perm_budget_edit', 'trip_owner');
     const { invalidatePermissionsCache } = await import('../../src/nest/permissions/permissions-cache');
-    invalidatePermissionsCache();
+    await invalidatePermissionsCache();
 
     const res = await request(app)
       .put(`/api/trips/${trip.id}/budget/reorder/items`)
@@ -437,8 +410,8 @@ describe('Reorder budget items', () => {
     expect(res.status).toBe(403);
 
     // Restore default
-    testDb.prepare("DELETE FROM app_settings WHERE key = 'perm_budget_edit'").run();
-    invalidatePermissionsCache();
+    await deleteRows(orm, AppSettings, { key: 'perm_budget_edit' });
+    await invalidatePermissionsCache();
   });
 
   it('BUDGET-013 — owner can reorder budget items — returns 200', async () => {
@@ -499,10 +472,7 @@ describe('Reservation price sync on budget item update', () => {
     const reservation = createReservation(testDb, trip.id, { title: 'Hotel Booking', type: 'hotel' });
 
     // Create a budget item linked to the reservation
-    const result = testDb.prepare(
-      'INSERT INTO budget_items (trip_id, name, category, total_price, reservation_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(trip.id, 'Hotel Cost', 'Accommodation', 200, reservation.id);
-    const itemId = result.lastInsertRowid as number;
+    const itemId = await seedBookedExpense(trip.id, reservation.id, 200);
 
     const res = await request(app)
       .put(`/api/trips/${trip.id}/budget/${itemId}`)
@@ -512,8 +482,8 @@ describe('Reservation price sync on budget item update', () => {
     expect(res.body.item.total_price).toBe(350);
 
     // Verify reservation metadata was synced
-    const updatedReservation = testDb.prepare('SELECT metadata FROM reservations WHERE id = ?').get(reservation.id) as { metadata: string | null } | undefined;
-    expect(updatedReservation).toBeDefined();
+    const updatedReservation = await findRow(orm, Reservations, { id: reservation.id });
+    expect(updatedReservation).not.toBeNull();
     const meta = JSON.parse(updatedReservation!.metadata || '{}');
     expect(meta.price).toBe('350');
   });
@@ -531,8 +501,8 @@ describe('Budget edit permission enforcement', () => {
     addTripMember(testDb, trip.id, member.id);
 
     const { invalidatePermissionsCache } = await import('../../src/nest/permissions/permissions-cache');
-    testDb.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('perm_budget_edit', 'trip_owner')").run();
-    invalidatePermissionsCache();
+    await setAppSetting(orm, 'perm_budget_edit', 'trip_owner');
+    await invalidatePermissionsCache();
 
     const res = await request(app)
       .post(`/api/trips/${trip.id}/budget`)
@@ -540,8 +510,8 @@ describe('Budget edit permission enforcement', () => {
       .send({ name: 'Sneaky Expense', total_price: 100 });
     expect(res.status).toBe(403);
 
-    testDb.prepare("DELETE FROM app_settings WHERE key = 'perm_budget_edit'").run();
-    invalidatePermissionsCache();
+    await deleteRows(orm, AppSettings, { key: 'perm_budget_edit' });
+    await invalidatePermissionsCache();
   });
 
   it('BUDGET-018 — member cannot reorder categories when budget_edit is restricted to trip_owner', async () => {
@@ -552,8 +522,8 @@ describe('Budget edit permission enforcement', () => {
     createBudgetItem(testDb, trip.id, { name: 'Item', category: 'Transport' });
 
     const { invalidatePermissionsCache } = await import('../../src/nest/permissions/permissions-cache');
-    testDb.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('perm_budget_edit', 'trip_owner')").run();
-    invalidatePermissionsCache();
+    await setAppSetting(orm, 'perm_budget_edit', 'trip_owner');
+    await invalidatePermissionsCache();
 
     const res = await request(app)
       .put(`/api/trips/${trip.id}/budget/reorder/categories`)
@@ -561,7 +531,201 @@ describe('Budget edit permission enforcement', () => {
       .send({ orderedCategories: ['Transport'] });
     expect(res.status).toBe(403);
 
-    testDb.prepare("DELETE FROM app_settings WHERE key = 'perm_budget_edit'").run();
-    invalidatePermissionsCache();
+    await deleteRows(orm, AppSettings, { key: 'perm_budget_edit' });
+    await invalidatePermissionsCache();
+  });
+});
+
+describe('fork exchange rates over REST', () => {
+  it('persists intentional 1:1, ignores untrusted provenance, and applies a stored preview once', async () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    const cookie = authCookie(user.id);
+    const costs = `/api/trips/${trip.id}/budget`;
+    const rates = `/api/trips/${trip.id}/exchange-rates/CAD`;
+    const created = await request(app).post(costs).set('Cookie', cookie).send({
+      name: 'Explicit 1:1',
+      currency: 'CAD',
+      total_price: 30,
+      exchange_rate: 1,
+      exchange_rate_source: 'global',
+      exchange_rate_set_by_user_id: 99,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.item).toMatchObject({
+      exchange_rate: 1,
+      exchange_rate_source: 'explicit',
+      exchange_rate_set_by_user_id: user.id,
+    });
+    const id = created.body.item.id;
+    const legacyId = await insertRow(orm, BudgetItems, {
+      trip: trip.id,
+      name: 'Legacy 1',
+      total_price: 10,
+      currency: 'CAD',
+    });
+    await insertRow(orm, GlobalExchangeRateSnapshots, {
+      base_currency: 'EUR',
+      rates_json: '{"EUR":1,"CAD":1.5}',
+      source_version: 'fixture',
+      effective_date: '2026-01-01',
+      fetched_at: new Date().toISOString(),
+    });
+
+    const summary = await request(app).get(`${costs}/settlement`).set('Cookie', cookie);
+    expect(summary.status).toBe(200);
+    expect(summary.body.unconverted.item_ids).toEqual([legacyId]);
+    expect((await findRow(orm, BudgetItems, { id: legacyId }))?.exchange_rate_source).toBe('legacy');
+
+    const preview = async () => request(app).post(`${rates}/preview`).set('Cookie', cookie).send({ exchange_rate: 2 });
+    const stale = await preview();
+    expect(stale.status).toBe(201);
+    expect(stale.body.rows).toEqual([
+      expect.objectContaining({ id, old_trip_value: 30, source: 'explicit', selected: false }),
+      expect.objectContaining({ id: legacyId, old_trip_value: null, trip_value_delta: null, source: 'legacy' }),
+    ]);
+    const edited = await request(app).put(`${costs}/${id}`).set('Cookie', cookie).send({ total_price: 34 });
+    expect(edited.body.item.exchange_rate_source_version).toBe(created.body.item.exchange_rate_source_version);
+    const apply = async (preview_id: string) =>
+      request(app)
+        .post(`${rates}/apply`)
+        .set('Cookie', cookie)
+        .send({ preview_id, selected: [{ type: 'expense', id: legacyId }] });
+    expect((await apply(stale.body.preview_id)).status).toBe(409);
+
+    const current = await preview();
+    const applied = await apply(current.body.preview_id);
+    expect(applied.status).toBe(201);
+    expect(applied.body).toMatchObject({ rate: { exchange_rate: 2 }, updated: [{ type: 'expense', id: legacyId }] });
+    expect((await apply(current.body.preview_id)).status).toBe(400);
+    const read = await request(app).get(costs).set('Cookie', cookie);
+    expect(read.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id, exchange_rate: 1, exchange_rate_source: 'explicit' }),
+        expect.objectContaining({ id: legacyId, exchange_rate: 2, exchange_rate_source: 'trip' }),
+      ]),
+    );
+  });
+
+  it('rejects an unquoted foreign expense and books reservation prices at the trip default', async () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    const cookie = authCookie(user.id);
+    const base = `/api/trips/${trip.id}`;
+    const missing = await request(app).post(`${base}/budget`).set('Cookie', cookie).send({
+      name: 'No foreign quote',
+      currency: 'ZZZ',
+      total_price: 42,
+    });
+    expect(missing.status).toBe(400);
+    const set = await request(app)
+      .put(`${base}/exchange-rates/ZZZ`)
+      .set('Cookie', cookie)
+      .send({ exchange_rate: 1, note: 'Booked rate' });
+    expect(set.status).toBe(200);
+
+    const booking = await request(app)
+      .post(`${base}/reservations`)
+      .set('Cookie', cookie)
+      .send({
+        title: 'Booked in another currency',
+        create_budget_entry: { currency: 'ZZZ', total_price: 42 },
+      });
+    expect(booking.status).toBe(201);
+    const row = await findRow(orm, BudgetItems, { trip: trip.id });
+    expect(row).toMatchObject({
+      currency: 'ZZZ',
+      exchange_rate: 1,
+      exchange_rate_source: 'trip',
+      exchange_rate_set_by_user_id: user.id,
+    });
+  });
+
+  it('keeps historical currencyless payments in the display base and records new payments in the trip base', async () => {
+    const { user } = createUser(testDb);
+    const { user: member } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    addTripMember(testDb, trip.id, member.id);
+    const cookie = authCookie(user.id);
+    const costs = `/api/trips/${trip.id}/budget`;
+    const legacyId = await insertRow(orm, BudgetSettlements, {
+      trip: trip.id,
+      fromUser: member.id,
+      toUser: user.id,
+      amount: 10,
+      currency: null,
+      exchange_rate_source: 'identity',
+    });
+    const input = { from_user_id: member.id, to_user_id: user.id, amount: 10 };
+    const payment = await request(app).post(`${costs}/settlements`).set('Cookie', cookie).send(input);
+    expect(payment.status).toBe(201);
+    expect(payment.body.settlement.currency).toBe('EUR');
+
+    const edit = await request(app)
+      .put(`${costs}/settlements/${legacyId}`)
+      .set('Cookie', cookie)
+      .send({ ...input, note: 'Historical payment' });
+    expect(edit.status).toBe(200);
+    expect(edit.body.settlement.currency).toBeNull();
+
+    const summary = await request(app).get(`${costs}/settlement?base=USD&base_rate=2`).set('Cookie', cookie);
+    expect(summary.status).toBe(200);
+    expect(summary.body.currency).toBe('USD');
+    expect(summary.body.finalBudgets.find((row: { user_id: number }) => row.user_id === user.id).sources.moved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ settlement_id: legacyId, cents: 1000 }),
+        expect.objectContaining({ settlement_id: payment.body.settlement.id, cents: 2000 }),
+      ]),
+    );
+  });
+
+  it('rebases booked expenses, transfers and defaults together using the outgoing-currency bridge', async () => {
+    const { user } = createUser(testDb);
+    const { user: member } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    addTripMember(testDb, trip.id, member.id);
+    const cookie = authCookie(user.id);
+    const base = `/api/trips/${trip.id}`;
+    const costs = `${base}/budget`;
+    const rates = `${base}/exchange-rates`;
+    await insertRow(orm, GlobalExchangeRateSnapshots, {
+      base_currency: 'USD',
+      rates_json: '{"USD":1,"EUR":0.8}',
+      source_version: 'test-bridge',
+      fetched_at: new Date().toISOString(),
+    });
+    const change = (currency: string) => request(app).put(base).set('Cookie', cookie).send({ currency });
+    const set = await request(app).put(`${rates}/CAD`).set('Cookie', cookie).send({ exchange_rate: 1.25 });
+    expect(set.status).toBe(200);
+    const expense = await request(app)
+      .post(costs)
+      .set('Cookie', cookie)
+      .send({ name: 'Implicit euros', total_price: 100 });
+    expect(expense.status).toBe(201);
+    const payment = await request(app).post(`${costs}/settlements`).set('Cookie', cookie).send({
+      from_user_id: user.id,
+      to_user_id: member.id,
+      currency: 'CAD',
+      exchange_rate: 1,
+      amount: 24,
+    });
+    expect(payment.status).toBe(201);
+    expect((await change('ZZZ')).status).toBe(400);
+    expect((await findRow(orm, BudgetSettlements, { id: payment.body.settlement.id }))?.exchange_rate).toBe(1);
+
+    expect((await change('USD')).status).toBe(200);
+    expect(await findRow(orm, BudgetItems, { id: expense.body.item.id })).toMatchObject({
+      currency: 'EUR',
+      exchange_rate: 0.8,
+      total_price: 100,
+    });
+    expect(await findRow(orm, BudgetSettlements, { id: payment.body.settlement.id })).toMatchObject({
+      currency: 'CAD',
+      exchange_rate: 0.8,
+      amount: 24,
+      exchange_rate_source: 'explicit',
+    });
+    const defaults = await request(app).get(rates).set('Cookie', cookie);
+    expect(defaults.body.rates).toEqual([expect.objectContaining({ currency: 'CAD', exchange_rate: 1 })]);
   });
 });

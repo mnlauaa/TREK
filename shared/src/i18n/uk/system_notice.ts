@@ -9,16 +9,8 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_plan': 'Детальні плани по днях для будь-яких поїздок',
   'system_notice.welcome_v1.highlight_share': 'Спільне планування',
   'system_notice.welcome_v1.highlight_offline': 'Працює офлайн на мобільному',
-  'system_notice.dev_test_modal.title': '[Dev] Test notice',
-  'system_notice.dev_test_modal.body': 'This is a dev-only test notice.',
-  'system_notice.thank_you_support.title': 'Дякую, що користуєтесь TREK',
-  'system_notice.thank_you_support.body':
-    'Невелика подяка за те, що встановили TREK — для мене це справді багато значить.\n\nЯ розробник-одинак і створюю TREK у вільний час. Усе почалося як маленький інструмент для моїх власних поїздок, і відтоді я щиро вражений підтримкою та інтересом спільноти. TREK зроблено з великою любов’ю з мого боку — але також завдяки багатьом чудовим зовнішнім контриб’юторам, які допомогли його сформувати.\n\n**TREK має відкритий код і повністю безкоштовний — і таким залишиться назавжди. Жодних платних тарифів, жодних підписок, жодних підводних каменів. Обіцяю.**\n\nЯкщо TREK корисний для вас і ви хочете підтримати його розробку, невелика кава справді допомагає мені продовжувати — жодного тиску, але кожна чашка підтримує ці пізні ночі.\n\nДякую, що ви тут.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% відкритий код на GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Безкоштовно назавжди — жодних платних тарифів',
-  'system_notice.thank_you_support.highlight_community': 'Створено разом зі спільнотою',
-  'system_notice.thank_you_support.cta_bmc': 'Buy Me a Coffee',
-  'system_notice.thank_you_support.cta_kofi': 'Підтримати на Ko-fi',
+  'system_notice.dev_test_modal.title': '[Dev] Тестове повідомлення',
+  'system_notice.dev_test_modal.body': 'Це тестове повідомлення лише для розробки.',
   'system_notice.pager.prev': 'Попереднє повідомлення',
   'system_notice.pager.next': 'Наступне повідомлення',
   'system_notice.pager.counter': '{current} / {total}',
@@ -54,43 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': 'Потрібна дія: конфлікт облікового запису користувача',
   'system_notice.v3014_whitespace_collision.body':
     'Оновлення 3.0.14 виявило один або кілька конфліктів імен користувачів або електронних адрес, спричинених початковими або кінцевими пробілами в збережених облікових записах. Уражені облікові записи було автоматично перейменовано. Перевірте журнали сервера на рядки, що починаються з **[migration] WHITESPACE COLLISION**, щоб визначити, які облікові записи потребують перевірки.',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Оновлення встановлено',
-  'system_notice.release_notes.headline': 'Чотири речі, які TREK тепер робить сам.',
-  'system_notice.release_notes.intro':
-    'Власний API місць, автоподорожі від початку до кінця, ваша історія розташувань у ваших руках, і ваші документи в синхронізації.',
-  'system_notice.release_notes.features_label': 'Головні новинки',
-  'system_notice.release_notes.features_aside': 'І це далеко не все',
-  'system_notice.release_notes.feature_places_title': 'TREK Places API',
-  'system_notice.release_notes.feature_places_body':
-    'Перший планувальник подорожей з відкритим кодом і власним API місць. 73,6 мільйона місць, без ключа й квот.',
-  'system_notice.release_notes.feature_roadtrip_title': 'Доповнення «Автоподорож»',
-  'system_notice.release_notes.feature_roadtrip_body':
-    'Планує поїздку сам: маршрут, відстань, години й зупинки. Вимкнено, поки адмін не ввімкне.',
-  'system_notice.release_notes.feature_dawarich_title': 'Інтеграція з Dawarich',
-  'system_notice.release_notes.feature_dawarich_body':
-    'Self-hosted альтернатива Google Timeline, яку тепер можна читати прямо в TREK. TREK читає, і тільки читає.',
-  'system_notice.release_notes.footnote': 'А також довгий список дрібніших змін по всьому TREK.',
-  'system_notice.release_notes.notes_label': 'Нотатки до релізу',
-  'system_notice.release_notes.note_eyebrow': 'Слово від мейнтейнера',
-  'system_notice.release_notes.note_title': 'Саме заради вас я далі розвиваю TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK починався як маленький інструмент для моїх власних поїздок, який я писав після роботи, бо хотів планувати їх краще. І відтоді він, власне, не переставав рости. Майже все, чим ви користуєтесь, створено пізно вночі, на вихідних, у поїздах, поруч з основною роботою, і було чимало вечорів, коли я тихо питав себе, чи хтось узагалі колись його відкриє.',
-  'system_notice.release_notes.promise_label': 'Обіцянка',
-  'system_notice.release_notes.promise_lead': 'TREK залишиться безкоштовним назавжди.',
-  'system_notice.release_notes.promise_text':
-    'Кожна функція, кожне оновлення, для всіх. Жодних платних тарифів, жодних підписок, жодних підводних каменів.',
-  'system_notice.release_notes.note_body_after':
-    'А потім його відкрили ви. За кілька місяців вас стали тисячі: зірки, звіти про баги, переклади мовами, якими я не володію, пул-реквести від людей, яких я ніколи не зустрічав. Я й досі щоранку насамперед заглядаю в репозиторій, і досі в це не зовсім віриться.',
-  'system_notice.release_notes.note_closing': 'Дякую, що ви тут. Ваш Maurice',
-  'system_notice.release_notes.support_lead':
-    'TREK безкоштовний і таким залишиться, а от сервери, домени й безліч пізніх ночей ні.',
-  'system_notice.release_notes.support_text':
-    'Якщо TREK заслужив місце у ваших подорожах, пригостіть мене кавою і допоможіть наблизити наступний реліз.',
-  'system_notice.release_notes.cta_bmc': 'Buy me a coffee',
-  'system_notice.release_notes.cta_kofi': 'Підтримати на Ko-fi',
-  'system_notice.release_notes.feature_docsync_title': 'Синхронізація документів',
-  'system_notice.release_notes.feature_docsync_body':
-    'Paperless-ngx, Papra, Nextcloud, OpenCloud і Synology Drive. Документи подорожі рухаються в обидва боки зі сховищем, яке ви вже використовуєте.',
 };
 export default system_notice;

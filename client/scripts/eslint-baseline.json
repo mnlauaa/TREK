@@ -1,0 +1,52 @@
+{
+  "src": {
+    "@typescript-eslint/no-non-null-assertion": 374,
+    "@typescript-eslint/no-misused-promises": 840,
+    "no-console": 88,
+    "complexity": 217,
+    "@typescript-eslint/no-explicit-any": 144,
+    "trek/no-swallowed-catch": 123,
+    "max-params": 31,
+    "trek/store-without-selector": 66,
+    "react-hooks/refs": 532,
+    "react-hooks/set-state-in-effect": 193,
+    "@typescript-eslint/no-floating-promises": 163,
+    "react-hooks/exhaustive-deps": 115,
+    "@typescript-eslint/no-unused-vars": 120,
+    "react-hooks/immutability": 28,
+    "max-lines-per-function": 130,
+    "react-hooks/static-components": 50,
+    "react-hooks/preserve-manual-memoization": 12,
+    "no-useless-assignment": 7,
+    "no-empty": 19,
+    "trek/no-window-globals": 41,
+    "react-refresh/only-export-components": 44,
+    "unused-disable-directive": 4,
+    "max-depth": 21,
+    "react-hooks/void-use-memo": 1,
+    "@typescript-eslint/no-unused-expressions": 2,
+    "react-hooks/purity": 2,
+    "preserve-caught-error": 53,
+    "no-useless-escape": 1
+  },
+  "suppressed": {
+    "@typescript-eslint/no-explicit-any": 38,
+    "react-hooks/exhaustive-deps": 46
+  },
+  "tests": {
+    "@typescript-eslint/no-explicit-any": 490,
+    "@typescript-eslint/no-non-null-assertion": 1915,
+    "@typescript-eslint/no-misused-promises": 22,
+    "@typescript-eslint/no-unused-vars": 51,
+    "@typescript-eslint/no-floating-promises": 33,
+    "trek/no-window-globals": 325,
+    "trek/no-swallowed-catch": 14,
+    "react-hooks/globals": 5,
+    "react-hooks/refs": 22,
+    "@typescript-eslint/no-this-alias": 1,
+    "trek/store-without-selector": 3,
+    "@typescript-eslint/no-unsafe-function-type": 2,
+    "no-console": 2,
+    "react-refresh/only-export-components": 1
+  }
+}

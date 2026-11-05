@@ -7,6 +7,7 @@ const common: TranslationStrings = {
   'common.cancel': 'Annuleren',
   'common.clear': 'Wissen',
   'common.delete': 'Verwijderen',
+  'common.remove': 'Verwijderen',
   'common.preview': 'Voorbeeld',
   'common.edit': 'Bewerken',
   'common.add': 'Toevoegen',
@@ -35,6 +36,9 @@ const common: TranslationStrings = {
   'common.rename': 'Hernoemen',
   'common.discardChanges': 'Wijzigingen verwerpen',
   'common.discard': 'Verwerpen',
+  'common.unsavedTitle': 'Wijzigingen weggooien?',
+  'common.unsavedMessage': 'Wat je hier hebt ingevuld, is nog niet opgeslagen.',
+  'common.keepEditing': 'Verder bewerken',
   'common.name': 'Naam',
   'common.email': 'E-mail',
   'common.password': 'Wachtwoord',
@@ -51,19 +55,21 @@ const common: TranslationStrings = {
   'common.copied': 'Gekopieerd',
   'common.justNow': 'zojuist',
   'common.hoursAgo': '{count}u geleden',
+  'common.hoursAgo.one': '{count}u geleden',
   'common.daysAgo': '{count}d geleden',
-  'common.datepicker.prevMonth': 'Previous month', // en-fallback
-  'common.datepicker.nextMonth': 'Next month', // en-fallback
-  'common.datepicker.prevYear': 'Previous year', // en-fallback
-  'common.datepicker.nextYear': 'Next year', // en-fallback
-  'common.datepicker.prevYears': 'Previous years', // en-fallback
-  'common.datepicker.nextYears': 'Next years', // en-fallback
-  'common.datepicker.selectMonth': 'Select month', // en-fallback
-  'common.datepicker.selectYear': 'Select year', // en-fallback
-  'common.datepicker.enterManually': 'Enter date manually', // en-fallback
-  'common.datepicker.typeDate': 'Type a date', // en-fallback
-  'common.datepicker.dialog': 'Date picker', // en-fallback
-  'common.datepicker.clearDate': 'Clear date', // en-fallback
+  'common.daysAgo.one': '{count}d geleden',
+  'common.datepicker.prevMonth': 'Vorige maand',
+  'common.datepicker.nextMonth': 'Volgende maand',
+  'common.datepicker.prevYear': 'Vorig jaar',
+  'common.datepicker.nextYear': 'Volgend jaar',
+  'common.datepicker.prevYears': 'Vorige jaren',
+  'common.datepicker.nextYears': 'Volgende jaren',
+  'common.datepicker.selectMonth': 'Maand kiezen',
+  'common.datepicker.selectYear': 'Jaar kiezen',
+  'common.datepicker.enterManually': 'Datum handmatig invoeren',
+  'common.datepicker.typeDate': 'Typ een datum',
+  'common.datepicker.dialog': 'Datumkiezer',
+  'common.datepicker.clearDate': 'Datum wissen',
   'common.errorTitle': 'Er is iets misgegaan',
   'common.errorBody': 'Dit deel van de app werkt niet meer. Je gegevens zijn veilig.',
   'common.errorPanelTitle': 'Dit onderdeel kon niet worden getoond',
@@ -74,12 +80,6 @@ const common: TranslationStrings = {
   'common.errorUpdateBody':
     'TREK is bijgewerkt terwijl dit tabblad open stond. Herlaad om de nieuwe versie te krijgen.',
   'common.errorPluginTitle': 'Deze plug-in kon niet worden getoond',
-  'legal.title': 'Legal & source',
-  'legal.description': 'License information and the exact source code for this deployed version.',
-  'legal.agpl':
-    'This application is licensed under the GNU Affero General Public License version 3. Remote users may obtain the corresponding source code at no charge.',
-  'legal.license': 'Read the license',
-  'legal.source': 'Corresponding source',
-  'legal.sourceDescription': 'Source code for this deployed build:',
+  'common.needsConnection': 'Hiervoor is een verbinding nodig. Probeer het opnieuw zodra TREK weer online is.',
 };
 export default common;

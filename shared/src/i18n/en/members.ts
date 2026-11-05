@@ -1,14 +1,13 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'Share Trip',
   'members.inviteUser': 'Invite User',
   'members.selectUser': 'Select user…',
   'members.invite': 'Invite',
   'members.allHaveAccess': 'All users already have access.',
   'members.access': 'Access',
-  'members.person': 'person',
-  'members.persons': 'persons',
+  'members.persons': 'people',
+  'members.persons.one': 'person',
   'members.you': 'you',
   'members.owner': 'Owner',
   'members.leaveTrip': 'Leave trip',
@@ -33,23 +32,9 @@ const members: TranslationStrings = {
   'members.guestAddError': 'Failed to add guest',
   'members.guestRenameError': 'Failed to rename guest',
   'members.guestRemoved': 'Guest removed',
-  'members.confirmRemoveGuest': 'Remove this guest? Their assignments and cost shares will be removed too.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'Remove this guest? Their assignments are removed and their share of each expense goes to the others in its split.',
+  'members.guestHasPayments':
+    'This guest paid for an expense or is part of a recorded payment. Change the payer or delete the payment first.',
 };
 export default members;

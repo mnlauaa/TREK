@@ -1,20 +1,38 @@
 /**
  * Budget module e2e — exercises the migrated /api/trips/:tripId/budget endpoints
- * through the real JwtAuthGuard against a temp SQLite db carrying the full real
- * schema (createTables + runMigrations), so the folded BudgetService runs its
- * real SQL. Only the db singleton (trip access) and the WebSocket broadcast are
- * mocked; the permission check is a spy on the container's PermissionsService.
+ * through the real JwtAuthGuard against a temp SQLite db carrying the full real,
+ * migrated schema (createSnapshotTestDb), so the folded BudgetService runs its
+ * real SQL. Only the db singleton (trip access) is mocked, and broadcasts reach
+ * the real transport, which has no sockets here; the permission check is a spy on the container's PermissionsService.
+ * ReservationsModule is mounted beside it because an expense can be linked to a
+ * booking (#2084), and deleting that booking has to take the expense with it.
  */
-import { runMigrations } from '../../src/db/migrations';
-import { createTables } from '../../src/db/schema';
+import { db } from '../../src/db/database';
+import { BudgetItems } from '../../src/db/entities/BudgetItems.entity';
+import { BudgetSettlements } from '../../src/db/entities/BudgetSettlements.entity';
+import { Reservations } from '../../src/db/entities/Reservations.entity';
+import { TripMembers } from '../../src/db/entities/TripMembers.entity';
+import { Trips } from '../../src/db/entities/Trips.entity';
+import type { McpContext } from '../../src/nest-mcp';
+import { BudgetItemsMcp } from '../../src/nest/budget/budget-items.mcp';
 import { BudgetModule } from '../../src/nest/budget/budget.module';
-import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { ZodValidationPipe } from '../../src/nest/common/zod-validation.pipe';
-import { DatabaseModule } from '../../src/nest/database/database.module';
+import { withRequestContext } from '../../src/nest/database/request-context';
+import { NotificationsService } from '../../src/nest/notifications/notifications.service';
 import { PermissionsService } from '../../src/nest/permissions/permissions.service';
 import { RealtimeModule } from '../../src/nest/realtime/realtime.module';
+import { ReservationsModule } from '../../src/nest/reservations/reservations.module';
+import { addBudgetItemMember, addBudgetItemPayer, makeBudgetItem } from '../helpers/factories/budget';
+import { makePlace } from '../helpers/factories/places';
+import { makeReservation } from '../helpers/factories/reservations';
+import { countRows, deleteRows, findRow, insertRow } from '../helpers/factories/rows';
+import { addTripMember, makeTrip } from '../helpers/factories/trips';
+import { makeUser } from '../helpers/factories/users';
+import { createTestMikroOrmModule, createTestOrm, type TestOrm } from '../helpers/test-orm';
+import { TestUnitOfWorkModule } from '../helpers/test-uow';
 import { sessionCookie } from './harness';
+import { MikroORM } from '@mikro-orm/core';
 import { Test } from '@nestjs/testing';
 
 import cookieParser from 'cookie-parser';
@@ -22,29 +40,32 @@ import type { Server } from 'http';
 import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi, type MockInstance } from 'vitest';
 
-const { db } = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require('better-sqlite3');
-  const tmp = new Database(':memory:');
-  tmp.exec('PRAGMA journal_mode = WAL');
-  tmp.exec('PRAGMA foreign_keys = ON');
-  return { db: tmp };
+vi.mock('../../src/db/database', async () => {
+  const { createSnapshotTestDb } = await import('../helpers/db-mock');
+  const db = createSnapshotTestDb();
+  // Trip access reads through TripsRepository now; the module only hands out the handle.
+  return { db, closeDb: () => {}, reinitialize: () => {} };
 });
-const { canAccessTrip } = vi.hoisted(() => ({ canAccessTrip: vi.fn() }));
-
-vi.mock('../../src/db/database', () => ({
-  db,
-  closeDb: () => {},
-  reinitialize: () => {},
-  canAccessTrip,
-  getPlaceWithTags: () => null,
-  isOwner: () => false,
-}));
-vi.mock('../../src/websocket', () => ({ broadcast: vi.fn() }));
 
 // Since the permissions DI migration, the check is a spy on the container's
 // PermissionsService singleton (created in beforeAll, after build()).
 let checkPermission: MockInstance;
+
+let orm: TestOrm;
+
+/** The stored expense; fails the case when it is gone. */
+async function budgetRow(id: number) {
+  const row = await findRow(orm, BudgetItems, { id });
+  if (!row) throw new Error(`no budget item ${id}`);
+  return row;
+}
+
+/** The stored settlement; fails the case when it is gone. */
+async function settlementRow(id: number) {
+  const row = await findRow(orm, BudgetSettlements, { id });
+  if (!row) throw new Error(`no settlement ${id}`);
+  return row;
+}
 
 describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
   let server: Server;
@@ -53,12 +74,18 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
 
   async function build() {
     const moduleRef = await Test.createTestingModule({
-      imports: [DatabaseModule, RealtimeModule, BudgetModule],
-    }).compile();
-    // Keep real frozen-rate writes and provenance; only the provider read is
-    // stubbed for this all-EUR fixture so it never touches the network.
-    vi.spyOn(moduleRef.get(ExchangeRatesService), 'getRates').mockResolvedValue(null);
-    vi.spyOn(moduleRef.get(ExchangeRatesService), 'getGlobalRateSnapshot').mockResolvedValue(null);
+      imports: [
+        await TestUnitOfWorkModule.forRoot(db),
+        await createTestMikroOrmModule(db),
+        RealtimeModule,
+        BudgetModule,
+        ReservationsModule,
+      ],
+    })
+      // A booking delete notifies the trip; nothing here is listening.
+      .overrideProvider(NotificationsService)
+      .useValue({ send: vi.fn().mockResolvedValue(undefined) })
+      .compile();
     const nest = moduleRef.createNestApplication();
     nest.use(cookieParser());
     nest.useGlobalFilters(new TrekExceptionFilter());
@@ -68,34 +95,37 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
   }
 
   beforeAll(async () => {
-    createTables(db);
-    runMigrations(db);
-    // The temp db carries the real schema (password_hash NOT NULL), so seed the
-    // auth users directly instead of via the trimmed-DDL seedUser helper.
-    db.prepare(
-      "INSERT INTO users (id, username, email, password_hash, role, password_version) VALUES (1, 'e2e-user', 'e2e@example.test', 'x', 'user', 0)",
-    ).run();
-    db.prepare(
-      "INSERT INTO users (id, username, email, password_hash, role, password_version) VALUES (2, 'e2e-peer', 'peer@example.test', 'x', 'user', 0)",
-    ).run();
-    tripId = Number(
-      db.prepare("INSERT INTO trips (user_id, title, currency) VALUES (1, 'E2E Trip', 'EUR')").run().lastInsertRowid,
-    );
+    // The temp db carries the real schema, so the auth users go in through the
+    // factories, pinned to the ids the session cookies are signed for.
+    orm = await createTestOrm(db);
+    await makeUser(orm, { id: 1, username: 'e2e-user', email: 'e2e@example.test', role: 'user', password_version: 0 });
+    await makeUser(orm, { id: 2, username: 'e2e-peer', email: 'peer@example.test', role: 'user', password_version: 0 });
+    tripId = (await makeTrip(orm, 1, { title: 'E2E Trip', currency: 'EUR' })).id;
     // The peer settles up with the owner below, so they have to be on the trip:
     // a settlement between people who do not share one is refused.
-    db.prepare('INSERT INTO trip_members (trip_id, user_id) VALUES (?, 2)').run(tripId);
+    await addTripMember(orm, tripId, 2);
     app = await build();
     checkPermission = vi.spyOn(app.get(PermissionsService), 'checkPermission');
     server = app.getHttpServer();
   });
 
   beforeEach(() => {
-    canAccessTrip.mockReturnValue({ id: tripId, user_id: 1, currency: 'EUR' });
+    // 0b review L2 / security review F-B7: `canAccessTrip` is dead mock
+    // scaffolding — `TripAccessGuard` reads `TripsRepository.findAccessible`
+    // directly now (Plan 3c Task 0b), so `db/database`'s `canAccessTrip`
+    // property is never imported by production code; this line used to be a
+    // no-op that read as if it still controlled access.
     checkPermission.mockReturnValue(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
   });
 
   afterAll(async () => {
+    vi.unstubAllGlobals();
     await app.close();
+    await orm.close();
   });
 
   it('401 without a session cookie', async () => {
@@ -104,10 +134,20 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
   });
 
   it('404 when the trip is not accessible', async () => {
-    canAccessTrip.mockReturnValue(undefined);
-    const res = await request(server).get(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1));
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: 'Trip not found' });
+    // Plan 3c Task 0b: TripAccessGuard reads TripsRepository.findAccessible
+    // directly now, a real query — `canAccessTrip.mockReturnValue(...)` no
+    // longer intercepts it. The trip row is seeded once in `beforeAll` (not
+    // re-seeded per test), so it is removed and restored around this one
+    // assertion instead.
+    await deleteRows(orm, Trips, { id: tripId });
+    try {
+      const res = await request(server).get(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1));
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: 'Trip not found' });
+    } finally {
+      await insertRow(orm, Trips, { id: tripId, user: 1, title: 'E2E Trip', currency: 'EUR' });
+      await addTripMember(orm, tripId, 2);
+    }
   });
 
   it('201 on create with permission, then 200 list returns the stored row', async () => {
@@ -124,8 +164,8 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       payers: [],
     });
 
-    const row = db.prepare('SELECT name, total_price FROM budget_items WHERE id = ?').get(created.body.item.id);
-    expect(row).toEqual({ name: 'Hotel', total_price: 200 });
+    const row = await budgetRow(created.body.item.id);
+    expect({ name: row.name, total_price: row.total_price }).toEqual({ name: 'Hotel', total_price: 200 });
 
     const list = await request(server).get(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1));
     expect(list.status).toBe(200);
@@ -182,10 +222,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     expect(refund.status).toBe(201);
     expect(refund.body.item).toMatchObject({ total_price: -30 });
     expect(refund.body.item.payers).toEqual([expect.objectContaining({ user_id: 1, amount: -30 })]);
-    const row = db.prepare('SELECT total_price FROM budget_items WHERE id = ?').get(refund.body.item.id) as {
-      total_price: number;
-    };
-    expect(row.total_price).toBe(-30);
+    expect((await budgetRow(refund.body.item.id)).total_price).toBe(-30);
 
     const settlement = await request(server)
       .get(`/api/trips/${tripId}/budget/settlement`)
@@ -247,6 +284,54 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     }
   });
 
+  it('a won trip offers whole won, and settling what it offers squares everyone (#2604)', async () => {
+    // ₩10,000 three ways nets to 6,666.67 / -3,333.33 / -3,333.34 in the ledger. The
+    // settlement answered those hundredths, the panel rounded each to 6,667 / -3,333 /
+    // -3,333, and Settle booked 3,333.34 won.
+    await makeUser(orm, {
+      id: 5,
+      username: 'e2e-third',
+      email: 'third@example.test',
+      role: 'user',
+      password_version: 0,
+    });
+    const krwTrip = (await makeTrip(orm, 1, { title: 'FIX KRW', currency: 'KRW' })).id;
+    await addTripMember(orm, krwTrip, 2);
+    await addTripMember(orm, krwTrip, 5);
+
+    const dinner = await request(server)
+      .post(`/api/trips/${krwTrip}/budget`)
+      .set('Cookie', sessionCookie(1))
+      .send({ name: 'Dinner', currency: 'KRW', payers: [{ user_id: 1, amount: 10000 }], member_ids: [1, 2, 5] });
+    expect(dinner.status).toBe(201);
+
+    const read = () =>
+      request(server).get(`/api/trips/${krwTrip}/budget/settlement?base=KRW`).set('Cookie', sessionCookie(1));
+    const before = await read();
+    expect(before.status).toBe(200);
+    const balances = before.body.balances as { user_id: number; balance: number }[];
+    const flows = before.body.flows as { from: { user_id: number }; to: { user_id: number }; amount: number }[];
+    // Which of the three carries the odd hundredth depends on the item id; what is
+    // shown is whole won either way, adds up to zero, and the flows move exactly it.
+    for (const b of balances) expect(Number.isInteger(b.balance)).toBe(true);
+    expect(balances.reduce((a, b) => a + b.balance, 0)).toBe(0);
+    expect(flows.every((f) => Number.isInteger(f.amount))).toBe(true);
+    expect(flows.reduce((a, f) => a + f.amount, 0)).toBe(balances.find((b) => b.user_id === 1)?.balance);
+
+    const paid = await Promise.all(
+      flows.map((f) =>
+        request(server)
+          .post(`/api/trips/${krwTrip}/budget/settlements`)
+          .set('Cookie', sessionCookie(1))
+          .send({ from_user_id: f.from.user_id, to_user_id: f.to.user_id, amount: f.amount, currency: 'KRW' }),
+      ),
+    );
+    expect(paid.map((r) => r.status)).toEqual(flows.map(() => 201));
+    const after = await read();
+    expect((after.body.balances as { balance: number }[]).map((b) => b.balance)).toEqual([0, 0, 0]);
+    expect(after.body.flows).toEqual([]);
+  });
+
   it('GET /summary/per-person reads a dollar bill on a euro trip at its booked rate (#2525)', async () => {
     const hotel = await request(server)
       .post(`/api/trips/${tripId}/budget`)
@@ -297,10 +382,8 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       settled_at: '2026-01-09',
     });
 
-    const row = db
-      .prepare('SELECT amount, settled_at FROM budget_settlements WHERE id = ?')
-      .get(created.body.settlement.id);
-    expect(row).toEqual({ amount: 15, settled_at: '2026-01-09' });
+    const row = await settlementRow(created.body.settlement.id);
+    expect({ amount: row.amount, settled_at: row.settled_at }).toEqual({ amount: 15, settled_at: '2026-01-09' });
   });
 
   it('200 on settlement update that clears the day, leaving NULL in the column', async () => {
@@ -317,8 +400,33 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     expect(res.status).toBe(200);
     expect(res.body.settlement.settled_at).toBeNull();
 
-    const row = db.prepare('SELECT settled_at FROM budget_settlements WHERE id = ?').get(created.body.settlement.id);
-    expect(row).toEqual({ settled_at: null });
+    expect((await settlementRow(created.body.settlement.id)).settled_at).toBeNull();
+  });
+
+  it('keeps a note on a settlement, leaves it alone when omitted and clears it on blank (#2340)', async () => {
+    const created = await request(server)
+      .post(`/api/trips/${tripId}/budget/settlements`)
+      .set('Cookie', sessionCookie(1))
+      .send({ from_user_id: 2, to_user_id: 1, amount: 10, note: '  Cash at the airport  ' });
+    expect(created.status).toBe(201);
+    expect(created.body.settlement.note).toBe('Cash at the airport');
+    const url = `/api/trips/${tripId}/budget/settlements/${created.body.settlement.id}`;
+
+    const kept = await request(server)
+      .put(url)
+      .set('Cookie', sessionCookie(1))
+      .send({ from_user_id: 2, to_user_id: 1, amount: 12 });
+    expect(kept.body.settlement.note).toBe('Cash at the airport');
+    const cleared = await request(server)
+      .put(url)
+      .set('Cookie', sessionCookie(1))
+      .send({ from_user_id: 2, to_user_id: 1, amount: 12, note: '   ' });
+    expect(cleared.body.settlement.note).toBeNull();
+    const tooLong = await request(server)
+      .put(url)
+      .set('Cookie', sessionCookie(1))
+      .send({ from_user_id: 2, to_user_id: 1, amount: 12, note: 'x'.repeat(501) });
+    expect(tooLong.status).toBe(400);
   });
 
   it('404 on settlement update when it does not exist', async () => {
@@ -330,39 +438,215 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     expect(res.body).toEqual({ error: 'Settlement not found' });
   });
 
-  // The VND/AUD report. The rates override above answers null for every base, which is
-  // exactly that server: it never reached the rates provider, so the only rates there
-  // are the ones the browser lends.
+  // Plan 4 Task 8b (U6) — :id is now parsed ONCE at the controller gate
+  // (toRowId), so a non-numeric id 404s cleanly through that guard instead
+  // of falling through to the repository and depending on SQLite's
+  // column-affinity CAST to simply not match (the legacy outcome was also a
+  // 404, same status — this pins the gate itself, not just the status).
+  it('404 (not 500) on a budget item update with a non-numeric :id', async () => {
+    const res = await request(server)
+      .put(`/api/trips/${tripId}/budget/abc`)
+      .set('Cookie', sessionCookie(1))
+      .send({ name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Budget item not found' });
+  });
+
+  it('404 (not 500) on a budget item delete with a non-numeric :id', async () => {
+    const res = await request(server).delete(`/api/trips/${tripId}/budget/abc`).set('Cookie', sessionCookie(1));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Budget item not found' });
+  });
+
+  // #2084: an expense that already exists can be linked to a booking of its trip
+  // (several per booking), let go of again, and goes with the booking it is on.
+  describe('linking expenses to bookings (#2084)', () => {
+    let bookingId: number;
+    let foreignBookingId: number;
+    let foreignPlaceId: number;
+    let fareId: number;
+    let luggageId: number;
+    let seatId: number;
+
+    const metadataOf = async (id: number) => {
+      const row = await findRow(orm, Reservations, { id });
+      if (!row) throw new Error(`no reservation ${id}`);
+      return row.metadata ? JSON.parse(row.metadata) : null;
+    };
+    /** The expense's booking link, or undefined once the expense is gone. */
+    const linkOf = async (id: number) => {
+      const row = await findRow(orm, BudgetItems, { id });
+      return row ? { reservation_id: row.reservation_id ?? null } : undefined;
+    };
+    const put = (id: number, body: Record<string, unknown>) =>
+      request(server).put(`/api/trips/${tripId}/budget/${id}`).set('Cookie', sessionCookie(1)).send(body);
+    const create = (body: Record<string, unknown>) =>
+      request(server).post(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1)).send(body);
+
+    beforeAll(async () => {
+      bookingId = (
+        await makeReservation(orm, tripId, {
+          title: 'Flight',
+          type: 'flight',
+          metadata: JSON.stringify({ seat: '12A' }),
+        })
+      ).id;
+      const otherTripId = (await makeTrip(orm, 1, { title: 'Other Trip', currency: 'EUR' })).id;
+      foreignBookingId = (await makeReservation(orm, otherTripId, { title: 'Elsewhere', type: 'flight' })).id;
+      foreignPlaceId = (await makePlace(orm, otherTripId, { name: 'Elsewhere', lat: null, lng: null, category: null }))
+        .id;
+    });
+
+    it('200 on linking two expenses to one booking, which then mirrors their sum', async () => {
+      const fare = await create({ name: 'Fare', total_price: 120 });
+      const luggage = await create({ name: 'Luggage', total_price: 30.5 });
+      expect(fare.status).toBe(201);
+      expect(luggage.status).toBe(201);
+      fareId = fare.body.item.id;
+      luggageId = luggage.body.item.id;
+
+      const first = await put(fareId, { reservation_id: bookingId });
+      expect(first.status).toBe(200);
+      expect(first.body.item).toMatchObject({ id: fareId, reservation_id: bookingId, total_price: 120 });
+      expect(await metadataOf(bookingId)).toEqual({ seat: '12A', price: '120' });
+
+      const second = await put(luggageId, { reservation_id: bookingId });
+      expect(second.status).toBe(200);
+      expect(await metadataOf(bookingId)).toEqual({ seat: '12A', price: '150.5' });
+
+      const list = await request(server).get(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1));
+      const linked = (list.body.items as { id: number; reservation_id: number | null }[])
+        .filter((i) => i.reservation_id === bookingId)
+        .map((i) => i.id);
+      expect(linked).toEqual([fareId, luggageId]);
+    });
+
+    it('400 on a booking or a place from another trip, on update and on create, writing nothing', async () => {
+      const relink = await put(fareId, { reservation_id: foreignBookingId, name: 'Hijacked' });
+      expect(relink.status).toBe(400);
+      expect(relink.body).toEqual({ error: 'reservation_id does not belong to this trip.' });
+      expect(await linkOf(fareId)).toEqual({ reservation_id: bookingId });
+      expect((await budgetRow(fareId)).name).toBe('Fare');
+      expect(await metadataOf(foreignBookingId)).toBeNull();
+
+      const place = await put(fareId, { place_id: foreignPlaceId });
+      expect(place.status).toBe(400);
+      expect(place.body).toEqual({ error: 'place_id does not belong to this trip.' });
+
+      const before = await countRows(orm, BudgetItems);
+      const created = await create({ name: 'Smuggled', total_price: 5, reservation_id: foreignBookingId });
+      expect(created.status).toBe(400);
+      expect(created.body).toEqual({ error: 'reservation_id does not belong to this trip.' });
+      expect(await countRows(orm, BudgetItems)).toBe(before);
+    });
+
+    it('400 on a reservation_id that is not a positive integer (Zod pipe envelope)', async () => {
+      const res = await put(fareId, { reservation_id: 0 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('reservation_id');
+      expect(await linkOf(fareId)).toEqual({ reservation_id: bookingId });
+    });
+
+    it('200 on unlinking: the expense stays and the booking price is worked out again', async () => {
+      const res = await put(luggageId, { reservation_id: null });
+      expect(res.status).toBe(200);
+      expect(res.body.item).toMatchObject({ id: luggageId, reservation_id: null, total_price: 30.5 });
+      expect(await linkOf(luggageId)).toEqual({ reservation_id: null });
+      expect(await metadataOf(bookingId)).toEqual({ seat: '12A', price: '120' });
+    });
+
+    it('201 on a second expense created straight onto the booking, which raises its price to the sum', async () => {
+      const seat = await create({ name: 'Seat', total_price: 15, reservation_id: bookingId });
+      expect(seat.status).toBe(201);
+      expect(seat.body.item.reservation_id).toBe(bookingId);
+      seatId = seat.body.item.id;
+      expect(await metadataOf(bookingId)).toEqual({ seat: '12A', price: '135' });
+    });
+
+    it('200 on new payers for a linked expense, whose derived total the booking price follows', async () => {
+      const res = await request(server)
+        .put(`/api/trips/${tripId}/budget/${seatId}/payers`)
+        .set('Cookie', sessionCookie(1))
+        .send({
+          payers: [
+            { user_id: 1, amount: 12 },
+            { user_id: 2, amount: 6 },
+          ],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.item).toMatchObject({ id: seatId, total_price: 18 });
+      expect(await metadataOf(bookingId)).toEqual({ seat: '12A', price: '138' });
+    });
+
+    it('200 on a currency-only change of a linked expense, which re-names the booking price', async () => {
+      const trainId = (await makeReservation(orm, tripId, { title: 'Train', type: 'train' })).id;
+      const ticket = await create({ name: 'Ticket', total_price: 60, reservation_id: trainId });
+      expect(ticket.status).toBe(201);
+      // In the trip currency, so the price carries no currency of its own.
+      expect(await metadataOf(trainId)).toEqual({ price: '60' });
+
+      const chf = await put(ticket.body.item.id, { currency: 'CHF', exchange_rate: 1.1 });
+      expect(chf.status).toBe(200);
+      expect(chf.body.item).toMatchObject({ currency: 'CHF', total_price: 60 });
+      expect(await metadataOf(trainId)).toEqual({ price: '60', priceCurrency: 'CHF' });
+
+      const back = await put(ticket.body.item.id, { currency: null });
+      expect(back.status).toBe(200);
+      expect(await metadataOf(trainId)).toEqual({ price: '60' });
+
+      // An expense with no currency and one naming the trip's own (EUR, in any
+      // case) are in the same money, so the booking shows their sum.
+      const bike = await create({ name: 'Bike ticket', total_price: 9.5, currency: 'eur', reservation_id: trainId });
+      expect(bike.status).toBe(201);
+      expect(await metadataOf(trainId)).toEqual({ price: '69.5', priceCurrency: 'EUR' });
+    });
+
+    it('deleting the booking removes every expense linked to it, and only those', async () => {
+      const unlinkedId = luggageId;
+
+      const res = await request(server)
+        .delete(`/api/trips/${tripId}/reservations/${bookingId}`)
+        .set('Cookie', sessionCookie(1));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true });
+
+      expect(await findRow(orm, Reservations, { id: bookingId })).toBeNull();
+      expect(await linkOf(fareId)).toBeUndefined();
+      expect(await linkOf(seatId)).toBeUndefined();
+      expect(await linkOf(unlinkedId)).toEqual({ reservation_id: null });
+
+      const list = await request(server).get(`/api/trips/${tripId}/budget`).set('Cookie', sessionCookie(1));
+      const ids = (list.body.items as { id: number }[]).map((i) => i.id);
+      expect(ids).not.toContain(fareId);
+      expect(ids).not.toContain(seatId);
+      expect(ids).toContain(unlinkedId);
+    });
+  });
+
+  // The VND/AUD report exercises an offline provider and a quote supplied by the browser.
   describe('rows no rate can convert', () => {
     /** A fresh AUD trip the owner shares with user 2, so these cases never meet the ledger above. */
-    function audTrip(): number {
-      const id = Number(
-        db.prepare("INSERT INTO trips (user_id, title, currency) VALUES (1, 'AUD Trip', 'AUD')").run().lastInsertRowid,
-      );
-      db.prepare('INSERT INTO trip_members (trip_id, user_id) VALUES (?, 2)').run(id);
-      canAccessTrip.mockReturnValue({ id, user_id: 1, currency: 'AUD' });
+    async function audTrip(): Promise<number> {
+      const id = (await makeTrip(orm, 1, { title: 'AUD Trip', currency: 'AUD' })).id;
+      await addTripMember(orm, id, 2);
       return id;
     }
     const balanceOf = (body: { balances: { user_id: number; balance: number }[] }, uid: number) =>
       body.balances.find((b) => b.user_id === uid)!.balance;
 
     it('VND/AUD regression: unfrozen VND bill is listed as unconverted, freeze-rates heals it from the browser quote, settlement nets 489.00, second freeze heals nothing', async () => {
-      const trip = audTrip();
-      const bill = await request(server)
-        .post(`/api/trips/${trip}/budget`)
-        .set('Cookie', sessionCookie(1))
-        .send({ name: 'Pho', currency: 'VND', exchange_rate: 1, payers: [{ user_id: 1, amount: 8920000 }], member_ids: [1, 2] });
-      expect(bill.status).toBe(201);
-      expect(bill.body.item.exchange_rate).toBe(1);
-      // Simulate a pre-freeze legacy row, rather than allowing new missing-rate writes.
-      db.prepare("UPDATE budget_items SET exchange_rate_source = 'legacy' WHERE id = ?").run(bill.body.item.id);
+      const trip = await audTrip();
+      const bill = await makeBudgetItem(orm, trip, { name: 'Pho', currency: 'VND', total_price: 8920000 });
+      await addBudgetItemPayer(orm, bill.id, 1, 8920000);
+      await addBudgetItemMember(orm, bill.id, 1);
+      await addBudgetItemMember(orm, bill.id, 2);
 
       // Left out whole before anything is written: no balance in VND's order of magnitude.
       const before = await request(server).get(`/api/trips/${trip}/budget/settlement`).set('Cookie', sessionCookie(1));
       expect(before.status).toBe(200);
       expect(before.body.currency).toBe('AUD');
       expect(before.body.unconverted).toEqual({
-        item_ids: [bill.body.item.id],
+        item_ids: [bill.id],
         settlement_ids: [],
         currencies: ['VND'],
       });
@@ -375,7 +659,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .send({ fallback_fx });
       expect(healed.status).toBe(200);
       expect(healed.body.items.map((i: { id: number; exchange_rate: number }) => [i.id, i.exchange_rate])).toEqual([
-        [bill.body.item.id, 18241.3],
+        [bill.id, 18241.3],
       ]);
       expect(healed.body).toMatchObject({ settlements: [], unresolved: [] });
 
@@ -392,17 +676,11 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .send({ fallback_fx: { base: 'AUD', rates: { VND: 25000 } } });
       expect(again.status).toBe(200);
       expect(again.body).toEqual({ items: [], settlements: [], unresolved: [] });
-      expect(
-        (
-          db.prepare('SELECT exchange_rate FROM budget_items WHERE id = ?').get(bill.body.item.id) as {
-            exchange_rate: number;
-          }
-        ).exchange_rate,
-      ).toBe(18241.3);
+      expect((await budgetRow(bill.id)).exchange_rate).toBe(18241.3);
     });
 
     it('POST with fallback_fx freezes at entry', async () => {
-      const trip = audTrip();
+      const trip = await audTrip();
       const res = await request(server)
         .post(`/api/trips/${trip}/budget`)
         .set('Cookie', sessionCookie(1))
@@ -418,7 +696,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     });
 
     it('POST /settlements in EUR with fallback_fx freezes the transfer', async () => {
-      const trip = audTrip();
+      const trip = await audTrip();
       const res = await request(server)
         .post(`/api/trips/${trip}/budget/settlements`)
         .set('Cookie', sessionCookie(1))
@@ -443,7 +721,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     });
 
     it('GET /settlement?base=EUR answers in AUD without base_rate and in EUR with it', async () => {
-      const trip = audTrip();
+      const trip = await audTrip();
       const dinner = await request(server)
         .post(`/api/trips/${trip}/budget`)
         .set('Cookie', sessionCookie(1))
@@ -466,8 +744,8 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       expect(balanceOf(quoted.body, 2)).toBe(-30.5);
     });
 
-    it('PUT currency change without a rate is refused atomically', async () => {
-      const trip = audTrip();
+    it('PUT currency change without a rate preserves the prior booking', async () => {
+      const trip = await audTrip();
       const created = await request(server)
         .post(`/api/trips/${trip}/budget`)
         .set('Cookie', sessionCookie(1))
@@ -479,19 +757,17 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .set('Cookie', sessionCookie(1))
         .send({ currency: 'VND' });
       expect(res.status).toBe(400);
-      expect(
-        db.prepare('SELECT currency, exchange_rate FROM budget_items WHERE id = ?').get(created.body.item.id),
-      ).toEqual({ currency: 'USD', exchange_rate: 0.65 });
+      expect(res.body.error).toMatch(/enter a manual exchange rate/);
+      const stored = await budgetRow(created.body.item.id);
+      expect({ currency: stored.currency, exchange_rate: stored.exchange_rate }).toEqual({
+        currency: 'USD',
+        exchange_rate: 0.65,
+      });
     });
 
     it('freeze-rates 403 without budget_edit, 400 on malformed fallback_fx, other base heals nothing (unresolved VND)', async () => {
-      const trip = audTrip();
-      const bill = await request(server)
-        .post(`/api/trips/${trip}/budget`)
-        .set('Cookie', sessionCookie(1))
-        .send({ name: 'Pho', currency: 'VND', exchange_rate: 1, total_price: 100000 });
-      expect(bill.status).toBe(201);
-      db.prepare("UPDATE budget_items SET exchange_rate_source = 'legacy' WHERE id = ?").run(bill.body.item.id);
+      const trip = await audTrip();
+      const bill = await makeBudgetItem(orm, trip, { name: 'Pho', currency: 'VND', total_price: 100000 });
       const freeze = (body: object) =>
         request(server).post(`/api/trips/${trip}/budget/freeze-rates`).set('Cookie', sessionCookie(1)).send(body);
 
@@ -515,13 +791,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       const otherBase = await freeze({ fallback_fx: { base: 'EUR', rates: { VND: 27000 } } });
       expect(otherBase.status).toBe(200);
       expect(otherBase.body).toEqual({ items: [], settlements: [], unresolved: ['VND'] });
-      expect(
-        (
-          db.prepare('SELECT exchange_rate FROM budget_items WHERE id = ?').get(bill.body.item.id) as {
-            exchange_rate: number;
-          }
-        ).exchange_rate,
-      ).toBe(1);
+      expect((await budgetRow(bill.id)).exchange_rate).toBe(1);
     });
 
     it('400 on base_rate=abc', async () => {
@@ -530,6 +800,135 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .set('Cookie', sessionCookie(1));
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('base_rate');
+    });
+  });
+
+  // #2604: removing someone from the trip leaves their rows on the expenses they
+  // were part of. Saving such an expense with the payload the form sends back used
+  // to drop them and shrink the total to what the rest had paid.
+  describe('someone who left the trip', () => {
+    it('PUT with the unchanged payers and split keeps them, the total and a balanced ledger; a stranger is still dropped', async () => {
+      await makeUser(orm, {
+        id: 3,
+        username: 'e2e-leaver',
+        email: 'leaver@example.test',
+        role: 'user',
+        password_version: 0,
+      });
+      await makeUser(orm, {
+        id: 4,
+        username: 'e2e-stranger',
+        email: 'stranger@example.test',
+        role: 'user',
+        password_version: 0,
+      });
+      const leftTripId = (await makeTrip(orm, 1, { title: 'E2E Left Trip', currency: 'EUR' })).id;
+      await addTripMember(orm, leftTripId, 2);
+      await addTripMember(orm, leftTripId, 3);
+      const payload = {
+        name: 'Rental car',
+        payers: [
+          { user_id: 1, amount: 120 },
+          { user_id: 3, amount: 60 },
+        ],
+        member_ids: [1, 2, 3],
+      };
+      const created = await request(server)
+        .post(`/api/trips/${leftTripId}/budget`)
+        .set('Cookie', sessionCookie(1))
+        .send(payload);
+      expect(created.status).toBe(201);
+      await deleteRows(orm, TripMembers, { trip: leftTripId, user: 3 });
+
+      const saved = await request(server)
+        .put(`/api/trips/${leftTripId}/budget/${created.body.item.id}`)
+        .set('Cookie', sessionCookie(1))
+        .send({ ...payload, note: 'keys at the desk', member_ids: [1, 2, 3, 4] });
+      expect(saved.status).toBe(200);
+      expect(saved.body.item.total_price).toBe(180);
+      expect(saved.body.item.payers.map((p: { user_id: number }) => p.user_id).sort()).toEqual([1, 3]);
+      expect(saved.body.item.members.map((m: { user_id: number }) => m.user_id).sort()).toEqual([1, 2, 3]);
+
+      const settlement = await request(server)
+        .get(`/api/trips/${leftTripId}/budget/settlement`)
+        .set('Cookie', sessionCookie(1));
+      expect(settlement.status).toBe(200);
+      const balances = settlement.body.balances as { user_id: number; balance: number }[];
+      expect(Math.round(balances.reduce((a, b) => a + b.balance, 0) * 100)).toBe(0);
+      expect(balances.find((b) => b.user_id === 3)?.balance).toBe(0);
+    });
+  });
+
+  describe('the read tools over MCP', () => {
+    let mcpTripId: number;
+    const asUser = (userId: number) => ({ userId }) as McpContext;
+    const call = <T>(fn: () => Promise<T>) => withRequestContext(app.get(MikroORM), fn);
+    const text = (result: { content: { text: string }[] }) => JSON.parse(result.content[0]?.text ?? '');
+
+    beforeAll(async () => {
+      mcpTripId = (await makeTrip(orm, 1, { title: 'MCP Trip', currency: 'EUR' })).id;
+      await addTripMember(orm, mcpTripId, 2);
+      await makeUser(orm, {
+        id: 6,
+        username: 'e2e-mcp-outsider',
+        email: 'mcp-outsider@example.test',
+        password_version: 0,
+      });
+    });
+
+    it('BUDGET-E2E-001: list_budget_items answers the expenses REST lists, in its order, with the trip totals', async () => {
+      const create = (body: object) =>
+        request(server).post(`/api/trips/${mcpTripId}/budget`).set('Cookie', sessionCookie(1)).send(body);
+      // One after the other, so the list order is the order they were made in.
+      const ferry = await create({ name: 'Ferry', category: 'transport', total_price: 60, member_ids: [1, 2] });
+      const diner = await create({
+        name: 'Diner',
+        category: 'food',
+        currency: 'USD',
+        exchange_rate: 1.2,
+        payers: [{ user_id: 2, amount: 36 }],
+      });
+      expect([ferry.status, diner.status]).toEqual([201, 201]);
+      const rest = await request(server).get(`/api/trips/${mcpTripId}/budget`).set('Cookie', sessionCookie(1));
+      expect(rest.status).toBe(200);
+
+      const tool = text(await call(() => app.get(BudgetItemsMcp).listBudgetItems({ tripId: mcpTripId }, asUser(2))));
+
+      type RestItem = { id: number; name: string; total_price: number; currency: string | null; members: unknown[] };
+      expect(tool.items.map((item: { id: number }) => item.id)).toEqual(rest.body.items.map((i: RestItem) => i.id));
+      expect(tool.items.map((item: { name: string; total_price: number }) => [item.name, item.total_price])).toEqual(
+        rest.body.items.map((i: RestItem) => [i.name, i.total_price]),
+      );
+      // 60 EUR and 36 USD at 1.2: 30 EUR.
+      expect(tool).toMatchObject({ currency: 'EUR', total: 90, item_count: 2, next_offset: null });
+    });
+
+    it('BUDGET-E2E-002: get_budget_per_person answers exactly what the per-person route answers', async () => {
+      const rest = await request(server)
+        .get(`/api/trips/${mcpTripId}/budget/summary/per-person`)
+        .set('Cookie', sessionCookie(1));
+      expect(rest.status).toBe(200);
+
+      const tool = text(await call(() => app.get(BudgetItemsMcp).getBudgetPerPerson({ tripId: mcpTripId }, asUser(1))));
+
+      expect(tool).toEqual(rest.body);
+      expect(tool.summary.length).toBeGreaterThan(0);
+    });
+
+    it('BUDGET-E2E-003: someone off the trip gets the REST 404 and the MCP trip refusal from both tools', async () => {
+      const rest = await request(server).get(`/api/trips/${mcpTripId}/budget`).set('Cookie', sessionCookie(6));
+      expect(rest.status).toBe(404);
+
+      const mcp = app.get(BudgetItemsMcp);
+      for (const result of [
+        await call(() => mcp.listBudgetItems({ tripId: mcpTripId }, asUser(6))),
+        await call(() => mcp.getBudgetPerPerson({ tripId: mcpTripId }, asUser(6))),
+      ]) {
+        expect(result).toEqual({
+          content: [{ type: 'text', text: 'Trip not found or access denied.' }],
+          isError: true,
+        });
+      }
     });
   });
 });

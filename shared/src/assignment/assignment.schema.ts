@@ -1,4 +1,5 @@
 import { assignmentPlaceSchema } from '../place/place.schema';
+import { stationKeySchema } from '../tours/tours.schema';
 
 import { z } from 'zod';
 
@@ -50,11 +51,20 @@ export const assignmentSchema = z.object({
   // not a place (booking arrival / morning hotel). null = inherit the day default.
   // Inert when the previous timeline element is a place.
   incoming_leg_transport_mode: z.string().nullable().optional(),
+  // Kept on the day and on the map, but not part of the day's route (#2532).
+  route_excluded: z.boolean().optional(),
   // The lodging booking that put this stop on the day, when one did. The day
   // planner already shows that booking as its own overnight block, so it hides
   // this row and leaves it to road trip mode, which is the view that needs the
   // hotel in the driving chain. Null for every stop a traveller placed.
   accommodation_id: z.number().nullable().optional(),
+  tour_place_id: z.number().nullable().optional(),
+  tour_route_geometry: z.string().nullable().optional(),
+  /**
+   * MDT-02: the stage of a multi-day tour this day holds, by the key of the
+   * stop the stage starts at; null where the day holds the whole tour or a place.
+   */
+  tour_stage_key: z.string().nullable().optional(),
   participants: z.array(assignmentParticipantSchema).optional(),
   created_at: z.string().optional(),
   place: assignmentPlaceSchema,
@@ -64,6 +74,12 @@ export type Assignment = z.infer<typeof assignmentSchema>;
 export const assignmentCreateRequestSchema = z.object({
   place_id: z.union([z.number(), z.string()]),
   notes: z.string().nullable().optional(),
+  /**
+   * MDT-02: puts one stage of a multi-day tour on the day instead of the whole
+   * tour, by the key of the stop the stage starts at (the tour list's
+   * `stage_stops`). A stage is on one day at most.
+   */
+  tour_stage_key: stationKeySchema.optional(),
 });
 export type AssignmentCreateRequest = z.infer<typeof assignmentCreateRequestSchema>;
 
@@ -115,6 +131,12 @@ export const assignmentTransportRequestSchema = z.object({
 });
 export type AssignmentTransportRequest = z.infer<typeof assignmentTransportRequestSchema>;
 
+/** Take a stop out of the day's route, or put it back (#2532). */
+export const assignmentRouteRequestSchema = z.object({
+  excluded: z.boolean(),
+});
+export type AssignmentRouteRequest = z.infer<typeof assignmentRouteRequestSchema>;
+
 export const assignmentParticipantsRequestSchema = z.object({
   user_ids: z.array(z.number()),
 });
@@ -125,3 +147,5 @@ export const assignmentStayRequestSchema = z.object({
   stay_minutes: z.number().int().min(0).max(1440).nullable(),
 });
 export type AssignmentStayRequest = z.infer<typeof assignmentStayRequestSchema>;
+
+export const assignmentResponseSchema = z.object({ assignment: assignmentSchema });

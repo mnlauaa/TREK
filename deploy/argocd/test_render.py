@@ -25,6 +25,27 @@ class RenderTests(unittest.TestCase):
             self.assertTrue(mounts['uploads']['readOnly'])
             self.assertNotIn('app',hook['spec']['template'].get('metadata',{}).get('labels',{}))
 
+    def test_release_runtime_stays_unprivileged(self):
+        items = render('ghcr.io/mnlauaa/trek@sha256:' + 'a'*64,
+                       'b'*40, 'docker.io/library/python@sha256:' + 'c'*64)['items']
+        deployment = next(item for item in items if item['kind'] == 'Deployment')
+        pod = deployment['spec']['template']['spec']
+        self.assertFalse(pod['automountServiceAccountToken'])
+        self.assertTrue(pod['securityContext']['runAsNonRoot'])
+        self.assertEqual(pod['securityContext']['runAsUser'], 1000)
+        self.assertEqual(pod['securityContext']['seccompProfile']['type'], 'RuntimeDefault')
+        app = pod['containers'][0]
+        self.assertEqual(app['startupProbe']['httpGet']['path'], '/api/health')
+        startup_budget = app['startupProbe']['failureThreshold'] * app['startupProbe']['periodSeconds']
+        self.assertEqual(startup_budget, 600)
+        self.assertGreater(deployment['spec']['progressDeadlineSeconds'], startup_budget)
+        self.assertFalse(app['securityContext']['allowPrivilegeEscalation'])
+        self.assertEqual(app['securityContext']['capabilities']['drop'], ['ALL'])
+        self.assertEqual(app['workingDir'], '/app/server')
+        self.assertEqual(app['command'], ['/usr/bin/dumb-init', '--', 'node',
+                                         '--require', 'tsconfig-paths/register', 'dist/index.js'])
+        self.assertTrue(any(item['kind'] == 'NetworkPolicy' for item in items))
+
     def test_mutable_image_rejected(self):
         with self.assertRaises(ValueError):
             render('ghcr.io/mnlauaa/trek:latest','b'*40,'docker.io/library/python@sha256:'+'c'*64)

@@ -1,42 +1,44 @@
-import { DEFAULT_APPEARANCE } from '@trek/shared';
-import { create } from 'zustand';
-import { settingsApi } from '../api/client';
-import { SUPPORTED_LANGUAGE_CODES } from '../i18n/supportedLanguages';
-import { clearTileCache } from '../sync/tilePrefetcher';
-import type { Settings } from '../types';
-import { getApiErrorMessage } from '../types';
-import { DEFAULT_START_PAGE, DEFAULT_START_TRIP_TAB, rememberStartDestination } from '../utils/startDestination';
-import { normalizeTileUrl, stripTileApiKey } from '../utils/tileUrl';
+import { commonCurrencyListSchema } from '@trek/shared'
+import { create } from 'zustand'
+import { settingsApi } from '../api/client'
+import type { Settings } from '../types'
+import { DEFAULT_APPEARANCE, DEFAULT_WEEK_START } from '@trek/shared'
+import { getApiErrorMessage } from '../types'
+import { SUPPORTED_LANGUAGE_CODES } from '../i18n/supportedLanguages'
+import { detectBrowserLanguage } from '../i18n/detectBrowserLanguage'
+import { normalizeTileUrl, stripTileApiKey } from '../utils/tileUrl'
+import { clearTileCache } from '../sync/tilePrefetcher'
+import { rememberStartDestination, DEFAULT_START_PAGE, DEFAULT_START_TRIP_TAB } from '../utils/startDestination'
 
 interface SettingsState {
-  settings: Settings;
-  isLoaded: boolean;
+  settings: Settings
+  isLoaded: boolean
 
-  loadSettings: () => Promise<void>;
-  updateSetting: (key: keyof Settings, value: Settings[keyof Settings]) => Promise<void>;
-  resetSetting: (key: 'common_currencies') => Promise<string[]>;
-  setLanguageLocal: (lang: string) => void;
-  setLanguageTransient: (lang: string) => void;
-  updateSettings: (settingsObj: Partial<Settings>) => Promise<void>;
+  loadSettings: () => Promise<void>
+  updateSetting: (key: keyof Settings, value: Settings[keyof Settings]) => Promise<void>
+  resetSetting: (key: "common_currencies") => Promise<string[]>
+  setLanguageLocal: (lang: string) => void
+  setLanguageTransient: (lang: string) => void
+  updateSettings: (settingsObj: Partial<Settings>) => Promise<void>
 }
 
 // Returns true when the user has explicitly chosen a language (persisted in localStorage).
 // Use this instead of reading localStorage directly so the key stays encapsulated here.
 export const hasStoredLanguage = (): boolean =>
-  typeof localStorage !== 'undefined' && !!localStorage.getItem('app_language');
+  typeof localStorage !== 'undefined' && !!localStorage.getItem('app_language')
 
-const SERVER_LANGUAGE_KEY = 'app_language_server';
+const SERVER_LANGUAGE_KEY = 'app_language_server'
 
 // An account that never picked a language sends no language key at all
 // (getUserSettings returns only what was set), so a mirror left over from
 // whoever used this browser before has to go rather than survive the load.
 function rememberServerLanguage(settings: Partial<Settings>): void {
   try {
-    const language = settings.language;
+    const language = settings.language
     if (language && SUPPORTED_LANGUAGE_CODES.includes(language)) {
-      localStorage.setItem(SERVER_LANGUAGE_KEY, language);
+      localStorage.setItem(SERVER_LANGUAGE_KEY, language)
     } else {
-      localStorage.removeItem(SERVER_LANGUAGE_KEY);
+      localStorage.removeItem(SERVER_LANGUAGE_KEY)
     }
   } catch {
     // Private mode: the session still has the value in the store.
@@ -46,7 +48,7 @@ function rememberServerLanguage(settings: Partial<Settings>): void {
 /** On logout, so the next account on this browser starts in its own language. */
 export function forgetServerLanguage(): void {
   try {
-    localStorage.removeItem(SERVER_LANGUAGE_KEY);
+    localStorage.removeItem(SERVER_LANGUAGE_KEY)
   } catch {
     // Nothing to clean up if storage is unavailable.
   }
@@ -62,9 +64,11 @@ export const DEFAULT_SETTINGS: Settings = {
   map_tile_url: '',
   // Empty = the public routing hosts TREK ships with.
   routing_base_url: '',
-  // Empty = the public Valhalla, unless routing_base_url names an own router, in which
-  // case no second engine is asked at all. See valhallaBase().
+  // Empty = no own Valhalla. Which one is asked then is valhallaBase()'s to say.
   valhalla_base_url: '',
+  // Empty = not chosen: the TREK services, FOSSGIS where they cannot answer, none
+  // beside an own router alone. See valhallaBase().
+  routing_valhalla_provider: '',
   // Empty = not said, and then a stop of either kind fills up. See refuelsRange().
   roadtrip_vehicle: '',
   // Off = the rail routes a day at a time, the way the day plan stores it, and the road
@@ -79,18 +83,21 @@ export const DEFAULT_SETTINGS: Settings = {
   default_currency: '',
   common_currencies: [],
   // Explicit in-app choice first, then the mirror of the account's server-side
-  // language (written by loadSettings below), then English. Without the mirror
-  // an offline cold start boots in English: the account's language lives on the
-  // server, and the fetch that would apply it cannot happen.
-  language: localStorage.getItem('app_language') || localStorage.getItem(SERVER_LANGUAGE_KEY) || 'en',
+  // language (written by loadSettings below), then the browser's, then English.
+  // Without the mirror an offline cold start would boot in English: the account's
+  // language lives on the server, and the fetch that would apply it cannot happen.
+  language: localStorage.getItem('app_language') || localStorage.getItem(SERVER_LANGUAGE_KEY) || detectBrowserLanguage() || 'en',
   temperature_unit: 'celsius',
   distance_unit: 'metric',
   time_format: '24h',
+  week_start: DEFAULT_WEEK_START,
   show_place_description: false,
   optimize_from_accommodation: true,
   map_provider: 'leaflet',
   map_base_layer: 'default',
   map_poi_pill_enabled: true,
+  assistant_map_follow: true,
+  assistant_hints: true,
   carto_api_key: '',
   mapbox_access_token: '',
   mapbox_style: 'mapbox://styles/mapbox/standard',
@@ -104,11 +111,11 @@ export const DEFAULT_SETTINGS: Settings = {
   appearance: DEFAULT_APPEARANCE,
   // dashboard_timezones is intentionally left unset so the widget can tell "never
   // chosen" (fall back to home + defaults) from an explicitly emptied list.
-};
+}
 
 // De-dupe concurrent loads: the reconnection triggers (online / visibility /
 // periodic) can all fire a retry at once — collapse them into one in-flight GET.
-let _loadInFlight: Promise<void> | null = null;
+let _loadInFlight: Promise<void> | null = null
 
 // Every tile consumer (planner map, journey map, tile prefetcher, the settings
 // preview) reads the template from this store, so the retired
@@ -116,15 +123,15 @@ let _loadInFlight: Promise<void> | null = null;
 // server and on the way out to it. Rewriting only on read would let a template
 // typed by hand survive in the database until the next load put it back (#1733).
 function withNormalizedTileUrl<T extends Partial<Settings>>(patch: T): T {
-  if (typeof patch.map_tile_url !== 'string') return patch;
-  return { ...patch, map_tile_url: cleanTileTemplate(patch.map_tile_url) };
+  if (typeof patch.map_tile_url !== 'string') return patch
+  return { ...patch, map_tile_url: cleanTileTemplate(patch.map_tile_url) }
 }
 
 // A CARTO key pasted along with a full tile URL is dropped here: the key lives
 // in its own setting and is appended at render time, so leaving it in the
 // template would freeze it into the saved value and break on the next rotation.
 function cleanTileTemplate(url: string): string {
-  return stripTileApiKey(normalizeTileUrl(url));
+  return stripTileApiKey(normalizeTileUrl(url))
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -132,20 +139,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoaded: false,
 
   loadSettings: async () => {
-    if (_loadInFlight !== null) return _loadInFlight;
+    if (_loadInFlight !== null) return _loadInFlight
     _loadInFlight = (async () => {
       try {
-        const data = await settingsApi.get();
+        const data = await settingsApi.get()
         // Rewritten here so the Map settings input already shows the host that
         // still resolves, and persists it on the next save.
-        const incoming = withNormalizedTileUrl({ ...data.settings } as Partial<Settings>);
+        const incoming = withNormalizedTileUrl({ ...data.settings } as Partial<Settings>)
         set((state) => ({
           settings: { ...state.settings, ...incoming },
           isLoaded: true,
-        }));
+        }))
         // The startup redirect runs before this ever resolves, so keep a mirror
         // it can read synchronously on the next launch.
-        rememberStartDestination(incoming);
+        rememberStartDestination(incoming)
         // Same trick for the language: mirror the account's value so the next
         // launch — including an offline one, where this fetch fails — boots in
         // it instead of English (#1618 fixed the same stranding for currency
@@ -153,72 +160,84 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         // key rather than 'app_language': that one means an explicit in-app
         // choice, and the login page's detection chain must keep running for
         // users who never made one.
-        rememberServerLanguage(incoming);
+        rememberServerLanguage(incoming)
+        // An account without a language of its own, and no choice made in this
+        // browser: the browser's language, as wiki/Languages.md has it. That step
+        // used to run on the login page only, so a session opened straight onto a
+        // trip stayed English. For this session only, nothing is saved.
+        const detected = !incoming.language && !hasStoredLanguage() ? detectBrowserLanguage() : null
+        if (detected) get().setLanguageTransient(detected)
       } catch (err: unknown) {
         // Leave isLoaded false so a transient failure — offline at launch, or a
         // (docker) server cold-start racing the first request — is retried on
         // reconnect instead of stranding the user on built-in defaults (wrong
         // currency/units) for the whole session (#1618).
-        console.error('Failed to load settings:', err);
+        console.error('Failed to load settings:', err)
       } finally {
-        _loadInFlight = null;
+        _loadInFlight = null
       }
-    })();
-    return _loadInFlight;
+    })()
+    return _loadInFlight
   },
 
   updateSetting: async (key: keyof Settings, value: Settings[keyof Settings]) => {
-    const next = key === 'map_tile_url' && typeof value === 'string' ? cleanTileTemplate(value) : value;
-    if (key === 'carto_api_key' && next !== get().settings.carto_api_key) void clearTileCache();
+    if (key === 'common_currencies') {
+      const currencies = commonCurrencyListSchema.parse(value)
+      await settingsApi.set(key, currencies)
+      set((state) => ({ settings: { ...state.settings, common_currencies: currencies } }))
+      return
+    }
+    const next =
+      key === 'map_tile_url' && typeof value === 'string' ? cleanTileTemplate(value) : value
+    if (key === 'carto_api_key' && next !== get().settings.carto_api_key) void clearTileCache()
     set((state) => ({
       settings: { ...state.settings, [key]: next },
-    }));
-    if (key === 'language') localStorage.setItem('app_language', next as string);
-    rememberStartDestination({ [key]: next } as Partial<Settings>);
+    }))
+    if (key === 'language') localStorage.setItem('app_language', next as string)
+    rememberStartDestination({ [key]: next } as Partial<Settings>)
     try {
-      await settingsApi.set(key, next);
+      await settingsApi.set(key, next)
     } catch (err: unknown) {
-      console.error('Failed to save setting:', err);
-      throw new Error(getApiErrorMessage(err, 'Error saving setting'));
+      console.error('Failed to save setting:', err)
+      throw new Error(getApiErrorMessage(err, 'Error saving setting'))
     }
   },
 
-  resetSetting: async (key: 'common_currencies') => {
-    const result = await settingsApi.reset(key);
-    const value = result.value as string[];
-    set((state) => ({ settings: { ...state.settings, [key]: value } }));
-    return value;
+  resetSetting: async (key) => {
+    const { value } = await settingsApi.reset(key)
+    set((state) => ({ settings: { ...state.settings, [key]: value } }))
+    return value
   },
 
   setLanguageLocal: (lang: string) => {
-    localStorage.setItem('app_language', lang);
-    set((state) => ({ settings: { ...state.settings, language: lang } }));
+    localStorage.setItem('app_language', lang)
+    set((state) => ({ settings: { ...state.settings, language: lang } }))
   },
 
   // Applies a language for the current session without persisting to localStorage.
   // Used for automatic detection (browser/server default) — only explicit user
   // choices via the UI should be persisted.
   setLanguageTransient: (lang: string) => {
-    if (!SUPPORTED_LANGUAGE_CODES.includes(lang)) return;
-    set((state) => ({ settings: { ...state.settings, language: lang } }));
+    if (!SUPPORTED_LANGUAGE_CODES.includes(lang)) return
+    set((state) => ({ settings: { ...state.settings, language: lang } }))
   },
 
   updateSettings: async (settingsObj: Partial<Settings>) => {
-    const patch = withNormalizedTileUrl(settingsObj);
+    const patch = withNormalizedTileUrl(settingsObj)
     // Cached tiles are keyed by their full URL, so a new key leaves the whole
     // offline cache stranded behind the old one.
     if ('carto_api_key' in patch && patch.carto_api_key !== get().settings.carto_api_key) {
-      void clearTileCache();
+      void clearTileCache()
     }
     set((state) => ({
       settings: { ...state.settings, ...patch },
-    }));
-    rememberStartDestination(patch);
+    }))
+    rememberStartDestination(patch)
     try {
-      await settingsApi.setBulk(patch);
+      await settingsApi.setBulk(patch)
     } catch (err: unknown) {
-      console.error('Failed to save settings:', err);
-      throw new Error(getApiErrorMessage(err, 'Error saving settings'));
+      console.error('Failed to save settings:', err)
+      throw new Error(getApiErrorMessage(err, 'Error saving settings'))
     }
   },
-}));
+}))

@@ -7,7 +7,7 @@ const docsync: TranslationStrings = {
     'Ein Administrator dieser Instanz schaltet sie unter Administration, Addons, Dokumente frei.',
   'docsync.addProvider': 'Anbieter verbinden',
   'docsync.test': 'Verbindung testen',
-  'docsync.connect.optional': 'Optional',
+  'docsync.connect.optional': 'Optional', // same-as-en
   'docsync.connected': 'Verbunden',
   'docsync.chooseFolder': 'Ordner wählen',
   'docsync.noFolders': 'Auf dieser Instanz wurde noch nichts gefunden.',
@@ -72,6 +72,7 @@ const docsync: TranslationStrings = {
   'docsync.state.scope_drift': 'Aus dem Ordner verschoben',
 
   'docsync.conflict.resolve': '{count} klären',
+  'docsync.conflict.resolve.one': '{count} klären',
 
   'docsync.conflict.title': 'Beide Kopien wurden geändert',
   'docsync.conflict.keepTrek': 'Die TREK-Version behalten',
@@ -181,6 +182,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'Pausiert: Ein Administrator hat diesen Anbieter abgeschaltet. Der Abgleich läuft weiter, sobald er wieder eingeschaltet ist.',
   'docsync.binding.reconnect': 'Neu verbinden',
+  'docsync.connection.title': 'Verbindung',
+  'docsync.connection.hint': 'Adresse und Anmeldung, mit denen TREK diesen Speicher erreicht.',
+  'docsync.connection.edit': 'Verbindung bearbeiten',
+  'docsync.connection.remove': 'Verbindung entfernen',
+  'docsync.connection.confirmRemove':
+    'TREK vergisst Adresse und Anmeldung für diesen Speicher, und jeder Abgleich dieser Reise darüber endet. Die Dokumente bleiben in TREK und im Speicher.',
 };
 
 export default docsync;

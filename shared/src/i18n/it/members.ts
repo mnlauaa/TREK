@@ -1,14 +1,13 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'Condividi viaggio',
   'members.inviteUser': 'Invita utente',
   'members.selectUser': 'Seleziona utente...',
   'members.invite': 'Invita',
   'members.allHaveAccess': 'Tutti gli utenti hanno già accesso.',
   'members.access': 'Accesso',
-  'members.person': 'persona',
   'members.persons': 'persone',
+  'members.persons.one': 'persona',
   'members.you': 'tu',
   'members.owner': 'Proprietario',
   'members.leaveTrip': 'Abbandona viaggio',
@@ -33,23 +32,9 @@ const members: TranslationStrings = {
   'members.guestAddError': "Impossibile aggiungere l'ospite",
   'members.guestRenameError': "Impossibile rinominare l'ospite",
   'members.guestRemoved': 'Ospite rimosso',
-  'members.confirmRemoveGuest': 'Rimuovere questo ospite? Verranno rimosse anche le sue assegnazioni e quote di spesa.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'Rimuovere questo ospite? Le sue assegnazioni verranno rimosse e la sua quota di ogni spesa sarà ripartita tra gli altri partecipanti.',
+  'members.guestHasPayments':
+    'Questo ospite ha pagato una spesa o fa parte di un pagamento registrato. Cambia prima chi paga o elimina il pagamento.',
 };
 export default members;

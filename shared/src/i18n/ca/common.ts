@@ -7,6 +7,7 @@ const common: TranslationStrings = {
   'common.cancel': 'Cancel·lar',
   'common.clear': 'Esborrar',
   'common.delete': 'Eliminar',
+  'common.remove': 'Elimina',
   'common.preview': 'Vista prèvia',
   'common.edit': 'Editar',
   'common.add': 'Afegir',
@@ -15,7 +16,7 @@ const common: TranslationStrings = {
   'common.select': 'Seleccionar',
   'common.selectAll': 'Seleccionar-ho tot',
   'common.deselectAll': 'Rebutjar la sel·lecció',
-  'common.error': 'Error',
+  'common.error': 'Error', // same-as-en
   'common.success': 'Èxit',
   'common.unknownError': 'Error desconegut',
   'common.tooManyAttempts': 'Massa intents. Torna a provar-ho més tard.',
@@ -28,13 +29,16 @@ const common: TranslationStrings = {
   'common.confirm': 'Confirmar',
   'common.ok': 'Acceptar',
   'common.yes': 'Sí',
-  'common.no': 'No',
+  'common.no': 'No', // same-as-en
   'common.or': 'o',
   'common.none': 'Cap',
   'common.date': 'Data',
   'common.rename': 'Canviar nom',
   'common.discardChanges': 'Descartar canvis',
   'common.discard': 'Descartar',
+  'common.unsavedTitle': 'Vols descartar els canvis?',
+  'common.unsavedMessage': "El que has introduït aquí encara no s'ha desat.",
+  'common.keepEditing': 'Continua editant',
   'common.name': 'Nom',
   'common.email': 'Correu',
   'common.password': 'Contrasenya',
@@ -51,7 +55,9 @@ const common: TranslationStrings = {
   'common.copied': 'Copiat',
   'common.justNow': 'ara mateix',
   'common.hoursAgo': 'fa {count} h',
+  'common.hoursAgo.one': 'fa {count} h',
   'common.daysAgo': 'fa {count} d',
+  'common.daysAgo.one': 'fa {count} d',
 
   'common.datepicker.prevMonth': 'Mes anterior',
   'common.datepicker.nextMonth': 'Mes següent',
@@ -75,12 +81,6 @@ const common: TranslationStrings = {
   'common.errorUpdateBody':
     "TREK s'ha actualitzat mentre aquesta pestanya era oberta. Torna a carregar per obtenir la versió nova.",
   'common.errorPluginTitle': "No s'ha pogut mostrar aquest connector",
-  'legal.title': 'Legal & source',
-  'legal.description': 'License information and the exact source code for this deployed version.',
-  'legal.agpl':
-    'This application is licensed under the GNU Affero General Public License version 3. Remote users may obtain the corresponding source code at no charge.',
-  'legal.license': 'Read the license',
-  'legal.source': 'Corresponding source',
-  'legal.sourceDescription': 'Source code for this deployed build:',
+  'common.needsConnection': 'Això necessita connexió. Torna-ho a provar quan TREK torni a estar en línia.',
 };
 export default common;

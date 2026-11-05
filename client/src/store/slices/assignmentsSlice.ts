@@ -1,10 +1,10 @@
-import { assignmentsApi } from '../../api/client'
 import type { StoreApi } from 'zustand'
 import type { TripStoreState } from '../tripStore'
 import type { Assignment, AssignmentsMap } from '../../types'
 import { getApiErrorMessage } from '../../types'
 import { assignmentRepo, type AssignmentTimes } from '../../repo/assignmentRepo'
 import { mergeAssignmentPlace } from './placesSlice'
+import { nextTempId } from '../../sync/mutationQueue'
 
 type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
@@ -12,9 +12,15 @@ type GetState = StoreApi<TripStoreState>['getState']
 export interface AssignmentsSlice {
   setAssignmentStay: (tripId: number | string, dayId: number, assignmentId: number, minutes: number | null) => Promise<void>
   setAssignmentEndDay: (tripId: number | string, dayId: number, assignmentId: number, endDay: boolean) => Promise<void>
+  setAssignmentRouteExcluded: (tripId: number | string, dayId: number, assignmentId: number, excluded: boolean) => Promise<void>
   setAssignmentTimes: (tripId: number | string, dayId: number, assignmentId: number, times: AssignmentTimes) => Promise<void>
-  assignPlaceToDay: (tripId: number | string, dayId: number | string, placeId: number | string, position?: number | null) => Promise<Assignment | undefined>
+  setAssignmentNotes: (tripId: number | string, dayId: number, assignmentId: number, notes: string | null) => Promise<void>
+  setAssignmentParticipants: (tripId: number | string, dayId: number, assignmentId: number, userIds: number[]) => Promise<void>
+  setAssignmentLegMode: (tripId: number | string, dayId: number, assignmentId: number, mode: string | null, direction?: 'outgoing' | 'incoming') => Promise<void>
+  /** `tourStageKey` puts one stage of a multi-day tour on the day instead of the whole tour (MDT-02). */
+  assignPlaceToDay: (tripId: number | string, dayId: number | string, placeId: number | string, position?: number | null, tourStageKey?: string) => Promise<Assignment | undefined>
   removeAssignment: (tripId: number | string, dayId: number | string, assignmentId: number) => Promise<void>
+  clearDayAssignments: (tripId: number | string, dayId: number) => Promise<void>
   reorderAssignments: (tripId: number | string, dayId: number | string, orderedIds: number[]) => Promise<void>
   moveAssignment: (tripId: number | string, assignmentId: number, fromDayId: number | string, toDayId: number | string, toOrderIndex?: number | null) => Promise<void>
   setAssignments: (assignments: AssignmentsMap) => void
@@ -48,6 +54,21 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
       throw err
     }
   },
+  setAssignmentRouteExcluded: async (tripId, dayId, assignmentId, excluded) => {
+    const assignment = get().assignments[String(dayId)]?.find(a => a.id === assignmentId)
+    if (!assignment || assignmentId < 0) return
+    const apply = (value: boolean) => set(state => ({
+      assignments: { ...state.assignments, [String(dayId)]: (state.assignments[String(dayId)] || []).map(a => a.id === assignmentId ? { ...a, route_excluded: value } : a) },
+    }))
+    apply(excluded)
+    try {
+      const saved = await assignmentRepo.setRouteExcluded(tripId, assignment, excluded)
+      apply(saved.route_excluded === true)
+    } catch (err: unknown) {
+      apply(assignment.route_excluded === true)
+      throw err
+    }
+  },
   setAssignmentTimes: async (tripId, dayId, assignmentId, times) => {
     const assignment = get().assignments[String(dayId)]?.find(a => a.id === assignmentId)
     if (!assignment || assignmentId < 0) return
@@ -71,12 +92,46 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
       throw err
     }
   },
-  assignPlaceToDay: async (tripId, dayId, placeId, position) => {
+  setAssignmentNotes: async (tripId, dayId, assignmentId, notes) => {
+    const assignment = get().assignments[String(dayId)]?.find(a => a.id === assignmentId)
+    if (!assignment || assignmentId < 0) return
+    // Only the note is patched: the saved row carries the place as the server has it,
+    // and the visit's times may still wait in the queue ahead of this write.
+    const apply = (value: string | null) => set(state => ({
+      assignments: Object.fromEntries(Object.entries(state.assignments).map(([key, items]) => [
+        key, items.map(a => a.id === assignmentId ? { ...a, notes: value } : a),
+      ])),
+    }))
+    apply(notes)
+    try {
+      const saved = await assignmentRepo.setNotes(tripId, assignment, notes)
+      apply(saved.notes ?? null)
+    } catch (err: unknown) {
+      apply(assignment.notes ?? null)
+      throw err
+    }
+  },
+  // Who joins the visit and how its legs are travelled; offline both wait in the
+  // queue. The participants the repo answers with are written into the day.
+  setAssignmentParticipants: async (tripId, dayId, assignmentId, userIds) => {
+    const participants = await assignmentRepo.setParticipants(tripId, assignmentId, userIds)
+    set(state => ({
+      assignments: { ...state.assignments, [String(dayId)]: (state.assignments[String(dayId)] || []).map(a => a.id === assignmentId ? { ...a, participants } : a) },
+    }))
+  },
+  setAssignmentLegMode: async (tripId, dayId, assignmentId, mode, direction = 'outgoing') => {
+    await assignmentRepo.setLegMode(tripId, assignmentId, mode, direction)
+    const field = direction === 'incoming' ? 'incoming_leg_transport_mode' : 'leg_transport_mode'
+    set(state => ({
+      assignments: { ...state.assignments, [String(dayId)]: (state.assignments[String(dayId)] || []).map(a => a.id === assignmentId ? { ...a, [field]: mode } : a) },
+    }))
+  },
+  assignPlaceToDay: async (tripId, dayId, placeId, position, tourStageKey) => {
     const state = get()
     const place = state.places.find(p => p.id === Number.parseInt(String(placeId)))
     if (!place) return
 
-    const tempId = Date.now() * -1
+    const tempId = nextTempId()
     // Sorted first, as moveAssignment does: the position is an index in the day as
     // it is shown, and that day is sorted by order_index. The stored list is not
     // always, a stop that arrived over the socket is appended wherever its
@@ -90,6 +145,7 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
       place_id: place.id,
       order_index: insertIdx,
       notes: null,
+      tour_stage_key: tourStageKey ?? null,
       place,
     }
 
@@ -102,11 +158,11 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
     }))
 
     try {
-      const data = await assignmentsApi.create(tripId, dayId, { place_id: placeId })
+      const created = await assignmentRepo.create(tripId, Number(dayId), place, tourStageKey)
       const newAssignment: Assignment = {
-        ...data.assignment,
-        place: data.assignment.place || place,
-        order_index: position != null ? insertIdx : data.assignment.order_index,
+        ...created,
+        place: created.place || place,
+        order_index: position != null ? insertIdx : created.order_index,
       }
       set(state => ({
         assignments: {
@@ -118,10 +174,10 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
       }))
       if (position != null) {
         const updated = get().assignments[String(dayId)] || []
-        const orderedIds = updated.map(a => a.id).filter(id => id > 0)
+        const orderedIds = updated.map(a => a.id)
         if (orderedIds.length > 0) {
           try {
-            await assignmentsApi.reorder(tripId, dayId, orderedIds)
+            await assignmentRepo.reorder(tripId, Number(dayId), orderedIds)
             set(state => {
               const items = state.assignments[String(dayId)] || []
               const reordered = orderedIds.map((id, idx) => {
@@ -138,7 +194,7 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
           } catch {}
         }
       }
-      return data.assignment
+      return created
     } catch (err: unknown) {
       set(state => ({
         assignments: {
@@ -161,7 +217,18 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
     }))
 
     try {
-      await assignmentsApi.delete(tripId, dayId, assignmentId)
+      await assignmentRepo.remove(tripId, Number(dayId), assignmentId)
+    } catch (err: unknown) {
+      set({ assignments: prevAssignments })
+      throw new Error(getApiErrorMessage(err, 'Error removing assignment'))
+    }
+  },
+
+  clearDayAssignments: async (tripId, dayId) => {
+    const prevAssignments = get().assignments
+    set(state => ({ assignments: { ...state.assignments, [String(dayId)]: [] } }))
+    try {
+      await assignmentRepo.clearDay(tripId, dayId)
     } catch (err: unknown) {
       set({ assignments: prevAssignments })
       throw new Error(getApiErrorMessage(err, 'Error removing assignment'))
@@ -184,7 +251,7 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
     }))
 
     try {
-      await assignmentsApi.reorder(tripId, dayId, orderedIds)
+      await assignmentRepo.reorder(tripId, Number(dayId), orderedIds)
     } catch (err: unknown) {
       set({ assignments: prevAssignments })
       throw new Error(getApiErrorMessage(err, 'Error reordering'))
@@ -217,10 +284,7 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
     }))
 
     try {
-      await assignmentsApi.move(tripId, assignmentId, toDayId, insertAt)
-      if (newToItems.length > 1) {
-        await assignmentsApi.reorder(tripId, toDayId, newToItems.map(a => a.id))
-      }
+      await assignmentRepo.move(tripId, assignment, Number(toDayId), insertAt, newToItems.map(a => a.id))
     } catch (err: unknown) {
       set({ assignments: prevAssignments })
       throw new Error(getApiErrorMessage(err, 'Error moving assignment'))

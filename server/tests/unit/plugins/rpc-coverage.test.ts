@@ -9,9 +9,9 @@
  * "how far along is the move" to "nothing fell out of it": a method deleted without a
  * replacement, or a new *.rpc.ts class that no one listed in allRpcControllers().
  */
+import { PluginRpcRegistryService } from '../../../src/nest-rpc/rpc-kit/registry.service';
+import { createTestPluginRegistry } from '../../../src/nest-rpc/rpc-kit/testing';
 import { PluginRpcHost } from '../../../src/nest/plugins/host/rpc-host';
-import { PluginRpcRegistryService } from '../../../src/nest/plugins/host/rpc-kit/registry.service';
-import { createTestPluginRegistry } from '../../../src/nest/plugins/host/rpc-kit/testing';
 import { KNOWN_METHODS, KNOWN_PERMISSIONS, UNCONDITIONAL_METHODS } from '../../../src/nest/plugins/protocol/envelope';
 import { allRpcControllers, makeDeps } from '../../helpers/rpc-host-deps';
 

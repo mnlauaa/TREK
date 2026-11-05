@@ -68,10 +68,19 @@ describe('registry integrity', () => {
     }
   });
 
-  it('reserves but does not publish upstream promotional notice ids', () => {
-    for (const id of ['release-4-0-0', 'thank-you-support', 'release-notes']) {
-      expect(RETIRED_NOTICE_IDS).toContain(id);
-      expect(SYSTEM_NOTICES.some((notice) => notice.id === id)).toBe(false);
+  it('the 4.0.0 release notice is retired and its id stays reserved', () => {
+    expect(SYSTEM_NOTICES.some((n) => n.id === 'release-4-0-0')).toBe(false);
+    expect(RETIRED_NOTICE_IDS).toContain('release-4-0-0');
+    for (const id of RETIRED_NOTICE_IDS) {
+      expect(
+        SYSTEM_NOTICES.some((n) => n.id === id),
+        id,
+      ).toBe(false);
     }
+  });
+
+  it('reserves upstream promotional notice IDs and keeps the operational notice', () => {
+    expect(RETIRED_NOTICE_IDS).toEqual(expect.arrayContaining(['release-notes', 'thank-you-support']));
+    expect(SYSTEM_NOTICES.some((notice) => notice.id === 'v3014-whitespace-collision')).toBe(true);
   });
 });

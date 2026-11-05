@@ -1,14 +1,14 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'Sdílet cestu',
   'members.inviteUser': 'Pozvat uživatele',
   'members.selectUser': 'Vyberte uživatele…',
   'members.invite': 'Pozvat',
   'members.allHaveAccess': 'Všichni uživatelé již mají přístup.',
   'members.access': 'Přístup',
-  'members.person': 'osoba',
   'members.persons': 'osob',
+  'members.persons.one': 'osoba',
+  'members.persons.few': 'osoby',
   'members.you': 'vy',
   'members.owner': 'Vlastník',
   'members.leaveTrip': 'Opustit cestu',
@@ -32,23 +32,9 @@ const members: TranslationStrings = {
   'members.guestAddError': 'Nepodařilo se přidat hosta',
   'members.guestRenameError': 'Nepodařilo se přejmenovat hosta',
   'members.guestRemoved': 'Host odebrán',
-  'members.confirmRemoveGuest': 'Odebrat tohoto hosta? Jeho přiřazení a podíly na nákladech budou také odebrány.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'Odebrat tohoto hosta? Jeho přiřazení budou odebrána a jeho podíl na každém výdaji se rozdělí mezi ostatní účastníky.',
+  'members.guestHasPayments':
+    'Tento host zaplatil výdaj nebo je součástí zaznamenané platby. Nejprve změňte plátce nebo platbu smažte.',
 };
 export default members;

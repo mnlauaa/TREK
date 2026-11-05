@@ -1,240 +1,36 @@
-import { Bell, Link2, Send } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { notificationsApi, settingsApi } from '../../../api/client';
-import WebPushDevices from '../../../components/Settings/WebPushDevices';
-import { useToast } from '../../../components/shared/Toast';
-import { useTranslation } from '../../../i18n';
-import MChip from '../../components/MChip';
-import { MSetButton, MSetCard, MSetEyebrow, MSetHint, MSetInput } from './MSettingsUi';
-
-interface ChannelDescriptor {
-  id: string;
-  source: 'builtin' | 'plugin';
-  /** Built-ins: an i18n key. */
-  labelKey?: string;
-  /** Plugin channels: a literal name, already resolved by the server. */
-  label?: string;
-  settingsPath?: string;
-  active: boolean;
-  configured: boolean;
-}
-
-interface PreferencesMatrix {
-  preferences: Record<string, Record<string, boolean>>;
-  channels: ChannelDescriptor[];
-  event_types: string[];
-  implemented_combos: Record<string, string[]>;
-  defaults?: { ntfyServer: string | null };
-}
-
-function channelLabel(ch: ChannelDescriptor, t: (k: string) => string): string {
-  if (ch.labelKey) return t(ch.labelKey) || ch.id;
-  return ch.label || ch.id;
-}
-
-const EVENT_LABEL_KEYS: Record<string, string> = {
-  trip_invite: 'settings.notifyTripInvite',
-  booking_change: 'settings.notifyBookingChange',
-  trip_reminder: 'settings.notifyTripReminder',
-  todo_due: 'settings.notifyTodoDue',
-  vacay_invite: 'settings.notifyVacayInvite',
-  vacay_share: 'settings.notifyVacayShare',
-  collection_invite: 'settings.notifyCollectionInvite',
-  synology_session_cleared: 'settings.notifySynologySessionCleared',
-  plugin_notification: 'settings.notifyPluginNotification',
-  photos_shared: 'settings.notifyPhotosShared',
-  collab_message: 'settings.notifyCollabMessage',
-  packing_tagged: 'settings.notifyPackingTagged',
-  version_available: 'settings.notifyVersionAvailable',
-};
-
-const MASKED = '••••••••';
+import { useNavigate } from 'react-router'
+import { Bell, Link2, Lock, Send } from 'lucide-react'
+import { WEB_PUSH_CHANNEL_ID } from '@trek/shared'
+import { useTranslation } from '../../../i18n'
+import { MSetCard, MSetEyebrow, MSetInput, MSetButton, MSetHint } from './MSettingsUi'
+import MChip from '../../components/MChip'
+import WebPushDevices from '../../../components/Settings/WebPushDevices'
+import { EVENT_LABEL_KEYS, channelLabel, isLockedCell } from '../../../components/Settings/notificationLabels'
+import { MASKED, useNotificationSettings } from '../../../components/Settings/useNotificationSettings'
 
 /**
  * "Notifications" section — NotificationsTab parity: webhook + ntfy channel
- * credentials, plugin channels and the event/channel preference matrix,
- * rendered as chip rows instead of the desktop grid.
+ * credentials, push on this device, plugin channels and the event/channel
+ * preference matrix, rendered as chip rows instead of the desktop grid.
  */
 export default function MSettingsNotifications() {
-  const { t } = useTranslation();
-  const toast = useToast();
-  const navigate = useNavigate();
-  const [matrix, setMatrix] = useState<PreferencesMatrix | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookIsSet, setWebhookIsSet] = useState(false);
-  const [webhookSaving, setWebhookSaving] = useState(false);
-  const [webhookTesting, setWebhookTesting] = useState(false);
-  const [ntfyTopic, setNtfyTopic] = useState('');
-  const [ntfyServer, setNtfyServer] = useState('');
-  const [ntfyToken, setNtfyToken] = useState('');
-  const [ntfyTokenIsSet, setNtfyTokenIsSet] = useState(false);
-  const [ntfySaving, setNtfySaving] = useState(false);
-  const [ntfyTesting, setNtfyTesting] = useState(false);
-  const [channelTesting, setChannelTesting] = useState<string | null>(null);
-
-  useEffect(() => {
-    notificationsApi
-      .getPreferences()
-      .then((data: PreferencesMatrix) => setMatrix(data))
-      .catch(() => {});
-    settingsApi
-      .get()
-      .then((data: { settings: Record<string, unknown> }) => {
-        const val = (data.settings?.webhook_url as string) || '';
-        if (val === MASKED) {
-          setWebhookIsSet(true);
-          setWebhookUrl('');
-        } else {
-          setWebhookUrl(val);
-        }
-        setNtfyTopic((data.settings?.ntfy_topic as string) || '');
-        setNtfyServer((data.settings?.ntfy_server as string) || '');
-        const rawToken = (data.settings?.ntfy_token as string) || '';
-        if (rawToken === MASKED) {
-          setNtfyTokenIsSet(true);
-          setNtfyToken('');
-        } else {
-          setNtfyToken(rawToken);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const visibleChannels = matrix
-    ? matrix.channels.filter((ch) => {
-        if (!ch.active) return false;
-        return matrix.event_types.some((evt) => matrix.implemented_combos[evt]?.includes(ch.id));
-      })
-    : [];
-
-  const hasChannel = (id: string) => matrix?.channels.some((ch) => ch.id === id && ch.active) ?? false;
-  const pluginChannels = matrix?.channels.filter((ch) => ch.source === 'plugin' && ch.active) ?? [];
-
-  const testChannel = async (ch: ChannelDescriptor) => {
-    setChannelTesting(ch.id);
-    try {
-      const result = await notificationsApi.testChannel(ch.id);
-      if (result.success) toast.success(t('settings.notificationPreferences.testSuccess'));
-      else toast.error(result.error || t('settings.notificationPreferences.testFailed'));
-    } catch {
-      toast.error(t('settings.notificationPreferences.testFailed'));
-    } finally {
-      setChannelTesting(null);
-    }
-  };
-
-  const toggle = async (eventType: string, channel: string) => {
-    if (!matrix) return;
-    const current = matrix.preferences[eventType]?.[channel] ?? true;
-    const updated = {
-      ...matrix.preferences,
-      [eventType]: { ...matrix.preferences[eventType], [channel]: !current },
-    };
-    setMatrix((m) => (m ? { ...m, preferences: updated } : m));
-    setSaving(true);
-    try {
-      await notificationsApi.updatePreferences(updated);
-    } catch {
-      // Only this cell rolls back — restoring the whole snapshot would also undo a
-      // toggle the user made while this request was in flight.
-      setMatrix((m) =>
-        m
-          ? {
-              ...m,
-              preferences: { ...m.preferences, [eventType]: { ...m.preferences[eventType], [channel]: current } },
-            }
-          : m
-      );
-      toast.error(t('common.error'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveWebhookUrl = async () => {
-    setWebhookSaving(true);
-    try {
-      await settingsApi.set('webhook_url', webhookUrl);
-      setWebhookIsSet(!!webhookUrl);
-      toast.success(t('settings.webhookUrl.saved'));
-    } catch {
-      toast.error(t('common.error'));
-    } finally {
-      setWebhookSaving(false);
-    }
-  };
-
-  const testWebhookUrl = async () => {
-    if (!webhookUrl && !webhookIsSet) return;
-    setWebhookTesting(true);
-    try {
-      const result = await notificationsApi.testWebhook(webhookUrl || undefined);
-      if (result.success) toast.success(t('settings.webhookUrl.testSuccess'));
-      else toast.error(result.error || t('settings.webhookUrl.testFailed'));
-    } catch {
-      toast.error(t('settings.webhookUrl.testFailed'));
-    } finally {
-      setWebhookTesting(false);
-    }
-  };
-
-  const saveNtfySettings = async () => {
-    setNtfySaving(true);
-    try {
-      await settingsApi.setBulk({
-        ntfy_topic: ntfyTopic,
-        ntfy_server: ntfyServer,
-        ...(ntfyToken && ntfyToken !== MASKED ? { ntfy_token: ntfyToken } : {}),
-      });
-      if (ntfyToken && ntfyToken !== MASKED) setNtfyTokenIsSet(true);
-      toast.success(t('settings.ntfyUrl.saved'));
-    } catch {
-      toast.error(t('common.error'));
-    } finally {
-      setNtfySaving(false);
-    }
-  };
-
-  const clearNtfyToken = async () => {
-    try {
-      await settingsApi.set('ntfy_token', '');
-      setNtfyToken('');
-      setNtfyTokenIsSet(false);
-      toast.success(t('settings.ntfyUrl.tokenCleared'));
-    } catch {
-      toast.error(t('common.error'));
-    }
-  };
-
-  const testNtfySettings = async () => {
-    if (!ntfyTopic) return;
-    setNtfyTesting(true);
-    try {
-      const result = await notificationsApi.testNtfy({
-        topic: ntfyTopic,
-        server: ntfyServer || null,
-        token: ntfyToken && ntfyToken !== MASKED ? ntfyToken : null,
-      });
-      if (result.success) toast.success(t('settings.ntfyUrl.testSuccess'));
-      else toast.error(result.error || t('settings.ntfyUrl.testFailed'));
-    } catch {
-      toast.error(t('settings.ntfyUrl.testFailed'));
-    } finally {
-      setNtfyTesting(false);
-    }
-  };
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const {
+    matrix, loadFailed, saving, visibleChannels, hasChannel, pluginChannels, toggle, testChannel, channelTesting,
+    webhookUrl, setWebhookUrl, webhookIsSet, webhookSaving, webhookTesting, saveWebhookUrl, testWebhookUrl,
+    ntfyTopic, setNtfyTopic, ntfyServer, setNtfyServer, ntfyToken, setNtfyToken, ntfyTokenIsSet,
+    ntfySaving, ntfyTesting, saveNtfySettings, clearNtfyToken, testNtfySettings,
+  } = useNotificationSettings({ skipMaskedToken: true })
 
   return (
     <MSetCard title={t('settings.notifications')} icon={Bell}>
-      <WebPushDevices />
-      {!matrix && <p className="font-geist text-[0.6875rem] italic text-m-faint">{t('common.loading')}</p>}
+      {!matrix && (
+        <p className="font-geist text-[0.6875rem] italic text-m-faint">{loadFailed ? t('common.error') : t('common.loading')}</p>
+      )}
 
       {matrix && visibleChannels.length === 0 && (
-        <p className="font-geist text-[0.6875rem] italic text-m-faint">
-          {t('settings.notificationPreferences.noChannels')}
-        </p>
+        <p className="font-geist text-[0.6875rem] italic text-m-faint">{t('settings.notificationPreferences.noChannels')}</p>
       )}
 
       {matrix && visibleChannels.length > 0 && (
@@ -252,11 +48,7 @@ export default function MSettingsNotifications() {
                 <MSetButton onClick={saveWebhookUrl} disabled={webhookSaving}>
                   {t('common.save')}
                 </MSetButton>
-                <MSetButton
-                  variant="ghost"
-                  onClick={testWebhookUrl}
-                  disabled={(!webhookUrl && !webhookIsSet) || webhookTesting}
-                >
+                <MSetButton variant="ghost" onClick={testWebhookUrl} disabled={(!webhookUrl && !webhookIsSet) || webhookTesting}>
                   <Send size={13} />
                   {t('settings.webhookUrl.test')}
                 </MSetButton>
@@ -268,11 +60,7 @@ export default function MSettingsNotifications() {
             <div className="mb-3 rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheet)] p-3">
               <MSetEyebrow className="mb-1">{t('settings.ntfyUrl.topicLabel')}</MSetEyebrow>
               <MSetHint className="mb-2 mt-0">{t('settings.ntfyUrl.hint')}</MSetHint>
-              <MSetInput
-                value={ntfyTopic}
-                onChange={(e) => setNtfyTopic(e.target.value)}
-                placeholder={t('settings.ntfyUrl.topicPlaceholder')}
-              />
+              <MSetInput value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder={t('settings.ntfyUrl.topicPlaceholder')} />
               <MSetEyebrow className="mb-1 mt-3">{t('settings.ntfyUrl.serverLabel')}</MSetEyebrow>
               <MSetInput
                 value={ntfyServer}
@@ -304,11 +92,10 @@ export default function MSettingsNotifications() {
             </div>
           )}
 
+          {hasChannel(WEB_PUSH_CHANNEL_ID) && <WebPushDevices />}
+
           {pluginChannels.map((ch) => (
-            <div
-              key={ch.id}
-              className="mb-3 rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheet)] p-3"
-            >
+            <div key={ch.id} className="mb-3 rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheet)] p-3">
               <MSetEyebrow className="mb-1">{channelLabel(ch, t)}</MSetEyebrow>
               <MSetHint className="mb-2 mt-0">
                 {ch.configured
@@ -322,11 +109,7 @@ export default function MSettingsNotifications() {
                     {t('settings.notificationPreferences.configure')}
                   </MSetButton>
                 )}
-                <MSetButton
-                  variant="ghost"
-                  onClick={() => testChannel(ch)}
-                  disabled={!ch.configured || channelTesting === ch.id}
-                >
+                <MSetButton variant="ghost" onClick={() => testChannel(ch)} disabled={!ch.configured || channelTesting === ch.id}>
                   <Send size={13} />
                   {t('settings.notificationPreferences.sendTest')}
                 </MSetButton>
@@ -338,9 +121,9 @@ export default function MSettingsNotifications() {
 
           {/* Event → channel matrix as chip rows: tap a channel chip to toggle it. */}
           {matrix.event_types.map((eventType, i) => {
-            const implementedForEvent = matrix.implemented_combos[eventType] ?? [];
-            const relevantChannels = visibleChannels.filter((ch) => implementedForEvent.includes(ch.id));
-            if (relevantChannels.length === 0) return null;
+            const implementedForEvent = matrix.implemented_combos[eventType] ?? []
+            const relevantChannels = visibleChannels.filter((ch) => implementedForEvent.includes(ch.id))
+            if (relevantChannels.length === 0) return null
             return (
               <div key={eventType} className={`py-[10px] ${i > 0 ? 'border-t border-[color:var(--m-rowbr)]' : ''}`}>
                 <div className="mb-[7px] text-[0.78125rem] font-bold text-m-ink">
@@ -348,19 +131,30 @@ export default function MSettingsNotifications() {
                 </div>
                 <div className="flex flex-wrap gap-[6px]">
                   {relevantChannels.map((ch) => {
-                    const isOn = matrix.preferences[eventType]?.[ch.id] ?? true;
+                    const isOn = matrix.preferences[eventType]?.[ch.id] ?? true
+                    // Switched off for everyone by the admin (#1536): shown, but locked.
+                    if (isLockedCell(matrix.locked, eventType, ch.id)) {
+                      return (
+                        <span key={ch.id} aria-disabled="true" data-locked
+                          aria-label={`${channelLabel(ch, t)}: ${t('settings.notificationPreferences.lockedByAdmin')}`}
+                          className="inline-flex flex-none items-center gap-[5px] rounded-full border border-dashed border-[color:var(--m-rowbr)] px-3 py-[7px] text-[0.75rem] font-semibold text-m-faint">
+                          <Lock size={11} strokeWidth={2.4} aria-hidden="true" />
+                          {channelLabel(ch, t)}
+                        </span>
+                      )
+                    }
                     return (
                       <MChip key={ch.id} active={isOn} onClick={() => toggle(eventType, ch.id)}>
                         {channelLabel(ch, t)}
                       </MChip>
-                    );
+                    )
                   })}
                 </div>
               </div>
-            );
+            )
           })}
         </>
       )}
     </MSetCard>
-  );
+  )
 }

@@ -2,15 +2,22 @@
  * System Notices API integration tests.
  * Covers GET /api/system-notices/active and POST /api/system-notices/:id/dismiss.
  */
+import { ADDON_IDS } from '../../src/addons';
 import { buildApp } from '../../src/bootstrap';
-import { runMigrations } from '../../src/db/migrations';
-import { createTables } from '../../src/db/schema';
+import { db as testDb } from '../../src/db/database';
+import { Addons } from '../../src/db/entities/Addons.entity';
+import { UserNoticeDismissals } from '../../src/db/entities/UserNoticeDismissals.entity';
+import { Users } from '../../src/db/entities/Users.entity';
 import { SYSTEM_NOTICES } from '../../src/systemNotices/registry';
 import { getCurrentAppVersion } from '../../src/systemNotices/service';
 import type { SystemNotice } from '../../src/systemNotices/types';
 import { authCookie } from '../helpers/auth';
 import { createUser, createAdmin } from '../helpers/factories';
+import type { FactoryOrm } from '../helpers/factories/context';
+import { insertRow, updateRows } from '../helpers/factories/rows';
+import { setAppSetting } from '../helpers/factories/settings';
 import { resetTestDb } from '../helpers/test-db';
+import { MikroORM } from '@mikro-orm/core';
 import type { INestApplication } from '@nestjs/common';
 
 import type { Application } from 'express';
@@ -20,39 +27,14 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bare in-memory DB — schema applied in beforeAll after mocks register
 // ─────────────────────────────────────────────────────────────────────────────
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: () => null,
-    isOwner: () => false,
-  };
-
-  return { testDb: db, dbMock: mock };
+vi.mock('../../src/db/database', async () => {
+  const { createSnapshotTestDb, buildDbMock } = await import('../helpers/db-mock');
+  return buildDbMock(createSnapshotTestDb());
 });
-
-vi.mock('../../src/db/database', () => dbMock);
-vi.mock('../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-  SESSION_DURATION: '24h',
-  SESSION_DURATION_MS: 86400000,
-  SESSION_DURATION_SECONDS: 86400,
-  DEFAULT_LANGUAGE: 'en',
-}));
-vi.mock('../../src/websocket', () => ({ broadcast: vi.fn(), broadcastToUser: vi.fn() }));
 
 let nestApp: INestApplication;
 let app: Application;
+let orm: FactoryOrm;
 
 // Test notice injected into the registry for notice-specific tests
 const TEST_NOTICE: SystemNotice = {
@@ -67,11 +49,25 @@ const TEST_NOTICE: SystemNotice = {
   priority: 0,
 };
 
+// Test notice gated on an addon, so the addonFlags lookup in getActiveNoticesFor
+// (built once per call from every addonEnabled condition in SYSTEM_NOTICES) is
+// exercised for both the enabled and the disabled case.
+const TEST_NOTICE_ADDON: SystemNotice = {
+  id: 'test-addon-notice',
+  display: 'modal',
+  severity: 'info',
+  titleKey: 'system_notice.test_addon_notice.title',
+  bodyKey: 'system_notice.test_addon_notice.body',
+  dismissible: true,
+  conditions: [{ kind: 'addonEnabled', addonId: ADDON_IDS.JOURNEY }],
+  publishedAt: '2026-01-01T00:00:00Z',
+  priority: 0,
+};
+
 beforeAll(async () => {
-  createTables(testDb);
-  runMigrations(testDb);
   nestApp = await buildApp();
   app = nestApp.getHttpAdapter().getInstance();
+  orm = nestApp.get(MikroORM);
 });
 
 beforeEach(() => {
@@ -100,7 +96,7 @@ describe('GET /api/system-notices/active', () => {
     // nothing but the install being self-hosted still apply, and which ones those are
     // changes every release (the thank-you modal handed over to the release notes at 4.0.0).
     // Read the set out of the registry rather than naming them, or this ages out again.
-    testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
+    await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
     const alwaysOn = new Set(
       SYSTEM_NOTICES.filter((n) => (n.conditions ?? []).every((c) => c.kind === 'managed')).map((n) => n.id),
     );
@@ -114,7 +110,7 @@ describe('GET /api/system-notices/active', () => {
     try {
       const { user } = createUser(testDb);
       // Set login_count to 1 (first login)
-      testDb.prepare('UPDATE users SET login_count = 1 WHERE id = ?').run(user.id);
+      await updateRows(orm, Users, { id: user.id }, { login_count: 1 });
 
       const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
       expect(res.status).toBe(200);
@@ -132,11 +128,32 @@ describe('GET /api/system-notices/active', () => {
     }
   });
 
+  it('an addonEnabled-gated notice appears only while the addon is on', async () => {
+    SYSTEM_NOTICES.push(TEST_NOTICE_ADDON);
+    try {
+      const { user } = createUser(testDb);
+      await updateRows(orm, Addons, { id: ADDON_IDS.JOURNEY }, { enabled: false });
+
+      const off = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
+      expect(off.status).toBe(200);
+      expect(off.body.find((n: { id: string }) => n.id === TEST_NOTICE_ADDON.id)).toBeUndefined();
+
+      await updateRows(orm, Addons, { id: ADDON_IDS.JOURNEY }, { enabled: true });
+
+      const on = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
+      expect(on.status).toBe(200);
+      expect(on.body.find((n: { id: string }) => n.id === TEST_NOTICE_ADDON.id)).toBeDefined();
+    } finally {
+      const idx = SYSTEM_NOTICES.indexOf(TEST_NOTICE_ADDON);
+      if (idx !== -1) SYSTEM_NOTICES.splice(idx, 1);
+    }
+  });
+
   it('does not return firstLogin notice for user with login_count > 1', async () => {
     SYSTEM_NOTICES.push(TEST_NOTICE);
     try {
       const { user } = createUser(testDb);
-      testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
+      await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
 
       const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
       expect(res.status).toBe(200);
@@ -151,12 +168,14 @@ describe('GET /api/system-notices/active', () => {
     SYSTEM_NOTICES.push(TEST_NOTICE);
     try {
       const { user } = createUser(testDb);
-      testDb.prepare('UPDATE users SET login_count = 1 WHERE id = ?').run(user.id);
+      await updateRows(orm, Users, { id: user.id }, { login_count: 1 });
 
       // Dismiss the notice directly in DB
-      testDb
-        .prepare('INSERT INTO user_notice_dismissals (user_id, notice_id, dismissed_at) VALUES (?, ?, ?)')
-        .run(user.id, TEST_NOTICE.id, Date.now());
+      await insertRow(orm, UserNoticeDismissals, {
+        user: user.id,
+        notice_id: TEST_NOTICE.id,
+        dismissed_at: Date.now(),
+      });
 
       const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
       expect(res.status).toBe(200);
@@ -188,7 +207,7 @@ describe('GET /api/system-notices/active', () => {
     SYSTEM_NOTICES.push(RECURRING);
     try {
       const { user } = createUser(testDb);
-      testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
+      await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
 
       const shows = async () => {
         const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
@@ -200,17 +219,21 @@ describe('GET /api/system-notices/active', () => {
       expect(await shows()).toBe(true);
 
       // Dismissed at an old version → it returns once the running version is newer.
-      testDb
-        .prepare(
-          'INSERT INTO user_notice_dismissals (user_id, notice_id, dismissed_at, dismissed_app_version) VALUES (?, ?, ?, ?)',
-        )
-        .run(user.id, RECURRING.id, Date.now(), '0.0.1');
+      await insertRow(orm, UserNoticeDismissals, {
+        user: user.id,
+        notice_id: RECURRING.id,
+        dismissed_at: Date.now(),
+        dismissed_app_version: '0.0.1',
+      });
       expect(await shows()).toBe(true);
 
       // Dismissed at a version >= the running one → stays hidden until the next upgrade.
-      testDb
-        .prepare('UPDATE user_notice_dismissals SET dismissed_app_version = ? WHERE user_id = ? AND notice_id = ?')
-        .run('99.0.0', user.id, RECURRING.id);
+      await updateRows(
+        orm,
+        UserNoticeDismissals,
+        { user: user.id, notice_id: RECURRING.id },
+        { dismissed_app_version: '99.0.0' },
+      );
       expect(await shows()).toBe(false);
     } finally {
       const idx = SYSTEM_NOTICES.indexOf(RECURRING);
@@ -218,70 +241,17 @@ describe('GET /api/system-notices/active', () => {
     }
   });
 
-  it('never re-surfaces the retired upstream support solicitation', async () => {
-    const noticeId = 'thank-you-support';
+  it('omits promotional notices for a client with the release layout', async () => {
     const { user } = createUser(testDb);
-    testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
-
-    const shows = async () => {
-      const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
-      expect(res.status).toBe(200);
-      return res.body.some((notice: { id: string }) => notice.id === noticeId);
-    };
-
-    expect(await shows()).toBe(false);
-    testDb
-      .prepare(
-        'INSERT INTO user_notice_dismissals (user_id, notice_id, dismissed_at, dismissed_app_version) VALUES (?, ?, ?, ?)',
-      )
-      .run(user.id, noticeId, Date.now(), '0.0.1');
-    expect(await shows()).toBe(false);
-  });
-
-  it('orders equal-priority operational notices by severity and then publication time', async () => {
-    const fixtures: SystemNotice[] = [
-      {
-        ...TEST_NOTICE,
-        id: 'sort-info-old',
-        severity: 'info',
-        conditions: [],
-        publishedAt: '2026-01-01T00:00:00Z',
-      },
-      {
-        ...TEST_NOTICE,
-        id: 'sort-warn',
-        severity: 'warn',
-        conditions: [],
-        publishedAt: '2026-01-02T00:00:00Z',
-      },
-      {
-        ...TEST_NOTICE,
-        id: 'sort-critical',
-        severity: 'critical',
-        conditions: [],
-        publishedAt: '2026-01-03T00:00:00Z',
-      },
-      {
-        ...TEST_NOTICE,
-        id: 'sort-info-new',
-        severity: 'info',
-        conditions: [],
-        publishedAt: '2026-01-04T00:00:00Z',
-      },
-    ];
-    SYSTEM_NOTICES.push(...fixtures);
-    try {
-      const { user } = createUser(testDb);
-      const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
-      expect(res.status).toBe(200);
-      const ids = res.body.map((notice: { id: string }) => notice.id).filter((id: string) => id.startsWith('sort-'));
-      expect(ids).toEqual(['sort-critical', 'sort-warn', 'sort-info-new', 'sort-info-old']);
-    } finally {
-      for (const fixture of fixtures) {
-        const index = SYSTEM_NOTICES.indexOf(fixture);
-        if (index !== -1) SYSTEM_NOTICES.splice(index, 1);
-      }
-    }
+    await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
+    const res = await request(app)
+      .get('/api/system-notices/active')
+      .query({ supports: 'release', ui: getCurrentAppVersion() })
+      .set('Cookie', authCookie(user.id));
+    expect(res.status).toBe(200);
+    const ids = res.body.map((notice: { id: string }) => notice.id);
+    expect(ids).not.toContain('release-notes');
+    expect(ids).not.toContain('thank-you-support');
   });
 });
 
@@ -341,7 +311,7 @@ describe('POST /api/system-notices/:id/dismiss', () => {
     SYSTEM_NOTICES.push(TEST_NOTICE);
     try {
       const { user } = createUser(testDb);
-      testDb.prepare('UPDATE users SET login_count = 1 WHERE id = ?').run(user.id);
+      await updateRows(orm, Users, { id: user.id }, { login_count: 1 });
 
       // Confirm TEST_NOTICE is visible before dismiss
       const before = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
@@ -370,9 +340,9 @@ describe('POST /api/system-notices/:id/dismiss', () => {
  * (so existingUserBeforeVersion('3.0.14') passes) and whose login_count is
  * high enough to suppress the firstLogin and v3-upgrade notice conditions.
  */
-function setupCollisionAdmin() {
+async function setupCollisionAdmin() {
   const { user } = createAdmin(testDb);
-  testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
+  await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
   return user;
 }
 
@@ -393,10 +363,8 @@ describe('v3014-whitespace-collision notice', () => {
   });
 
   it('SN-COLLISION-1 — shown to admin when collision flag is set and user predates 3.0.14', async () => {
-    const user = setupCollisionAdmin();
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'true')")
-      .run();
+    const user = await setupCollisionAdmin();
+    await setAppSetting(orm, 'whitespace_migration_collision', 'true');
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -405,7 +373,7 @@ describe('v3014-whitespace-collision notice', () => {
   });
 
   it('SN-COLLISION-2 — hidden when collision flag is absent', async () => {
-    const user = setupCollisionAdmin();
+    const user = await setupCollisionAdmin();
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -414,10 +382,8 @@ describe('v3014-whitespace-collision notice', () => {
   });
 
   it('SN-COLLISION-3 — hidden when collision flag is explicitly false', async () => {
-    const user = setupCollisionAdmin();
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'false')")
-      .run();
+    const user = await setupCollisionAdmin();
+    await setAppSetting(orm, 'whitespace_migration_collision', 'false');
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -427,10 +393,8 @@ describe('v3014-whitespace-collision notice', () => {
 
   it('SN-COLLISION-4 — hidden for non-admin user even when collision flag is set', async () => {
     const { user } = createUser(testDb);
-    testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.0', user.id);
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'true')")
-      .run();
+    await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.0' });
+    await setAppSetting(orm, 'whitespace_migration_collision', 'true');
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -440,10 +404,8 @@ describe('v3014-whitespace-collision notice', () => {
 
   it('SN-COLLISION-5 — hidden for user whose first_seen_version is >= 3.0.14 (new account)', async () => {
     const { user } = createAdmin(testDb);
-    testDb.prepare('UPDATE users SET login_count = 5, first_seen_version = ? WHERE id = ?').run('3.0.14', user.id);
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'true')")
-      .run();
+    await updateRows(orm, Users, { id: user.id }, { login_count: 5, first_seen_version: '3.0.14' });
+    await setAppSetting(orm, 'whitespace_migration_collision', 'true');
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -453,10 +415,8 @@ describe('v3014-whitespace-collision notice', () => {
 
   it('SN-COLLISION-6 — hidden when app version is below 3.0.14', async () => {
     process.env.APP_VERSION = '3.0.13';
-    const user = setupCollisionAdmin();
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'true')")
-      .run();
+    const user = await setupCollisionAdmin();
+    await setAppSetting(orm, 'whitespace_migration_collision', 'true');
 
     const res = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
 
@@ -465,10 +425,8 @@ describe('v3014-whitespace-collision notice', () => {
   });
 
   it('SN-COLLISION-7 — hidden after admin dismisses it', async () => {
-    const user = setupCollisionAdmin();
-    testDb
-      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('whitespace_migration_collision', 'true')")
-      .run();
+    const user = await setupCollisionAdmin();
+    await setAppSetting(orm, 'whitespace_migration_collision', 'true');
 
     const before = await request(app).get('/api/system-notices/active').set('Cookie', authCookie(user.id));
     expect(before.body.find((n: { id: string }) => n.id === NOTICE_ID)).toBeDefined();

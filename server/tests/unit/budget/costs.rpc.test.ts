@@ -5,17 +5,19 @@
  * for costs.listMine. Both orderings are asserted, because swapping them changes
  * which refusal a caller sees.
  */
+import type { TripsRepository } from '../../../src/db/repositories/Trips.repository';
+import type { UsersRepository } from '../../../src/db/repositories/Users.repository';
+import { PluginGuards } from '../../../src/nest-rpc/plugin-guards.service';
+import { createTestPluginRegistry } from '../../../src/nest-rpc/rpc-kit/testing';
 import type { AddonsService } from '../../../src/nest/addons/addons.service';
 import { BudgetModule } from '../../../src/nest/budget/budget.module';
 import type { BudgetService } from '../../../src/nest/budget/budget.service';
 import { CostsRpc } from '../../../src/nest/budget/costs.rpc';
-import type { DatabaseService } from '../../../src/nest/database/database.service';
 import type { PermissionsService } from '../../../src/nest/permissions/permissions.service';
-import { PluginGuards } from '../../../src/nest/plugins/host/plugin-guards.service';
 import { PluginRpcHost } from '../../../src/nest/plugins/host/rpc-host';
-import { createTestPluginRegistry } from '../../../src/nest/plugins/host/rpc-kit/testing';
 import type { RpcRequest, RpcError } from '../../../src/nest/plugins/protocol/envelope';
 import type { RealtimeService } from '../../../src/nest/realtime/realtime.service';
+import { TripAccessService } from '../../../src/nest/trip-membership/trip-access.service';
 import type { TripMembershipService } from '../../../src/nest/trip-membership/trip-membership.service';
 import { expectRegisteredProvider } from '../../helpers/module-providers';
 import { makeDeps } from '../../helpers/rpc-host-deps';
@@ -29,39 +31,44 @@ const req = (method: string, params: Record<string, unknown> = {}): RpcRequest =
   params,
 });
 
-/** Trip 1 belongs to user 42, cost 5 sits on it, and the addon is on unless said otherwise. */
-function build(opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean } = {}) {
+/**
+ * Trip 1 belongs to user 42, cost 5 sits on it, and the addon is on unless said otherwise.
+ * `refusal` is what BudgetService.linkRefusal answers for the body's links (#2084), and
+ * `linkedTo` the booking cost 5 is linked to before the write.
+ */
+function build(
+  opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean; refusal?: string; linkedTo?: number | null } = {},
+) {
   const budget = {
     listBudgetItems: vi.fn((tripId: number) => [{ id: 5, trip_id: tripId }]),
-    listSettlements: vi.fn((tripId: number) => [{ id: 6, trip_id: tripId }]),
     create: vi.fn(async (tripId: string, i: Record<string, unknown>) => ({ id: 9, trip_id: tripId, ...i })),
-    update: vi.fn(async () => (opts.missing ? null : { id: 5, name: 'Hotel' })),
+    // The row after the write: a link in the body moves it, otherwise it keeps its booking.
+    update: vi.fn(async (_id: number, _tripId: string, i: Record<string, unknown>) =>
+      opts.missing
+        ? null
+        : { id: 5, name: 'Hotel', reservation_id: 'reservation_id' in i ? i.reservation_id : (opts.linkedTo ?? null) },
+    ),
     remove: vi.fn(() => !opts.missing),
-    createSettlement: vi.fn(async () => (opts.missing ? null : { id: 6, amount: 20 })),
-    updateSettlement: vi.fn(async () => (opts.missing ? null : { id: 6, amount: 25 })),
-    deleteSettlement: vi.fn(() => !opts.missing),
+    linkRefusal: vi.fn(() => opts.refusal ?? null),
+    getBudgetItem: vi.fn(() => (opts.missing ? null : { id: 5, reservation_id: opts.linkedTo ?? null })),
+    resyncLinkedPrices: vi.fn(),
+    resyncReservationPrice: vi.fn(),
   } as unknown as BudgetService & Record<string, ReturnType<typeof vi.fn>>;
   const realtime = { broadcast: vi.fn() } as unknown as RealtimeService & { broadcast: ReturnType<typeof vi.fn> };
   const db = {
-    canAccessTrip: vi.fn((tripId: number, userId: number) =>
+    findAccessible: vi.fn(async (tripId: number, userId: number) =>
       tripId === 1 && userId === 42 ? { id: 1, user_id: 42 } : undefined,
     ),
-    prepare: vi.fn(() => ({ get: () => ({ role: 'user' }) })),
-  } as unknown as DatabaseService;
+  } as unknown as TripsRepository;
   const guards = new PluginGuards(
     db,
     { checkPermission: vi.fn(() => opts.canEdit ?? true) } as unknown as PermissionsService,
     { isAddonEnabled: vi.fn(() => opts.addonOn ?? true) } as unknown as AddonsService,
+    { getRole: vi.fn(async () => 'user') } as unknown as UsersRepository,
   );
   // The leaf membership read replaced the deleted trips.bridge for listMine.
   const membership = { listAccessibleTripIds: vi.fn(() => [1, 2]) } as unknown as TripMembershipService;
-  const exchangeRates = {
-    listTripExchangeRates: vi.fn(() => [{ currency: 'USD', exchange_rate: 1.2 }]),
-    resolveExchangeRate: vi.fn(async () => ({ currency: 'USD', exchange_rate: 1.2, source: 'trip' })),
-    setTripExchangeRate: vi.fn(() => ({ currency: 'USD', exchange_rate: 1.2 })),
-    deleteTripExchangeRate: vi.fn(() => !opts.missing),
-  };
-  const rpc = new CostsRpc(budget, db, realtime, guards, membership, exchangeRates as never);
+  const rpc = new CostsRpc(budget, new TripAccessService(db), realtime, guards, membership, {} as never);
   const host = (...grants: string[]) =>
     new PluginRpcHost(
       'p',
@@ -69,7 +76,7 @@ function build(opts: { addonOn?: boolean; canEdit?: boolean; missing?: boolean }
       makeDeps(),
       createTestPluginRegistry([rpc]),
     );
-  return { budget, exchangeRates, realtime, host };
+  return { budget, realtime, host };
 }
 
 describe('CostsRpc reads', () => {
@@ -204,97 +211,123 @@ describe('CostsRpc writes', () => {
   });
 });
 
-describe('CostsRpc FX and settlement parity', () => {
-  it('COSTS-RPC-013 reads Trip rates, resolved provenance, and the settlement ledger', async () => {
-    const f = build();
-    await expect(f.host().dispatch(req('costs.listRates', { tripId: 1 }), 42)).resolves.toMatchObject({ ok: true });
-    await expect(
-      f.host().dispatch(req('costs.resolveRate', { tripId: 1, currency: 'USD' }), 42),
-    ).resolves.toMatchObject({ ok: true });
-    await expect(f.host().dispatch(req('costs.listSettlements', { tripId: 1 }), 42)).resolves.toMatchObject({
-      ok: true,
-    });
-    expect(f.exchangeRates.resolveExchangeRate).toHaveBeenCalledWith(1, 'USD');
-    expect(f.budget.listSettlements).toHaveBeenCalledWith(1);
+// #2084: a cost can point at a booking or a place, which has to be on the same trip
+// (the REST route answers 400, the MCP tool an error result, the plugin surface
+// RESOURCE_FORBIDDEN, all in the same words), and the booking mirrors its costs' total.
+describe('CostsRpc links to bookings and places', () => {
+  it("COSTS-RPC-013 a create linking another trip's booking is refused in linkRefusal's words, before any write", async () => {
+    const f = build({ refusal: 'reservation_id does not belong to this trip.' });
+    const res = (await f
+      .host()
+      .dispatch(
+        req('costs.create', { tripId: 1, input: { name: 'Seat', total_price: 15, reservation_id: 4711 } }),
+        42,
+      )) as RpcError;
+    expect(res.error.code).toBe('RESOURCE_FORBIDDEN');
+    expect(res.error.message).toBe('reservation_id does not belong to this trip.');
+    expect(f.budget.linkRefusal).toHaveBeenCalledWith(1, expect.objectContaining({ reservation_id: 4711 }));
+    expect(f.budget.create).not.toHaveBeenCalled();
+    expect(f.budget.resyncReservationPrice).not.toHaveBeenCalled();
+    expect(f.realtime.broadcast).not.toHaveBeenCalled();
   });
 
-  it('COSTS-RPC-014 saves and deletes Trip defaults with the cost-specific permission gate', async () => {
+  it("COSTS-RPC-014 an update linking another trip's place is refused before it reads, writes or resyncs", async () => {
+    const f = build({ refusal: 'place_id does not belong to this trip.', linkedTo: 77 });
+    const res = (await f
+      .host()
+      .dispatch(req('costs.update', { tripId: 1, itemId: 5, input: { place_id: 4711 } }), 42)) as RpcError;
+    expect(res.error.code).toBe('RESOURCE_FORBIDDEN');
+    expect(res.error.message).toBe('place_id does not belong to this trip.');
+    expect(f.budget.linkRefusal).toHaveBeenCalledWith(1, { place_id: 4711 });
+    expect(f.budget.getBudgetItem).not.toHaveBeenCalled();
+    expect(f.budget.update).not.toHaveBeenCalled();
+    expect(f.budget.resyncLinkedPrices).not.toHaveBeenCalled();
+    expect(f.realtime.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('COSTS-RPC-015 the permission refusal still comes first, so a link check never answers a caller without budget_edit', async () => {
+    const f = build({ canEdit: false, refusal: 'reservation_id does not belong to this trip.' });
+    for (const [method, params] of [
+      ['costs.create', { tripId: 1, input: { name: 'x', reservation_id: 4711 } }],
+      ['costs.update', { tripId: 1, itemId: 5, input: { reservation_id: 4711 } }],
+    ] as const) {
+      expect(((await f.host().dispatch(req(method, params), 42)) as RpcError).error.message).toBe(
+        'no permission to edit costs on trip 1',
+      );
+    }
+    expect(f.budget.linkRefusal).not.toHaveBeenCalled();
+  });
+
+  it("COSTS-RPC-016 a cost created on a booking resyncs that booking's price; an unlinked one resyncs nothing", async () => {
     const f = build();
     expect(
       (
         await f
           .host()
-          .dispatch(req('costs.setRate', { tripId: 1, currency: 'usd', exchangeRate: 1.2, note: 'bank' }), 42)
+          .dispatch(
+            req('costs.create', { tripId: 1, input: { name: 'Seat', total_price: 15, reservation_id: 77 } }),
+            42,
+          )
       ).ok,
     ).toBe(true);
-    expect(f.exchangeRates.setTripExchangeRate).toHaveBeenCalledWith(1, 'usd', 1.2, 42, 'bank');
-    expect((await f.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'usd' }), 42)).ok).toBe(true);
-    expect(f.realtime.broadcast.mock.calls.map((call) => call[1])).toEqual([
-      'budget:exchange-rates-updated',
-      'budget:exchange-rates-updated',
-    ]);
+    expect(f.budget.resyncReservationPrice).toHaveBeenCalledWith(1, 77);
+    expect(f.realtime.broadcast.mock.calls.map((c) => c[1])).toEqual(['budget:created']);
 
-    const missing = build({ missing: true });
-    expect(
-      ((await missing.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'USD' }), 42)) as RpcError).error
-        .message,
-    ).toBe('no trip exchange rate for USD');
+    const g = build();
+    await g.host().dispatch(req('costs.create', { tripId: 1, input: { name: 'Coffee', total_price: 3 } }), 42);
+    expect(g.budget.resyncReservationPrice).not.toHaveBeenCalled();
   });
 
-  it('COSTS-RPC-015 creates, updates, and deletes foreign-currency settlements through BudgetService', async () => {
-    const input = { from_user_id: 42, to_user_id: 43, amount: 20, currency: 'USD', exchange_rate: 1.2 };
-    const f = build();
-    expect((await f.host().dispatch(req('costs.createSettlement', { tripId: 1, input }), 42)).ok).toBe(true);
-    expect((await f.host().dispatch(req('costs.updateSettlement', { tripId: 1, settlementId: 6, input }), 42)).ok).toBe(
-      true,
-    );
-    expect((await f.host().dispatch(req('costs.deleteSettlement', { tripId: 1, settlementId: 6 }), 42)).ok).toBe(true);
-    expect(f.realtime.broadcast.mock.calls.map((call) => call[1])).toEqual([
-      'budget:settlement-created',
-      'budget:settlement-updated',
-      'budget:settlement-deleted',
-    ]);
-  });
-
-  it('COSTS-RPC-016 rejects malformed settlement bodies and missing rows without broadcasting', async () => {
-    const malformed = build();
-    const bad = (await malformed
+  it('COSTS-RPC-017 an update moving the cost hands the booking it left and the row it wrote to resyncLinkedPrices', async () => {
+    const f = build({ linkedTo: 77 });
+    const res = await f
       .host()
-      .dispatch(req('costs.createSettlement', { tripId: 1, input: { amount: 'twenty' } }), 42)) as RpcError;
-    expect(bad.error.code).toBe('BAD_PARAMS');
-    expect(malformed.realtime.broadcast).not.toHaveBeenCalled();
-
-    const input = { from_user_id: 42, to_user_id: 43, amount: 20 };
-    const missing = build({ missing: true });
-    expect(
-      ((await missing.host().dispatch(req('costs.createSettlement', { tripId: 1, input }), 42)) as RpcError).error
-        .message,
-    ).toBe('no settlement on trip 1');
-    expect(
-      (
-        (await missing
-          .host()
-          .dispatch(req('costs.updateSettlement', { tripId: 1, settlementId: 404, input }), 42)) as RpcError
-      ).error.message,
-    ).toBe('no settlement 404 on trip 1');
-    expect(
-      ((await missing.host().dispatch(req('costs.deleteSettlement', { tripId: 1, settlementId: 404 }), 42)) as RpcError)
-        .error.message,
-    ).toBe('no settlement 404 on trip 1');
+      .dispatch(req('costs.update', { tripId: 1, itemId: 5, input: { reservation_id: 78 } }), 42);
+    expect(res.ok).toBe(true);
+    // The row is read before the write, so the booking it leaves is still known.
+    expect(f.budget.getBudgetItem).toHaveBeenCalledWith(5, 1);
+    expect(vi.mocked(f.budget.getBudgetItem).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(f.budget.update).mock.invocationCallOrder[0],
+    );
+    expect(f.budget.resyncLinkedPrices).toHaveBeenCalledWith(
+      1,
+      77,
+      { id: 5, name: 'Hotel', reservation_id: 78 },
+      { reservation_id: 78 },
+    );
   });
 
-  it('COSTS-RPC-017 validates numeric rate arguments and still refuses userless rate writes', async () => {
-    const f = build();
-    expect(
-      (
-        (await f
-          .host()
-          .dispatch(req('costs.setRate', { tripId: 1, currency: 'USD', exchangeRate: 'x' }), 42)) as RpcError
-      ).error.code,
-    ).toBe('BAD_PARAMS');
-    expect(
-      ((await f.host().dispatch(req('costs.deleteRate', { tripId: 1, currency: 'USD' }), undefined)) as RpcError).error
-        .message,
-    ).toBe('cost writes require an authenticated user context');
+  it('COSTS-RPC-018 an unlink (null) snapshots too and passes the booking it leaves', async () => {
+    const f = build({ linkedTo: 77 });
+    await f.host().dispatch(req('costs.update', { tripId: 1, itemId: 5, input: { reservation_id: null } }), 42);
+    expect(f.budget.resyncLinkedPrices).toHaveBeenCalledWith(
+      1,
+      77,
+      { id: 5, name: 'Hotel', reservation_id: null },
+      { reservation_id: null },
+    );
+  });
+
+  it('COSTS-RPC-019 an update that names no booking reads nothing first, yet still lets the linked booking resync', async () => {
+    // A new total or currency moves the price of the booking the cost stays on.
+    const f = build({ linkedTo: 77 });
+    await f.host().dispatch(req('costs.update', { tripId: 1, itemId: 5, input: { total_price: 40 } }), 42);
+    expect(f.budget.getBudgetItem).not.toHaveBeenCalled();
+    expect(f.budget.resyncLinkedPrices).toHaveBeenCalledWith(
+      1,
+      undefined,
+      { id: 5, name: 'Hotel', reservation_id: 77 },
+      { total_price: 40 },
+    );
+  });
+
+  it('COSTS-RPC-020 a missing cost resyncs nothing', async () => {
+    const f = build({ missing: true });
+    const res = (await f
+      .host()
+      .dispatch(req('costs.update', { tripId: 1, itemId: 404, input: { reservation_id: 78 } }), 42)) as RpcError;
+    expect(res.error.message).toBe('no cost 404 on trip 1');
+    expect(f.budget.resyncLinkedPrices).not.toHaveBeenCalled();
+    expect(f.realtime.broadcast).not.toHaveBeenCalled();
   });
 });

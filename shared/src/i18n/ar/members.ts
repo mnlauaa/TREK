@@ -1,14 +1,17 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'مشاركة الرحلة',
   'members.inviteUser': 'دعوة مستخدم',
   'members.selectUser': 'اختر مستخدمًا…',
   'members.invite': 'دعوة',
   'members.allHaveAccess': 'جميع المستخدمين لديهم صلاحية الوصول بالفعل.',
   'members.access': 'الصلاحية',
-  'members.person': 'شخص',
-  'members.persons': 'أشخاص',
+  'members.persons': 'شخص',
+  'members.persons.zero': 'أشخاص',
+  'members.persons.one': 'شخص',
+  'members.persons.two': 'شخصان',
+  'members.persons.few': 'أشخاص',
+  'members.persons.many': 'شخصًا',
   'members.you': 'أنت',
   'members.owner': 'المالك',
   'members.leaveTrip': 'مغادرة الرحلة',
@@ -32,23 +35,8 @@ const members: TranslationStrings = {
   'members.guestAddError': 'فشلت إضافة الضيف',
   'members.guestRenameError': 'فشلت إعادة تسمية الضيف',
   'members.guestRemoved': 'تمت إزالة الضيف',
-  'members.confirmRemoveGuest': 'إزالة هذا الضيف؟ سيتم أيضًا إزالة تعييناته وحصص التكاليف الخاصة به.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'إزالة هذا الضيف؟ ستتم إزالة تعييناته، وتُوزَّع حصته من كل نفقة على الآخرين المشاركين فيها.',
+  'members.guestHasPayments': 'دفع هذا الضيف نفقة أو هو طرف في دفعة مسجّلة. غيّر الدافع أو احذف الدفعة أولًا.',
 };
 export default members;

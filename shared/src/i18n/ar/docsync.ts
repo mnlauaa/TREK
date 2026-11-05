@@ -68,7 +68,12 @@ const docsync: TranslationStrings = {
   'docsync.state.local_deleted': 'محذوف في TREK',
   'docsync.state.scope_drift': 'نُقل خارج المجلد',
 
-  'docsync.conflict.resolve': 'حلّ {count}',
+  'docsync.conflict.resolve': 'حلّ {count} تعارض',
+  'docsync.conflict.resolve.zero': 'حلّ {count} تعارض',
+  'docsync.conflict.resolve.one': 'حلّ تعارض واحد',
+  'docsync.conflict.resolve.two': 'حلّ تعارضين',
+  'docsync.conflict.resolve.few': 'حلّ {count} تعارضات',
+  'docsync.conflict.resolve.many': 'حلّ {count} تعارضًا',
 
   'docsync.conflict.title': 'تغيّرت النسختان',
   'docsync.conflict.keepTrek': 'الإبقاء على نسخة TREK',
@@ -172,6 +177,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'متوقفة مؤقتاً: أوقف مسؤول الخادم هذا المزوّد. ستُستأنف المزامنة عند إعادة تشغيله.',
   'docsync.binding.reconnect': 'إعادة الاتصال',
+  'docsync.connection.title': 'الاتصال',
+  'docsync.connection.hint': 'العنوان وبيانات الدخول التي يستخدمها TREK لهذا المخزن.',
+  'docsync.connection.edit': 'تعديل الاتصال',
+  'docsync.connection.remove': 'إزالة الاتصال',
+  'docsync.connection.confirmRemove':
+    'ينسى TREK عنوان هذا المخزن وبيانات الدخول إليه، وتتوقف كل مزامنة لهذه الرحلة عبره. تبقى المستندات في TREK وفي المخزن.',
 };
 
 export default docsync;

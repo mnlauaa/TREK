@@ -1,35 +1,34 @@
-import type { LucideIcon } from 'lucide-react';
+import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import {
   Bell,
   ChevronDown,
   ChevronLeft,
   CloudOff,
-  Map,
+    Map,
   Palette,
   Plug,
   Puzzle,
   Settings2,
   SlidersHorizontal,
   User,
-} from 'lucide-react';
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
-import { useTranslation } from '../../../i18n';
-import { useSettings } from '../../../pages/settings/useSettings';
-import { usePluginStore } from '../../../store/pluginStore';
-import MSettingsAccount from './MSettingsAccount';
-import MSettingsAppearance from './MSettingsAppearance';
-import MSettingsGeneral from './MSettingsGeneral';
-import MSettingsIntegrations from './MSettingsIntegrations';
-import MSettingsMap from './MSettingsMap';
-import MSettingsNotifications from './MSettingsNotifications';
-import MSettingsOffline from './MSettingsOffline';
-import MSettingsPlugins from './MSettingsPlugins';
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useTranslation } from '../../../i18n'
+import { useSettings } from '../../../pages/settings/useSettings'
+import MSettingsPlugins from './MSettingsPlugins'
+import MSettingsOffline from './MSettingsOffline'
+import MSettingsGeneral from './MSettingsGeneral'
+import MSettingsAppearance from './MSettingsAppearance'
+import MSettingsMap from './MSettingsMap'
+import MSettingsNotifications from './MSettingsNotifications'
+import MSettingsIntegrations from './MSettingsIntegrations'
+import MSettingsAccount from './MSettingsAccount'
 
 interface SectionTab {
-  id: string;
-  label: string;
-  icon: LucideIcon;
+  id: string
+  label: string
+  icon: LucideIcon
 }
 
 /**
@@ -39,11 +38,10 @@ interface SectionTab {
  * gating, app version).
  */
 export default function MSettings() {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  const { hasIntegrations, appVersion, activeTab, setActiveTab } = useSettings();
-  const hasPlugins = usePluginStore((s) => s.plugins.length > 0);
-  const [dropOpen, setDropOpen] = useState(false);
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { hasIntegrations, hasPlugins, appVersion, activeTab, setActiveTab } = useSettings()
+  const [dropOpen, setDropOpen] = useState(false)
 
   const tabs: SectionTab[] = [
     { id: 'display', label: t('settings.tabs.display'), icon: SlidersHorizontal },
@@ -54,9 +52,10 @@ export default function MSettings() {
     ...(hasPlugins ? [{ id: 'plugins', label: t('settings.tabs.plugins'), icon: Puzzle }] : []),
     { id: 'offline', label: t('settings.tabs.offline'), icon: CloudOff },
     { id: 'account', label: t('settings.tabs.account'), icon: User },
-  ];
 
-  const active = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+  ]
+
+  const active = tabs.find((tab) => tab.id === activeTab) || tabs[0]
 
   return (
     <div className="px-4 pb-[calc(var(--bottom-nav-h,84px)+16px)] pt-[var(--m-safe-top,12px)]">
@@ -65,7 +64,7 @@ export default function MSettings() {
         <button
           type="button"
           aria-label={t('common.back')}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => void navigate('/dashboard')}
           className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-full border border-[color:var(--m-gbr)] bg-[color:var(--m-sheet)] text-m-ink shadow-[0_5px_12px_-8px_rgba(0,0,0,.18)]"
         >
           <ChevronLeft size={18} strokeWidth={2.2} />
@@ -77,7 +76,7 @@ export default function MSettings() {
           className="flex h-[38px] min-w-0 flex-1 items-center gap-[7px] rounded-full border border-[color:var(--m-gbr)] bg-[color:var(--m-sheet)] px-[14px] text-[0.8125rem] font-bold text-m-ink shadow-[0_5px_12px_-8px_rgba(0,0,0,.18)]"
         >
           <Settings2 size={14} strokeWidth={2.2} className="flex-none" />
-          <span className="min-w-0 flex-1 truncate text-left">{active.label}</span>
+          <span className="min-w-0 flex-1 truncate text-start">{active.label}</span>
           <ChevronDown size={13} strokeWidth={2} className="flex-none text-m-faint" />
         </button>
       </div>
@@ -90,10 +89,10 @@ export default function MSettings() {
               key={tab.id}
               type="button"
               onClick={() => {
-                setActiveTab(tab.id);
-                setDropOpen(false);
+                setActiveTab(tab.id)
+                setDropOpen(false)
               }}
-              className={`flex w-full items-center gap-[10px] rounded-[11px] p-[10px] text-left text-[0.8125rem] font-semibold text-m-ink ${
+              className={`flex w-full items-center gap-[10px] rounded-[11px] p-[10px] text-start text-[0.8125rem] font-semibold text-m-ink ${
                 tab.id === active.id ? 'bg-[color:var(--m-ic)]' : ''
               }`}
             >
@@ -113,13 +112,11 @@ export default function MSettings() {
       {active.id === 'plugins' && hasPlugins && <MSettingsPlugins />}
       {active.id === 'offline' && <MSettingsOffline />}
       {active.id === 'account' && <MSettingsAccount />}
-      {appVersion && (
-        <p className="mt-8 text-center text-caption text-m-muted">
-          <button type="button" onClick={() => navigate('/legal')} className="underline">
-            {t('legal.title')} · v{appVersion}
-          </button>
-        </p>
-      )}
+      <p className="mt-8 text-center text-caption text-m-muted">
+        <button type="button" onClick={() => void navigate('/legal')} className="underline">
+          {t('legal.title')}{appVersion && ` · v${appVersion}`}
+        </button>
+      </p>
     </div>
-  );
+  )
 }

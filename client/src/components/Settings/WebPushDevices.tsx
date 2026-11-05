@@ -1,8 +1,8 @@
 import type { WebPushConfigResult, WebPushDevice } from '@trek/shared';
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { notificationsApi } from '../../api/client';
 import { useTranslation } from '../../i18n';
+import { webPushRepo } from '../../repo/webPushRepo';
 import {
   detectWebPushCapability,
   disableCurrentWebPush,
@@ -11,32 +11,47 @@ import {
 } from '../../services/webPush';
 import { useToast } from '../shared/Toast';
 
+const loadDevices = () => Promise.all([webPushRepo.config(), webPushRepo.devices()]);
+
 export default function WebPushDevices(): React.ReactElement {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const toast = useToast();
   const [config, setConfig] = useState<WebPushConfigResult | null>(null);
   const [devices, setDevices] = useState<WebPushDevice[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ id: number; label: string } | null>(null);
   const installationId = getWebPushInstallationId();
   const capability = detectWebPushCapability();
 
   const load = useCallback(async () => {
-    const [nextConfig, result] = await Promise.all([
-      notificationsApi.webPushConfig(),
-      notificationsApi.webPushDevices(),
-    ]);
+    const [nextConfig, result] = await loadDevices();
     setConfig(nextConfig);
     setDevices(result.devices);
   }, []);
   useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
+    let active = true;
+    void loadDevices().then(
+      ([nextConfig, result]) => {
+        if (!active) return;
+        setConfig(nextConfig);
+        setDevices(result.devices);
+      },
+      () => {
+        if (active) setConfig(null);
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const current = devices.find((device) => device.installationId === installationId);
   const enable = async () => {
+    if (!config) return;
     setBusy('enable');
     try {
-      await enableWebPush();
+      const result = await enableWebPush(config);
+      if (result.state !== 'active') throw new Error(result.error || t('settings.webPush.failed'));
       toast.success(t('settings.webPush.enabled'));
       await load();
     } catch (error) {
@@ -48,8 +63,8 @@ export default function WebPushDevices(): React.ReactElement {
   const revoke = async (device: WebPushDevice) => {
     setBusy(`revoke:${device.id}`);
     try {
-      if (device.installationId === installationId) await disableCurrentWebPush();
-      else await notificationsApi.revokeWebPushDevice(device.id);
+      if (device.installationId === installationId) await disableCurrentWebPush(device.id);
+      else await webPushRepo.revoke(device.id);
       toast.success(t('settings.webPush.revoked'));
       await load();
     } catch {
@@ -58,13 +73,13 @@ export default function WebPushDevices(): React.ReactElement {
       setBusy(null);
     }
   };
-  const rename = async (device: WebPushDevice) => {
-    const label = window.prompt(t('settings.webPush.renamePrompt'), device.label)?.trim();
-    if (!label || label === device.label) return;
-    setBusy(`rename:${device.id}`);
+  const rename = async () => {
+    if (!edit || !edit.label.trim()) return;
+    setBusy(`rename:${edit.id}`);
     try {
-      await notificationsApi.renameWebPushDevice(device.id, label);
+      await webPushRepo.rename(edit.id, edit.label.trim());
       await load();
+      setEdit(null);
     } catch {
       toast.error(t('common.error'));
     } finally {
@@ -74,7 +89,7 @@ export default function WebPushDevices(): React.ReactElement {
   const test = async (device: WebPushDevice) => {
     setBusy(`test:${device.id}`);
     try {
-      const result = await notificationsApi.testWebPushDevice(device.id);
+      const result = await webPushRepo.test(device.id);
       if (result.success) toast.success(t('settings.notificationPreferences.testSuccess'));
       else toast.error(result.error || t('settings.notificationPreferences.testFailed'));
     } catch {
@@ -102,15 +117,15 @@ export default function WebPushDevices(): React.ReactElement {
 
   return (
     <div className="bg-surface-subtle mb-4 rounded-lg border border-edge p-4">
-      <h3 className="text-sm font-semibold text-content">{t('settings.webPush.title')}</h3>
-      <p className="mt-1 text-xs text-content-faint">{t('settings.webPush.description')}</p>
-      {guidance && <p className="mt-3 text-xs text-content-muted">{guidance}</p>}
+      <h3 className="text-body font-semibold text-content">{t('settings.webPush.title')}</h3>
+      <p className="mt-1 text-caption text-content-faint">{t('settings.webPush.description')}</p>
+      {guidance && <p className="mt-3 text-caption text-content-muted">{guidance}</p>}
       {!current && !guidance && (
         <button
           type="button"
-          onClick={enable}
+          onClick={() => void enable()}
           disabled={busy === 'enable'}
-          className="mt-3 rounded-md bg-content px-3 py-2 text-xs font-medium text-surface disabled:opacity-50"
+          className="mt-3 rounded-md bg-content px-3 py-2 text-caption font-medium text-surface disabled:opacity-50"
         >
           {busy === 'enable' ? t('settings.webPush.enabling') : t('settings.webPush.enable')}
         </button>
@@ -121,46 +136,82 @@ export default function WebPushDevices(): React.ReactElement {
             <div key={device.id} className="rounded-md border border-edge bg-surface p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-content">
+                  <p className="text-body font-medium text-content">
                     {device.label}
                     {device.installationId === installationId ? ` · ${t('settings.webPush.current')}` : ''}
                   </p>
-                  <p className="text-xs text-content-faint">
-                    {t('settings.webPush.lastSeen', { date: new Date(device.lastSeenAt).toLocaleString() })}
+                  <p className="text-caption text-content-faint">
+                    {t('settings.webPush.lastSeen', { date: new Date(device.lastSeenAt).toLocaleString(locale) })}
                   </p>
-                  <p className="text-xs text-content-faint">
+                  <p className="text-caption text-content-faint">
                     {device.lastSuccessAt
-                      ? t('settings.webPush.lastDelivered', { date: new Date(device.lastSuccessAt).toLocaleString() })
+                      ? t('settings.webPush.lastDelivered', {
+                          date: new Date(device.lastSuccessAt).toLocaleString(locale),
+                        })
                       : t('settings.webPush.neverDelivered')}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => test(device)}
+                    onClick={() => void test(device)}
                     disabled={busy != null}
-                    className="text-xs underline"
+                    className="text-caption underline"
                   >
                     {t('settings.webPush.test')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => rename(device)}
+                    onClick={() => setEdit({ id: device.id, label: device.label })}
                     disabled={busy != null}
-                    className="text-xs underline"
+                    className="text-caption underline"
                   >
                     {t('settings.webPush.rename')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => revoke(device)}
+                    onClick={() => void revoke(device)}
                     disabled={busy != null}
-                    className="text-xs text-danger underline"
+                    className="text-caption text-danger underline"
                   >
                     {t('settings.webPush.revoke')}
                   </button>
                 </div>
               </div>
+              {edit?.id === device.id && (
+                <form
+                  className="mt-2 flex flex-wrap items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void rename();
+                  }}
+                >
+                  <label className="text-caption">
+                    {t('settings.webPush.renamePrompt')}
+                    <input
+                      className="ms-2 rounded border border-edge bg-surface-input px-2 py-1"
+                      value={edit.label}
+                      maxLength={80}
+                      onChange={(event) => setEdit({ id: device.id, label: event.target.value })}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={busy != null || !edit.label.trim()}
+                    className="text-caption underline"
+                  >
+                    {t('common.save')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy != null}
+                    onClick={() => setEdit(null)}
+                    className="text-caption underline"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </form>
+              )}
             </div>
           ))}
         </div>

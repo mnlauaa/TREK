@@ -1,44 +1,58 @@
-import type { User, BudgetItem, BudgetItemMember, BudgetItemPayer, BudgetItemReceipt } from '../../types';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@mikro-orm/nestjs';
+import type { BudgetFallbackFx, BudgetParticipantFinal, BudgetUnconverted, TrekWsPayload, TrekWsTripEventName } from '@trek/shared';
+import { currencyDecimals, exchangeRateSourceSchema, splitEqualShares, sumMinor, toMinor } from '@trek/shared';
+import { RealtimeService } from '../realtime/realtime.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { byCodeUnit } from '../common/compare';
-import { DatabaseService, type TripAccess } from '../database/database.service';
-import { PermissionsService } from '../permissions/permissions.service';
-import { RealtimeService } from '../realtime/realtime.service';
-import { ExchangeRatesService, ExchangeRateUnavailableError, type ExchangeRateWrite } from './exchange-rates.service';
-import { Injectable } from '@nestjs/common';
-import type {
-  BudgetFallbackFx,
-  BudgetParticipantFinal,
-  BudgetUnconverted,
-  TrekWsPayload,
-  TrekWsTripEventName,
-} from '@trek/shared';
+import { inOrder } from '../common/in-order';
+import type { User, BudgetItem, BudgetItemMember, BudgetItemPayer, BudgetItemReceipt } from '../../types';
+import { ExchangeRatesService, freezeRate, normalizeCurrency, type FrozenRate, type PreparedRate, type RateWrite } from './exchange-rates.service';
+import { budgetRateColumns, type BudgetRateColumns } from '../../db/repositories/_shared/budget-rate';
+import { UnitOfWork } from '../database/unit-of-work';
+import { BudgetItems } from '../../db/entities/BudgetItems.entity';
+import type { BudgetItemsRepository, BudgetItemRow } from '../../db/repositories/BudgetItems.repository';
+import { BudgetItemMembers } from '../../db/entities/BudgetItemMembers.entity';
+import type { BudgetItemMembersRepository } from '../../db/repositories/BudgetItemMembers.repository';
+import { BudgetItemPayers } from '../../db/entities/BudgetItemPayers.entity';
+import type { BudgetItemPayersRepository } from '../../db/repositories/BudgetItemPayers.repository';
+import { BudgetSettlements } from '../../db/entities/BudgetSettlements.entity';
+import type { BudgetSettlementsRepository } from '../../db/repositories/BudgetSettlements.repository';
+import { BudgetCategoryOrder } from '../../db/entities/BudgetCategoryOrder.entity';
+import type { BudgetCategoryOrderRepository } from '../../db/repositories/BudgetCategoryOrder.repository';
+import { Reservations } from '../../db/entities/Reservations.entity';
+import type { ReservationsRepository } from '../../db/repositories/Reservations.repository';
+import { Places } from '../../db/entities/Places.entity';
+import type { PlacesRepository } from '../../db/repositories/Places.repository';
+import { Trips } from '../../db/entities/Trips.entity';
+import type { TripsRepository, TripAccess } from '../../db/repositories/Trips.repository';
+import { TripMembers } from '../../db/entities/TripMembers.entity';
+import type { TripMembersRepository } from '../../db/repositories/TripMembers.repository';
+import { BUDGET_ITEM_TICKET, RESERVATION_METADATA } from '../../db/json-columns';
+import { decodeJson, decodeJsonResult, encodeJson } from '../../utils/json-column';
+import { conflict, DomainError } from '../common/domain-error';
+import { GUEST_HAS_PAYMENTS, shareAfterLeaving } from './budget-departure.helpers';
+import { allocateDisplayCents, customSplitCents, isFrozenRate, positiveRate, quoteRatio, summaryShareCents, sumMoney, tripConverter } from './budget-money.helpers';
 
 type Trip = TripAccess;
 
-type SettlementRow = {
-  id: number;
-  trip_id: string;
-  from_user_id: number;
-  to_user_id: number;
-  amount: number;
-  currency: string | null;
-  exchange_rate: number | null;
-  exchange_rate_source: string | null;
-  exchange_rate_source_version: string | null;
-  exchange_rate_effective_date: string | null;
-  exchange_rate_set_at: string | null;
-  exchange_rate_set_by_user_id: number | null;
-  exchange_rate_note: string | null;
-  exchange_rate_reset_at: string | null;
-  created_at: string;
-  settled_at: string | null;
-  created_by_user_id: number | null;
-  from_username: string;
-  from_avatar: string | null;
-  to_username: string;
-  to_avatar: string | null;
+/** A trip currency switch whose rates are already fetched, ready to write (#1543). */
+export type CurrencyRebase = { previous: string; next: string; bridge: number | undefined };
+
+type SettlementRow = BudgetRateColumns & {
+  id: number; trip_id: number; from_user_id: number; to_user_id: number;
+  amount: number; currency: string | null;
+  created_at: string; settled_at: string | null; note?: string | null; created_by_user_id: number | null;
+  from_username: string; from_avatar: string | null;
+  to_username: string; to_avatar: string | null;
 };
+
+/** A settle-up note as stored (#2340): trimmed, and nothing at all when blank. */
+function settlementNote(note: string | null | undefined): string | null {
+  const trimmed = (note ?? '').trim();
+  return trimmed ? trimmed : null;
+}
 
 /** How the costs UI used to smuggle an itemized receipt through the note field. */
 const LEGACY_TICKET_PREFIX = 'TICKETJSON:';
@@ -64,112 +78,6 @@ export function splitLegacyTicketNote(
 }
 
 /**
- * Re-denominate whole trip-currency cents into whole display-currency cents
- * without losing or inventing one (#1382).
- *
- * Rounding every balance on its own lets the rounded set drift away from the sum
- * it came from: a squared-up trip viewed in another currency then shows a cent
- * that no payment flow can ever clear, and the drift moves whenever the live rate
- * does — money appearing without a single expense being touched. Rounding down
- * and handing the leftover to the largest fractions keeps Σ(converted) equal to
- * converted(Σ). `factor === 1` (the display currency IS the trip currency, the
- * common case) is the identity and never touches a float.
- */
-/**
- * Add money in whole cents, not in floats (#1964).
- *
- * A total that does not divide evenly is split into parts that are each exact
- * to the cent — 163.21 across two people is 81.61 and 81.60 — but adding those
- * two doubles gives 163.20999999999998, and that is what got written back over
- * the clean total the client sent. It then surfaced anywhere the number is
- * printed without Intl doing the rounding: the expense form when reopened, the
- * mobile cost sheet, and the price stamped onto a linked booking.
- *
- * This is the same rule the settlement maths in this file already follows
- * (toTripCents), applied to the one arithmetic that had been left in euros.
- */
-function sumMoney(amounts: number[]): number {
-  return amounts.reduce((a, v) => a + Math.round(v * 100), 0) / 100;
-}
-
-/**
- * Convert a set of trip cents to display cents so that they still add up: floor
- * each one, then hand the cents lost to flooring to the largest fractions. `total`
- * is what the set has to sum to. By default that is the rounded conversion of its
- * own sum; the rows behind a figure pass the figure's already allocated cents
- * instead, so a list nested under a line lands exactly on that line.
- */
-function allocateDisplayCents(
-  cents: number[],
-  factor: number,
-  total = Math.round(cents.reduce((a, c) => a + c, 0) * factor),
-): number[] {
-  if (factor === 1) return [...cents];
-  const exact = cents.map((c) => c * factor);
-  const out = exact.map((v) => Math.floor(v));
-  const drift = total - out.reduce((a, v) => a + v, 0);
-  const byFraction = exact.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac || a.i - b.i);
-  for (let k = 0; k < drift && k < byFraction.length; k++) out[byFraction[k].i] += 1;
-  return out;
-}
-
-/**
- * What `exchange_rate` holds on a row whose rate was never frozen. The column is
- * `REAL NOT NULL DEFAULT 1`, so without a migration 1 is the only way to store "no
- * rate". It is read in exactly two places, isFrozenRate and UNFROZEN_SQL; nothing
- * else in this file compares a rate with 1.
- */
-const NOT_FROZEN_RATE = 1;
-
-/** Whether a stored rate is one that was frozen, rather than the "not frozen" sentinel. */
-function isFrozenRate(rate: number | null | undefined, source?: string | null): rate is number {
-  return rate != null && Number.isFinite(rate) && rate > 0 && (rate !== NOT_FROZEN_RATE || ['identity', 'explicit', 'trip', 'global'].includes(source ?? ''));
-}
-
-/** The SQL twin of `!isFrozenRate(exchange_rate)`, for the row tables' own column. */
-const UNFROZEN_SQL = "(exchange_rate IS NULL OR exchange_rate <= 0 OR (exchange_rate = 1 AND COALESCE(exchange_rate_source, 'legacy') NOT IN ('identity', 'explicit', 'trip', 'global')))";
-
-/**
- * How an amount of a row, in the row's own currency, becomes trip currency, or null when
- * nothing can convert it. The rate frozen when the row was entered wins (#1335), so a
- * booked expense keeps the value it was booked at. A row written before the freeze
- * existed (no frozen rate) converts through today's `rates`, units of each currency per
- * 1 of their base. Pre-rework rows store currency = NULL, which means the trip's own.
- *
- * A foreign row with neither is left out by every caller and reported, rather than read
- * as if it were already in the trip currency: 8,920,000 VND counted as that many dollars
- * swamps every balance on the trip.
- *
- * The settlement nets with it and every trip total adds up with it, so the two can never
- * read the same rows differently.
- */
-function tripConverter(
-  itemCurrency: string | null | undefined,
-  itemRate: number | null | undefined,
-  tripCurrency: string,
-  rates: Record<string, number> | null,
-  source?: string | null,
-): ((amount: number) => number) | null {
-  const cur = (itemCurrency || tripCurrency).toUpperCase();
-  if (cur === tripCurrency) return (amount) => amount;
-  if (isFrozenRate(itemRate, source)) return (amount) => amount / itemRate;
-  const rCur = rates?.[cur];
-  const rTrip = rates?.[tripCurrency];
-  if (rCur && rCur > 0 && rTrip && rTrip > 0) return (amount) => (amount / rCur) * rTrip;
-  return null;
-}
-
-/**
- * Units of `to` per 1 `from`, from a set of rates quoted against any base (each rate is
- * units of that currency per 1 base). Null when either quote is missing.
- */
-function quoteRatio(rates: Record<string, number> | null, to: string, from: string): number | null {
-  const rTo = rates?.[to];
-  const rFrom = rates?.[from];
-  return rTo && rTo > 0 && rFrom && rFrom > 0 ? rTo / rFrom : null;
-}
-
-/**
  * Budget domain service — owns the budget SQL (moved from the legacy
  * services/budgetService.ts: identical statements, the `||` falsy-coercion
  * defaults, the COALESCE / CASE WHEN sentinel conventions on update and the
@@ -179,7 +87,7 @@ function quoteRatio(rates: Record<string, number> | null, to: string, from: stri
  * UserCleanupService, injects this class now.)
  *
  * Quirk fixes on top of the relocated legacy behavior: every multi-statement
- * write now runs in db.transaction() ("transactions are not optional"),
+ * write now runs in uow.transactional() ("transactions are not optional"),
  * linkBudgetItemToReservation passes reservation_id through the insert instead
  * of a redundant second UPDATE, settlement re-selects are targeted single-row
  * queries instead of a full listSettlements() scan, settlement usernames use
@@ -189,79 +97,75 @@ function quoteRatio(rates: Record<string, number> | null, to: string, from: stri
 @Injectable()
 export class BudgetService {
   constructor(
-    private readonly db: DatabaseService,
     private readonly permissions: PermissionsService,
     private readonly exchangeRates: ExchangeRatesService,
     private readonly realtime: RealtimeService,
+    private readonly uow: UnitOfWork,
+    @InjectRepository(BudgetItems) private readonly budgetItemsRepo: BudgetItemsRepository,
+    @InjectRepository(BudgetItemMembers) private readonly budgetItemMembersRepo: BudgetItemMembersRepository,
+    @InjectRepository(BudgetItemPayers) private readonly budgetItemPayersRepo: BudgetItemPayersRepository,
+    @InjectRepository(BudgetSettlements) private readonly budgetSettlementsRepo: BudgetSettlementsRepository,
+    @InjectRepository(BudgetCategoryOrder) private readonly budgetCategoryOrderRepo: BudgetCategoryOrderRepository,
+    @InjectRepository(Reservations) private readonly reservationsRepo: ReservationsRepository,
+    @InjectRepository(Places) private readonly placesRepo: PlacesRepository,
+    @InjectRepository(Trips) private readonly tripsRepo: TripsRepository,
+    // Plan 4 Task 3 — DatabaseService.rosterUserIds inlined onto
+    // TripMembersRepository.rosterUserIds directly.
+    @InjectRepository(TripMembers) private readonly tripMembersRepo: TripMembersRepository,
   ) {}
 
-  verifyTripAccess(tripId: string | number, userId: number) {
-    return this.db.canAccessTrip(tripId, userId);
+  async verifyTripAccess(tripId: string | number, userId: number) {
+    // Plan 4 Task 2 — canAccessTrip's own DatabaseService delegation is
+    // gone: this reuses the TripsRepository already injected for other
+    // reads and calls findAccessible.
+    return await this.tripsRepo.findAccessible(tripId, userId);
   }
 
-  canEdit(trip: Trip, user: User): boolean {
+  async canEdit(trip: Trip, user: User): Promise<boolean> {
     return this.permissions.checkPermission('budget_edit', user.role, trip.user_id, user.id, trip.user_id !== user.id);
   }
 
-  broadcast<E extends TrekWsTripEventName>(
-    tripId: string,
-    event: E,
-    payload: TrekWsPayload<E>,
-    socketId: string | undefined,
-  ): void {
+  broadcast<E extends TrekWsTripEventName>(tripId: string, event: E, payload: TrekWsPayload<E>, socketId: string | undefined): void {
     this.realtime.broadcast(tripId, event, payload, socketId);
+  }
+
+  /**
+   * `BudgetItemRow` (the repository's DB-accurate row — `sort_order`/
+   * `created_at` genuinely nullable, per the entity) to `BudgetItem` (the
+   * domain type the API and every caller of this service expects —
+   * `sort_order: number`, `created_at?: string`). A freshly-read row always
+   * has both populated (`sort_order` defaults to 0, `created_at` to
+   * `CURRENT_TIMESTAMP`), so this is a type-shape bridge, not a behavior
+   * change — matching what the legacy `db.get<BudgetItem>(...)` generic
+   * silently assumed.
+   */
+  private toBudgetItem(row: BudgetItemRow): BudgetItem {
+    return {
+      ...row,
+      exchange_rate_source: exchangeRateSourceSchema.safeParse(row.exchange_rate_source).data ?? 'legacy',
+      sort_order: row.sort_order ?? 0,
+      created_at: row.created_at ?? undefined,
+    };
   }
 
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
-  private loadItemMembers(itemId: number | string) {
-    const rows = this.db.all<BudgetItemMember>(
-      `
-    SELECT bm.user_id, bm.paid, bm.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_members bm
-    JOIN users u ON bm.user_id = u.id
-    WHERE bm.budget_item_id = ?
-  `,
-      itemId,
-    );
-    return rows.map((m) => ({ ...m, avatar_url: avatarUrl(m) }));
+  private async loadItemMembers(itemId: number | string) {
+    const rows = await this.budgetItemMembersRepo.listForItem(itemId as number);
+    return rows.map(m => ({ ...m, avatar_url: avatarUrl(m) }));
   }
 
-  private loadItemPayers(itemId: number | string) {
-    const rows = this.db.all<BudgetItemPayer>(
-      `
-    SELECT bp.user_id, bp.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_payers bp
-    JOIN users u ON bp.user_id = u.id
-    WHERE bp.budget_item_id = ?
-  `,
-      itemId,
-    );
-    return rows.map((p) => ({ ...p, avatar_url: avatarUrl(p) }));
+  private async loadItemPayers(itemId: number | string) {
+    const rows = await this.budgetItemPayersRepo.listForItem(itemId as number);
+    return rows.map(p => ({ ...p, avatar_url: avatarUrl(p) }));
   }
 
-  private loadItemReceipts(itemId: number | string): BudgetItemReceipt[] {
-    const rows = this.db.all<{
-      id: number;
-      filename: string;
-      original_name: string;
-      file_size: number | null;
-      mime_type: string | null;
-      trip_id: number;
-    }>(
-      `
-      SELECT f.id, f.filename, f.original_name, f.file_size, f.mime_type, f.trip_id
-      FROM trip_files f
-      JOIN file_links fl ON fl.file_id = f.id
-      WHERE f.deleted_at IS NULL AND fl.budget_item_id = ?
-      ORDER BY f.created_at ASC
-    `,
-      itemId,
-    );
+  private async loadItemReceipts(itemId: number | string): Promise<BudgetItemReceipt[]> {
+    const rows = await this.budgetItemsRepo.listReceipts(itemId);
 
-    return rows.map((f) => ({
+    return rows.map(f => ({
       id: f.id,
       filename: f.filename,
       original_name: f.original_name,
@@ -272,45 +176,45 @@ export class BudgetService {
   }
 
   /**
-   * The subset of `userIds` that is actually on this trip. Used to be a plain
-   * existence check against `users`, which let any id on the instance become a
-   * payer or a split member and come back out through the read-back join with a
-   * name and an avatar attached. Off-roster ids drop silently, the way the
-   * packing and reservations assignee paths handle them.
+   * Who may be a payer or a split member of an expense: everyone on the trip,
+   * plus, for an existing expense, whoever already pays for it or shares it.
+   * Used to be a plain existence check against `users`, which let any id on the
+   * instance become a payer or a split member and come back out through the
+   * read-back join with a name and an avatar attached. Off-roster ids still drop
+   * silently, the way the packing and reservations assignee paths handle them.
+   *
+   * Someone removed from the trip keeps their rows on the expenses they were part
+   * of, and the edit form sends those ids back. Filtering them out on that save
+   * dropped their share and shrank total_price to what the rest had paid (#2604),
+   * so ids already on this expense stay allowed, as payer or as member, and can
+   * still be taken off it. A stranger who never was on it is refused as before.
+   * Read before anything is replaced, inside the caller's transaction.
    */
-  private rosterMemberIds(tripId: string | number, userIds: number[]): Set<number> {
-    const unique = new Set(userIds);
-    if (unique.size === 0) return new Set();
-    const roster = this.db.rosterUserIds(tripId);
-    return new Set([...unique].filter((id) => roster.has(id)));
+  async allowedParticipantIds(tripId: string | number, itemId: number | null): Promise<Set<number>> {
+    const allowed = new Set(await this.tripMembersRepo.rosterUserIds(tripId));
+    if (itemId !== null) {
+      for (const p of await this.budgetItemPayersRepo.listForItem(itemId)) allowed.add(p.user_id);
+      for (const m of await this.budgetItemMembersRepo.listUserPaid(itemId)) allowed.add(m.user_id);
+    }
+    return allowed;
   }
 
   /**
    * Replace the payer rows of an item and keep total_price = sum of payer amounts.
    * A negative amount is a real payer — the recipient of a refund (#2176) — and
    * is stored as such; only a zero (or NaN) amount says nothing and is dropped.
+   * `known` is {@link allowedParticipantIds}, read before the rows go.
    */
-  private writeItemPayers(
-    itemId: number | string,
-    tripId: string | number,
-    payers: { user_id: number; amount: number }[],
-  ) {
-    this.db.run('DELETE FROM budget_item_payers WHERE budget_item_id = ?', itemId);
-    const insert = this.db.prepare(
-      'INSERT OR IGNORE INTO budget_item_payers (budget_item_id, user_id, amount) VALUES (?, ?, ?)',
-    );
-    const known = this.rosterMemberIds(
-      tripId,
-      payers.map((p) => p.user_id),
-    );
+  private async writeItemPayers(itemId: number | string, known: ReadonlySet<number>, payers: { user_id: number; amount: number }[]) {
+    await this.budgetItemPayersRepo.deleteForItem(itemId as number);
     const accepted: number[] = [];
     for (const p of payers) {
       if (!p.amount || !known.has(p.user_id)) continue;
-      insert.run(itemId, p.user_id, p.amount);
+      await this.budgetItemPayersRepo.insertIgnore({ budget_item_id: itemId as number, user_id: p.user_id, amount: p.amount });
       accepted.push(p.amount);
     }
     const total = sumMoney(accepted);
-    this.db.run('UPDATE budget_items SET total_price = ? WHERE id = ?', total, itemId);
+    await this.budgetItemsRepo.setTotalPrice(itemId, total);
     return total;
   }
 
@@ -329,26 +233,14 @@ export class BudgetService {
    * nothing to do with the expense. A link whose file already sits in the trash
    * is left in place, so restoring that file brings it back attached.
    */
-  private unlinkReceipts(budgetItemId: number | string, keep: ReadonlySet<number> = new Set()) {
-    const rows = this.db.all<{
-      id: number;
-      file_id: number;
-      reservation_id: number | null;
-      assignment_id: number | null;
-      place_id: number | null;
-    }>(
-      `SELECT fl.id, fl.file_id, fl.reservation_id, fl.assignment_id, fl.place_id
-       FROM file_links fl
-       JOIN trip_files f ON f.id = fl.file_id
-       WHERE fl.budget_item_id = ? AND f.deleted_at IS NULL`,
-      budgetItemId,
-    );
+  private async unlinkReceipts(budgetItemId: number | string, keep: ReadonlySet<number> = new Set()) {
+    const rows = await this.budgetItemsRepo.listReceiptLinks(budgetItemId);
     for (const row of rows) {
       if (keep.has(row.file_id)) continue;
       if (row.reservation_id || row.assignment_id || row.place_id) {
-        this.db.run('UPDATE file_links SET budget_item_id = NULL WHERE id = ?', row.id);
+        await this.budgetItemsRepo.clearLinkBudgetRef(row.id);
       } else {
-        this.db.run('DELETE FROM file_links WHERE id = ?', row.id);
+        await this.budgetItemsRepo.deleteLink(row.id);
       }
     }
   }
@@ -357,87 +249,38 @@ export class BudgetService {
   // CRUD
   // -------------------------------------------------------------------------
 
-  listBudgetItems(tripId: string | number) {
-    const items = this.db.all<BudgetItem>(
-      `
-    SELECT bi.* FROM budget_items bi
-    LEFT JOIN budget_category_order bco ON bco.trip_id = bi.trip_id AND bco.category = bi.category
-    WHERE bi.trip_id = ?
-    ORDER BY COALESCE(bco.sort_order, 999999) ASC, bi.sort_order ASC
-  `,
-      tripId,
-    );
+  async listBudgetItems(tripId: string | number) {
+    const items = (await this.budgetItemsRepo.listWithCategoryOrder(tripId)).map(r => this.toBudgetItem(r));
 
-    const itemIds = items.map((i) => i.id);
+    const itemIds = items.map(i => i.id);
     const membersByItem: Record<number, (BudgetItemMember & { avatar_url: string | null })[]> = {};
 
     if (itemIds.length > 0) {
-      const allMembers = this.db.all<BudgetItemMember & { budget_item_id: number }>(
-        `
-      SELECT bm.budget_item_id, bm.user_id, bm.paid, bm.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-      FROM budget_item_members bm
-      JOIN users u ON bm.user_id = u.id
-      WHERE bm.budget_item_id IN (${itemIds.map(() => '?').join(',')})
-    `,
-        ...itemIds,
-      );
+      const allMembers = await this.budgetItemMembersRepo.listForItems(itemIds);
 
       for (const m of allMembers) {
         if (!membersByItem[m.budget_item_id]) membersByItem[m.budget_item_id] = [];
         membersByItem[m.budget_item_id].push({
-          user_id: m.user_id,
-          paid: m.paid,
-          username: m.username,
-          avatar_url: avatarUrl(m),
-          amount: m.amount,
+          user_id: m.user_id, paid: m.paid, username: m.username, avatar_url: avatarUrl(m), amount: m.amount,
         });
       }
     }
 
     const payersByItem: Record<number, (BudgetItemPayer & { avatar_url: string | null })[]> = {};
     if (itemIds.length > 0) {
-      const allPayers = this.db.all<BudgetItemPayer & { budget_item_id: number }>(
-        `
-      SELECT bp.budget_item_id, bp.user_id, bp.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-      FROM budget_item_payers bp
-      JOIN users u ON bp.user_id = u.id
-      WHERE bp.budget_item_id IN (${itemIds.map(() => '?').join(',')})
-    `,
-        ...itemIds,
-      );
+      const allPayers = await this.budgetItemPayersRepo.listForItems(itemIds);
 
       for (const p of allPayers) {
         if (!payersByItem[p.budget_item_id]) payersByItem[p.budget_item_id] = [];
         payersByItem[p.budget_item_id].push({
-          user_id: p.user_id,
-          amount: p.amount,
-          username: p.username,
-          avatar_url: avatarUrl(p),
+          user_id: p.user_id, amount: p.amount, username: p.username, avatar_url: avatarUrl(p),
         });
       }
     }
 
     const receiptsByItem: Record<number, BudgetItemReceipt[]> = {};
     if (itemIds.length > 0) {
-      const placeholders = itemIds.map(() => '?').join(',');
-      const allReceipts = this.db.all<{
-        id: number;
-        filename: string;
-        original_name: string;
-        file_size: number | null;
-        mime_type: string | null;
-        trip_id: number;
-        budget_item_id: number;
-      }>(
-        `
-        SELECT f.id, f.filename, f.original_name, f.file_size, f.mime_type, f.trip_id, fl.budget_item_id
-        FROM trip_files f
-        JOIN file_links fl ON fl.file_id = f.id
-        WHERE f.deleted_at IS NULL AND fl.budget_item_id IN (${placeholders})
-        ORDER BY f.created_at ASC
-      `,
-        ...itemIds,
-      );
+      const allReceipts = await this.budgetItemsRepo.listReceiptsForItems(itemIds);
 
       for (const r of allReceipts) {
         if (!receiptsByItem[r.budget_item_id]) receiptsByItem[r.budget_item_id] = [];
@@ -452,7 +295,7 @@ export class BudgetService {
       }
     }
 
-    items.forEach((item) => {
+    items.forEach(item => {
       item.members = membersByItem[item.id] || [];
       item.payers = payersByItem[item.id] || [];
       item.receipts = receiptsByItem[item.id] || [];
@@ -460,49 +303,29 @@ export class BudgetService {
     return items;
   }
 
-  /**
-   * Freeze the live FX rate at entry time into `exchange_rate` so a settled position
-   * isn't re-opened when live rates drift later (#1335 / #1445). The stored rate is
-   * "units of the item/display currency per 1 trip currency" — the settlement
-   * converts with it via `amount / rate`.
-   *
-   * Explicit input wins, then the trip default, then the global snapshot. A client
-   * fallback only fills a missing server quote. New foreign writes without a rate
-   * are rejected; unrelated edits retain the existing freeze and provenance.
-   * Freeze before the synchronous write because SQLite transactions cannot await.
-   */
-  async freezeForeignRate(
-    tripId: string | number,
-    data: ExchangeRateWrite,
-    existingItemId?: string | number,
-    existingCurrency?: string | null,
-    userId?: number,
-  ): Promise<void> {
-    let existing: { currency?: string | null; exchange_rate?: number } | null = null;
-    if (existingCurrency !== undefined) {
-      existing = { currency: existingCurrency };
-    } else if (existingItemId != null) {
-      existing =
-        this.db.get<{ currency?: string | null; exchange_rate?: number }>(
-          'SELECT currency, exchange_rate FROM budget_items WHERE id = ? AND trip_id = ?',
-          existingItemId,
-          tripId,
-        ) ?? null;
-    }
-    await this.exchangeRates.freezeRateForWrite(tripId, data, userId, existing);
+  async prepareRate(tripId: string | number, data: RateWrite, userId?: number, existing?: { currency: string | null }) {
+    return this.exchangeRates.prepareWrite(tripId, data, userId, existing);
   }
 
-  /** The trip's currency, upper case, EUR when it has none (the default the app reads). */
-  private tripCurrency(tripId: string | number): string {
-    const trip = this.db.get<{ currency?: string | null }>('SELECT currency FROM trips WHERE id = ?', tripId);
-    return (trip?.currency || 'EUR').toUpperCase();
+  private async rateForCommit(
+    tripId: string | number,
+    prepared: PreparedRate | undefined,
+    existing?: { currency: string | null },
+  ): Promise<FrozenRate | undefined> {
+    if (!prepared) return undefined;
+    await this.exchangeRates.requireCurrentBase(tripId, prepared.base);
+    const prior = existing ? normalizeCurrency(existing.currency, prepared.base) : null;
+    if (prior !== prepared.previousCurrency) throw conflict('Booked currency changed while resolving the exchange rate');
+    return prepared.kind === 'freeze' ? prepared.rate : undefined;
+  }
+
+  private async tripCurrency(tripId: string | number): Promise<string> {
+    return normalizeCurrency(await this.tripsRepo.getCurrency(tripId));
   }
 
   /**
    * Freeze a rate onto every expense and transfer in a foreign currency that never
-   * froze one: the rows the settlement lists as `unconverted`, and also those it still
-   * converts at today's live rate. Today's server rate first, `fallback` (rates the
-   * caller holds) for what the server cannot quote. A row that is frozen, in the trip
+   * froze one. Resolve the trip default, the server snapshot, then a caller fallback. A row that is frozen, in the trip
    * currency or without a currency is never touched, so a second call heals nothing.
    *
    * The write is a compare-and-set in one transaction: only rows that are still
@@ -510,372 +333,270 @@ export class BudgetService {
    * the rates were fetched (null, so the caller can say so). A healthy trip with
    * nothing pending returns before any fetch.
    */
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async freezeMissingRates(
     tripId: string | number,
     fallback?: BudgetFallbackFx,
     userId?: number,
-  ): Promise<{
-    items: BudgetItem[];
-    settlements: NonNullable<ReturnType<BudgetService['getSettlement']>>[];
-    unresolved: string[];
-  } | null> {
-    const tripCur = this.tripCurrency(tripId);
-    const pendingWhere = `trip_id = ? AND currency IS NOT NULL AND currency != '' AND UPPER(currency) != ? AND ${UNFROZEN_SQL}`;
-    const pending = this.db
-      .all<{ cur: string }>(
-        `
-    SELECT UPPER(currency) AS cur FROM budget_items WHERE ${pendingWhere}
-    UNION
-    SELECT UPPER(currency) AS cur FROM budget_settlements WHERE ${pendingWhere}
-    ORDER BY cur
-  `,
-        tripId,
-        tripCur,
-        tripId,
-        tripCur,
-      )
-      .map((r) => r.cur);
+  ): Promise<{ items: BudgetItem[]; settlements: NonNullable<Awaited<ReturnType<BudgetService['getSettlement']>>>[]; unresolved: string[] } | null> {
+    const tripCur = await this.tripCurrency(tripId);
+    // The legacy statement was one UNION of both tables, ORDER BY cur.
+    const pending = [...new Set([
+      ...(await this.budgetItemsRepo.listUnfrozenForeignCurrencies(tripId, tripCur)),
+      ...(await this.budgetSettlementsRepo.listUnfrozenForeignCurrencies(tripId, tripCur)),
+    ])].sort(byCodeUnit);
     if (pending.length === 0) return { items: [], settlements: [], unresolved: [] };
 
-    const resolved: [string, ExchangeRateWrite][] = [];
+    const resolved: [string, FrozenRate][] = [];
     const unresolved: string[] = [];
     for (const cur of pending) {
-      const data: ExchangeRateWrite = { currency: cur, fallback_fx: fallback };
-      try {
-        await this.exchangeRates.freezeRateForWrite(tripId, data, userId);
-        resolved.push([cur, data]);
-      } catch (error) {
-        if (!(error instanceof ExchangeRateUnavailableError)) throw error;
-        unresolved.push(cur);
-      }
+      const rate = await this.exchangeRates.resolveWriteRate(tripId, tripCur, cur, { fallback_fx: fallback }, userId);
+      if (rate === null) unresolved.push(cur);
+      else resolved.push([cur, rate]);
     }
     if (resolved.length === 0) return { items: [], settlements: [], unresolved };
 
-    const written = this.db.transaction(() => {
-      if (this.tripCurrency(tripId) !== tripCur) return null;
+    const written = await this.uow.transactional(async () => {
+      if ((await this.tripCurrency(tripId)) !== tripCur) return null;
       const ids = { budget_items: [] as number[], budget_settlements: [] as number[] };
-      for (const table of ['budget_items', 'budget_settlements'] as const) {
-        const where = `trip_id = ? AND UPPER(currency) = ? AND ${UNFROZEN_SQL}`;
-        for (const [cur, data] of resolved) {
-          ids[table].push(
-            ...this.db.all<{ id: number }>(`SELECT id FROM ${table} WHERE ${where}`, tripId, cur).map((r) => r.id),
-          );
-          this.db.run(`UPDATE ${table} SET exchange_rate = ?, exchange_rate_source = ?,
-            exchange_rate_source_version = ?, exchange_rate_effective_date = ?,
-            exchange_rate_set_at = ?, exchange_rate_set_by_user_id = ? WHERE ${where}`,
-            data.exchange_rate, data.exchange_rate_source, data.exchange_rate_source_version,
-            data.exchange_rate_effective_date, data.exchange_rate_set_at, data.exchange_rate_set_by_user_id,
-            tripId, cur);
-        }
+      for (const [cur, rate] of resolved) {
+        ids.budget_items.push(...(await this.budgetItemsRepo.listUnfrozenIdsForCurrency(tripId, cur)));
+        await this.budgetItemsRepo.freezeUnfrozenForCurrency(tripId, cur, rate);
+      }
+      for (const [cur, rate] of resolved) {
+        ids.budget_settlements.push(...(await this.budgetSettlementsRepo.listUnfrozenIdsForCurrency(tripId, cur)));
+        await this.budgetSettlementsRepo.freezeUnfrozenForCurrency(tripId, cur, rate);
       }
       return ids;
     });
     if (!written) return null;
 
-    return {
-      items: written.budget_items
-        .sort((a, b) => a - b)
-        .map((id) => this.getBudgetItem(id, tripId))
-        .filter((i) => i !== null),
-      settlements: written.budget_settlements
-        .sort((a, b) => a - b)
-        .map((id) => this.getSettlement(id, tripId))
-        .filter((s) => s !== null),
-      unresolved,
-    };
+    const items: BudgetItem[] = [];
+    for (const id of written.budget_items.sort((a, b) => a - b)) {
+      const item = await this.getBudgetItem(id, tripId);
+      if (item !== null) items.push(item);
+    }
+    const settlements: NonNullable<Awaited<ReturnType<BudgetService['getSettlement']>>>[] = [];
+    for (const id of written.budget_settlements.sort((a, b) => a - b)) {
+      const settlement = await this.getSettlement(id, tripId);
+      if (settlement !== null) settlements.push(settlement);
+    }
+    return { items, settlements, unresolved };
   }
 
-  /**
-   * Re-anchor a trip's money when its base currency changes (#1543).
-   *
-   * Every frozen `exchange_rate` is "units of the row's currency per 1 *trip*
-   * currency", and `currency = NULL` means "the trip's own currency" — both are
-   * relative to the trip currency, so swapping it out from under them silently
-   * corrupts the settlement: NULL rows redenominate (9 000 RUB becomes 9 000 EUR)
-   * and frozen rates keep pointing at the old base, which is exactly the mismatch
-   * that inflated #1543 by ~27x.
-   *
-   * So, before the switch: pin the implicit rows to the outgoing currency (their
-   * amounts really were in it) and re-freeze every row against the incoming one.
-   * No stored amount is rewritten — each expense keeps the figure the user typed,
-   * in the currency they typed it in, and its real-world value is preserved.
-   *
-   * Place prices follow the same NULL = "the trip's own currency" convention (that
-   * is how the PDF export and the place chips read them), so they are pinned too —
-   * otherwise a €15 museum on a trip switched to JPY starts reading as ¥15. They
-   * carry no frozen rate, so pinning the currency is all they need.
-   *
-   * Must run *before* the (synchronous) trip update, while the old currency is
-   * still in `trips`, and is a no-op when the currency isn't actually changing.
-   */
-  async rebaseTripCurrency(tripId: string | number, newCurrency: string | null | undefined): Promise<void> {
-    const next = (newCurrency || '').toUpperCase();
-    if (!next) return;
-    const trip = this.db.get<{ currency?: string }>('SELECT currency FROM trips WHERE id = ?', tripId);
-    if (!trip) return;
-    const prev = (trip.currency || 'EUR').toUpperCase();
-    if (prev === next) return;
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async rebaseTripCurrency(tripId: string | number, newCurrency?: string | null): Promise<void> {
+    const plan = await this.prepareCurrencyRebase(tripId, newCurrency);
+    if (plan) await this.applyCurrencyRebase(tripId, plan);
+  }
 
+  async prepareCurrencyRebase(tripId: string | number, newCurrency?: string | null): Promise<CurrencyRebase | null> {
+    const next = normalizeCurrency(newCurrency, '');
+    if (!next) return null;
+    const tripCurrency = await this.tripsRepo.getCurrency(tripId);
+    if (tripCurrency === undefined) return null;
+    const previous = normalizeCurrency(tripCurrency);
+    if (previous === next) return null;
     const rates = await this.exchangeRates.getRates(next);
-    // A row already denominated in the new base needs no conversion (rate 1). When no
-    // live rate is available we also store 1 rather than a stale one: rate 1 means "not
-    // frozen", so the settlement falls back to live rates instead of trusting a figure
-    // anchored to a currency this trip no longer uses.
-    const rateFor = (cur: string): number => {
-      if (cur === next) return 1;
-      const r = rates?.[cur];
-      return r && r > 0 ? r : 1;
-    };
+    return { previous, next, bridge: rates?.[previous] };
+  }
 
-    const bridge = rates?.[prev];
-    const defaults = this.db.all<{ currency: string; exchange_rate: number }>(
-      'SELECT currency, exchange_rate FROM trip_exchange_rates WHERE trip_id = ?', tripId);
-    const hasCustomForeignRows = ['budget_items', 'budget_settlements'].some(table => this.db.get(
-      `SELECT 1 FROM ${table} WHERE trip_id = ? AND UPPER(COALESCE(currency, ?)) != ?
-       AND exchange_rate_source IN ('identity','explicit','trip','global') AND exchange_rate > 0 LIMIT 1`, tripId, prev, next));
-    if ((defaults.length || hasCustomForeignRows) && !(bridge && Number.isFinite(bridge) && bridge > 0)) {
-      throw new ExchangeRateUnavailableError();
-    }
-    const rebasedAt = new Date().toISOString();
-
-    const rebase = (table: 'budget_items' | 'budget_settlements') => {
-      this.db.run(
-        `UPDATE ${table} SET currency = ? WHERE trip_id = ? AND (currency IS NULL OR currency = '')`,
-        prev,
-        tripId,
-      );
-      const rows = this.db.all<{ id: number; currency: string; exchange_rate: number; exchange_rate_source: string | null; exchange_rate_source_version: string | null }>(
-        `SELECT id, currency, exchange_rate, exchange_rate_source, exchange_rate_source_version FROM ${table} WHERE trip_id = ?`, tripId);
-      for (const row of rows) {
-        const cur = row.currency.toUpperCase();
-        const custom = ['identity','explicit','trip','global'].includes(row.exchange_rate_source ?? '') && isFrozenRate(row.exchange_rate, row.exchange_rate_source);
-        const rate = cur === next ? 1 : custom && bridge ? row.exchange_rate * bridge : rateFor(cur);
-        const source = cur === next ? 'identity' : custom ? row.exchange_rate_source : rates?.[cur] ? 'global' : 'legacy';
-        this.db.run(`UPDATE ${table} SET exchange_rate = ?, exchange_rate_source = ?, exchange_rate_source_version = ?,
-          exchange_rate_effective_date = NULL, exchange_rate_set_at = ?, exchange_rate_set_by_user_id = NULL WHERE id = ?`,
-          rate, source, `rebase:${prev}:${next}:${row.exchange_rate_source_version ?? rebasedAt}`, rebasedAt, row.id);
-      }
-    };
-
-    // Only priced places have anything to denominate; a currency on a free place would
-    // just be noise. `updated_at` doubles as the optimistic-concurrency token (#1135),
-    // so bumping it stops a client holding the pre-switch row from writing the pin away.
-    const pinPlaces = () => {
-      this.db.run(
-        `
-      UPDATE places SET currency = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE trip_id = ? AND price IS NOT NULL AND (currency IS NULL OR currency = '')
-    `,
-        prev,
-        tripId,
-      );
-    };
-
-    this.db.transaction(() => {
-      rebase('budget_items');
-      rebase('budget_settlements');
-      for (const row of defaults) {
-        if (row.currency.toUpperCase() === next) this.db.run('DELETE FROM trip_exchange_rates WHERE trip_id = ? AND currency = ?', tripId, row.currency);
-        else this.db.run(`UPDATE trip_exchange_rates SET exchange_rate = ?, source_version = ?, effective_date = NULL,
-          set_at = ?, set_by_user_id = NULL WHERE trip_id = ? AND currency = ?`,
-          row.exchange_rate * bridge!, `rebase:${prev}:${next}:${rebasedAt}`, rebasedAt, tripId, row.currency);
-      }
-      pinPlaces();
+  async applyCurrencyRebase(tripId: string | number, { previous, next, bridge }: CurrencyRebase): Promise<void> {
+    await this.uow.transactional(async () => {
+      await this.exchangeRates.requireCurrentBase(tripId, previous);
+      const rebase = (row: BudgetRateColumns & { currency: string | null }) => {
+        const currency = normalizeCurrency(row.currency, previous);
+        if (currency === next) {
+          return { currency, rate: freezeRate(1, 'identity', `identity:${next}`) };
+        }
+        const oldRate = currency === previous ? 1 : row.exchange_rate;
+        if (currency !== previous && !isFrozenRate(oldRate, row.exchange_rate_source)) {
+          return { currency, rate: { exchange_rate: 1, exchange_rate_source: 'legacy' } };
+        }
+        if (!positiveRate(bridge)) throw new DomainError(400, 'No bridge exchange rate is available for the trip currency change');
+        const rebased = oldRate * bridge;
+        if (!positiveRate(rebased)) throw new DomainError(400, 'Invalid exchange rate after trip currency change');
+        const rate = budgetRateColumns(row);
+        const version = row.exchange_rate_source_version ?? 'legacy';
+        return {
+          currency,
+          rate: {
+            ...rate,
+            exchange_rate: rebased,
+            exchange_rate_source: currency === previous || row.exchange_rate_source === 'identity' || row.exchange_rate_source === 'legacy'
+              ? 'global' : row.exchange_rate_source,
+            exchange_rate_source_version: `rebase:${previous}:${next}:${version}`,
+            exchange_rate_effective_date: null,
+            exchange_rate_set_at: new Date().toISOString(),
+            exchange_rate_set_by_user_id: null,
+          },
+        };
+      };
+      await inOrder(await this.budgetItemsRepo.listAllForTrip(tripId), (row) => {
+        const { currency, rate } = rebase(row);
+        return this.budgetItemsRepo.setRebasedRate(row.id, currency, rate);
+      });
+      await inOrder(await this.budgetSettlementsRepo.listRawForTrip(tripId), (row) => {
+        const { currency, rate } = rebase(row);
+        return this.budgetSettlementsRepo.setRebasedRate(row.id, currency, rate);
+      });
+      await this.exchangeRates.rebaseTripRates(tripId, previous, next, bridge);
+      await this.placesRepo.pinCurrencyForTrip(tripId, previous);
     });
   }
 
-  createBudgetItem(
+  async createBudgetItem(
     tripId: string | number,
     data: {
-      category?: string;
-      name: string;
-      total_price?: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      exchange_rate_source?: ExchangeRateWrite['exchange_rate_source'];
-      exchange_rate_source_version?: string | null;
-      exchange_rate_effective_date?: string | null;
-      exchange_rate_set_at?: string | null;
-      exchange_rate_set_by_user_id?: number | null;
-      payers?: { user_id: number; amount: number }[];
-      member_ids?: number[];
+      category?: string; name: string; total_price?: number;
+      currency?: string | null; exchange_rate?: number;
+      payers?: { user_id: number; amount: number }[]; member_ids?: number[];
       members?: { user_id: number; amount?: number | null }[];
-      persons?: number | null;
-      days?: number | null;
-      note?: string | null;
-      expense_date?: string | null;
+      persons?: number | null; days?: number | null; note?: string | null; expense_date?: string | null;
       ticket_json?: string | null;
       reservation_id?: number | null;
       place_id?: number | null;
       receipt_file_ids?: number[];
     },
+    prepared?: PreparedRate,
   ) {
-    return this.db.transaction(() => {
-      const maxOrder = this.db.get<{ max: number | null }>(
-        'SELECT MAX(sort_order) as max FROM budget_items WHERE trip_id = ?',
-        tripId,
-      )!;
-      const sortOrder = (maxOrder.max !== null ? maxOrder.max : -1) + 1;
+    return await this.uow.transactional(async () => {
+      const rate = await this.rateForCommit(tripId, prepared);
+      const maxOrder = await this.budgetItemsRepo.maxSortOrder(tripId);
+      const sortOrder = (maxOrder !== null ? maxOrder : -1) + 1;
 
       const cat = data.category || 'other';
 
       // Ensure category has a sort_order entry
-      const catExists = this.db.get(
-        'SELECT 1 FROM budget_category_order WHERE trip_id = ? AND category = ?',
-        tripId,
-        cat,
-      );
+      const catExists = await this.budgetCategoryOrderRepo.exists(tripId, cat);
       if (!catExists) {
-        const maxCatOrder = this.db.get<{ max: number | null }>(
-          'SELECT MAX(sort_order) as max FROM budget_category_order WHERE trip_id = ?',
-          tripId,
-        );
-        const catOrder = (maxCatOrder?.max !== null && maxCatOrder?.max !== undefined ? maxCatOrder.max : -1) + 1;
-        this.db.run(
-          'INSERT OR IGNORE INTO budget_category_order (trip_id, category, sort_order) VALUES (?, ?, ?)',
-          tripId,
-          cat,
-          catOrder,
-        );
+        const maxCatOrder = await this.budgetCategoryOrderRepo.maxSortOrder(tripId);
+        const catOrder = (maxCatOrder !== null && maxCatOrder !== undefined ? maxCatOrder : -1) + 1;
+        await this.budgetCategoryOrderRepo.insertIgnore(tripId, cat, catOrder);
       }
 
       // total_price is derived from explicit payers when given; otherwise the caller
       // value (planning entries, or a bill no one has paid yet). Negative payer
       // amounts (a refund's recipient, #2176) count like any other.
-      const payerTotal = sumMoney((data.payers || []).filter((p) => p.amount !== 0).map((p) => p.amount));
-      const total = data.payers && data.payers.length > 0 ? payerTotal : data.total_price || 0;
+      const payerTotal = sumMoney((data.payers || []).filter(p => p.amount !== 0).map(p => p.amount));
+      const total = data.payers && data.payers.length > 0 ? payerTotal : (data.total_price || 0);
 
-      const knownMembers = data.members
-        ? this.rosterMemberIds(
-            tripId,
-            data.members.map((m) => m.user_id),
-          )
-        : null;
-      const members =
-        data.members && knownMembers ? data.members.filter((m) => knownMembers.has(m.user_id)) : undefined;
-      const knownIds = data.member_ids ? this.rosterMemberIds(tripId, data.member_ids) : null;
-      const memberIds = data.member_ids && knownIds ? data.member_ids.filter((uid) => knownIds.has(uid)) : undefined;
+      // A new expense has nobody on it yet, so only the trip's own people qualify.
+      const known = data.payers || data.members || data.member_ids ? await this.allowedParticipantIds(tripId, null) : new Set<number>();
+      const members = data.members ? data.members.filter(m => known.has(m.user_id)) : undefined;
+      const memberIds = data.member_ids ? data.member_ids.filter(uid => known.has(uid)) : undefined;
 
       const { note, ticket } = splitLegacyTicketNote(data.note, data.ticket_json);
 
-      const result = this.db.run(
-        `INSERT INTO budget_items (
-           trip_id, category, name, total_price, currency, exchange_rate,
-           exchange_rate_source, exchange_rate_source_version, exchange_rate_effective_date,
-           exchange_rate_set_at, exchange_rate_set_by_user_id, exchange_rate_note,
-           persons, days, note, ticket_json, sort_order, expense_date, reservation_id, place_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        tripId,
-        cat,
-        data.name,
-        total,
-        data.currency || null,
-        data.exchange_rate != null ? data.exchange_rate : 1,
-        data.exchange_rate_source || 'legacy',
-        data.exchange_rate_source_version || null,
-        data.exchange_rate_effective_date || null,
-        data.exchange_rate_set_at || null,
-        data.exchange_rate_set_by_user_id ?? null,
-        data.exchange_rate_note || null,
-        memberIds ? memberIds.length : data.persons != null ? data.persons : null,
-        data.days !== undefined && data.days !== null ? data.days : null,
-        note || null,
-        ticket || null,
-        sortOrder,
-        data.expense_date || null,
-        data.reservation_id != null ? data.reservation_id : null,
-        data.place_id != null ? data.place_id : null,
-      );
+      const itemId = await this.budgetItemsRepo.insertItem({
+        trip_id: tripId,
+        category: cat,
+        name: data.name,
+        total_price: total,
+        currency: normalizeCurrency(data.currency, '') || null,
+        exchange_rate: data.exchange_rate ?? 1,
+        ...rate,
+        persons: memberIds ? memberIds.length : (data.persons != null ? data.persons : null),
+        days: data.days !== undefined && data.days !== null ? data.days : null,
+        note: note || null,
+        ticket_json: ticket || null,
+        sort_order: sortOrder,
+        expense_date: data.expense_date || null,
+        reservation_id: data.reservation_id != null ? data.reservation_id : null,
+        place_id: data.place_id != null ? data.place_id : null,
+      });
 
-      const itemId = result.lastInsertRowid as number;
-      if (data.payers && data.payers.length > 0) this.writeItemPayers(itemId, tripId, data.payers);
+      if (data.payers && data.payers.length > 0) await this.writeItemPayers(itemId, known, data.payers);
       if (members && members.length > 0) {
-        const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO budget_item_members (budget_item_id, user_id, paid, amount) VALUES (?, ?, 0, ?)',
-        );
-        for (const m of members)
-          insert.run(itemId, m.user_id, m.amount !== undefined && m.amount !== null ? m.amount : null);
+        for (const m of members) {
+          await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: itemId, user_id: m.user_id, paid: 0, amount: m.amount !== undefined && m.amount !== null ? m.amount : null });
+        }
       } else if (memberIds && memberIds.length > 0) {
-        const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO budget_item_members (budget_item_id, user_id, paid, amount) VALUES (?, ?, 0, NULL)',
-        );
-        for (const uid of memberIds) insert.run(itemId, uid);
+        for (const uid of memberIds) {
+          await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: itemId, user_id: uid, paid: 0, amount: null });
+        }
       }
 
       if (data.receipt_file_ids && data.receipt_file_ids.length > 0) {
-        const insertLink = this.db.prepare('INSERT OR IGNORE INTO file_links (file_id, budget_item_id) VALUES (?, ?)');
         for (const fid of data.receipt_file_ids) {
           // Verify file belongs to this trip
-          const belongs = this.db.get(
-            'SELECT id FROM trip_files WHERE id = ? AND trip_id = ? AND deleted_at IS NULL',
-            fid,
-            tripId,
-          );
+          const belongs = await this.budgetItemsRepo.findTripFile(fid, tripId);
           if (belongs) {
-            insertLink.run(fid, itemId);
+            await this.budgetItemsRepo.insertReceiptLink(fid, itemId);
           }
         }
       }
 
-      const item = this.db.get<BudgetItem>('SELECT * FROM budget_items WHERE id = ?', itemId)!;
-      item.members = this.loadItemMembers(itemId);
-      item.payers = this.loadItemPayers(itemId);
-      item.receipts = this.loadItemReceipts(itemId);
+      const item = this.toBudgetItem((await this.budgetItemsRepo.findById(itemId))!);
+      item.members = await this.loadItemMembers(itemId);
+      item.payers = await this.loadItemPayers(itemId);
+      item.receipts = await this.loadItemReceipts(itemId);
       return item;
     });
   }
 
-  /** Fetch a single budget item hydrated with its members, payers, and receipts, scoped to the trip. */
-  getBudgetItem(id: string | number, tripId: string | number): BudgetItem | null {
-    const item = this.db.get<BudgetItem>('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?', id, tripId);
-    if (!item) return null;
-    item.members = this.loadItemMembers(id);
-    item.payers = this.loadItemPayers(id);
-    item.receipts = this.loadItemReceipts(id);
+  /**
+   * Fetch a single budget item hydrated with its members, payers, and
+   * receipts, scoped to the trip. `id: number` — Plan 4 Task 8b (U6): every
+   * caller is `budget.mcp.ts`'s Zod-typed `itemId`/`created.id`, already a
+   * real row id (this route has no REST `GET /:id` counterpart).
+   */
+  async getBudgetItem(id: number, tripId: string | number): Promise<BudgetItem | null> {
+    const row = await this.budgetItemsRepo.findInTrip(id, tripId);
+    if (!row) return null;
+    const item = this.toBudgetItem(row);
+    item.members = await this.loadItemMembers(id);
+    item.payers = await this.loadItemPayers(id);
+    item.receipts = await this.loadItemReceipts(id);
     return item;
   }
 
-  linkBudgetItemToReservation(
+  async linkBudgetItemToReservation(
     tripId: string | number,
     reservationId: number,
-    data: { name: string; category?: string; total_price: number } & ExchangeRateWrite,
+    data: { name: string; category?: string; total_price: number; currency?: string | null; exchange_rate?: number; expense_date?: string | null },
+    prepared?: PreparedRate,
   ) {
     // createBudgetItem accepts reservation_id directly — the legacy separate
     // UPDATE after the insert was redundant (and non-atomic).
-    return this.createBudgetItem(tripId, { ...data, reservation_id: reservationId });
+    return await this.createBudgetItem(tripId, { ...data, reservation_id: reservationId }, prepared);
   }
 
-  updateBudgetItem(
-    id: string | number,
+  /**
+   * `id: number` (Plan 4 Task 8b, U6 — the program's gate-level id parsing
+   * carry: `BudgetController.update` now parses `:id` once via `toRowId`
+   * and threads the number down through `update` to here; the other
+   * caller, `reservations.service.ts`, already passed a real row id).
+   */
+  async updateBudgetItem(
+    id: number,
     tripId: string | number,
     data: {
-      category?: string;
-      name?: string;
-      total_price?: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      exchange_rate_source?: ExchangeRateWrite['exchange_rate_source'];
-      exchange_rate_source_version?: string | null;
-      exchange_rate_effective_date?: string | null;
-      exchange_rate_set_at?: string | null;
-      exchange_rate_set_by_user_id?: number | null;
-      payers?: { user_id: number; amount: number }[];
-      member_ids?: number[];
+      category?: string; name?: string; total_price?: number;
+      currency?: string | null; exchange_rate?: number;
+      payers?: { user_id: number; amount: number }[]; member_ids?: number[];
       members?: { user_id: number; amount?: number | null }[];
-      persons?: number | null;
-      days?: number | null;
-      note?: string | null;
-      sort_order?: number;
-      expense_date?: string | null;
+      persons?: number | null; days?: number | null; note?: string | null; sort_order?: number; expense_date?: string | null;
       ticket_json?: string | null;
       receipt_file_ids?: number[];
+      reservation_id?: number | null;
+      place_id?: number | null;
     },
+    prepared?: PreparedRate,
   ) {
-    return this.db.transaction(() => {
-      const item = this.db.get('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?', id, tripId);
+    return await this.uow.transactional(async () => {
+      const item = await this.budgetItemsRepo.findInTrip(id, tripId);
       if (!item) return null;
+      const rate = await this.rateForCommit(tripId, prepared, item);
+
+      // Who may stay on or join this expense, and the paid ticks of its split, are
+      // read before the payer and member rows below are replaced.
+      const splitTouched = data.payers !== undefined || data.members !== undefined || data.member_ids !== undefined;
+      const known = splitTouched ? await this.allowedParticipantIds(tripId, id) : new Set<number>();
+      const existingPaid = new Map<number, number>();
+      if (data.members !== undefined || data.member_ids !== undefined) {
+        for (const e of await this.budgetItemMembersRepo.listUserPaid(id)) existingPaid.set(e.user_id, e.paid);
+      }
 
       // An old client sending a receipt in `note` still lands in ticket_json, and
       // its note is left untouched rather than clobbered with the receipt blob.
@@ -883,116 +604,61 @@ export class BudgetService {
       const noteTouched = data.note !== undefined && note !== undefined;
       const ticketTouched = data.ticket_json !== undefined || ticket !== undefined;
 
-      this.db.run(
-        `
-    UPDATE budget_items SET
-      category = COALESCE(?, category),
-      name = COALESCE(?, name),
-      total_price = CASE WHEN ? IS NOT NULL THEN ? ELSE total_price END,
-      currency = CASE WHEN ? THEN ? ELSE currency END,
-      exchange_rate = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate END,
-      exchange_rate_source = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate_source END,
-      exchange_rate_source_version = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate_source_version END,
-      exchange_rate_effective_date = CASE WHEN ? THEN ? ELSE exchange_rate_effective_date END,
-      exchange_rate_set_at = CASE WHEN ? THEN ? ELSE exchange_rate_set_at END,
-      exchange_rate_set_by_user_id = CASE WHEN ? THEN ? ELSE exchange_rate_set_by_user_id END,
-      exchange_rate_note = CASE WHEN ? THEN ? ELSE exchange_rate_note END,
-      persons = CASE WHEN ? IS NOT NULL THEN ? ELSE persons END,
-      days = CASE WHEN ? THEN ? ELSE days END,
-      note = CASE WHEN ? THEN ? ELSE note END,
-      ticket_json = CASE WHEN ? THEN ? ELSE ticket_json END,
-      sort_order = CASE WHEN ? IS NOT NULL THEN ? ELSE sort_order END,
-      expense_date = CASE WHEN ? THEN ? ELSE expense_date END
-    WHERE id = ?
-  `,
-        data.category || null,
-        data.name || null,
-        data.total_price !== undefined ? 1 : null,
-        data.total_price !== undefined ? data.total_price : 0,
-        data.currency !== undefined ? 1 : 0,
-        data.currency !== undefined ? data.currency || null : null,
-        data.exchange_rate !== undefined ? 1 : null,
-        data.exchange_rate !== undefined ? data.exchange_rate : 1,
-        data.exchange_rate_source !== undefined ? 1 : null,
-        data.exchange_rate_source ?? null,
-        data.exchange_rate_source_version !== undefined ? 1 : null,
-        data.exchange_rate_source_version ?? null,
-        data.exchange_rate_effective_date !== undefined ? 1 : 0,
-        data.exchange_rate_effective_date ?? null,
-        data.exchange_rate_set_at !== undefined ? 1 : 0,
-        data.exchange_rate_set_at ?? null,
-        data.exchange_rate_set_by_user_id !== undefined ? 1 : 0,
-        data.exchange_rate_set_by_user_id ?? null,
-        data.exchange_rate_note !== undefined ? 1 : 0,
-        data.exchange_rate_note ?? null,
-        data.persons !== undefined ? 1 : null,
-        data.persons !== undefined ? data.persons : null,
-        data.days !== undefined ? 1 : 0,
-        data.days !== undefined ? data.days : null,
-        noteTouched ? 1 : 0,
-        noteTouched ? note : null,
-        ticketTouched ? 1 : 0,
-        ticketTouched ? ticket : null,
-        data.sort_order !== undefined ? 1 : null,
-        data.sort_order !== undefined ? data.sort_order : 0,
-        data.expense_date !== undefined ? 1 : 0,
-        data.expense_date !== undefined ? data.expense_date || null : null,
-        id,
-      );
+      // R11's presence-sentinel helper (`BudgetItemsRepository.update`,
+      // `presenceSet`) — `category`/`name` pass `present = !!value`
+      // (the legacy `COALESCE(?, col)` truthy-wins shape), everything else
+      // passes `present = <field> !== undefined` (a true presence sentinel).
+      await this.budgetItemsRepo.update(id, {
+        category: [!!data.category, data.category || ''],
+        name: [!!data.name, data.name || ''],
+        total_price: [data.total_price !== undefined, data.total_price !== undefined ? data.total_price : 0],
+        currency: [data.currency !== undefined, normalizeCurrency(data.currency, '') || null],
+        exchange_rate: [data.exchange_rate !== undefined, data.exchange_rate !== undefined ? data.exchange_rate : 1],
+        persons: [data.persons !== undefined, data.persons !== undefined ? data.persons : null],
+        days: [data.days !== undefined, data.days !== undefined ? data.days : null],
+        note: [noteTouched, noteTouched ? (note as string | null) : null],
+        ticket_json: [ticketTouched, ticketTouched ? (ticket as string | null) : null],
+        sort_order: [data.sort_order !== undefined, data.sort_order !== undefined ? data.sort_order : 0],
+        expense_date: [data.expense_date !== undefined, data.expense_date !== undefined ? (data.expense_date || null) : null],
+        reservation_id: [data.reservation_id !== undefined, data.reservation_id ?? null],
+        place_id: [data.place_id !== undefined, data.place_id ?? null],
+      }, rate);
 
       // Optional inline payer/member replacement (the edit modal saves all at once).
       if (data.payers !== undefined) {
-        this.writeItemPayers(id, tripId, data.payers);
+        await this.writeItemPayers(id, known, data.payers);
         // writeItemPayers derives total_price from the payer sum (0 for no payers).
         // A "recorded total, nobody assigned" expense clears payers but still carries
         // an explicit total_price — re-apply it so it isn't clobbered to 0.
         if (data.payers.length === 0 && data.total_price !== undefined) {
-          this.db.run('UPDATE budget_items SET total_price = ? WHERE id = ?', data.total_price, id);
+          await this.budgetItemsRepo.setTotalPrice(id, data.total_price);
         }
       }
+      // The paid ticks carry over, as they do through updateMembers: the edit form
+      // saves the whole split every time, and it used to clear every tick with it.
       if (data.members !== undefined) {
-        const known = this.rosterMemberIds(
-          tripId,
-          data.members.map((m) => m.user_id),
-        );
-        const members = data.members.filter((m) => known.has(m.user_id));
-        this.db.run('DELETE FROM budget_item_members WHERE budget_item_id = ?', id);
-        const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO budget_item_members (budget_item_id, user_id, paid, amount) VALUES (?, ?, 0, ?)',
-        );
-        for (const m of members)
-          insert.run(id, m.user_id, m.amount !== undefined && m.amount !== null ? m.amount : null);
-        this.db.run('UPDATE budget_items SET persons = ? WHERE id = ?', members.length || null, id);
+        const members = data.members.filter(m => known.has(m.user_id));
+        await this.budgetItemMembersRepo.deleteForItem(id);
+        for (const m of members) {
+          await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: id, user_id: m.user_id, paid: existingPaid.get(m.user_id) || 0, amount: m.amount !== undefined && m.amount !== null ? m.amount : null });
+        }
+        await this.budgetItemsRepo.setPersons(id, members.length || null);
       } else if (data.member_ids !== undefined) {
-        const known = this.rosterMemberIds(tripId, data.member_ids);
-        const memberIds = data.member_ids.filter((uid) => known.has(uid));
-        this.db.run('DELETE FROM budget_item_members WHERE budget_item_id = ?', id);
-        const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO budget_item_members (budget_item_id, user_id, paid, amount) VALUES (?, ?, 0, NULL)',
-        );
-        for (const uid of memberIds) insert.run(id, uid);
-        this.db.run('UPDATE budget_items SET persons = ? WHERE id = ?', memberIds.length || null, id);
+        const memberIds = data.member_ids.filter(uid => known.has(uid));
+        await this.budgetItemMembersRepo.deleteForItem(id);
+        for (const uid of memberIds) {
+          await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: id, user_id: uid, paid: existingPaid.get(uid) || 0, amount: null });
+        }
+        await this.budgetItemsRepo.setPersons(id, memberIds.length || null);
       }
 
       // If category changed, update category order table
       if (data.category) {
-        const catExists = this.db.get(
-          'SELECT 1 FROM budget_category_order WHERE trip_id = ? AND category = ?',
-          tripId,
-          data.category,
-        );
+        const catExists = await this.budgetCategoryOrderRepo.exists(tripId, data.category);
         if (!catExists) {
-          const maxCatOrder = this.db.get<{ max: number | null }>(
-            'SELECT MAX(sort_order) as max FROM budget_category_order WHERE trip_id = ?',
-            tripId,
-          );
-          const catOrder = (maxCatOrder?.max !== null && maxCatOrder?.max !== undefined ? maxCatOrder.max : -1) + 1;
-          this.db.run(
-            'INSERT OR IGNORE INTO budget_category_order (trip_id, category, sort_order) VALUES (?, ?, ?)',
-            tripId,
-            data.category,
-            catOrder,
-          );
+          const maxCatOrder = await this.budgetCategoryOrderRepo.maxSortOrder(tripId);
+          const catOrder = (maxCatOrder !== null && maxCatOrder !== undefined ? maxCatOrder : -1) + 1;
+          await this.budgetCategoryOrderRepo.insertIgnore(tripId, data.category, catOrder);
         }
       }
 
@@ -1003,18 +669,10 @@ export class BudgetService {
         // second spare row into the pair the first one just wrote.
         const wanted = [...new Set(data.receipt_file_ids.map(Number))];
         const keep = new Set(wanted);
-        this.unlinkReceipts(id, keep);
+        await this.unlinkReceipts(id, keep);
         if (wanted.length > 0) {
-          const insertLink = this.db.prepare(
-            'INSERT OR IGNORE INTO file_links (file_id, budget_item_id) VALUES (?, ?)',
-          );
-          const adopt = this.db.prepare('UPDATE file_links SET budget_item_id = ? WHERE id = ?');
           for (const fid of wanted) {
-            const belongs = this.db.get(
-              'SELECT id FROM trip_files WHERE id = ? AND trip_id = ? AND deleted_at IS NULL',
-              fid,
-              tripId,
-            );
+            const belongs = await this.budgetItemsRepo.findTripFile(fid, tripId);
             if (!belongs) continue;
             // Already this item's receipt: nothing to do. A file can carry several
             // link rows (one per place, one per booking), so on a second save of
@@ -1022,25 +680,22 @@ export class BudgetService {
             // unlinkReceipts and the next spare would be adopted into a duplicate
             // (file, item) pair, which the unique index refuses. That threw inside
             // the transaction and rolled the whole expense edit back, every time.
-            const already = this.db.get('SELECT 1 FROM file_links WHERE file_id = ? AND budget_item_id = ?', fid, id);
+            const already = await this.budgetItemsRepo.linkAlreadyExists(fid, id);
             if (already) continue;
             // A file already tied to a place or a booking gets the receipt link
             // written onto that row, because the unique index is per file and
             // item and a second row for the same pair would be refused anyway.
-            const spare = this.db.get<{ id: number }>(
-              'SELECT id FROM file_links WHERE file_id = ? AND budget_item_id IS NULL LIMIT 1',
-              fid,
-            );
-            if (spare) adopt.run(id, spare.id);
-            else insertLink.run(fid, id);
+            const spare = await this.budgetItemsRepo.findSpareLink(fid);
+            if (spare) await this.budgetItemsRepo.adoptSpareLink(spare.id, id);
+            else await this.budgetItemsRepo.insertReceiptLink(fid, id);
           }
         }
       }
 
-      const updated = this.db.get<BudgetItem>('SELECT * FROM budget_items WHERE id = ?', id)!;
-      updated.members = this.loadItemMembers(id);
-      updated.payers = this.loadItemPayers(id);
-      updated.receipts = this.loadItemReceipts(id);
+      const updated = this.toBudgetItem((await this.budgetItemsRepo.findById(id))!);
+      updated.members = await this.loadItemMembers(id);
+      updated.payers = await this.loadItemPayers(id);
+      updated.receipts = await this.loadItemReceipts(id);
       return updated;
     });
   }
@@ -1049,62 +704,113 @@ export class BudgetService {
   // Payers
   // -------------------------------------------------------------------------
 
-  setItemPayers(id: string | number, tripId: string | number, payers: { user_id: number; amount: number }[]) {
-    return this.db.transaction(() => {
-      const item = this.db.get('SELECT id FROM budget_items WHERE id = ? AND trip_id = ?', id, tripId);
+  /** `id: number` — same Plan 4 Task 8b (U6) gate-level narrowing as {@link updateBudgetItem} (`BudgetController.setPayers` parses `:id` via `toRowId`). */
+  async setItemPayers(id: number, tripId: string | number, payers: { user_id: number; amount: number }[]) {
+    return await this.uow.transactional(async () => {
+      const item = await this.budgetItemsRepo.existsInTrip(id, tripId);
       if (!item) return null;
-      this.writeItemPayers(id, tripId, payers);
-      const updated = this.db.get<BudgetItem>('SELECT * FROM budget_items WHERE id = ?', id)!;
-      updated.members = this.loadItemMembers(id);
-      updated.payers = this.loadItemPayers(id);
+      await this.writeItemPayers(id, await this.allowedParticipantIds(tripId, id), payers);
+      const updated = this.toBudgetItem((await this.budgetItemsRepo.findById(id))!);
+      updated.members = await this.loadItemMembers(id);
+      updated.payers = await this.loadItemPayers(id);
       return updated;
     });
   }
 
-  deleteBudgetItem(id: string | number, tripId: string | number): boolean {
-    const item = this.db.get<{ id: number; reservation_id: number | null }>(
-      'SELECT id, reservation_id FROM budget_items WHERE id = ? AND trip_id = ?',
-      id,
-      tripId,
-    );
+  /** `id: number` — same Plan 4 Task 8b (U6) gate-level narrowing as {@link updateBudgetItem} (`BudgetController.remove` parses `:id` via `toRowId`; `reservations.service.ts` already passed a real row id). */
+  async deleteBudgetItem(id: number, tripId: string | number): Promise<boolean> {
+    const item = await this.budgetItemsRepo.findForDelete(id, tripId);
     if (!item) return false;
-    return this.db.transaction(() => {
+    return await this.uow.transactional(async () => {
       // Find all receipts attached to this item before deleting it
       // The receipts stay; only their tie to this expense goes. Rows that
       // carry nothing else are removed, rows that also point at a place or a
       // booking keep those. A link on a file already in the trash is left for
       // the SET NULL on the foreign key, so restoring the file does not bring
       // back a pointer to an expense that no longer exists.
-      this.unlinkReceipts(id);
-      this.db.run('DELETE FROM budget_items WHERE id = ?', id);
+      await this.unlinkReceipts(id);
+      await this.budgetItemsRepo.deleteById(id);
 
-      // The booking keeps a copy of this expense's total in its metadata, and
-      // the reservation update path preserves that copy across edits. With the
-      // expense gone there is nothing left to mirror, so drop it here rather
-      // than leave a price on the card that no longer has anything behind it.
-      if (item.reservation_id) this.clearReservationPrice(tripId, item.reservation_id);
+      // The booking keeps a copy of its expenses' total in its metadata, and
+      // the reservation update path preserves that copy across edits. With this
+      // expense gone the copy is worked out again from what is still linked, and
+      // dropped when nothing is, rather than leave a price on the card that no
+      // longer has anything behind it.
+      if (item.reservation_id) await this.resyncReservationPrice(tripId, item.reservation_id);
       return true;
     });
   }
 
   /**
-   * The counterpart to syncReservationPrice: take the mirrored total back off
-   * the booking. Non-fatal, exactly like the writer.
+   * After an update, the bookings whose mirrored price may have moved: the one
+   * the expense is linked to when its total changed, and on a re-link both the
+   * booking it left and the one it joined.
    */
-  private clearReservationPrice(tripId: string | number, reservationId: number): void {
+  async resyncLinkedPrices(
+    tripId: string | number,
+    previousReservationId: number | null | undefined,
+    updated: { reservation_id?: number | null },
+    data: { total_price?: number; reservation_id?: number | null },
+    socketId?: string,
+  ): Promise<void> {
+    const affected = new Set<number>();
+    if (data.reservation_id !== undefined && previousReservationId) affected.add(previousReservationId);
+    // Not only a new total: the currency and the payers (which derive the total)
+    // move the booking's price as well, so any edit of a linked expense resyncs.
+    if (updated.reservation_id) affected.add(updated.reservation_id);
+    for (const reservationId of affected) await this.resyncReservationPrice(tripId, reservationId, socketId);
+  }
+
+  /**
+   * Why a link from an expense can't be made, or null when it can: a booking or
+   * a place it points at has to exist on the same trip (#2084). REST and MCP
+   * both ask this before they write, so neither can reach into another trip.
+   */
+  async linkRefusal(tripId: string | number, data: { reservation_id?: number | null; place_id?: number | null }): Promise<string | null> {
+    if (data.reservation_id != null && (await this.reservationsRepo.findTripId(data.reservation_id)) !== Number(tripId)) {
+      return 'reservation_id does not belong to this trip.';
+    }
+    if (data.place_id != null && (await this.placesRepo.findTripId(data.place_id)) !== Number(tripId)) {
+      return 'place_id does not belong to this trip.';
+    }
+    return null;
+  }
+
+  /**
+   * Works the booking's mirrored price out again from every expense linked to
+   * it (#2084): their sum while they share one currency, the first one's total
+   * when they don't (a sum across currencies would be meaningless), and no
+   * price at all once none is linked. One expense gives exactly the old mirror.
+   * @txStandalone a non-fatal mirror onto the booking, worked out again on every change.
+   */
+  async resyncReservationPrice(tripId: string | number, reservationId: number, socketId?: string): Promise<void> {
+    const linked = await this.budgetItemsRepo.listLinkedToReservation(tripId, reservationId);
+    if (linked.length === 0) {
+      await this.clearReservationPrice(tripId, reservationId);
+      return;
+    }
+    // No currency means the trip's, and a code is a code whatever its case, so
+    // an expense in EUR and one without a currency on a EUR trip do add up.
+    const tripCurrency = ((await this.tripsRepo.getCurrency(tripId)) || '').toUpperCase();
+    const codeOf = (currency: string | null) => (currency || tripCurrency).toUpperCase();
+    const oneCurrency = new Set(linked.map(row => codeOf(row.currency))).size === 1;
+    const total = oneCurrency ? sumMoney(linked.map(row => row.total_price || 0)) : (linked[0].total_price || 0);
+    // Either way the figure is in the first expense's currency; none means the trip's.
+    const allInTripCurrency = oneCurrency && linked.every(row => !row.currency);
+    await this.syncReservationPrice(String(tripId), reservationId, total, socketId, allInTripCurrency ? null : codeOf(linked[0].currency) || null);
+  }
+
+  /** The counterpart to syncReservationPrice: take the mirrored total back off the booking. Non-fatal, like the writer. */
+  private async clearReservationPrice(tripId: string | number, reservationId: number): Promise<void> {
     try {
-      const reservation = this.db.get<{ id: number; metadata: string | null }>(
-        'SELECT id, metadata FROM reservations WHERE id = ? AND trip_id = ?',
-        reservationId,
-        tripId,
-      );
+      const reservation = await this.reservationsRepo.getIdAndMetadata(reservationId, tripId);
       if (!reservation?.metadata) return;
-      const meta = JSON.parse(reservation.metadata);
-      if (!meta || typeof meta !== 'object' || meta.price === undefined) return;
+      const meta = decodeJson(RESERVATION_METADATA, reservation.metadata, `reservation ${reservation.id}`);
+      if (meta.price === undefined) return;
       delete meta.price;
       delete meta.priceCurrency;
-      this.db.run('UPDATE reservations SET metadata = ? WHERE id = ?', JSON.stringify(meta), reservation.id);
-      const updatedRes = this.db.get('SELECT * FROM reservations WHERE id = ?', reservation.id);
+      await this.reservationsRepo.setMetadata(reservation.id, encodeJson(RESERVATION_METADATA, meta));
+      const updatedRes = await this.reservationsRepo.getFull(reservation.id);
       this.realtime.broadcast(String(tripId), 'reservation:updated', { reservation: updatedRes }, undefined);
     } catch (err) {
       console.error('[budget] Failed to clear the mirrored price from the reservation:', err);
@@ -1115,84 +821,99 @@ export class BudgetService {
   // Members
   // -------------------------------------------------------------------------
 
-  updateMembers(id: string | number, tripId: string | number, userIds: number[]) {
-    return this.db.transaction(() => {
-      const item = this.db.get('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?', id, tripId);
+  /** `id: number` — same Plan 4 Task 8b (U6) gate-level narrowing as {@link updateBudgetItem} (`BudgetController.updateMembers` parses `:id` via `toRowId`). */
+  async updateMembers(id: number, tripId: string | number, userIds: number[]) {
+    return await this.uow.transactional(async () => {
+      const item = await this.budgetItemsRepo.findInTrip(id, tripId);
       if (!item) return null;
 
       const existingPaid: Record<number, number> = {};
-      const existing = this.db.all<{ user_id: number; paid: number }>(
-        'SELECT user_id, paid FROM budget_item_members WHERE budget_item_id = ?',
-        id,
-      );
+      const existing = await this.budgetItemMembersRepo.listUserPaid(id);
       for (const e of existing) existingPaid[e.user_id] = e.paid;
+      const known = await this.allowedParticipantIds(tripId, id);
 
-      this.db.run('DELETE FROM budget_item_members WHERE budget_item_id = ?', id);
+      await this.budgetItemMembersRepo.deleteForItem(id);
 
-      const known = this.rosterMemberIds(tripId, userIds);
-      const memberIds = userIds.filter((uid) => known.has(uid));
+      const memberIds = userIds.filter(uid => known.has(uid));
       if (memberIds.length > 0) {
-        const insert = this.db.prepare(
-          'INSERT OR IGNORE INTO budget_item_members (budget_item_id, user_id, paid) VALUES (?, ?, ?)',
-        );
-        for (const userId of memberIds) insert.run(id, userId, existingPaid[userId] || 0);
-        this.db.run('UPDATE budget_items SET persons = ? WHERE id = ?', memberIds.length, id);
+        for (const userId of memberIds) {
+          await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: id, user_id: userId, paid: existingPaid[userId] || 0 });
+        }
+        await this.budgetItemsRepo.setPersons(id, memberIds.length);
       } else {
-        this.db.run('UPDATE budget_items SET persons = NULL WHERE id = ?', id);
+        await this.budgetItemsRepo.setPersons(id, null);
       }
 
       // loadItemMembers already applies avatar_url — the legacy second .map was redundant.
-      const members = this.loadItemMembers(id);
-      const updated = this.db.get<BudgetItem>('SELECT * FROM budget_items WHERE id = ?', id)!;
+      const members = await this.loadItemMembers(id);
+      const updated = this.toBudgetItem((await this.budgetItemsRepo.findById(id))!);
       return { members, item: updated };
     });
   }
 
-  removeUserFromBudgetItems(userId: number): void {
-    this.db.transaction(() => {
-      const itemIds = this.db
-        .all<{
-          budget_item_id: number;
-        }>('SELECT DISTINCT budget_item_id FROM budget_item_members WHERE user_id = ?', userId)
-        .map((r) => r.budget_item_id);
-      if (itemIds.length === 0) {
-        return;
+  /**
+   * Clears a guest's traces before the users row goes, refusing while money they moved is
+   * on the books: the cascade would take their payer rows and recorded payments with it (#2604).
+   */
+  async releaseGuest(userId: number): Promise<void> {
+    await this.uow.transactional(async () => {
+      const paid = await this.budgetItemPayersRepo.countNonZeroForUser(userId);
+      if (paid + (await this.budgetSettlementsRepo.countForUser(userId)) > 0) {
+        throw new DomainError(409, GUEST_HAS_PAYMENTS, { code: 'guest_has_payments' });
       }
+      await this.budgetItemsRepo.clearPaidByUser(userId);
+      await this.budgetSettlementsRepo.clearCreatedBy(userId);
+      await this.removeUserFromBudgetItems(userId);
+    });
+  }
 
-      this.db.run('DELETE FROM budget_item_members WHERE user_id = ?', userId);
+  async removeUserFromBudgetItems(userId: number): Promise<void> {
+    await this.uow.transactional(async () => {
+      const itemIds = await this.budgetItemMembersRepo.listItemIdsForUser(userId);
+      await Promise.all(itemIds.map(itemId => this.handOnShare(itemId, userId)));
+      await this.budgetItemMembersRepo.deleteForUser(userId);
 
-      const remaining = this.db.prepare('SELECT COUNT(*) AS count FROM budget_item_members WHERE budget_item_id = ?');
-      const setPersons = this.db.prepare('UPDATE budget_items SET persons = ? WHERE id = ?');
       for (const itemId of itemIds) {
-        const { count } = remaining.get(itemId) as { count: number };
-        setPersons.run(count || null, itemId);
+        const count = await this.budgetItemMembersRepo.countForItem(itemId);
+        await this.budgetItemsRepo.setPersons(itemId, count || null);
       }
     });
   }
 
-  toggleMemberPaid(id: string | number, tripId: string | number, userId: string | number, paid: boolean) {
-    // Resolve the item within the caller's trip before updating.
-    const item = this.db.get('SELECT id FROM budget_items WHERE id = ? AND trip_id = ?', id, tripId);
-    if (!item) return null;
+  /** Hands a departing member's custom or receipt share to the rest of the split, see {@link shareAfterLeaving}. */
+  private async handOnShare(itemId: number, userId: number): Promise<void> {
+    const item = await this.budgetItemsRepo.findById(itemId);
+    if (!item) return;
+    const ticket = decodeJsonResult(BUDGET_ITEM_TICKET, item.ticket_json);
+    const currency = item.currency || (await this.tripsRepo.getCurrency(item.trip_id)) || 'EUR';
+    const members = await this.budgetItemMembersRepo.listForItem(itemId);
+    const next = shareAfterLeaving(itemId, members, userId, currency, ticket.ok ? ticket.value : null);
+    if (next.ticket) await this.budgetItemsRepo.setTicketJson(itemId, encodeJson(BUDGET_ITEM_TICKET, next.ticket));
+    const amounts = Object.entries(next.amounts ?? {});
+    await Promise.all(amounts.map(([id, amount]) => this.budgetItemMembersRepo.setAmount(itemId, Number(id), amount)));
+  }
 
-    this.db.run(
-      'UPDATE budget_item_members SET paid = ? WHERE budget_item_id = ? AND user_id = ?',
-      paid ? 1 : 0,
-      id,
-      userId,
-    );
+  /**
+   * R2-class fix (same as `FilesService`'s — flagged, mutation-tested): the
+   * legacy trip-scoping guard (BG68) and the write (BG69) were two separate
+   * statements with no `uow.transactional`, the one write in this file that
+   * didn't follow its own "transactions are not optional" convention (§17
+   * surprise 4). Wrapped here so a forced mid-transaction failure leaves no
+   * partial update.
+   */
+  /** `id`/`userId`: number — same Plan 4 Task 8b (U6) gate-level narrowing as {@link updateBudgetItem} (`BudgetController.toggleMemberPaid` parses both via `toRowId`). */
+  async toggleMemberPaid(id: number, tripId: string | number, userId: number, paid: boolean) {
+    return await this.uow.transactional(async () => {
+      // Resolve the item within the caller's trip before updating.
+      const item = await this.budgetItemsRepo.existsInTrip(id, tripId);
+      if (!item) return null;
 
-    const member = this.db.get<BudgetItemMember>(
-      `
-    SELECT bm.user_id, bm.paid, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_members bm JOIN users u ON bm.user_id = u.id
-    WHERE bm.budget_item_id = ? AND bm.user_id = ?
-  `,
-      id,
-      userId,
-    );
+      await this.budgetItemMembersRepo.setPaid(id, userId, paid ? 1 : 0);
 
-    return member ? { ...member, avatar_url: avatarUrl(member) } : null;
+      const member = await this.budgetItemMembersRepo.findMemberWithUser(id, userId);
+
+      return member ? { ...member, avatar_url: avatarUrl(member) } : null;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -1209,49 +930,20 @@ export class BudgetService {
    * currencies and divided them in floats, so a bill of 801.76 USD counted as 801.76 of
    * the trip's euros and a third of 100 came out as 33.333…
    */
-  getPerPersonSummary(tripId: string | number, rates: Record<string, number> | null = null) {
-    const trip = this.db.get<{ currency?: string | null }>('SELECT currency FROM trips WHERE id = ?', tripId);
-    const tripCurrency = (trip?.currency || 'EUR').toUpperCase();
-    const items = this.db.all<{
-      id: number;
-      total_price: number | null;
-      currency: string | null;
-      exchange_rate: number | null;
-      exchange_rate_source: string | null;
-    }>('SELECT id, total_price, currency, exchange_rate FROM budget_items WHERE trip_id = ?', tripId);
-    const members = this.db.all<{
-      budget_item_id: number;
-      user_id: number;
-      amount: number | null;
-      paid: number | null;
-      username: string;
-      avatar: string | null;
-    }>(
-      `
-    SELECT bm.budget_item_id, bm.user_id, bm.amount, bm.paid, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_members bm
-    JOIN budget_items bi ON bm.budget_item_id = bi.id
-    JOIN users u ON bm.user_id = u.id
-    WHERE bi.trip_id = ?
-  `,
-      tripId,
-    );
-    const people = new Map<
-      number,
-      { user_id: number; username: string; avatar: string | null; assigned: number; paid: number; items_count: number }
-    >();
+  async getPerPersonSummary(tripId: string | number) {
+    const tripCurrency = await this.tripCurrency(tripId);
+    const items = await this.budgetItemsRepo.listMoneyRows(tripId);
+    const members = await this.budgetItemMembersRepo.listForTripWithUsersAndPaid(tripId);
+    const people = new Map<number, { user_id: number; username: string; avatar: string | null; assigned: number; paid: number; items_count: number }>();
     for (const item of items) {
-      const own = members.filter((m) => m.budget_item_id === item.id);
+      const own = members.filter(m => m.budget_item_id === item.id);
       if (own.length === 0) continue;
       // A foreign row nothing can convert counts for nobody, as in the settlement.
-      const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, rates, item.exchange_rate_source);
+      const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, item.exchange_rate_source);
       if (!convert) continue;
-      const toTripCents = (amount: number) => Math.round(convert(amount) * 100);
-      // A member with an amount of their own owes exactly that; the rest split the
-      // total evenly, as the query this replaces did.
-      const equal = this.splitEqualShares(toTripCents(item.total_price || 0), own, item.id);
+      const shares = summaryShareCents(own, convert, item.total_price || 0, item.id);
       for (const m of own) {
-        const share = m.amount !== null && m.amount !== undefined ? toTripCents(m.amount) : equal[m.user_id] || 0;
+        const share = shares[m.user_id] || 0;
         let p = people.get(m.user_id);
         if (!p) {
           p = { user_id: m.user_id, username: m.username, avatar: m.avatar, assigned: 0, paid: 0, items_count: 0 };
@@ -1265,13 +957,9 @@ export class BudgetService {
 
     return [...people.values()]
       .sort((a, b) => a.user_id - b.user_id)
-      .map((p) => ({
-        user_id: p.user_id,
-        username: p.username,
-        avatar: p.avatar,
-        total_assigned: p.assigned / 100,
-        total_paid: p.paid / 100,
-        items_count: p.items_count,
+      .map(p => ({
+        user_id: p.user_id, username: p.username, avatar: p.avatar,
+        total_assigned: p.assigned / 100, total_paid: p.paid / 100, items_count: p.items_count,
         currency: tripCurrency,
         avatar_url: avatarUrl(p),
       }));
@@ -1284,33 +972,19 @@ export class BudgetService {
    * dollars to euros and labels the result with the trip currency. A foreign row nothing
    * can convert is left out and its id listed under `unconverted`.
    */
-  tripTotals(
-    tripId: string | number,
-    tripCurrency: string,
-    rates: Record<string, number> | null = null,
-  ): { total: number; byCategory: Record<string, number>; unconverted: number[] } {
+  async tripTotals(tripId: string | number, tripCurrency: string): Promise<{ total: number; byCategory: Record<string, number>; unconverted: number[] }> {
     const trip = (tripCurrency || 'EUR').toUpperCase();
-    const rows = this.db.all<{
-      id: number;
-      category: string | null;
-      total_price: number | null;
-      currency: string | null;
-      exchange_rate: number | null;
-      exchange_rate_source: string | null;
-    }>(
-      'SELECT id, category, total_price, currency, exchange_rate, exchange_rate_source FROM budget_items WHERE trip_id = ? ORDER BY id',
-      tripId,
-    );
+    const rows = await this.budgetItemsRepo.listMoneyRows(tripId);
     let total = 0;
     const byCategory: Record<string, number> = {};
     const unconverted: number[] = [];
     for (const r of rows) {
-      const convert = tripConverter(r.currency, r.exchange_rate, trip, rates, r.exchange_rate_source);
+      const convert = tripConverter(r.currency, r.exchange_rate, trip, r.exchange_rate_source);
       if (!convert) {
         unconverted.push(r.id);
         continue;
       }
-      const cents = Math.round(convert(r.total_price || 0) * 100);
+      const cents = toMinor(convert(r.total_price || 0));
       total += cents;
       const cat = r.category || '';
       byCategory[cat] = (byCategory[cat] || 0) + cents;
@@ -1320,61 +994,6 @@ export class BudgetService {
       byCategory: Object.fromEntries(Object.entries(byCategory).map(([cat, cents]) => [cat, cents / 100])),
       unconverted,
     };
-  }
-
-  /**
-   * Today's rates against the trip currency, for the totals above. Fetched only when a
-   * row in another currency never froze a rate of its own: every other row converts
-   * without them, so a trip whose rows were all booked never waits on the network.
-   */
-  async ratesForTripTotals(tripId: string | number, tripCurrency: string): Promise<Record<string, number> | null> {
-    const trip = (tripCurrency || 'EUR').toUpperCase();
-    const unbooked = this.db.get(
-      `
-    SELECT 1 FROM budget_items
-    WHERE trip_id = ? AND currency IS NOT NULL AND currency != '' AND UPPER(currency) != ?
-      AND ${UNFROZEN_SQL}
-    LIMIT 1
-  `,
-      tripId,
-      trip,
-    );
-    return unbooked ? this.exchangeRates.getRates(trip) : null;
-  }
-
-  /**
-   * Largest-remainder split of an expense across its participants. Takes and
-   * returns **whole cents**, so the shares add back up to the input exactly —
-   * the settlement ledger is netted in integer cents (#1382).
-   *
-   * The remainder cent rotates with the item id rather than always landing on the
-   * first member, so across several expenses the rounding evens out instead of
-   * always favouring the same person.
-   *
-   * Floor-based (`totalCents - baseCents * n`, never `%`), so a negative total —
-   * a refund split across its beneficiaries (#2176) — still yields a remainder
-   * in [0, n) and shares that sum back to the total exactly. The client mirror
-   * (CostsPanel.helpers.splitEqualShares) must stay share-for-share identical;
-   * the parity fixture in budget.service.calc.test.ts pins both sides.
-   */
-  private splitEqualShares(totalCents: number, members: { user_id: number }[], itemId: number): Record<number, number> {
-    const n = members.length;
-    if (n === 0) return {};
-
-    const baseCents = Math.floor(totalCents / n);
-    const remainder = totalCents - baseCents * n;
-
-    const shares: Record<number, number> = {};
-    const sortedMembers = [...members].sort((a, b) => a.user_id - b.user_id);
-    const startIndex = itemId % n;
-
-    for (let i = 0; i < n; i++) {
-      const member = sortedMembers[i];
-      const hasExtraCent = (i - startIndex + n) % n < remainder;
-      shares[member.user_id] = baseCents + (hasExtraCent ? 1 : 0);
-    }
-
-    return shares;
   }
 
   /**
@@ -1392,13 +1011,12 @@ export class BudgetService {
    * expense list converted again on the client with today's rate would not add up
    * to a figure that was booked at the rate frozen on entry.
    *
-   * A row nothing can convert (a foreign currency with no frozen rate and no live
-   * one) is left out whole and listed under `unconverted`, so Σ balances stays 0.
+   * A foreign row with no frozen rate is left out whole and listed under `unconverted`, so Σ balances stays 0.
    * `currency` says what the amounts are in: the display currency when there is a
    * quote for it (the rates, else `baseRate`, the caller's own units of display
    * currency per 1 trip currency), otherwise the trip currency.
    */
-  calculateSettlement(
+  async calculateSettlement(
     tripId: string | number,
     opts: { base?: string; rates?: Record<string, number> | null; tripCurrency?: string; baseRate?: number } = {},
   ) {
@@ -1415,9 +1033,8 @@ export class BudgetService {
     // per 1 trip-currency. Pre-rework rows store currency = NULL = "the trip's own currency".
     // Prefer the FX rate frozen at entry time (#1335): a settled expense keeps the rate
     // it was booked at, so a later live-rate drift doesn't re-open it with a residual.
-    // Legacy rows without a frozen rate convert via base with live rates.
-    const converterFor = (itemCurrency: string | null | undefined, itemRate?: number | null, source?: string | null) =>
-      tripConverter(itemCurrency, itemRate, tripCurrency, rates, source);
+    const converterFor = (itemCurrency: string | null | undefined, itemRate?: number | null, source?: string) =>
+      tripConverter(itemCurrency, itemRate, tripCurrency, source);
     // trip-currency → display currency, applied once to the final netted totals.
     // Held as a plain factor so it is exactly linear: the balances are converted as
     // one set (allocateDisplayCents) rather than one at a time, which is what keeps
@@ -1436,57 +1053,36 @@ export class BudgetService {
     // without a currency, which is taken to be in the display currency. With neither,
     // the answer stays in the trip currency and says so, rather than printing trip cents
     // as the display currency.
-    const baseRate =
-      opts.baseRate != null && Number.isFinite(opts.baseRate) && opts.baseRate > 0 ? opts.baseRate : null;
+    const baseRate = opts.baseRate != null && Number.isFinite(opts.baseRate) && opts.baseRate > 0 ? opts.baseRate : null;
     const quoted = requested === tripCurrency ? 1 : (quoteRatio(rates, requested, tripCurrency) ?? baseRate);
     const currency = quoted === null ? tripCurrency : requested;
     const displayFactor = quoted ?? 1;
-    // A recorded settle-up amount is entered in whatever display currency the payer
-    // was viewing. New rows capture that currency and the rate frozen at settle time
-    // (#1445), so a settled position stays balanced when live rates drift — mirroring
-    // the expenses; a frozen currency without a usable rate falls back to live rates,
-    // and without those the transfer is left out like an expense. Legacy rows
-    // (currency = NULL) have no frozen rate, so fall back to the old behaviour: assume
-    // they were entered in the current display base and convert with live rates.
-    const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string | null) =>
+    // Every figure goes out in whole steps of that currency: whole won or yen (#2604).
+    const displayUnit = 10 ** Math.max(0, 2 - currencyDecimals(currency));
+    const toDisplay = (cents: number[], total?: number) => allocateDisplayCents(cents, displayFactor, total, displayUnit);
+    // Currencyless legacy transfers are interpreted in the current display base.
+    // New transfers record their currency and frozen rate when entered.
+    const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string) =>
       sCurrency
-        ? tripConverter(sCurrency, sRate, tripCurrency, rates, source)
-        : // The inverse of the display factor, so such a transfer reads back as entered.
-          (amount: number) => amount / displayFactor;
+        ? tripConverter(sCurrency, sRate, tripCurrency, source)
+        // The inverse of the display factor, so such a transfer reads back as entered.
+        : (amount: number) => amount / displayFactor;
     const unconvertedItems: number[] = [];
     const unconvertedSettlements: number[] = [];
     const unconvertedCurrencies = new Set<string>();
 
-    const items = this.db.all<BudgetItem>('SELECT * FROM budget_items WHERE trip_id = ?', tripId);
-    const allMembers = this.db.all<BudgetItemMember & { budget_item_id: number }>(
-      `
-    SELECT bm.budget_item_id, bm.user_id, bm.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_members bm
-    JOIN users u ON bm.user_id = u.id
-    WHERE bm.budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)
-  `,
-      tripId,
-    );
-    const allPayers = this.db.all<BudgetItemPayer & { budget_item_id: number }>(
-      `
-    SELECT bp.budget_item_id, bp.user_id, bp.amount, COALESCE(u.display_name, u.username) AS username, u.avatar
-    FROM budget_item_payers bp
-    JOIN users u ON bp.user_id = u.id
-    WHERE bp.budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)
-  `,
-      tripId,
-    );
+    const items = (await this.budgetItemsRepo.listAllForTrip(tripId)).map(r => this.toBudgetItem(r));
+    const allMembers = await this.budgetItemMembersRepo.listForTripWithUsers(tripId);
+    const allPayers = await this.budgetItemPayersRepo.listForTripWithUsers(tripId);
 
     // Net balance per user, in whole cents of the TRIP currency: positive = is owed
     // money, negative = owes money. Every amount is converted out of its own currency
     // and rounded to a cent once, at the boundary — from there on the ledger is
     // integer arithmetic, so Σ(balances) is exactly 0 and no sub-cent residual can
     // build up behind the two-decimal figures the user sees (#1382).
-    const balances: Record<number, { user_id: number; username: string; avatar_url: string | null; cents: number }> =
-      {};
+    const balances: Record<number, { user_id: number; username: string; avatar_url: string | null; cents: number }> = {};
     const ensure = (id: number, src: { username?: string; avatar?: string | null }) => {
-      if (!balances[id])
-        balances[id] = { user_id: id, username: src.username || '', avatar_url: avatarUrl(src), cents: 0 };
+      if (!balances[id]) balances[id] = { user_id: id, username: src.username || '', avatar_url: avatarUrl(src), cents: 0 };
       return balances[id];
     };
     // The two halves of the balance, kept apart so the per-person final budget can
@@ -1499,10 +1095,7 @@ export class BudgetService {
     // ...and the rows they are made of, so the breakdown lists them in these same
     // cents rather than converting the expense list a second time on the client.
     const frontedRows: Record<number, { item_id: number; cents: number }[]> = {};
-    const movedRows: Record<
-      number,
-      { settlement_id: number; from_user_id: number; to_user_id: number; cents: number }[]
-    > = {};
+    const movedRows: Record<number, { settlement_id: number; from_user_id: number; to_user_id: number; cents: number }[]> = {};
     // Read in the trip currency, those figures are the ledger's own trip cents. Read in
     // another one, they are built from each row's unrounded trip amount instead: a trip
     // cent is worth more than a dollar cent on a euro trip, so a bill of 12,345.67 USD
@@ -1519,9 +1112,8 @@ export class BudgetService {
         unconvertedCurrencies.add((item.currency || '').toUpperCase());
         continue;
       }
-      const toTripCents = (amount: number): number => Math.round(convert(amount) * 100);
-      const members = allMembers.filter((m) => m.budget_item_id === item.id);
-      const payers = allPayers.filter((p) => p.budget_item_id === item.id);
+      const members = allMembers.filter(m => m.budget_item_id === item.id);
+      const payers = allPayers.filter(p => p.budget_item_id === item.id);
       if (members.length === 0) continue; // planning-only entry → doesn't affect balances
 
       // An expense nobody has paid stays out of the ledger (#2225), which is what
@@ -1540,7 +1132,7 @@ export class BudgetService {
       // payment between two people who never shared a bill. Booking every flow it
       // offered then left someone short: "everyone square" beside a balance that
       // is not zero.
-      if (!payers.some((p) => p.amount !== 0)) continue;
+      if (!payers.some(p => p.amount !== 0)) continue;
 
       // Payers are credited what they actually paid (converted to trip currency with
       // the item's stored exchange rate). A negative payer — the recipient of a
@@ -1565,14 +1157,12 @@ export class BudgetService {
       // to total_price any more: an item with no payer behind it never reaches
       // here since #2225. An item whose payers net to exactly zero still does, and
       // divides zero, which is what it is worth.
-      const hasCustomSplit = members.some((m) => m.amount !== null && m.amount !== undefined);
-      const equalShares = !hasCustomSplit ? this.splitEqualShares(creditCents, members, item.id) : {};
+      const hasCustomSplit = members.some(m => m.amount !== null && m.amount !== undefined);
+      const shares = hasCustomSplit
+        ? customSplitCents(members, convert, creditCents, sumMinor(payers.map(p => p.amount)))
+        : splitEqualShares(creditCents, members, item.id);
       for (const m of members) {
-        const memberShare =
-          hasCustomSplit && m.amount !== null && m.amount !== undefined
-            ? toTripCents(m.amount)
-            : equalShares[m.user_id] || 0;
-        ensure(m.user_id, m).cents -= memberShare;
+        ensure(m.user_id, m).cents -= shares[m.user_id] || 0;
       }
     }
 
@@ -1581,10 +1171,9 @@ export class BudgetService {
     // counts even when neither user has an expense-derived balance yet — a manual
     // payment, or one left behind after its expense was deleted, then correctly
     // surfaces as an amount still to square up instead of silently vanishing.
-    const settlements = this.listSettlements(tripId);
+    const settlements = await this.listSettlements(tripId);
     const ensureSettled = (id: number, username: string | undefined, avatar_url: string | null | undefined) => {
-      if (!balances[id])
-        balances[id] = { user_id: id, username: username || '', avatar_url: avatar_url ?? null, cents: 0 };
+      if (!balances[id]) balances[id] = { user_id: id, username: username || '', avatar_url: avatar_url ?? null, cents: 0 };
       return balances[id];
     };
     for (const s of settlements) {
@@ -1615,44 +1204,30 @@ export class BudgetService {
     // derived from the same integers, so what the balances say is owed is exactly
     // what "Settle up" offers to move, down to the last cent (#1382).
     const ledger = Object.values(balances);
-    const displayCents = allocateDisplayCents(
-      ledger.map((b) => b.cents),
-      displayFactor,
-    );
+    const displayCents = toDisplay(ledger.map(b => b.cents));
     // Each component of the final budget is re-denominated as its own set, for the
     // same reason the balances are: rounding one person at a time lets the column
     // drift away from the figure it converted from. The final itself is then
     // subtracted in display cents rather than converted separately, so the three
     // lines the breakdown shows always add up to the total beside them, whatever
     // currency the viewer picked.
-    const frontedDisplayCents = allocateDisplayCents(
-      ledger.map((b) => frontedCents[b.user_id] || 0),
-      displayFactor,
-    );
-    const reimbursedDisplayCents = allocateDisplayCents(
-      ledger.map((b) => reimbursedCents[b.user_id] || 0),
-      displayFactor,
-    );
+    const frontedDisplayCents = toDisplay(ledger.map(b => frontedCents[b.user_id] || 0));
+    const reimbursedDisplayCents = toDisplay(ledger.map(b => reimbursedCents[b.user_id] || 0));
 
     // Calculate optimized payment flows (greedy algorithm)
     const people = ledger
       .map((b, i) => ({ user_id: b.user_id, username: b.username, avatar_url: b.avatar_url, cents: displayCents[i] }))
-      .filter((b) => b.cents !== 0);
-    const debtors = people.filter((p) => p.cents < 0).map((p) => ({ ...p, amount: -p.cents }));
-    const creditors = people.filter((p) => p.cents > 0).map((p) => ({ ...p, amount: p.cents }));
+      .filter(b => b.cents !== 0);
+    const debtors = people.filter(p => p.cents < 0).map(p => ({ ...p, amount: -p.cents }));
+    const creditors = people.filter(p => p.cents > 0).map(p => ({ ...p, amount: p.cents }));
 
     // Sort by amount descending for efficient matching
     debtors.sort((a, b) => b.amount - a.amount);
     creditors.sort((a, b) => b.amount - a.amount);
 
-    const flows: {
-      from: { user_id: number; username: string; avatar_url: string | null };
-      to: { user_id: number; username: string; avatar_url: string | null };
-      amount: number;
-    }[] = [];
+    const flows: { from: { user_id: number; username: string; avatar_url: string | null }; to: { user_id: number; username: string; avatar_url: string | null }; amount: number }[] = [];
 
-    let di = 0,
-      ci = 0;
+    let di = 0, ci = 0;
     while (di < debtors.length && ci < creditors.length) {
       const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
       flows.push({
@@ -1668,9 +1243,7 @@ export class BudgetService {
 
     return {
       balances: ledger.map((b, i) => ({
-        user_id: b.user_id,
-        username: b.username,
-        avatar_url: b.avatar_url,
+        user_id: b.user_id, username: b.username, avatar_url: b.avatar_url,
         balance: displayCents[i] / 100,
       })),
       flows,
@@ -1681,20 +1254,10 @@ export class BudgetService {
         // figure as the target, so each list adds up to the line it sits under.
         const fronted = frontedRows[b.user_id] || [];
         const moved = movedRows[b.user_id] || [];
-        const frontedDisplay = allocateDisplayCents(
-          fronted.map((r) => r.cents),
-          displayFactor,
-          frontedDisplayCents[i],
-        );
-        const movedDisplay = allocateDisplayCents(
-          moved.map((r) => r.cents),
-          displayFactor,
-          reimbursedDisplayCents[i],
-        );
+        const frontedDisplay = toDisplay(fronted.map(r => r.cents), frontedDisplayCents[i]);
+        const movedDisplay = toDisplay(moved.map(r => r.cents), reimbursedDisplayCents[i]);
         return {
-          user_id: b.user_id,
-          username: b.username,
-          avatar_url: b.avatar_url,
+          user_id: b.user_id, username: b.username, avatar_url: b.avatar_url,
           expenses: frontedDisplayCents[i] / 100,
           reimbursed: reimbursedDisplayCents[i] / 100,
           pending: displayCents[i] / 100,
@@ -1705,8 +1268,8 @@ export class BudgetService {
             // The flows are display cents already, and the greedy pass drains every
             // balance completely, so the flows on a person's side sum to their balance.
             outstanding: flows
-              .filter((f) => f.from.user_id === b.user_id || f.to.user_id === b.user_id)
-              .map((f) => ({
+              .filter(f => f.from.user_id === b.user_id || f.to.user_id === b.user_id)
+              .map(f => ({
                 from_user_id: f.from.user_id,
                 to_user_id: f.to.user_id,
                 cents: Math.round(f.amount * 100) * (f.to.user_id === b.user_id ? 1 : -1),
@@ -1728,177 +1291,87 @@ export class BudgetService {
   // -------------------------------------------------------------------------
 
   // Settlement usernames use COALESCE(display_name, username) like every item
-  // query (the legacy raw fu.username was the odd one out).
-  private static readonly SETTLEMENT_SELECT = `
-    SELECT s.id, s.trip_id, s.from_user_id, s.to_user_id, s.amount, s.currency, s.exchange_rate,
-           s.exchange_rate_source, s.exchange_rate_source_version, s.exchange_rate_effective_date,
-           s.exchange_rate_set_at, s.exchange_rate_set_by_user_id, s.exchange_rate_note, s.exchange_rate_reset_at,
-           s.created_at, s.settled_at, s.created_by_user_id,
-           COALESCE(fu.display_name, fu.username) AS from_username, fu.avatar AS from_avatar,
-           COALESCE(tu.display_name, tu.username) AS to_username,   tu.avatar AS to_avatar
-    FROM budget_settlements s
-    JOIN users fu ON s.from_user_id = fu.id
-    JOIN users tu ON s.to_user_id = tu.id
-  `;
+  // query (the legacy raw fu.username was the odd one out) — now the
+  // repository's own `joinedQuery()`/`SETTLEMENT_SELECT` shape.
 
   private mapSettlementRow(r: SettlementRow) {
     return {
-      id: r.id,
-      trip_id: r.trip_id,
-      from_user_id: r.from_user_id,
-      to_user_id: r.to_user_id,
-      amount: r.amount,
-      currency: r.currency ?? null,
-      exchange_rate: r.exchange_rate ?? 1,
-      exchange_rate_source: r.exchange_rate_source ?? 'legacy',
-      exchange_rate_source_version: r.exchange_rate_source_version,
-      exchange_rate_effective_date: r.exchange_rate_effective_date,
-      exchange_rate_set_at: r.exchange_rate_set_at,
-      exchange_rate_set_by_user_id: r.exchange_rate_set_by_user_id,
-      exchange_rate_note: r.exchange_rate_note,
-      exchange_rate_reset_at: r.exchange_rate_reset_at,
-      created_at: r.created_at,
-      settled_at: r.settled_at ?? null,
-      created_by_user_id: r.created_by_user_id,
-      from_username: r.from_username,
-      from_avatar_url: avatarUrl({ avatar: r.from_avatar }),
-      to_username: r.to_username,
-      to_avatar_url: avatarUrl({ avatar: r.to_avatar }),
+      id: r.id, trip_id: r.trip_id,
+      from_user_id: r.from_user_id, to_user_id: r.to_user_id,
+      amount: r.amount, currency: r.currency ?? null,
+      ...budgetRateColumns(r),
+      exchange_rate_source: exchangeRateSourceSchema.safeParse(r.exchange_rate_source).data ?? 'legacy',
+      created_at: r.created_at, settled_at: r.settled_at ?? null, note: r.note ?? null, created_by_user_id: r.created_by_user_id,
+      from_username: r.from_username, from_avatar_url: avatarUrl({ avatar: r.from_avatar }),
+      to_username: r.to_username, to_avatar_url: avatarUrl({ avatar: r.to_avatar }),
     };
   }
 
-  listSettlements(tripId: string | number) {
-    const rows = this.db.all<SettlementRow>(
-      `${BudgetService.SETTLEMENT_SELECT}
-    WHERE s.trip_id = ?
-    ORDER BY s.created_at DESC, s.id DESC
-  `,
-      tripId,
-    );
-    return rows.map((r) => this.mapSettlementRow(r));
+  async listSettlements(tripId: string | number) {
+    const rows = await this.budgetSettlementsRepo.listForTrip(tripId);
+    return rows.map(r => this.mapSettlementRow(r));
   }
 
-  /** Targeted single-row read (the legacy re-select was a full listSettlements scan). */
-  getSettlement(id: string | number, tripId: string | number) {
-    const row = this.db.get<SettlementRow>(
-      `${BudgetService.SETTLEMENT_SELECT}
-    WHERE s.trip_id = ? AND s.id = ?
-  `,
-      tripId,
-      id,
-    );
+  /**
+   * Targeted single-row read (the legacy re-select was a full
+   * listSettlements scan). `id: number` — Plan 4 Task 8b (U6): every caller
+   * (`insertSettlement`'s own `newId`, `applySettlementUpdate` below) is
+   * already a real row id.
+   */
+  async getSettlement(id: number, tripId: string | number) {
+    const row = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
     return row ? this.mapSettlementRow(row) : null;
   }
 
   /** Raw settlement insert (no FX freeze) — the REST path wraps it in createSettlement. */
-  insertSettlement(
+  async insertSettlement(
     tripId: string | number,
-    data: {
-      from_user_id: number;
-      to_user_id: number;
-      amount: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      exchange_rate_source?: ExchangeRateWrite['exchange_rate_source'];
-      exchange_rate_source_version?: string | null;
-      exchange_rate_effective_date?: string | null;
-      exchange_rate_set_at?: string | null;
-      exchange_rate_set_by_user_id?: number | null;
-      settled_at?: string | null;
-    },
+    data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; exchange_rate?: number; settled_at?: string | null; note?: string | null },
     createdByUserId?: number,
+    rate?: FrozenRate,
   ) {
-    const result = this.db.run(
-      `INSERT INTO budget_settlements (
-         trip_id, from_user_id, to_user_id, amount, currency, exchange_rate,
-         exchange_rate_source, exchange_rate_source_version, exchange_rate_effective_date,
-         exchange_rate_set_at, exchange_rate_set_by_user_id, exchange_rate_note, settled_at, created_by_user_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      tripId,
-      data.from_user_id,
-      data.to_user_id,
-      Math.round(data.amount * 100) / 100,
-      data.currency ? data.currency.toUpperCase() : null,
-      data.exchange_rate != null ? data.exchange_rate : 1,
-      data.exchange_rate_source || 'legacy',
-      data.exchange_rate_source_version || null,
-      data.exchange_rate_effective_date || null,
-      data.exchange_rate_set_at || null,
-      data.exchange_rate_set_by_user_id ?? null,
-      data.exchange_rate_note || null,
-      data.settled_at || null,
-      createdByUserId ?? null,
-    );
-    return this.getSettlement(Number(result.lastInsertRowid), tripId);
+    const newId = await this.budgetSettlementsRepo.insertSettlement({
+      trip_id: tripId, from_user_id: data.from_user_id, to_user_id: data.to_user_id,
+      amount: Math.round(data.amount * 100) / 100,
+      currency: data.currency ? data.currency.toUpperCase() : null,
+      exchange_rate: data.exchange_rate ?? 1,
+      ...rate,
+      settled_at: data.settled_at || null,
+      note: settlementNote(data.note),
+      created_by_user_id: createdByUserId ?? null,
+    });
+    return await this.getSettlement(newId, tripId);
   }
 
-  /** Raw settlement update (no FX freeze) — the REST path wraps it in updateSettlement. */
-  applySettlementUpdate(
-    id: string | number,
+  /**
+   * Raw settlement update (no FX freeze) — the REST path wraps it in
+   * updateSettlement. `id: number` — Plan 4 Task 8b (U6): `BudgetController
+   * .updateSettlement` parses `:settlementId` via `toRowId` and threads the
+   * number down through `updateSettlement` to here.
+   */
+  async applySettlementUpdate(
+    id: number,
     tripId: string | number,
-    data: {
-      from_user_id: number;
-      to_user_id: number;
-      amount: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      exchange_rate_source?: ExchangeRateWrite['exchange_rate_source'];
-      exchange_rate_source_version?: string | null;
-      exchange_rate_effective_date?: string | null;
-      exchange_rate_set_at?: string | null;
-      exchange_rate_set_by_user_id?: number | null;
-      settled_at?: string | null;
-    },
+    data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; exchange_rate?: number; settled_at?: string | null; note?: string | null },
+    rate?: FrozenRate,
   ) {
-    const row = this.db.get('SELECT id FROM budget_settlements WHERE id = ? AND trip_id = ?', id, tripId);
+    const row = await this.budgetSettlementsRepo.findGuard(id, tripId);
     if (!row) return null;
-    this.db.run(
-      `
-    UPDATE budget_settlements SET
-      from_user_id = ?, to_user_id = ?, amount = ?,
-      currency = CASE WHEN ? THEN ? ELSE currency END,
-      exchange_rate = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate END,
-      exchange_rate_source = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate_source END,
-      exchange_rate_source_version = CASE WHEN ? IS NOT NULL THEN ? ELSE exchange_rate_source_version END,
-      exchange_rate_effective_date = CASE WHEN ? THEN ? ELSE exchange_rate_effective_date END,
-      exchange_rate_set_at = CASE WHEN ? THEN ? ELSE exchange_rate_set_at END,
-      exchange_rate_set_by_user_id = CASE WHEN ? THEN ? ELSE exchange_rate_set_by_user_id END,
-      exchange_rate_note = CASE WHEN ? THEN ? ELSE exchange_rate_note END,
-      settled_at = CASE WHEN ? THEN ? ELSE settled_at END
-    WHERE id = ?
-  `,
-      data.from_user_id,
-      data.to_user_id,
-      Math.round(data.amount * 100) / 100,
-      data.currency !== undefined ? 1 : 0,
-      data.currency ? data.currency.toUpperCase() : null,
-      data.exchange_rate !== undefined ? 1 : null,
-      data.exchange_rate !== undefined ? data.exchange_rate : 1,
-      data.exchange_rate_source !== undefined ? 1 : null,
-      data.exchange_rate_source ?? null,
-      data.exchange_rate_source_version !== undefined ? 1 : null,
-      data.exchange_rate_source_version ?? null,
-      data.exchange_rate_effective_date !== undefined ? 1 : 0,
-      data.exchange_rate_effective_date ?? null,
-      data.exchange_rate_set_at !== undefined ? 1 : 0,
-      data.exchange_rate_set_at ?? null,
-      data.exchange_rate_set_by_user_id !== undefined ? 1 : 0,
-      data.exchange_rate_set_by_user_id ?? null,
-      data.exchange_rate_note !== undefined ? 1 : 0,
-      data.exchange_rate_note ?? null,
-      data.settled_at !== undefined ? 1 : 0,
-      data.settled_at || null,
-      id,
-    );
-    return this.getSettlement(id, tripId);
+    await this.budgetSettlementsRepo.update(id, {
+      from_user_id: data.from_user_id, to_user_id: data.to_user_id, amount: Math.round(data.amount * 100) / 100,
+      currency: [data.currency !== undefined, data.currency ? data.currency.toUpperCase() : null],
+      exchange_rate: [data.exchange_rate !== undefined, data.exchange_rate !== undefined ? data.exchange_rate : 1],
+      settled_at: [data.settled_at !== undefined, data.settled_at || null],
+      note: [data.note !== undefined, settlementNote(data.note)],
+    }, rate);
+    return await this.getSettlement(id, tripId);
   }
 
-  deleteSettlement(id: string | number, tripId: string | number): boolean {
-    const row = this.db.get('SELECT id FROM budget_settlements WHERE id = ? AND trip_id = ?', id, tripId);
+  /** `id: number` — same Plan 4 Task 8b (U6) narrowing as {@link applySettlementUpdate} (`BudgetController.deleteSettlement` parses `:settlementId` via `toRowId`). */
+  async deleteSettlement(id: number, tripId: string | number): Promise<boolean> {
+    const row = await this.budgetSettlementsRepo.findGuard(id, tripId);
     if (!row) return false;
-    this.db.run('DELETE FROM budget_settlements WHERE id = ?', id);
+    await this.budgetSettlementsRepo.deleteById(id);
     return true;
   }
 
@@ -1906,13 +1379,12 @@ export class BudgetService {
   // Controller-facing surface (unchanged from the pre-fold wrapper)
   // -------------------------------------------------------------------------
 
-  list(tripId: string) {
-    return this.listBudgetItems(tripId);
+  async list(tripId: string) {
+    return await this.listBudgetItems(tripId);
   }
 
   async perPersonSummary(tripId: string | number) {
-    const trip = this.db.get<{ currency?: string | null }>('SELECT currency FROM trips WHERE id = ?', tripId);
-    return this.getPerPersonSummary(tripId, await this.ratesForTripTotals(tripId, trip?.currency || 'EUR'));
+    return this.getPerPersonSummary(tripId);
   }
 
   /**
@@ -1925,36 +1397,37 @@ export class BudgetService {
    * missing display quote, which also reads a legacy transfer without a currency (taken
    * to be in the display currency, as with a live quote).
    */
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async settlement(tripId: string | number, base: string | undefined, tripCurrency: string, baseRate?: number) {
     const trip = (tripCurrency || 'EUR').toUpperCase();
     const effectiveBase = (base || trip).toUpperCase();
-    const rates =
-      (await this.exchangeRates.getRates(trip)) ??
-      (effectiveBase === trip ? null : await this.exchangeRates.getRates(effectiveBase));
-    return this.calculateSettlement(tripId, { base: effectiveBase, rates, tripCurrency: trip, baseRate });
+    const rates = effectiveBase === trip ? null : (await this.exchangeRates.getRates(trip))
+      ?? await this.exchangeRates.getRates(effectiveBase);
+    return await this.calculateSettlement(tripId, { base: effectiveBase, rates, tripCurrency: trip, baseRate });
   }
 
-  async create(tripId: string, data: Parameters<BudgetService['createBudgetItem']>[1] & { fallback_fx?: BudgetFallbackFx }, userId?: number) {
-    await this.freezeForeignRate(tripId, data, undefined, undefined, userId);
-    return this.createBudgetItem(tripId, data);
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async create(tripId: string, data: Parameters<BudgetService['createBudgetItem']>[1] & RateWrite, userId?: number) {
+    const prepared = await this.prepareRate(tripId, data, userId);
+    return this.createBudgetItem(tripId, data, prepared);
   }
 
-  async update(
-    id: string | number,
-    tripId: string | number,
-    data: Parameters<BudgetService['updateBudgetItem']>[2] & { fallback_fx?: BudgetFallbackFx },
-    userId?: number,
-  ) {
-    await this.freezeForeignRate(tripId, data, id, undefined, userId);
-    return this.updateBudgetItem(id, tripId, data);
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async update(id: number, tripId: string | number, data: Parameters<BudgetService['updateBudgetItem']>[2] & RateWrite, userId?: number) {
+    const existing = await this.budgetItemsRepo.findInTrip(id, tripId);
+    if (!existing) return null;
+    const prepared = await this.prepareRate(tripId, data, userId, existing);
+    return this.updateBudgetItem(id, tripId, data, prepared);
   }
 
-  remove(id: string, tripId: string): boolean {
-    return this.deleteBudgetItem(id, tripId);
+  /** `id: number` — same Plan 4 Task 8b (U6) narrowing as {@link update} (`BudgetController.remove`/the `costs.delete` RPC method). */
+  async remove(id: number, tripId: string): Promise<boolean> {
+    return await this.deleteBudgetItem(id, tripId);
   }
 
-  setPayers(id: string, tripId: string, payers: { user_id: number; amount: number }[]) {
-    return this.setItemPayers(id, tripId, payers);
+  /** `id: number` — same Plan 4 Task 8b (U6) narrowing as {@link update} (`BudgetController.setPayers`). */
+  async setPayers(id: number, tripId: string, payers: { user_id: number; amount: number }[]) {
+    return await this.setItemPayers(id, tripId, payers);
   }
 
   /**
@@ -1965,72 +1438,59 @@ export class BudgetService {
    * found" 404, which is also what keeps the endpoint from confirming whether
    * an id it rejected exists at all.
    */
-  private settlementPartiesOnTrip(
-    tripId: string | number,
-    data: { from_user_id: number; to_user_id: number },
-  ): boolean {
-    const roster = this.db.rosterUserIds(tripId);
+  private async settlementPartiesOnTrip(tripId: string | number, data: { from_user_id: number; to_user_id: number }): Promise<boolean> {
+    const roster = await this.tripMembersRepo.rosterUserIds(tripId);
     return roster.has(data.from_user_id) && roster.has(data.to_user_id);
   }
 
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async createSettlement(
     tripId: string | number,
-    data: {
-      from_user_id: number;
-      to_user_id: number;
-      amount: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      settled_at?: string | null;
-      fallback_fx?: BudgetFallbackFx;
-    },
+    data: Parameters<BudgetService['insertSettlement']>[1] & RateWrite,
     userId: number,
   ) {
-    if (!this.settlementPartiesOnTrip(tripId, data)) return null;
-    // Freeze the FX rate for the display currency the amount was entered in so the
-    // transfer keeps cancelling its expense when live rates drift (#1445).
-    await this.freezeForeignRate(tripId, data, undefined, undefined, userId);
-    return this.insertSettlement(tripId, data, userId);
-  }
-
-  async updateSettlement(
-    id: string | number,
-    tripId: string | number,
-    data: {
-      from_user_id: number;
-      to_user_id: number;
-      amount: number;
-      currency?: string | null;
-      exchange_rate?: number;
-      exchange_rate_note?: string | null;
-      settled_at?: string | null;
-      fallback_fx?: BudgetFallbackFx;
-    },
-    userId?: number,
-  ) {
-    // Pass the settlement's stored currency so an edit that doesn't change it keeps
-    // the already-frozen rate (#1445) — otherwise a live-rate drift would re-open a
-    // settled position on an unrelated edit.
-    if (!this.settlementPartiesOnTrip(tripId, data)) return null;
-    const existing = this.getSettlement(id, tripId);
-    await this.freezeForeignRate(tripId, data, undefined, existing?.currency ?? null, userId);
-    return this.applySettlementUpdate(id, tripId, data);
-  }
-
-  reorderItems(tripId: string, orderedIds: number[]): void {
-    const update = this.db.prepare('UPDATE budget_items SET sort_order = ? WHERE id = ? AND trip_id = ?');
-    this.db.transaction(() => {
-      orderedIds.forEach((id, index) => update.run(index, id, tripId));
+    if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+    const prepared = await this.prepareRate(tripId, data, userId);
+    return this.uow.transactional(async () => {
+      if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+      const rate = await this.rateForCommit(tripId, prepared);
+      return this.insertSettlement(tripId, { ...data, currency: normalizeCurrency(data.currency, prepared.base) }, userId, rate);
     });
   }
 
-  reorderCategories(tripId: string, orderedCategories: string[]): void {
-    const upsert = this.db.prepare(
-      'INSERT INTO budget_category_order (trip_id, category, sort_order) VALUES (?, ?, ?) ON CONFLICT(trip_id, category) DO UPDATE SET sort_order = excluded.sort_order',
-    );
-    this.db.transaction(() => {
-      orderedCategories.forEach((cat, index) => upsert.run(tripId, cat, index));
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async updateSettlement(
+    id: number, tripId: string | number,
+    data: Parameters<BudgetService['applySettlementUpdate']>[2] & RateWrite,
+    userId?: number,
+  ) {
+    if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+    const existing = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
+    if (!existing) return null;
+    const prepared = await this.prepareRate(tripId, data, userId, existing);
+    return this.uow.transactional(async () => {
+      if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+      const current = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
+      if (!current) return null;
+      const rate = await this.rateForCommit(tripId, prepared, current);
+      const currency = data.currency === undefined ? undefined : normalizeCurrency(data.currency, prepared.base);
+      return this.applySettlementUpdate(id, tripId, { ...data, currency }, rate);
+    });
+  }
+
+  async reorderItems(tripId: string, orderedIds: number[]): Promise<void> {
+    await this.uow.transactional(async () => {
+      for (let index = 0; index < orderedIds.length; index++) {
+        await this.budgetItemsRepo.setSortOrder(orderedIds[index], tripId, index);
+      }
+    });
+  }
+
+  async reorderCategories(tripId: string, orderedCategories: string[]): Promise<void> {
+    await this.uow.transactional(async () => {
+      for (let index = 0; index < orderedCategories.length; index++) {
+        await this.budgetCategoryOrderRepo.upsertSortOrder(tripId, orderedCategories[index], index);
+      }
     });
   }
 
@@ -2039,21 +1499,23 @@ export class BudgetService {
    * total_price changes, write it into the reservation's metadata and broadcast
    * reservation:updated. Non-fatal — a failure here never breaks the budget update.
    */
-  syncReservationPrice(tripId: string, reservationId: number, totalPrice: number, socketId: string | undefined): void {
+  async syncReservationPrice(tripId: string, reservationId: number, totalPrice: number, socketId: string | undefined, currency?: string | null): Promise<void> {
     try {
-      const reservation = this.db.get<{ id: number; metadata: string | null }>(
-        'SELECT id, metadata FROM reservations WHERE id = ? AND trip_id = ?',
-        reservationId,
-        tripId,
-      );
+      const reservation = await this.reservationsRepo.getIdAndMetadata(reservationId, tripId);
       if (!reservation) return;
-      const meta = reservation.metadata ? JSON.parse(reservation.metadata) : {};
+      const meta = decodeJson(RESERVATION_METADATA, reservation.metadata, `reservation ${reservation.id}`);
       // Cent-clean, so a booking never inherits float noise from the expense
       // it is linked to — and so a row stamped before #1964 heals on the next
       // edit. The panels print this string as it stands.
       meta.price = String(Math.round(totalPrice * 100) / 100);
-      this.db.run('UPDATE reservations SET metadata = ? WHERE id = ?', JSON.stringify(meta), reservation.id);
-      const updatedRes = this.db.get('SELECT * FROM reservations WHERE id = ?', reservation.id);
+      // The card names the currency beside the figure (#2084). An expense in the
+      // trip's own currency carries none, and neither does its mirror then.
+      if (currency !== undefined) {
+        if (currency) meta.priceCurrency = currency.toUpperCase();
+        else delete meta.priceCurrency;
+      }
+      await this.reservationsRepo.setMetadata(reservation.id, encodeJson(RESERVATION_METADATA, meta));
+      const updatedRes = await this.reservationsRepo.getFull(reservation.id);
       this.realtime.broadcast(tripId, 'reservation:updated', { reservation: updatedRes }, socketId);
     } catch (err) {
       console.error('[budget] Failed to sync price to reservation:', err);
