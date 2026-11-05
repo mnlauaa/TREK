@@ -124,6 +124,49 @@ describe('upgrading a populated legacy fork', () => {
     }
   });
 
+  it('preserves native push opt-outs and defaults while canonical fork preferences win collisions', async () => {
+    const { orm, db, boot } = await openFixture(244);
+    try {
+      sourceStatement(
+        db,
+        `INSERT INTO notification_channel_preferences (user_id, event_type, channel, enabled)
+        VALUES (1, 'trip_invite', 'push', 0), (1, 'collab_message', 'push', 0),
+               (1, 'collab_message', 'webpush', 1)`,
+      ).run();
+      sourceStatement(
+        db,
+        `INSERT INTO app_settings (key, value) VALUES
+        ('notif_default_trip_invite_push', 'blocked'),
+        ('notif_default_collab_message_push', 'off'),
+        ('notif_default_collab_message_webpush', 'on')`,
+      ).run();
+      await boot();
+      const preferences = () =>
+        sourceStatement(
+          db,
+          "SELECT event_type, enabled FROM notification_channel_preferences WHERE user_id = 1 AND channel = 'webpush' ORDER BY event_type",
+        ).all();
+      const defaults = () =>
+        sourceStatement(
+          db,
+          "SELECT key, value FROM app_settings WHERE key GLOB 'notif_default_*_webpush' ORDER BY key",
+        ).all();
+      expect(preferences()).toEqual([
+        { event_type: 'collab_message', enabled: 1 },
+        { event_type: 'trip_invite', enabled: 0 },
+      ]);
+      expect(defaults()).toEqual([
+        { key: 'notif_default_collab_message_webpush', value: 'on' },
+        { key: 'notif_default_trip_invite_webpush', value: 'blocked' },
+      ]);
+      sourceStatement(db, "DELETE FROM app_settings WHERE key = 'notif_default_trip_invite_webpush'").run();
+      await boot();
+      expect(defaults()).toEqual([{ key: 'notif_default_collab_message_webpush', value: 'on' }]);
+    } finally {
+      await orm.close(true);
+    }
+  });
+
   it('adopts the released custom v3 schema without rewriting protected state', async () => {
     const { orm, db, boot } = await openFixture(180);
     try {

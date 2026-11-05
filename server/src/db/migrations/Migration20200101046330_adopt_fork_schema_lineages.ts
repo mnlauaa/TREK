@@ -182,6 +182,15 @@ function adoptForkMigrations(db: Database.Database): void {
   }
 
   db.exec(`
+    INSERT INTO notification_channel_preferences (user_id, event_type, channel, enabled)
+      SELECT user_id, event_type, 'webpush', enabled
+      FROM notification_channel_preferences WHERE channel = 'push'
+      ON CONFLICT(user_id, event_type, channel) DO NOTHING;
+    INSERT INTO app_settings (key, value)
+      SELECT substr(key, 1, length(key) - 4) || 'webpush', value
+      FROM app_settings WHERE key GLOB 'notif_default_*_push'
+      ON CONFLICT(key) DO NOTHING;
+
     CREATE INDEX IF NOT EXISTS idx_web_push_user_status
       ON web_push_subscriptions(user_id, status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_web_push_delivery
