@@ -1,5 +1,6 @@
 import { FORK_RECONCILIATION, FORK_TIMING_MIGRATION } from '../../../src/db/fork-migrations';
-import { BootstrapMigrator, migrateToHead } from '../../../src/db/legacy-baseline';
+import { BootstrapMigrator, migrateToHead, planLegacyBaseline } from '../../../src/db/legacy-baseline';
+import { reseatBookedNights } from '../../../src/db/reseat-booked-nights';
 import { openLegacyFixture, removeLegacyFixtureFiles } from '../../helpers/legacy-fixture';
 import { MikroORM } from '@mikro-orm/sqlite';
 
@@ -60,6 +61,53 @@ describe('current release itinerary upgrade', () => {
       expect(source(db, 'SELECT name FROM mikro_orm_migrations').pluck().all()).toContain(FORK_TIMING_MIGRATION);
       await boot();
       expect(values(db)).toEqual(before);
+    } finally {
+      await orm.close(true);
+    }
+  });
+  it('baselines the frozen night reseat step and preserves explicitly cleared visits and drawn roads', async () => {
+    const { orm, db, boot, migrator } = await open('fork-v244-itinerary');
+    try {
+      source(db, 'UPDATE places SET lat=48, lng=2 WHERE id=1').run();
+      source(db, "INSERT INTO places (id,trip_id,name,lat,lng) VALUES (2,1,'Hotel',49,3)").run();
+      source(
+        db,
+        "INSERT INTO day_accommodations (id,trip_id,place_id,start_day_id,end_day_id,check_in) VALUES (1,1,2,1,2,'15:00')",
+      ).run();
+      source(db, 'UPDATE day_assignments SET order_index=1 WHERE id=1').run();
+      source(
+        db,
+        'INSERT INTO day_assignments (id,day_id,place_id,order_index,accommodation_id) VALUES (3,1,2,0,1)',
+      ).run();
+      source(
+        db,
+        'INSERT INTO roadtrip_vias (id,day_id,after_order_index,sequence,lat,lng) VALUES (1,1,0,0,48.5,2.5)',
+      ).run();
+      const projections = () => [
+        source(db, 'SELECT id,order_index FROM day_assignments ORDER BY id').all(),
+        source(db, 'SELECT * FROM roadtrip_vias ORDER BY id').all(),
+        ...values(db),
+      ];
+      const before = projections();
+      // The frozen rule would inherit 09:00 from the place, moving the hotel
+      // behind the explicitly untimed visit. Prove this fixture exposes that risk.
+      db.exec('BEGIN');
+      try {
+        expect(reseatBookedNights(db)).toBe(1);
+        expect(projections()).not.toEqual(before);
+      } finally {
+        db.exec('ROLLBACK');
+      }
+      const baseline = await planLegacyBaseline(orm.em.getConnection(), migrator);
+      expect(baseline).toContain('Migration20200101040300_a_booked_night_finally_took_the_seat_a_new');
+      await boot();
+      expect(source(db, 'SELECT name FROM mikro_orm_migrations').pluck().all()).toContain(
+        'Migration20200101040300_a_booked_night_finally_took_the_seat_a_new',
+      );
+      expect(projections()).toEqual(before);
+      await boot();
+      expect(projections()).toEqual(before);
+      expect(db.pragma('foreign_key_check')).toEqual([]);
     } finally {
       await orm.close(true);
     }
