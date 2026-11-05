@@ -24,6 +24,7 @@ export type LegacyFixture =
   | 'legacy-v242'
   | 'legacy-v244'
   | 'fork-v180'
+  | 'fork-v199'
   | 'fork-v202'
   | 'fork-v244';
 

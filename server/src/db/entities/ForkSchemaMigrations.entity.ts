@@ -12,6 +12,6 @@ export const ForkSchemaMigrationsSchema = defineEntity({
   repository: () => ForkSchemaMigrationsRepository,
   properties: {
     id: p.text().primary().nullable(),
-    applied_at: p.text().defaultRaw(`(datetime('now'))`),
+    applied_at: p.text().defaultRaw(`CURRENT_TIMESTAMP`),
   },
 });

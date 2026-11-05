@@ -32,6 +32,6 @@ export const ExchangeRateBatchPreviewsSchema = defineEntity({
     preview_json: p.text(),
     createdByUser: () => p.manyToOne(Users).ref().deleteRule('cascade').nullable().hidden().index('idx_exchange_rate_batch_previews_created_by'),
     created_by_user_id: p.integer().nullable().persist(false).index('idx_exchange_rate_batch_previews_created_by'),
-    created_at: p.text().defaultRaw(`(datetime('now'))`).index('idx_exchange_rate_batch_previews_created_at'),
+    created_at: p.text().defaultRaw(`CURRENT_TIMESTAMP`).index('idx_exchange_rate_batch_previews_created_at'),
   },
 });

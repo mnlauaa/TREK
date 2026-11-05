@@ -25,12 +25,17 @@ const queries = [
   "SELECT * FROM app_settings WHERE key LIKE 'web_push_vapid_%' ORDER BY key",
 ];
 
+function sourceStatement(db: Database.Database, statement: string) {
+  // test-sql-allow: reads schema and fixtures built by historical runners, before current ORM entities apply.
+  return db.prepare(statement);
+}
+
 function protectedRows(db: Database.Database) {
-  return queries.map((query) => db.prepare(query).all());
+  return queries.map((query) => sourceStatement(db, query).all());
 }
 
 function catalog(db: Database.Database) {
-  return db.prepare('SELECT * FROM sqlite_master ORDER BY name').all();
+  return sourceStatement(db, 'SELECT * FROM sqlite_master ORDER BY name').all();
 }
 
 async function openFixture(step: 180 | 199 | 202 | 244) {
@@ -68,19 +73,22 @@ describe('upgrading a populated legacy fork', () => {
     const { orm, db, boot } = await openFixture(step);
     try {
       const values = protectedRows(db);
-      const existingLedger = step === 244 ? db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all() : null;
+      const existingLedger =
+        step === 244 ? sourceStatement(db, 'SELECT * FROM fork_schema_migrations ORDER BY id').all() : null;
       await boot();
 
       expect(protectedRows(db)).toEqual(values);
       expect(db.pragma('foreign_key_check')).toEqual([]);
       expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
-      const executed = db.prepare('SELECT name FROM mikro_orm_migrations').pluck().all();
+      const executed = sourceStatement(db, 'SELECT name FROM mikro_orm_migrations').pluck().all();
       expect(executed).toContain(FORK_RECONCILIATION);
-      expect(db.prepare("SELECT type FROM addons WHERE id = 'naver_list_import'").pluck().get()).toBe('integration');
-      expect(db.prepare('SELECT ingest_state FROM reservations').pluck().get()).toBe('live');
-      expect(db.prepare('SELECT show_trip_tracks FROM journeys').all()).toEqual([]);
-      const ledger = db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all();
-      expect(db.prepare('SELECT id FROM fork_schema_migrations ORDER BY id').pluck().all()).toEqual(
+      expect(sourceStatement(db, "SELECT type FROM addons WHERE id = 'naver_list_import'").pluck().get()).toBe(
+        'integration',
+      );
+      expect(sourceStatement(db, 'SELECT ingest_state FROM reservations').pluck().get()).toBe('live');
+      expect(sourceStatement(db, 'SELECT show_trip_tracks FROM journeys').all()).toEqual([]);
+      const ledger = sourceStatement(db, 'SELECT * FROM fork_schema_migrations ORDER BY id').all();
+      expect(sourceStatement(db, 'SELECT id FROM fork_schema_migrations ORDER BY id').pluck().all()).toEqual(
         [...FORK_SCHEMA_MIGRATION_IDS].sort(),
       );
       if (existingLedger) expect(ledger).toEqual(existingLedger);
@@ -91,15 +99,15 @@ describe('upgrading a populated legacy fork', () => {
       expect(files).toEqual([`pre-migrate-legacy-${step}-20261101T100000Z.db`]);
       const copy = new Database(path.join(dir, files[0]!), { readonly: true, fileMustExist: true });
       try {
-        expect(copy.prepare('SELECT version FROM schema_version').pluck().get()).toBe(step);
+        expect(sourceStatement(copy, 'SELECT version FROM schema_version').pluck().get()).toBe(step);
         expect(catalog(copy)).not.toEqual(catalog(db));
         expect(
-          copy.prepare("SELECT name FROM sqlite_master WHERE name = 'mikro_orm_migrations'").get(),
+          sourceStatement(copy, "SELECT name FROM sqlite_master WHERE name = 'mikro_orm_migrations'").get(),
         ).toBeUndefined();
         expect(protectedRows(copy)).toEqual(values);
         if (step === 202) {
           expect(
-            copy.prepare("SELECT name FROM pragma_table_info('reservations') WHERE name='ingest_state'").get(),
+            sourceStatement(copy, "SELECT name FROM pragma_table_info('reservations') WHERE name='ingest_state'").get(),
           ).toBeUndefined();
         }
       } finally {
@@ -109,8 +117,8 @@ describe('upgrading a populated legacy fork', () => {
       await boot();
       expect(snapshots()).toEqual(files);
       expect(protectedRows(db)).toEqual(values);
-      expect(db.prepare('SELECT * FROM fork_schema_migrations ORDER BY id').all()).toEqual(ledger);
-      expect(db.prepare('SELECT name FROM mikro_orm_migrations').pluck().all()).toEqual(executed);
+      expect(sourceStatement(db, 'SELECT * FROM fork_schema_migrations ORDER BY id').all()).toEqual(ledger);
+      expect(sourceStatement(db, 'SELECT name FROM mikro_orm_migrations').pluck().all()).toEqual(executed);
     } finally {
       await orm.close(true);
     }
@@ -125,11 +133,11 @@ describe('upgrading a populated legacy fork', () => {
         'SELECT * FROM web_push_subscriptions',
         'SELECT * FROM trip_exchange_rates',
       ];
-      const values = checks.map((query) => db.prepare(query).all());
+      const values = checks.map((query) => sourceStatement(db, query).all());
       await boot();
-      expect(checks.map((query) => db.prepare(query).all())).toEqual(values);
+      expect(checks.map((query) => sourceStatement(db, query).all())).toEqual(values);
       expect(
-        db.prepare("SELECT name FROM pragma_table_info('vacay_entries') WHERE name='fraction'").get(),
+        sourceStatement(db, "SELECT name FROM pragma_table_info('vacay_entries') WHERE name='fraction'").get(),
       ).toBeDefined();
       expect(db.pragma('foreign_key_check')).toEqual([]);
     } finally {
@@ -143,7 +151,7 @@ describe('upgrading a populated legacy fork', () => {
       const values = protectedRows(db);
       await boot();
       expect(protectedRows(db)).toEqual(values);
-      expect(db.prepare('SELECT version FROM schema_version').pluck().get()).toBe(200);
+      expect(sourceStatement(db, 'SELECT version FROM schema_version').pluck().get()).toBe(200);
     } finally {
       await orm.close(true);
     }
@@ -158,7 +166,7 @@ describe('upgrading a populated legacy fork', () => {
       const checkOriginal = () => {
         expect(catalog(db)).toEqual(originalCatalog);
         expect(protectedRows(db)).toEqual(originalValues);
-        expect(db.prepare('SELECT version FROM schema_version').pluck().get()).toBe(202);
+        expect(sourceStatement(db, 'SELECT version FROM schema_version').pluck().get()).toBe(202);
         expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
       };
       const snapshot = path.join(path.dirname(db.name), 'pre-migrate-legacy-202-20261101T100000Z.db');

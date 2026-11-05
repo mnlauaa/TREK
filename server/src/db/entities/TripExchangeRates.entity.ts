@@ -29,7 +29,7 @@ export const TripExchangeRatesSchema = defineEntity({
     exchange_rate: p.double(),
     effective_date: p.text().nullable(),
     source_version: p.text(),
-    set_at: p.text().defaultRaw(`(datetime('now'))`),
+    set_at: p.text().defaultRaw(`CURRENT_TIMESTAMP`),
     setByUser: () => p.manyToOne(Users).ref().nullable().hidden().index('idx_trip_exchange_rates_set_by'),
     set_by_user_id: p.integer().nullable().persist(false).index('idx_trip_exchange_rates_set_by'),
     note: p.text().nullable(),
