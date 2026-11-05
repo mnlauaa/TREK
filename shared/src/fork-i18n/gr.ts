@@ -1,18 +1,15 @@
 import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
-  'dashboard.hero.dayUnitMany': 'days', // en-fallback
-  'costs.exchangeRates.manage': 'Συναλλαγματικές ισοτιμίες',
+  'dashboard.hero.dayUnitMany': 'days',
   'costs.exchangeRates.title': 'Συναλλαγματικές ισοτιμίες ταξιδιού',
   'costs.exchangeRates.notePlaceholder': 'Προαιρετική σημείωση',
-  'costs.exchangeRates.updateExisting': 'Ενημέρωση υπαρχόντων στοιχείων (απαιτείται προεπισκόπηση)',
   'costs.exchangeRates.noMatchingItems': 'Δεν υπάρχουν αντίστοιχα υπάρχοντα στοιχεία.',
   'costs.exchangeRates.savedDefaults': 'Αποθηκευμένες προεπιλογές',
   'costs.exchangeRates.noTripRates': 'Δεν υπάρχουν ισοτιμίες ειδικά για το ταξίδι.',
   'costs.exchangeRates.applyItems': 'Εφαρμογή σε {count} στοιχεία',
   'costs.exchangeRates.previewChanges': 'Προεπισκόπηση αλλαγών',
   'costs.exchangeRates.saveDefault': 'Αποθήκευση ως προεπιλογή',
-  'costs.exchangeRates.label': 'Συναλλαγματική ισοτιμία',
   'costs.exchangeRates.required': 'Απαιτείται',
   'costs.exchangeRates.manualRate': 'Μη αυτόματη ισοτιμία',
   'costs.exchangeRates.sourceLabel': 'Πηγή: {source}',

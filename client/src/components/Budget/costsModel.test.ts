@@ -83,19 +83,19 @@ describe('costsModel: the share of an unfinished expense', () => {
 describe('costsModel: recorded payments', () => {
   it('FE-BUDGET-COSTSMODEL-004: a payment converts at the rate frozen when it was settled (#1445)', () => {
     expect(paymentAmount(payment({ amount: 10, currency: 'USD', exchange_rate: 2 }), ctx)).toBe(5);
-    // No frozen rate: today's rate.
-    expect(paymentAmount(payment({ amount: 10, currency: 'usd' }), ctx)).toBe(5);
+    // A legacy rate without provenance stays outside totals.
+    expect(paymentAmount(payment({ amount: 10, currency: 'usd' }), ctx)).toBe(0);
   });
 
   it('FE-BUDGET-COSTSMODEL-005: a legacy payment without a currency was entered in the display currency', () => {
     const inUsd: CostsCtx = { ...ctx, displayCurrency: 'USD' };
-    expect(paymentAmount(payment({ amount: 10, currency: null }), inUsd)).toBe(5);
+    expect(paymentAmount(payment({ amount: 10, currency: null }), inUsd)).toBe(10);
     expect(paymentAmount(payment({ amount: 10, currency: null }), ctx)).toBe(10);
   });
 
   it('FE-BUDGET-COSTSMODEL-006: the line under a payment explains it the way an expense is explained (#2525)', () => {
     expect(paymentLineOf(payment({ amount: 10, currency: 'EUR' }), ctx, 10)).toBeNull();
-    expect(paymentLineOf(payment({ amount: 10, currency: 'usd' }), ctx, 5)).toEqual({
+    expect(paymentLineOf(payment({ amount: 10, currency: 'usd', exchange_rate: 2 }), ctx, 5)).toEqual({
       entered: { amount: 10, currency: 'USD' },
       into: { amount: 5, currency: 'EUR' },
     });

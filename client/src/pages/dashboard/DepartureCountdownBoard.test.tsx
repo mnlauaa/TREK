@@ -43,11 +43,11 @@ describe('DepartureCountdownBoard', () => {
     expect(screen.getByText(/seconds/i)).toBeInTheDocument();
   });
 
-  it('preserves the white-on-dark compact mobile treatment', () => {
+  it('preserves the compact mobile treatment uses the active theme', () => {
     render(<DepartureCountdownBoard departure={departure(START.getTime() + 10000)} compact />);
 
     const timer = screen.getByRole('timer');
-    expect(timer).toHaveClass('bg-black/25', 'text-white');
+    expect(timer).toHaveClass('bg-surface/90', 'text-content');
     expect(timer).not.toHaveClass('departure-countdown-board');
     expect(screen.getByText(/HX676/)).toHaveClass('truncate', 'opacity-80');
   });

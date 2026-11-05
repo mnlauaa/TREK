@@ -11,8 +11,6 @@ import { currencyDecimals } from '../utils/formatters'
  */
 
 const TTL_MS = 6 * 60 * 60 * 1000 // 6h
-// A hung request would otherwise hold every caller, the freeze-rates heal included,
-// for as long as the browser keeps the socket open.
 const FETCH_TIMEOUT_MS = 10_000
 const mem = new Map<string, { rates: Record<string, number>; ts: number }>()
 
@@ -155,7 +153,7 @@ export function convertBooked(
  * The amount a row was booked at in the trip currency, when it was booked through one: a
  * foreign currency with a frozen rate. Null for a row in the trip currency, and for one
  * written before the freeze existed. A rate of exactly 1 is frozen only when its source records an intentional rate;
- * legacy/default 1 still converts live.
+ * legacy/default 1 remains unfrozen.
  *
  * The lists print it between the amount entered and the amount shown, so a row whose value
  * moved with the rate shows where the move came from instead of a figure nobody typed.
@@ -182,16 +180,15 @@ export function bookedInTrip(
 
 /**
  * What an amount of a row counts as in the trip currency, the figure the settlement nets:
- * the booked amount for a row booked through the trip currency, the amount itself for one
- * in it, and today's rate for a foreign row that never froze one, the way the server
- * counts that row too.
+ * the booked amount for a row with a frozen rate, the amount itself for a row in the trip
+ * currency, or NaN for an unfrozen foreign row.
  */
 export function tripAmountOf(
   amount: number,
   rowCurrency: string | null | undefined,
   frozenRate: number | null | undefined,
   tripCurrency: string,
-  convertLive: (amount: number, from: string | null | undefined) => number,
+  _convertLive: (amount: number, from: string | null | undefined) => number,
   source?: string | null
 ): number {
   const trip = (tripCurrency || 'EUR').toUpperCase()

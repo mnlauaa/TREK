@@ -1,6 +1,12 @@
-import { webPushSubscriptionSchema, type WebPushCurrentResult, type WebPushSubscription } from '@trek/shared';
+import {
+  webPushDeviceListResultSchema,
+  webPushSubscriptionSchema,
+  type WebPushConfigResult,
+  type WebPushCurrentResult,
+  type WebPushSubscription,
+} from '@trek/shared';
 
-import { notificationsApi } from '../api/client';
+import { webPushRepo } from '../repo/webPushRepo';
 
 const INSTALLATION_KEY = 'trek_web_push_installation_id';
 const ENABLED_KEY = 'trek_web_push_enabled';
@@ -105,17 +111,25 @@ async function ensureSubscription(
   );
 }
 
-export async function enableWebPush(): Promise<WebPushCurrentResult> {
+function readyWorker(): Promise<ServiceWorkerRegistration> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Web Push worker is unavailable')), 5000);
+    navigator.serviceWorker.ready.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+export async function enableWebPush(config: WebPushConfigResult): Promise<WebPushCurrentResult> {
   const capability = detectWebPushCapability();
   if (capability !== 'supported') throw new Error(capability);
-  const config = await notificationsApi.webPushConfig();
   if (!config.enabled) throw new Error('Web Push is disabled by the administrator');
   if (!config.available || !config.publicKey) throw new Error(config.error || 'Web Push is unavailable');
+  if (config.canonicalOrigin && config.canonicalOrigin !== window.location.origin)
+    throw new Error('Web Push is unavailable on this origin');
   const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (permission !== 'granted') throw new Error(permission === 'denied' ? 'denied' : 'permission-dismissed');
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await readyWorker();
   const subscription = await ensureSubscription(registration, config.publicKey);
-  const result = await notificationsApi.webPushCurrent({
+  const result = await webPushRepo.register({
     intent: 'enable',
     installationId: getWebPushInstallationId(),
     label: deviceLabel(),
@@ -128,11 +142,12 @@ export async function enableWebPush(): Promise<WebPushCurrentResult> {
 export async function reconcileWebPush(): Promise<WebPushCurrentResult | null> {
   if (detectWebPushCapability() !== 'supported' || Notification.permission !== 'granted') return null;
   if (localStorage.getItem(ENABLED_KEY) !== '1') return null;
-  const config = await notificationsApi.webPushConfig();
-  if (!config.available || !config.publicKey) return null;
-  const registration = await navigator.serviceWorker.ready;
+  const config = await webPushRepo.config();
+  if (!config.enabled || !config.available || !config.publicKey) return null;
+  if (config.canonicalOrigin && config.canonicalOrigin !== window.location.origin) return null;
+  const registration = await readyWorker();
   const subscription = await ensureSubscription(registration, config.publicKey);
-  const result = await notificationsApi.webPushCurrent({
+  const result = await webPushRepo.register({
     intent: 'reconcile',
     installationId: getWebPushInstallationId(),
     label: deviceLabel(),
@@ -145,32 +160,34 @@ export async function reconcileWebPush(): Promise<WebPushCurrentResult | null> {
   return result;
 }
 
-export async function disableCurrentWebPush(): Promise<void> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1500);
-  try {
-    await unregisterCurrentDevice(controller.signal);
-  } finally {
-    clearTimeout(timer);
-  }
+async function forgetBrowserSubscription(): Promise<void> {
+  localStorage.removeItem(ENABLED_KEY);
+  const registration = await navigator.serviceWorker?.getRegistration();
+  await (await registration?.pushManager.getSubscription())?.unsubscribe();
 }
 
-async function unregisterCurrentDevice(signal: AbortSignal): Promise<void> {
+export async function disableCurrentWebPush(deviceId: number): Promise<void> {
+  await webPushRepo.revoke(deviceId);
+  void forgetBrowserSubscription().catch(() => {});
+}
+
+export async function forgetWebPushOnLogout(): Promise<void> {
   const installationId = localStorage.getItem(INSTALLATION_KEY);
   if (!installationId || localStorage.getItem(ENABLED_KEY) !== '1') return;
-  localStorage.removeItem(ENABLED_KEY);
+  void forgetBrowserSubscription().catch(() => {});
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  const options = { credentials: 'same-origin', signal: controller.signal } as const;
   try {
-    const { devices } = await notificationsApi.webPushDevices(signal);
+    const response = await fetch('/api/notifications/web-push/devices', options);
+    if (!response.ok) return;
+    const { devices } = webPushDeviceListResultSchema.parse(await response.json());
     const current = devices.find((device) => device.installationId === installationId);
-    if (current) await notificationsApi.revokeWebPushDevice(current.id, signal);
-  } catch {
-    /* local unsubscribe still runs */
-  }
-  try {
-    const registration = await navigator.serviceWorker?.getRegistration();
-    void (await registration?.pushManager.getSubscription())?.unsubscribe();
-  } catch {
-    /* best effort during logout */
+    if (current) {
+      await fetch(`/api/notifications/web-push/devices/${current.id}`, { ...options, method: 'DELETE' });
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 

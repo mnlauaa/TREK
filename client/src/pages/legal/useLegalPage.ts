@@ -1,14 +1,14 @@
 import type { PublicConfig } from '@trek/shared';
 import { useEffect, useState } from 'react';
 
-import { configApi } from '../../api/client';
+import { configRepo } from '../../repo/configRepo';
 
 export function useLegalPage(): { config: PublicConfig | null } {
   const [config, setConfig] = useState<PublicConfig | null>(null);
 
   useEffect(() => {
-    configApi
-      .getPublicConfig()
+    configRepo
+      .publicConfig()
       .then(setConfig)
       .catch(() => {});
   }, []);

@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'dagar',
-  'costs.exchangeRates.manage': 'Växelkurser',
   'costs.exchangeRates.title': 'Resans växelkurser',
   'costs.exchangeRates.notePlaceholder': 'Valfri anteckning',
-  'costs.exchangeRates.updateExisting': 'Uppdatera befintliga poster (förhandsgranskning krävs)',
   'costs.exchangeRates.noMatchingItems': 'Inga matchande befintliga poster.',
   'costs.exchangeRates.savedDefaults': 'Sparade standardvärden',
   'costs.exchangeRates.noTripRates': 'Inga resespecifika kurser.',
   'costs.exchangeRates.applyItems': 'Tillämpa på {count} poster',
   'costs.exchangeRates.previewChanges': 'Förhandsgranska ändringar',
   'costs.exchangeRates.saveDefault': 'Spara som standard',
-  'costs.exchangeRates.label': 'Växelkurs',
   'costs.exchangeRates.required': 'Obligatoriskt',
   'costs.exchangeRates.manualRate': 'Manuell kurs',
   'costs.exchangeRates.sourceLabel': 'Källa: {source}',

@@ -1,3 +1,4 @@
+import { buildCurrencyOptions } from '../../../components/shared/currencyOptions'
 import CommonCurrenciesEditor from '../../../components/Settings/CommonCurrenciesEditor'
 import React, { useState } from 'react'
 import { ChevronDown, Settings2 } from 'lucide-react'
@@ -25,7 +26,7 @@ const EMPTY_CURRENCIES: readonly string[] = []
 export default function MAdminDefaultUserSettings(): React.ReactElement {
   const { t, locale } = useTranslation()
   const {
-    defaults, loaded, managed, isSet, save, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
+    defaults, loaded, managed, isSet, save, saveCommonCurrencies, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
     cartoKey, setCartoKey, mapboxStyle, setMapboxStyle, mapPreviewPlaces, mapProvider, glStylePresets, styleKey,
     saveMapProvider, pickTilePreset, pickStylePreset, commitStyle,
   } = useDefaultUserSettings({ errorMessage: getApiErrorMessage, previewCreatedAt: () => new Date().toISOString() })
@@ -137,7 +138,7 @@ export default function MAdminDefaultUserSettings(): React.ReactElement {
           <MAdminField label={<>{t('settings.commonCurrencies.title')} <ResetButton field="common_currencies" /></>}
             hint={t('settings.commonCurrencies.adminHint')}>
             <CommonCurrenciesEditor mobile value={defaults.common_currencies ?? EMPTY_CURRENCIES}
-              onSave={(value) => save({ common_currencies: value })} />
+              onSave={saveCommonCurrencies} />
           </MAdminField>
 
           {/* Blur Booking Codes */}
@@ -302,7 +303,14 @@ export default function MAdminDefaultUserSettings(): React.ReactElement {
         title={t('settings.currency')}
         value={defaults.default_currency || ''}
         onSelect={(value) => { if (value) void save({ default_currency: value }) }}
-        options={currenciesWith(defaults.default_currency).map((c) => ({ value: c, label: SYMBOLS[c] ? `${c}  ${SYMBOLS[c]}` : c }))}
+        options={buildCurrencyOptions({
+          commonCurrencies: defaults.common_currencies,
+          availableCurrencies: currenciesWith(defaults.default_currency),
+          currentCurrency: defaults.default_currency,
+          locale,
+          commonLabel: t('settings.commonCurrencies.group'),
+          otherLabel: t('settings.otherCurrencies.group'),
+        })}
       />
 
       <MSetPickerSheet

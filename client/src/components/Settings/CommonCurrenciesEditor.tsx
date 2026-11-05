@@ -70,7 +70,7 @@ export default function CommonCurrenciesEditor({
       />
       {currencies.map((code, index) => (
         <div key={code} className="flex items-center gap-2 rounded-lg border border-edge bg-surface-input px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-sm">{currencyOption(code, locale).label}</span>
+          <span className="min-w-0 flex-1 truncate text-body">{currencyOption(code, locale).label}</span>
           <button
             type="button"
             disabled={saving || index === 0}
@@ -100,7 +100,7 @@ export default function CommonCurrenciesEditor({
           </button>
         </div>
       ))}
-      <div className="flex gap-3 text-xs">
+      <div className="flex gap-3 text-caption">
         {currencies.length > 0 && (
           <button
             type="button"
@@ -133,7 +133,7 @@ export default function CommonCurrenciesEditor({
           </button>
         )}
       </div>
-      <p className="m-0 text-xs text-content-faint">
+      <p className="m-0 text-caption text-content-faint">
         {t('settings.commonCurrencies.count', { count: currencies.length, max: COMMON_CURRENCIES_MAX })}
       </p>
     </div>

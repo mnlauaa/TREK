@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { budgetApi } from '../../../../api/client';
 import ExchangeRateManager from '../../../../components/Budget/ExchangeRateManager';
+import { budgetRepo } from '../../../../repo/budgetRepo';
 import MSheet from '../../../components/MSheet';
 import type { MTripSheetsProps } from '../MTripShell';
 import { FormSheetHeader } from './PlSheetChrome';
@@ -20,7 +20,7 @@ export default function MExchangeRateSheet({ planner, shell }: MTripSheetsProps)
   useEffect(() => {
     if (!open) return;
     let active = true;
-    budgetApi
+    budgetRepo
       .settlement(tripId, tripCurrency)
       .then((result: { settlements?: SettlementCurrency[] }) => {
         if (active) setSettlements(result.settlements || []);

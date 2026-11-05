@@ -876,7 +876,7 @@ describe('CostsPanel — overview', () => {
     // of them 61. Bob has sent 15 of the 31 he owed, 16 is still open. No live rate
     // is loaded here, so a client converting the dinner itself would print 100 €.
     const user = userEvent.setup()
-    mount([{ ...dinner(), currency: 'USD', total_price: 100, payers: [{ user_id: 1, amount: 100 }] }, taxi()], {
+    mount([{ ...dinner(), currency: 'USD', exchange_rate: 100 / 92, total_price: 100, payers: [{ user_id: 1, amount: 100 }] }, taxi()], {
       balances: [
         { user_id: 1, username: 'alice', avatar_url: null, balance: 16 },
         { user_id: 2, username: 'bob', avatar_url: null, balance: -16 },
@@ -1123,10 +1123,10 @@ describe('CostsPanel — expense rows', () => {
   it('FE-W5COSTS-021: a foreign-currency expense shows the original and the converted amount', async () => {
     localStorage.setItem('trek_fx_EUR', JSON.stringify({ rates: { EUR: 1, USD: 2 }, ts: Date.now() }))
     mount([expense({
-      id: 130, name: 'Diner', category: 'food', total_price: 100, currency: 'USD', expense_date: '2025-06-15',
+      id: 130, name: 'Diner', category: 'food', total_price: 100, currency: 'USD', exchange_rate: 2, expense_date: '2025-06-15',
       payers: [{ user_id: 1, amount: 100 }],
       members: [{ user_id: 1, username: 'alice' }, { user_id: 2, username: 'bob' }],
-    })], { settlements: [{ id: 8, from_user_id: 2, to_user_id: 1, amount: 20, currency: 'USD', created_at: '2025-06-15 09:00:00' }] })
+    })], { settlements: [{ id: 8, from_user_id: 2, to_user_id: 1, amount: 20, currency: 'USD', exchange_rate: 2, created_at: '2025-06-15 09:00:00' }] })
 
     await screen.findByText('Diner')
     expect(screen.getByText(/\$100\.00 → 50,00 €/)).toBeInTheDocument()
@@ -1453,9 +1453,8 @@ describe('CostsPanel — expense modal', () => {
     await user.click(screen.getByText(/^EUR/))
     await user.click(await screen.findByText(/^USD/))
 
-    expect(screen.getByText('live rate', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('50,00 €')).toBeInTheDocument()
     expect(screen.getByText('$100.00')).toBeInTheDocument()
-    expect(screen.getByText('50,00 €')).toBeInTheDocument()
 
     // A different category than the default is carried into the payload.
     await user.click(screen.getByRole('button', { name: /^Category:/ }))
@@ -2385,7 +2384,7 @@ describe('CostsPanel: a bill entered in the display currency (#2525)', () => {
     mount([
       hotel({ id: 403, name: 'Museum', category: 'activities', total_price: 100, currency: 'EUR', exchange_rate: 1, payers: [{ user_id: 1, amount: 100 }] }),
       hotel({ id: 404, name: 'Ferry', category: 'transport', total_price: 1000, currency: 'SEK', exchange_rate: 10, payers: [{ user_id: 1, amount: 1000 }] }),
-      // Written before the freeze existed: nothing was booked, so dollars stay dollars.
+      // Written before the freeze existed: the legacy default is not a conversion.
       hotel({ id: 405, name: 'Old taxi', category: 'transport', total_price: 50, currency: 'USD', exchange_rate: 1, payers: [{ user_id: 1, amount: 50 }] }),
     ])
 
@@ -2394,7 +2393,7 @@ describe('CostsPanel: a bill entered in the display currency (#2525)', () => {
     expect(screen.getByText(/^100,00\s€ → \$115\.51$/)).toBeInTheDocument()
     // 1000 SEK at 10 per euro is 100 euro, then live to dollars in the pill.
     expect(screen.getByText(/^1\s000,00\skr → 100,00\s€$/)).toBeInTheDocument()
-    expect(screen.getAllByText('$50.00').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Awaiting conversion')).toBeInTheDocument()
     expect(screen.queryByText(/^\$50\.00 →/)).toBeNull()
   })
 
@@ -2507,10 +2506,7 @@ describe('CostsPanel: a bill entered in the display currency (#2525)', () => {
 
 // ── A bill the server cannot convert: VND on an AUD trip ────────────────────────
 describe('CostsPanel: a bill the server cannot convert', () => {
-  // The reporter's setup: an AUD trip whose server cannot fetch rates while the browser
-  // can. An 8,920,000 VND dinner that never froze a rate was counted as 8,920,000 AUD.
-  // The settlement now leaves it out and lists it, and an editor's browser lends its AUD
-  // table to freeze a rate on it.
+  // The cached AUD quote must never freeze a legacy VND row just by opening Costs.
   const pho = () => expense({
     id: 501, name: 'Pho', category: 'food', total_price: 8920000, currency: 'VND', exchange_rate: 1,
     expense_date: '2026-09-20',
@@ -2538,6 +2534,14 @@ describe('CostsPanel: a bill the server cannot convert', () => {
     expect(await screen.findByText('Awaiting conversion')).toBeInTheDocument()
     expect(screen.queryByText(/\$8,920,000/)).toBeNull()
     expect(frozen).toBe(0)
+  })
+
+  it('shows a foreign expense with explicit 1:1 provenance at its booked value', async () => {
+    mount([{ ...pho(), total_price: 125, exchange_rate_source: 'explicit',
+      payers: [{ user_id: 1, amount: 125, username: 'Alice' }] }], leftOut)
+    await screen.findByText('Pho')
+    expect(screen.queryByText('Awaiting conversion')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/125\.00/).length).toBeGreaterThan(0)
   })
 
   it('FE-W5COSTS-091: a viewer\'s browser never freezes anything', async () => {

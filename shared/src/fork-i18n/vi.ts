@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'ngày',
-  'costs.exchangeRates.manage': 'Tỷ giá',
   'costs.exchangeRates.title': 'Tỷ giá của chuyến đi',
   'costs.exchangeRates.notePlaceholder': 'Ghi chú không bắt buộc',
-  'costs.exchangeRates.updateExisting': 'Cập nhật các mục hiện có (cần xem trước)',
   'costs.exchangeRates.noMatchingItems': 'Không có mục hiện có nào phù hợp.',
   'costs.exchangeRates.savedDefaults': 'Giá trị mặc định đã lưu',
   'costs.exchangeRates.noTripRates': 'Không có tỷ giá riêng cho chuyến đi.',
   'costs.exchangeRates.applyItems': 'Áp dụng cho {count} mục',
   'costs.exchangeRates.previewChanges': 'Xem trước thay đổi',
   'costs.exchangeRates.saveDefault': 'Lưu làm mặc định',
-  'costs.exchangeRates.label': 'Tỷ giá',
   'costs.exchangeRates.required': 'Bắt buộc',
   'costs.exchangeRates.manualRate': 'Tỷ giá thủ công',
   'costs.exchangeRates.sourceLabel': 'Nguồn: {source}',

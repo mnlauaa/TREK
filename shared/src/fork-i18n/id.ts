@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'hari',
-  'costs.exchangeRates.manage': 'Kurs',
   'costs.exchangeRates.title': 'Kurs perjalanan',
   'costs.exchangeRates.notePlaceholder': 'Catatan opsional',
-  'costs.exchangeRates.updateExisting': 'Perbarui item yang ada (pratinjau diperlukan)',
   'costs.exchangeRates.noMatchingItems': 'Tidak ada item yang cocok.',
   'costs.exchangeRates.savedDefaults': 'Nilai default tersimpan',
   'costs.exchangeRates.noTripRates': 'Tidak ada kurs khusus perjalanan.',
   'costs.exchangeRates.applyItems': 'Terapkan ke {count} item',
   'costs.exchangeRates.previewChanges': 'Pratinjau perubahan',
   'costs.exchangeRates.saveDefault': 'Simpan sebagai default',
-  'costs.exchangeRates.label': 'Kurs',
   'costs.exchangeRates.required': 'Wajib',
   'costs.exchangeRates.manualRate': 'Kurs manual',
   'costs.exchangeRates.sourceLabel': 'Sumber: {source}',

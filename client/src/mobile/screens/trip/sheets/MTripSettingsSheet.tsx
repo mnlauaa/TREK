@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import CustomSelect from '../../../../components/shared/CustomSelect';
+import GuestIdentityTransferModal from '../../../../components/Trips/GuestIdentityTransferModal';
 import { TripJournalLinkSection } from '../../../../components/Trips/TripJournalLinkSection';
 import { TripMemberAvatar } from '../../../../components/Trips/TripMemberAvatar';
 import {
@@ -439,6 +440,7 @@ export default function MTripSettingsSheet({
   const { t } = useTranslation();
   const m = useTripMembers({ isOpen: open, tripId, onClose, onMembersChanged });
   const [question, setQuestion] = useState<Question | null>(null);
+  const [identityOpen, setIdentityOpen] = useState(false);
   const words = questionWords(question, t);
 
   const answer = () => {
@@ -465,11 +467,30 @@ export default function MTripSettingsSheet({
         <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-[18px] pb-[18px] pt-3">
           <AccessSection m={m} ask={setQuestion} />
           <GuestsSection m={m} ask={setQuestion} />
+          {m.guests.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIdentityOpen(true)}
+              className="rounded-xl border border-edge px-3 py-2 text-body text-m-ink"
+            >
+              {t('members.identityTransfer.thisIsMe')}
+            </button>
+          )}
           {m.canManageShare && <ShareLinkSection tripId={tripId} />}
           {m.canManageShare && <InviteLinkSection tripId={tripId} />}
           <TripJournalLinkSection tripId={tripId} />
         </div>
       </MSheet>
+
+      <GuestIdentityTransferModal
+        tripId={tripId}
+        open={open && identityOpen}
+        onClose={() => setIdentityOpen(false)}
+        onTransferred={() => {
+          onMembersChanged?.();
+          onClose();
+        }}
+      />
 
       <MConfirmSheet
         open={question != null}

@@ -7,6 +7,18 @@
       "mobile": ["src/mobile/screens/trip/sheets/MAccommodationSheet.tsx"]
     },
     {
+      "feature": "Edit or record a payment",
+      "hooks": ["src/components/Budget/useSettlementForm.ts"],
+      "desktop": ["src/components/Budget/SettlementModal.tsx"],
+      "mobile": ["src/mobile/screens/trip/sheets/MCostPaymentSheet.tsx"]
+    },
+    {
+      "feature": "Trip exchange rates",
+      "hooks": ["src/components/Budget/ExchangeRateManager.tsx"],
+      "desktop": ["src/components/Budget/CostsPanel.tsx"],
+      "mobile": ["src/mobile/screens/trip/sheets/MExchangeRateSheet.tsx"]
+    },
+    {
       "feature": "Add place to collection",
       "hooks": ["src/components/Collections/addPlaceModel.ts", "src/components/Collections/useAddPlaceToCollection.ts"],
       "desktop": ["src/components/Collections/AddPlaceToCollectionModal.tsx"],
@@ -1004,7 +1016,6 @@
     "src/mobile/screens/settings/MSettingsAbout.tsx": "Markup only about card with static links and no state.",
     "src/mobile/screens/settings/MSettingsOffline.tsx": "Already shares components/Settings/useOfflineSettings with components/Settings/OfflineTab.tsx.",
     "src/mobile/screens/settings/MSettingsUi.tsx": "Phone only settings UI primitives (card, row, input, button, segments, hint).",
-    "src/mobile/screens/settings/MWebPushCard.tsx": "Already shares hooks/useWebPush with components/Settings/WebPushCard.tsx.",
     "src/mobile/screens/trip/dockTabs.ts": "Phone only helper that picks which trip tabs get a seat in the mobile dock.",
     "src/mobile/screens/trip/lib/dayNotes.ts": "Phone only helper that splits a leading time off a day note for the plan timeline.",
     "src/mobile/screens/trip/map/MMapArea.tsx": "Phone map stage framing; already shares usePoiExplore and useMergedMapPois with the desktop trip planner.",

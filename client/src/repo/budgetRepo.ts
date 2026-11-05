@@ -114,6 +114,15 @@ async function enqueueItemWrite(tripId: number | string, id: number, method: 'PU
  * server, so the ledger shows it once the queue has sent it. Receipts are file
  * uploads and stay online-only.
  */
+export const exchangeRateRepo = {
+  list: (...args: Parameters<typeof budgetApi.listExchangeRates>) => budgetApi.listExchangeRates(...args),
+  resolve: (...args: Parameters<typeof budgetApi.resolveExchangeRate>) => budgetApi.resolveExchangeRate(...args),
+  saveDefault: (...args: Parameters<typeof budgetApi.setExchangeRate>) => budgetApi.setExchangeRate(...args),
+  deleteDefault: (...args: Parameters<typeof budgetApi.deleteExchangeRate>) => budgetApi.deleteExchangeRate(...args),
+  preview: (...args: Parameters<typeof budgetApi.previewExchangeRate>) => budgetApi.previewExchangeRate(...args),
+  apply: (...args: Parameters<typeof budgetApi.applyExchangeRate>) => budgetApi.applyExchangeRate(...args),
+};
+
 export const budgetRepo = {
   async list(tripId: number | string): Promise<{ items: BudgetItem[] }> {
     return onlineThenCache(

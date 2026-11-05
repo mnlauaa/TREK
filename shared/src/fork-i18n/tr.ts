@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'gün',
-  'costs.exchangeRates.manage': 'Döviz kurları',
   'costs.exchangeRates.title': 'Gezi döviz kurları',
   'costs.exchangeRates.notePlaceholder': 'İsteğe bağlı not',
-  'costs.exchangeRates.updateExisting': 'Mevcut öğeleri güncelle (önizleme gerekli)',
   'costs.exchangeRates.noMatchingItems': 'Eşleşen mevcut öğe yok.',
   'costs.exchangeRates.savedDefaults': 'Kaydedilen varsayılanlar',
   'costs.exchangeRates.noTripRates': 'Geziye özel kur yok.',
   'costs.exchangeRates.applyItems': '{count} öğeye uygula',
   'costs.exchangeRates.previewChanges': 'Değişiklikleri önizle',
   'costs.exchangeRates.saveDefault': 'Varsayılanı kaydet',
-  'costs.exchangeRates.label': 'Döviz kuru',
   'costs.exchangeRates.required': 'Gerekli',
   'costs.exchangeRates.manualRate': 'Manuel kur',
   'costs.exchangeRates.sourceLabel': 'Kaynak: {source}',

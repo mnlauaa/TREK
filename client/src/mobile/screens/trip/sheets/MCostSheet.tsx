@@ -179,9 +179,9 @@ export default function MCostSheet({ tripId, base, people, me, editing, prefill,
         </div>
 
         <ItemExchangeRateFields rate={rate} currency={currency} tripCurrency={tripCur}
-          amount={totalNum} t={t} locale={locale} mobile />
+          t={t} locale={locale} mobile />
         {/* CONVERSION HINT */}
-        {fx && currency === tripCur && (
+        {fx && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[12px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 py-[9px] text-[0.71875rem] text-m-muted">
             <span>{formatMoney(totalNum, currency, locale)}</span>
             {fx.inTrip != null && <>

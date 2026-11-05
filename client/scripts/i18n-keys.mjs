@@ -390,6 +390,9 @@ export async function readEnKeyFiles() {
   const { listDomainFiles, readCatalog } = await import(pathToFileURL(join(SHARED_SCRIPTS, 'i18n-catalog.mjs')).href);
   const files = new Map();
   for (const file of listDomainFiles('en')) for (const { key } of readCatalog('en', file)) files.set(key, file);
+  for (const { key } of readCatalog('', 'en.ts', join(HERE, '..', '..', 'shared', 'src', 'fork-i18n'))) {
+    files.set(key, 'fork-i18n/en.ts');
+  }
   if (files.size === 0) throw new Error('shared/src/i18n/en holds no keys: the reader or the path is broken');
   return files;
 }

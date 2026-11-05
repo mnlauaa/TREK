@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'dies',
-  'costs.exchangeRates.manage': 'Tipus de canvi',
   'costs.exchangeRates.title': 'Tipus de canvi del viatge',
   'costs.exchangeRates.notePlaceholder': 'Nota opcional',
-  'costs.exchangeRates.updateExisting': 'Actualitza els elements existents (cal previsualització)',
   'costs.exchangeRates.noMatchingItems': 'No hi ha cap element existent que coincideixi.',
   'costs.exchangeRates.savedDefaults': 'Valors predeterminats desats',
   'costs.exchangeRates.noTripRates': 'No hi ha tipus específics del viatge.',
   'costs.exchangeRates.applyItems': 'Aplica a {count} elements',
   'costs.exchangeRates.previewChanges': 'Previsualitza els canvis',
   'costs.exchangeRates.saveDefault': 'Desa com a predeterminat',
-  'costs.exchangeRates.label': 'Tipus de canvi',
   'costs.exchangeRates.required': 'Obligatori',
   'costs.exchangeRates.manualRate': 'Tipus manual',
   'costs.exchangeRates.sourceLabel': 'Origen: {source}',

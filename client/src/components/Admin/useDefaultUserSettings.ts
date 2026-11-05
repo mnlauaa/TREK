@@ -87,6 +87,12 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
     }
   };
 
+  const saveCommonCurrencies = async (common_currencies: string[]) => {
+    const updated = await adminApi.updateDefaultUserSettings({ common_currencies });
+    setDefaults(updated);
+    return (updated as Defaults).common_currencies ?? [];
+  };
+
   const reset = async (key: keyof Defaults) => {
     try {
       const updated = await adminApi.updateDefaultUserSettings({ [key]: null });
@@ -156,6 +162,7 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
     managed,
     isSet,
     save,
+    saveCommonCurrencies,
     reset,
     mapTileUrl,
     setMapTileUrl,

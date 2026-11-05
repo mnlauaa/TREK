@@ -153,7 +153,7 @@ export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => 
     }
   },
 
-  // Freezes a rate onto the rows the settlement could not count (see useFreezeMissingRates).
+  // Compatibility endpoint for callers that explicitly request a freeze.
   // Not optimistic: nothing changes locally until the server says which rows it froze.
   freezeMissingRates: async (tripId, fallback) => {
     const result = await budgetRepo.freezeRates(tripId, fallback ? { fallback_fx: fallback } : {})

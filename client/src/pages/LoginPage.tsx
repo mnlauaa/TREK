@@ -629,18 +629,8 @@ export default function LoginPage(): React.ReactElement {
                     >
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>{t('login.insecureCookie.title')}</div>
                       <div style={{ lineHeight: 1.55 }}>{t('login.insecureCookie.body')}</div>
-                      <a
-                        href="https://github.com/liketrek/TREK/wiki/Troubleshooting"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-block',
-                          marginTop: 6,
-                          fontWeight: 600,
-                          color: '#b45309',
-                          textDecoration: 'underline',
-                        }}
-                      >
+                      <a href="https://github.com/liketrek/TREK/wiki/Troubleshooting" target="_blank"
+                        rel="noopener noreferrer" className="mt-1.5 inline-block font-semibold underline">
                         {t('login.insecureCookie.link')} ↗
                       </a>
                     </div>

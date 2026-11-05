@@ -43,7 +43,7 @@ export function useDashboard() {
 
   const [stats, setStats] = useState<TravelStats | null>(null)
   const [upcoming, setUpcoming] = useState<UpcomingReservation[]>([])
-  const [heroBundle, setHeroBundle] = useState<HeroBundle | null>(null)
+  const [heroSnapshot, setHeroSnapshot] = useState<{ tripId: number; bundle: HeroBundle } | null>(null)
 
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -127,16 +127,17 @@ export function useDashboard() {
   // that trip is only borrowed for the header and must stay in the grid, or a user
   // whose trips are all finished (or undated) sees "No trips yet". #1706
   const spotlight = featured || trips[0] || null
+  const heroBundle = heroSnapshot?.tripId === spotlight?.id ? heroSnapshot?.bundle ?? null : null
   const rest = featured ? trips.filter(t => t.id !== featured.id) : trips
 
   // Pull the spotlight trip's members + places so the boarding pass can show
   // real buddies and place thumbnails instead of placeholders.
   useEffect(() => {
-    if (!spotlight) { setHeroBundle(null); return }
+    if (!spotlight) { setHeroSnapshot(null); return }
     let cancelled = false
     tripsApi.bundle(spotlight.id)
-      .then((b: HeroBundle) => { if (!cancelled) setHeroBundle({ members: b.members || [], places: b.places || [], days: b.days || [], reservations: b.reservations || [] }) })
-      .catch(() => { if (!cancelled) setHeroBundle(null) })
+      .then((b: HeroBundle) => { if (!cancelled) setHeroSnapshot({ tripId: spotlight.id, bundle: { members: b.members || [], places: b.places || [], days: b.days || [], reservations: b.reservations || [] } }) })
+      .catch(() => { if (!cancelled) setHeroSnapshot(null) })
     return () => { cancelled = true }
   }, [spotlight?.id])
 

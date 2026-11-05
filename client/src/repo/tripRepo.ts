@@ -53,6 +53,10 @@ function pickActive(trips: Trip[]): Trip | null {
 }
 
 export const tripRepo = {
+  runNewMemberIdentityCheck: (tripId: string | number) => tripsApi.runNewMemberIdentityCheck(tripId),
+  declineNewMemberIdentityCheck: (tripId: string | number) => tripsApi.declineNewMemberIdentityCheck(tripId),
+  guestIdentityTransferCandidates: (tripId: string | number) => tripsApi.guestIdentityTransferCandidates(tripId),
+  transferGuestIdentity: (tripId: string | number, guestId: number) => tripsApi.transferGuestIdentity(tripId, guestId),
   async list(): Promise<{ trips: Trip[]; archivedTrips: Trip[] }> {
     return onlineThenCache(
       async () => {

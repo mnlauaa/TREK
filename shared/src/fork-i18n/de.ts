@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'Tage',
-  'costs.exchangeRates.manage': 'Wechselkurse',
   'costs.exchangeRates.title': 'Wechselkurse der Reise',
   'costs.exchangeRates.notePlaceholder': 'Optionale Notiz',
-  'costs.exchangeRates.updateExisting': 'Bestehende Einträge aktualisieren (Vorschau erforderlich)',
   'costs.exchangeRates.noMatchingItems': 'Keine passenden bestehenden Einträge.',
   'costs.exchangeRates.savedDefaults': 'Gespeicherte Standardwerte',
   'costs.exchangeRates.noTripRates': 'Keine reisespezifischen Kurse.',
   'costs.exchangeRates.applyItems': 'Auf {count} Einträge anwenden',
   'costs.exchangeRates.previewChanges': 'Änderungen anzeigen',
   'costs.exchangeRates.saveDefault': 'Standardwert speichern',
-  'costs.exchangeRates.label': 'Wechselkurs',
   'costs.exchangeRates.required': 'Erforderlich',
   'costs.exchangeRates.manualRate': 'Manueller Kurs',
   'costs.exchangeRates.sourceLabel': 'Quelle: {source}',

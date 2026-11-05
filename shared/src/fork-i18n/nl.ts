@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'dagen',
-  'costs.exchangeRates.manage': 'Wisselkoersen',
   'costs.exchangeRates.title': 'Wisselkoersen voor de reis',
   'costs.exchangeRates.notePlaceholder': 'Optionele notitie',
-  'costs.exchangeRates.updateExisting': 'Bestaande items bijwerken (voorbeeld vereist)',
   'costs.exchangeRates.noMatchingItems': 'Geen overeenkomende bestaande items.',
   'costs.exchangeRates.savedDefaults': 'Opgeslagen standaardwaarden',
   'costs.exchangeRates.noTripRates': 'Geen reisspecifieke koersen.',
   'costs.exchangeRates.applyItems': 'Toepassen op {count} items',
   'costs.exchangeRates.previewChanges': 'Wijzigingen bekijken',
   'costs.exchangeRates.saveDefault': 'Standaardwaarde opslaan',
-  'costs.exchangeRates.label': 'Wisselkoers',
   'costs.exchangeRates.required': 'Verplicht',
   'costs.exchangeRates.manualRate': 'Handmatige koers',
   'costs.exchangeRates.sourceLabel': 'Bron: {source}',

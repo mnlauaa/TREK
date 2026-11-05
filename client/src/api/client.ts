@@ -1,6 +1,9 @@
+import type { PublicConfig, SettingResetKey, SettingResetResponse } from '@trek/shared'
+import { createExchangeRateApi, createGuestIdentityApi, createWebPushApi, createExchangeRateSnapshotApi } from './retainedRoutes'
 import { isEffectivelyOffline } from '../sync/networkMode'
 import axios, { AxiosInstance } from 'axios'
-import type { z } from 'zod'
+import { checkInDev, parseInDev } from './contractChecks'
+export { parseInDev } from './contractChecks'
 import type { Day, Place, Trip } from '../types'
 import type { MapsNearbyRequest, JourneyReorderEntryPhotosRequest, TransitProvider, GoogleQuotaUpdateRequest, NotificationDefaultsUpdateRequest, TourListItem, TourCreateRequest, TourCreateResponse, TourDetailResponse } from '@trek/shared'
 import { randomId } from '../utils/randomId'
@@ -78,42 +81,6 @@ import { probeNow } from '../sync/connectivity'
 import { downloadBlob } from '../utils/fileDownload'
 import { translateRateLimit } from './rateLimitMessage'
 
-/**
- * Validate a response payload against its @trek/shared Zod schema — but only in
- * dev, and never throwing. A drift between the server contract and the client's
- * expected shape is surfaced as a console warning during development; in
- * production (and on any mismatch) the data passes through untouched, so adding
- * validation can never break a working call. This is the typed-request helper
- * the FE adopts per domain as each backend module lands on @trek/shared.
- */
-const API_DEV = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
-export function parseInDev<S extends z.ZodTypeAny>(schema: S, data: unknown, label: string): z.infer<S> {
-  if (API_DEV) {
-    const result = schema.safeParse(data)
-    if (!result.success) {
-      console.warn(`[api] ${label}: response did not match the @trek/shared schema`, result.error.issues)
-    }
-  }
-  return data as z.infer<S>
-}
-
-/**
- * Same dev-only drift check as parseInDev, but passes the payload straight
- * through with its original inferred type instead of the schema type. Use this
- * for endpoints whose existing consumers rely on the loose `r.data` type — it
- * adds the development contract-drift warning without retyping the public
- * surface (so it can never break a consumer that worked before).
- */
-function checkInDev<T>(schema: z.ZodTypeAny, data: T, label: string): T {
-  if (API_DEV) {
-    const result = schema.safeParse(data)
-    if (!result.success) {
-      console.warn(`[api] ${label}: response did not match the @trek/shared schema`, result.error.issues)
-    }
-  }
-  return data
-}
-
 export const apiClient: AxiosInstance = axios.create({
   baseURL: '/api',
   withCredentials: true,
@@ -143,24 +110,6 @@ apiClient.interceptors.request.use(
     },
     (error) => Promise.reject(error)
 )
-
-import type {
-  ExchangeRateBatchApplyResult,
-  ExchangeRateBatchPreview,
-  ExchangeRateResolution,
-  ExchangeRateSnapshot,
-  GuestIdentityTransferCandidatesResponse,
-  GuestIdentityTransferResponse,
-  NewMemberIdentityCheckResponse,
-  PublicConfig,
-  SettingResetKey,
-  SettingResetResponse,
-  TripExchangeRate,
-  WebPushCurrentRequest,
-  WebPushCurrentResult,
-  WebPushDeviceListResult,
-} from '@trek/shared'
-import { webPushConfigResultSchema, webPushCurrentResultSchema, webPushDeviceListResultSchema } from '@trek/shared'
 
 export function isAuthPublicPath(pathname: string): boolean {
   const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/legal']
@@ -397,14 +346,7 @@ export const oauthApi = {
 }
 
 export const tripsApi = {
-  runNewMemberIdentityCheck: (id: number | string): Promise<NewMemberIdentityCheckResponse> =>
-    apiClient.post(`/trips/${id}/new-member-identity-check`).then((r) => r.data),
-  declineNewMemberIdentityCheck: (id: number | string) =>
-    apiClient.post(`/trips/${id}/new-member-identity-check/decline`).then((r) => r.data),
-  guestIdentityTransferCandidates: (id: number | string): Promise<GuestIdentityTransferCandidatesResponse> =>
-    apiClient.get(`/trips/${id}/guest-identity-transfers/candidates`).then((r) => r.data),
-  transferGuestIdentity: (id: number | string, guestUserId: number): Promise<GuestIdentityTransferResponse> =>
-    apiClient.post(`/trips/${id}/guests/${guestUserId}/identity-transfer`).then((r) => r.data),
+  ...createGuestIdentityApi(apiClient),
   list: (params?: Record<string, unknown>) => apiClient.get('/trips', { params }).then(r => r.data),
   create: (data: TripCreateRequest) => apiClient.post('/trips', data).then(r => r.data),
   get: (id: number | string) => apiClient.get(`/trips/${id}`).then(r => r.data),
@@ -1378,29 +1320,7 @@ export const airportsApi = {
 }
 
 export const budgetApi = {
-  listExchangeRates: (tripId: number | string): Promise<{ rates: TripExchangeRate[] }> =>
-    apiClient.get(`/trips/${tripId}/exchange-rates`).then((r) => r.data),
-  resolveExchangeRate: (tripId: number | string, currency: string): Promise<ExchangeRateResolution> =>
-    apiClient.get(`/trips/${tripId}/exchange-rates/resolve`, { params: { currency } }).then((r) => r.data),
-  setExchangeRate: (tripId: number | string, currency: string, exchange_rate: number, note?: string | null) =>
-    apiClient
-      .put(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}`, { exchange_rate, note })
-      .then((r) => r.data),
-  deleteExchangeRate: (tripId: number | string, currency: string) =>
-    apiClient.delete(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}`).then((r) => r.data),
-  previewExchangeRate: (tripId: number | string, currency: string, exchange_rate: number, note?: string | null): Promise<ExchangeRateBatchPreview> =>
-    apiClient
-      .post(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}/preview`, { exchange_rate, note })
-      .then((r) => r.data),
-  applyExchangeRate: (
-    tripId: number | string,
-    currency: string,
-    preview_id: string,
-    selected: Array<{ type: 'expense' | 'settlement'; id: number }>
-  ): Promise<ExchangeRateBatchApplyResult> =>
-    apiClient
-      .post(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}/apply`, { preview_id, selected })
-      .then((r) => r.data),
+  ...createExchangeRateApi(apiClient),
   list: (tripId: number | string) => apiClient.get(`/trips/${tripId}/budget`).then(r => r.data),
   create: (tripId: number | string, data: BudgetCreateItemRequest) => apiClient.post(`/trips/${tripId}/budget`, data).then(r => r.data),
   update: (tripId: number | string, id: number, data: BudgetUpdateItemRequest) => apiClient.put(`/trips/${tripId}/budget/${id}`, data).then(r => r.data),
@@ -1421,10 +1341,7 @@ export const budgetApi = {
   reorderCategories: (tripId: number | string, orderedCategories: string[]) => apiClient.put(`/trips/${tripId}/budget/reorder/categories`, { orderedCategories } satisfies BudgetReorderCategoriesRequest).then(r => r.data),
 }
 
-export const exchangeRatesApi = {
-  snapshot: (base = 'EUR'): Promise<ExchangeRateSnapshot> =>
-    apiClient.get('/exchange-rates', { params: { base } }).then((r) => r.data),
-};
+export const exchangeRatesApi = createExchangeRateSnapshotApi(apiClient)
 
 export const filesApi = {
   list: (tripId: number | string, trash?: boolean) => apiClient.get(`/trips/${tripId}/files`, { params: trash ? { trash: 'true' } : {} }).then(r => r.data),
@@ -1665,22 +1582,7 @@ export const tripInviteApi = {
 const CHANNEL_TEST_TIMEOUT = 40000
 
 export const notificationsApi = {
-  webPushConfig: () =>
-    apiClient
-      .get('/notifications/web-push/config')
-      .then((r) => parseInDev(webPushConfigResultSchema, r.data, 'notifications.webPushConfig')),
-  webPushDevices: (signal?: AbortSignal): Promise<WebPushDeviceListResult> =>
-    apiClient
-      .get('/notifications/web-push/devices', { signal })
-      .then((r) => parseInDev(webPushDeviceListResultSchema, r.data, 'notifications.webPushDevices')),
-  webPushCurrent: (payload: WebPushCurrentRequest): Promise<WebPushCurrentResult> =>
-    apiClient
-      .put('/notifications/web-push/current', payload)
-      .then((r) => parseInDev(webPushCurrentResultSchema, r.data, 'notifications.webPushCurrent')),
-  renameWebPushDevice: (id: number, label: string) =>
-    apiClient.patch(`/notifications/web-push/devices/${id}`, { label }).then((r) => r.data),
-  revokeWebPushDevice: (id: number, signal?: AbortSignal) => apiClient.delete(`/notifications/web-push/devices/${id}`, { signal }).then((r) => r.data),
-  testWebPushDevice: (id: number) => apiClient.post(`/notifications/web-push/devices/${id}/test`).then((r) => r.data),
+  ...createWebPushApi(apiClient, parseInDev),
   getPreferences: () => apiClient.get('/notifications/preferences').then(r => r.data),
   updatePreferences: (prefs: Record<string, Record<string, boolean>>) => apiClient.put('/notifications/preferences', prefs).then(r => r.data),
   testSmtp: (email?: string) => apiClient.post('/notifications/test-smtp', { email }, { timeout: CHANNEL_TEST_TIMEOUT }).then(r => checkInDev(channelTestResultSchema, r.data, 'notifications.testSmtp')),

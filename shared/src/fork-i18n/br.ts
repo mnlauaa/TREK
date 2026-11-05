@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'dias',
-  'costs.exchangeRates.manage': 'Taxas de câmbio',
   'costs.exchangeRates.title': 'Taxas de câmbio da viagem',
   'costs.exchangeRates.notePlaceholder': 'Observação opcional',
-  'costs.exchangeRates.updateExisting': 'Atualizar itens existentes (prévia obrigatória)',
   'costs.exchangeRates.noMatchingItems': 'Nenhum item existente correspondente.',
   'costs.exchangeRates.savedDefaults': 'Padrões salvos',
   'costs.exchangeRates.noTripRates': 'Nenhuma taxa específica da viagem.',
   'costs.exchangeRates.applyItems': 'Aplicar a {count} itens',
   'costs.exchangeRates.previewChanges': 'Visualizar alterações',
   'costs.exchangeRates.saveDefault': 'Salvar como padrão',
-  'costs.exchangeRates.label': 'Taxa de câmbio',
   'costs.exchangeRates.required': 'Obrigatório',
   'costs.exchangeRates.manualRate': 'Taxa manual',
   'costs.exchangeRates.sourceLabel': 'Fonte: {source}',

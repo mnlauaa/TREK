@@ -326,8 +326,15 @@ export default function Navbar({ tripTitle, tripId, onBack, showBack, onSettings
                     {t('nav.settings')}
                   </Link>
 
-                  <Link to="/legal" onClick={() => setUserMenuOpen(false)}
+                  <Link to="/help" onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-2 px-4 py-2 text-sm transition-colors text-content-secondary"
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <BookOpen className="w-4 h-4" />
+                    {t('nav.help')}
+                  </Link>
+                  <Link to="/legal" onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2 text-body transition-colors text-content-secondary"
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <BookOpen className="w-4 h-4" />

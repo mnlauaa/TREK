@@ -106,8 +106,19 @@ describe('ExchangeRateManager', () => {
     };
     const previewSpy = vi.spyOn(budgetApi, 'previewExchangeRate').mockResolvedValue(preview);
     const applySpy = vi.spyOn(budgetApi, 'applyExchangeRate').mockResolvedValue({
-      rate: { trip_id: 42, currency: 'USD', exchange_rate: 2, source_version: 'trip', set_at: '', set_by_user_id: null, note: null },
-      updated: [{ type: 'expense', id: 1 }, { type: 'settlement', id: 2 }],
+      rate: {
+        trip_id: 42,
+        currency: 'USD',
+        exchange_rate: 2,
+        source_version: 'trip',
+        set_at: '',
+        set_by_user_id: null,
+        note: null,
+      },
+      updated: [
+        { type: 'expense', id: 1 },
+        { type: 'settlement', id: 2 },
+      ],
     });
     const deleteSpy = vi.spyOn(budgetApi, 'deleteExchangeRate').mockResolvedValue({ success: true });
     const onChanged = vi.fn();

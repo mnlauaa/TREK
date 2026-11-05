@@ -1,5 +1,5 @@
-import { useItemExchangeRate } from './useItemExchangeRate';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useItemExchangeRate } from './useItemExchangeRate';
 
 import { useTranslation } from '../../i18n';
 import { useTripStore } from '../../store/tripStore';
@@ -221,7 +221,8 @@ export function useExpenseForm({
   const payersOk = !multiPayer || (payerIds.size > 0 && payersBalanced(payerAmounts, payerIds, totalNum));
   // A negative total is a valid entry (a refund, #2176); only zero has nothing to say.
   const valid =
-    rate.valid && name.trim().length > 0 &&
+    rate.valid &&
+    name.trim().length > 0 &&
     payersOk &&
     (isTicketMode
       ? ticketValid

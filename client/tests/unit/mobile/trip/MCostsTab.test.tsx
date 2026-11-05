@@ -60,7 +60,7 @@ const RAMEN = {
 
 /** Foreign currency + explicit custom shares — exercises the conversion line. */
 const MUSEUM = {
-  id: 12, trip_id: 7, name: 'Museum', category: 'activities', total_price: 30, currency: 'GBP',
+  id: 12, trip_id: 7, name: 'Museum', category: 'activities', total_price: 30, currency: 'GBP', exchange_rate: 0.5,
   expense_date: '2026-04-30', note: 'Tickets; adult',
   members: [
     { user_id: 1, paid: 0, username: 'Me', amount: 10, avatar_url: null },
@@ -739,7 +739,7 @@ describe('MCostsTab', () => {
     // Recorded in pounds while the phone shows dollars: the row says so, the
     // sheet reopens in GBP, and a date-only correction must not re-declare the
     // amount as dollars (the server would freeze a fresh FX rate for it).
-    const payment = { id: 505, from_user_id: 1, to_user_id: 2, amount: 10, currency: 'GBP', settled_at: '2026-04-28', created_at: '2026-04-30T09:00:00Z' }
+    const payment = { id: 505, from_user_id: 1, to_user_id: 2, amount: 10, currency: 'GBP', exchange_rate: 0.5, settled_at: '2026-04-28', created_at: '2026-04-30T09:00:00Z' }
     serveSettlement({ ...SETTLEMENT, settlements: [payment] })
     const update = vi.spyOn(budgetApi, 'updateSettlement').mockResolvedValue({})
     await renderTab()
@@ -836,7 +836,7 @@ describe('MCostsTab', () => {
   it('FE-MOB-COSTT-047: an editor sees a missing legacy rate without a write on open', async () => {
     serveSettlement({ ...SETTLEMENT, unconverted: { item_ids: [12], settlement_ids: [], currencies: ['GBP'] } })
     const freeze = vi.spyOn(budgetApi, 'freezeRates')
-    await renderTab()
+    await renderTab(planner({ budgetItems: [{ ...MUSEUM, exchange_rate: 1 }] }))
     expect(await screen.findByText('costs.exchangeRates.awaitingConversion')).toBeInTheDocument()
     expect(freeze).not.toHaveBeenCalled()
   })

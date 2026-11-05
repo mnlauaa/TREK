@@ -1,6 +1,6 @@
 import type { ExchangeRateResolution, ExchangeRateSource } from '@trek/shared';
 import { useEffect, useRef, useState } from 'react';
-import { budgetApi } from '../../api/client';
+import { exchangeRateRepo } from '../../repo/budgetRepo';
 
 export interface ExistingFrozenRate {
   currency?: string | null;
@@ -43,7 +43,10 @@ export function useItemExchangeRate(
   const sameExistingCurrency = Boolean(
     hasExisting && (existingCurrency || accountingCurrency).toUpperCase() === currentCurrency
   );
-  const hasFrozenRate = existingRate != null && Number.isFinite(existingRate) && existingRate > 0 &&
+  const hasFrozenRate =
+    existingRate != null &&
+    Number.isFinite(existingRate) &&
+    existingRate > 0 &&
     (existingRate !== 1 || (existingSource != null && existingSource !== 'legacy'));
   const existingResolution: ExchangeRateResolution | null =
     sameExistingCurrency && hasFrozenRate
@@ -64,7 +67,9 @@ export function useItemExchangeRate(
     existingResolution ? formatDisplayRate(existingResolution.exchange_rate) : ''
   );
   const [note, setNote] = useState(existingNote || '');
-  const [manual, setManual] = useState(false);
+  const rateKey = `${tripId}:${accountingCurrency}:${currentCurrency}`;
+  const [manualKey, setManualKey] = useState<string | null>(null);
+  const manual = manualKey === rateKey;
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const requestRevision = useRef(0);
@@ -76,7 +81,7 @@ export function useItemExchangeRate(
     const startedManualRevision = manualRevision.current;
     const current = () => requestRevision.current === revision && manualRevision.current === startedManualRevision;
     const unchanged = hasExisting && (existingCurrency || accountingCurrency).toUpperCase() === currentCurrency;
-    setManual(false);
+    setManualKey(null);
     setUnavailable(false);
     setLoading(false);
     setNote(unchanged ? existingNote || '' : '');
@@ -120,8 +125,8 @@ export function useItemExchangeRate(
     setSuggestion(null);
     setValue('');
     setLoading(true);
-    budgetApi
-      .resolveExchangeRate(tripId, currentCurrency)
+    exchangeRateRepo
+      .resolve(tripId, currentCurrency)
       .then((resolved) => {
         if (!current()) return;
         setSuggestion(resolved);
@@ -158,22 +163,30 @@ export function useItemExchangeRate(
   const setManualValue = (next: string) => {
     manualRevision.current += 1;
     requestRevision.current += 1;
-    setManual(true);
+    setManualKey(rateKey);
     setLoading(false);
     setUnavailable(false);
     setValue(next.replace(',', '.'));
   };
   const numeric = Number(value);
   const sameCurrency = currentCurrency === accountingCurrency;
-  const valid = sameCurrency || (manual ? Number.isFinite(numeric) && numeric > 0 : sameExistingCurrency || suggestion !== null);
-  const storedRate = manual ? displayRateToStored(numeric) : (suggestion?.exchange_rate ?? null);
+  const applicableSuggestion =
+    suggestion?.trip_id === tripId &&
+    suggestion.trip_currency === accountingCurrency &&
+    suggestion.item_currency === currentCurrency
+      ? suggestion
+      : null;
+  const valid =
+    sameCurrency ||
+    (manual ? Number.isFinite(numeric) && numeric > 0 : sameExistingCurrency || applicableSuggestion !== null);
+  const storedRate = manual ? displayRateToStored(numeric) : (applicableSuggestion?.exchange_rate ?? null);
   const write =
     manual && !sameCurrency && storedRate !== null
       ? { exchange_rate: storedRate, exchange_rate_note: note.trim() || null }
       : {};
 
   return {
-    suggestion,
+    suggestion: applicableSuggestion,
     value,
     setManualValue,
     note,

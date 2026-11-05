@@ -53,7 +53,8 @@ function settlement(overrides: Partial<CostsSettlement> = {}): CostsSettlement {
 }
 
 function expense(overrides: Partial<BudgetItem> = {}): BudgetItem {
-  return buildBudgetItem({ category: 'other', ...overrides });
+  const rate = RATES[overrides.currency?.toUpperCase() ?? ''];
+  return buildBudgetItem({ category: 'other', ...(rate ? { exchange_rate: 1 / rate } : {}), ...overrides });
 }
 
 function filters(overrides: Partial<CostsFilterState> = {}): CostsFilterState {
@@ -366,7 +367,7 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     const zero = expense({ total_price: 0, currency: 'USD', exchange_rate: 1.17 });
     expect(lineOf(0, zero, usdCtx, 0)).toBeNull();
     const legacy = expense({ total_price: 50, currency: 'USD', exchange_rate: 1 });
-    expect(baseTotal(legacy, usdCtx)).toBe(50);
+    expect(baseTotal(legacy, usdCtx)).toBe(0);
     expect(lineOf(50, legacy, usdCtx, 50)).toBeNull();
     const inEur = { ...usdCtx, displayCurrency: 'EUR', convert: (a: number) => a };
     expect(lineOf(801.76, hotel(), inEur, 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } });
@@ -381,8 +382,8 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     const inUsd = buildCostsCsv(items, { base: 'USD', ctx: usdCtx, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inUsd[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Amount (USD);Note');
     expect(inUsd[1]).toMatch(/;801\.76;USD;685\.26;791\.55;$/);
-    // Never booked, so counted at today's rate, as the server counts it.
-    expect(inUsd[2]).toMatch(/;115\.51;USD;100\.00;115\.51;$/);
+    // Unfrozen foreign rows keep their original amount, with blank accounting amounts.
+    expect(inUsd[2]).toMatch(/;115\.51;USD;;;$/);
     const inEur = buildCostsCsv(items, { base: 'EUR', ctx: { ...usdCtx, displayCurrency: 'EUR' }, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inEur[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Note');
   });

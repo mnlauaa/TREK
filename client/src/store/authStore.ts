@@ -17,7 +17,7 @@ import { forgetStartDestination } from '../utils/startDestination'
 import { forgetServerLanguage } from './settingsStore'
 import { forgetResumeRoute } from '../utils/resumeRoute'
 import { markSignedOut, clearSignedOut } from '../utils/signedOut'
-import { disableCurrentWebPush, reconcileWebPush, setActivePushUser } from '../services/webPush'
+import { forgetWebPushOnLogout, reconcileWebPush, setActivePushUser, updateAppBadge } from '../services/webPush'
 import { browserTimeZone } from '../utils/localDate'
 
 /** How long a logout waits for the queued changes to go out. */
@@ -133,8 +133,7 @@ async function onAuthSuccess(userId: number): Promise<void> {
   // an SPA session, so a second login in the same tab would leave the mutation
   // queue without a flush trigger. Re-registering is a no-op while they are up.
   registerSyncTriggers()
-  await setActivePushUser(userId)
-  void reconcileWebPush().catch(() => {})
+  void setActivePushUser(userId).then(() => reconcileWebPush()).catch(() => {})
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -292,7 +291,8 @@ export const useAuthStore = create<AuthState>()(
     // connection, with nothing cached to answer from.
     setForcedOffline(false)
     await setActivePushUser(null)
-    await disableCurrentWebPush().catch(() => {})
+    await forgetWebPushOnLogout().catch(() => {})
+    void updateAppBadge(0)
     // 4. Tell server to clear the httpOnly cookie (best-effort).
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     // 5. Clear service worker caches containing sensitive data.

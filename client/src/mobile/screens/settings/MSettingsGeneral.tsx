@@ -198,7 +198,7 @@ export default function MSettingsGeneral() {
       </MSetCard>
 
       <MSetCard title={t('settings.commonCurrencies.title')} icon={Languages} className="mt-3">
-        <p className="mb-2 text-[0.6875rem] text-m-faint">{t('settings.commonCurrencies.hint')}</p>
+        <p className="mb-2 text-caption text-m-faint">{t('settings.commonCurrencies.hint')}</p>
         <CommonCurrenciesEditor mobile value={settings.common_currencies ?? DEFAULT_SETTINGS.common_currencies}
           onSave={(value) => useSettingsStore.getState().updateSetting('common_currencies', value)}
           onReset={() => useSettingsStore.getState().resetSetting('common_currencies')} />

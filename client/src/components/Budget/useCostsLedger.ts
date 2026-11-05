@@ -94,11 +94,10 @@ export function useCostsLedger({
   const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
   const base = settlement?.currency || requestedBase;
   // Anchored on the trip currency's quote, the one the server books with (#2525).
-  const { convert } = useExchangeRates(base, tripCurrency);
-  const { displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
+  const { convert, displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
   const ctx: CostsCtx = useMemo(
-    () => ({ me, tripCurrency, displayCurrency: base, convert }),
-    [me, tripCurrency, base, convert]
+    () => ({ me, tripCurrency, displayCurrency: base, convert: base === requestedBase ? convert : (amount) => amount }),
+    [me, tripCurrency, base, requestedBase, convert]
   );
 
   // A failed settlement read leaves `settlement` null, which the views would
@@ -166,7 +165,11 @@ export function useCostsLedger({
   };
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (event: Event) => {
+      if (event.type === 'guest:identity-transferred') {
+        if (Number((event as CustomEvent<number | string>).detail) === tripId) loadSettlement();
+        return;
+      }
       void loadBudgetItems(tripId);
       loadSettlement();
     };

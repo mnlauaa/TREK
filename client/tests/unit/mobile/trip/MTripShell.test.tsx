@@ -171,7 +171,7 @@ describe('MTripShell', () => {
     expect(planner.tripActions.setSelectedDay).toHaveBeenCalledWith(11)
   })
 
-  it('FE-MOB-SHELL-006: leaves an existing day selection alone, and a later deselect too', () => {
+  it('FE-MOB-SHELL-006: leaves an existing day selection alone, and restores it when the timeline selection clears', () => {
     const { planner, rerenderShell } = renderShell()
     expect(planner.tripActions.setSelectedDay).not.toHaveBeenCalled()
 
@@ -179,7 +179,7 @@ describe('MTripShell', () => {
     // shell fighting them for it.
     planner.selectedDayId = null
     rerenderShell()
-    expect(planner.tripActions.setSelectedDay).not.toHaveBeenCalled()
+    expect(planner.tripActions.setSelectedDay).toHaveBeenCalledWith(11)
   })
 
   it('FE-MOB-SHELL-006b: seeds the next dated day when today falls in a gap', () => {

@@ -74,7 +74,7 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
         onClose={onClose}
         labelledBy={labelId}
         width={areas.length > 1 ? 'wide' : 'detail'}
-        blocked={!!ask}
+        blocked={!!ask || identityOpen}
         bodyClassName={BODY}
         header={(
           <DialogHeader
@@ -103,9 +103,7 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
             {m.guests.length > 0 && (
               <DialogButton onClick={() => setIdentityOpen(true)}>{t('members.identityTransfer.thisIsMe')}</DialogButton>
             )}
-            <GuestIdentityTransferModal tripId={tripId} open={identityOpen}
-              onClose={() => setIdentityOpen(false)}
-              onTransferred={() => { onMembersChanged?.(); onClose() }} />
+
           </AreaPanel>
           {m.canManageShare && (
             <AreaPanel area={panelOf('sharing')} shown={current.id === 'sharing'} titled>
@@ -120,6 +118,9 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
           )}
         </div>
       </DialogShell>
+      <GuestIdentityTransferModal tripId={tripId} open={identityOpen}
+              onClose={() => setIdentityOpen(false)}
+              onTransferred={() => { onMembersChanged?.(); onClose() }} />
       <ConfirmDialog
         isOpen={!!ask}
         onClose={() => setAsk(null)}

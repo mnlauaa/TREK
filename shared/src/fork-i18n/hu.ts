@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'nap',
-  'costs.exchangeRates.manage': 'Árfolyamok',
   'costs.exchangeRates.title': 'Az utazás árfolyamai',
   'costs.exchangeRates.notePlaceholder': 'Opcionális megjegyzés',
-  'costs.exchangeRates.updateExisting': 'Meglévő tételek frissítése (előnézet szükséges)',
   'costs.exchangeRates.noMatchingItems': 'Nincs megfelelő meglévő tétel.',
   'costs.exchangeRates.savedDefaults': 'Mentett alapértékek',
   'costs.exchangeRates.noTripRates': 'Nincs utazásspecifikus árfolyam.',
   'costs.exchangeRates.applyItems': 'Alkalmazás {count} tételre',
   'costs.exchangeRates.previewChanges': 'Változtatások előnézete',
   'costs.exchangeRates.saveDefault': 'Mentés alapértékként',
-  'costs.exchangeRates.label': 'Árfolyam',
   'costs.exchangeRates.required': 'Kötelező',
   'costs.exchangeRates.manualRate': 'Kézi árfolyam',
   'costs.exchangeRates.sourceLabel': 'Forrás: {source}',

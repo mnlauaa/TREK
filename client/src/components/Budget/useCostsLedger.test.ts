@@ -178,7 +178,6 @@ describe('useCostsLedger: loading', () => {
     await waitFor(() => expect(result.current.settlementError).toBe(false));
     expect(result.current.settlement).toEqual(SETTLEMENT);
   });
-
 });
 
 describe('useCostsLedger: totals and filters', () => {

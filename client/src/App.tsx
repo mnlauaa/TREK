@@ -423,12 +423,12 @@ export default function App() {
     const refresh = (event: MessageEvent) => {
       if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileWebPush().catch(() => {})
     }
-    worker?.addEventListener('message', refresh)
+    worker?.addEventListener?.('message', refresh)
     const unsubscribe = useInAppNotificationStore.subscribe((state, previous) => {
       if (state.unreadCount !== previous.unreadCount) void updateAppBadge(state.unreadCount)
     })
     return () => {
-      worker?.removeEventListener('message', refresh)
+      worker?.removeEventListener?.('message', refresh)
       unsubscribe()
     }
   }, [isAuthenticated])

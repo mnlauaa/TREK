@@ -1,9 +1,14 @@
-import { FRANKFURTER_CURRENCIES, type ExchangeRateBatchPreview, type ExchangeRateResolution, type TripExchangeRate } from '@trek/shared';
+import {
+  FRANKFURTER_CURRENCIES,
+  type ExchangeRateBatchPreview,
+  type ExchangeRateResolution,
+  type TripExchangeRate,
+} from '@trek/shared';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { budgetApi } from '../../api/client';
 import { useTranslation } from '../../i18n';
+import { exchangeRateRepo } from '../../repo/budgetRepo';
 import { useSettingsStore } from '../../store/settingsStore';
 import CurrencySelect from '../shared/CurrencySelect';
 import { NumericInput } from '../shared/NumericInput';
@@ -53,7 +58,7 @@ export default function ExchangeRateManager({
 
   const load = useCallback(async () => {
     try {
-      const result = await budgetApi.listExchangeRates(tripId);
+      const result = await exchangeRateRepo.list(tripId);
       const nextRates = result.rates || [];
       setRates(nextRates);
       if (!userSelectedCurrency.current) {
@@ -91,8 +96,8 @@ export default function ExchangeRateManager({
     setValue('');
     const saved = rates.find((rate) => rate.currency === currency);
     setNote(saved?.note || '');
-    budgetApi
-      .resolveExchangeRate(tripId, currency)
+    exchangeRateRepo
+      .resolve(tripId, currency)
       .then((next) => {
         if (resolveRevision.current !== revision) return;
         setResolution(next);
@@ -126,7 +131,7 @@ export default function ExchangeRateManager({
     if (!canEdit || !validRate) return;
     setBusy(true);
     try {
-      await budgetApi.setExchangeRate(tripId, currency, storedRate!, note.trim() || null);
+      await exchangeRateRepo.saveDefault(tripId, currency, storedRate!, note.trim() || null);
       toast.success(t('budget.exchangeRates.saved'));
       refresh();
     } catch {
@@ -140,7 +145,7 @@ export default function ExchangeRateManager({
     if (!canEdit) return;
     setBusy(true);
     try {
-      await budgetApi.deleteExchangeRate(tripId, rate.currency);
+      await exchangeRateRepo.deleteDefault(tripId, rate.currency);
       refresh();
     } catch {
       toast.error(t('common.error'));
@@ -153,12 +158,7 @@ export default function ExchangeRateManager({
     if (!canEdit || !validRate) return;
     setBusy(true);
     try {
-      const result = (await budgetApi.previewExchangeRate(
-        tripId,
-        currency,
-        storedRate!,
-        note.trim() || null
-      ));
+      const result = await exchangeRateRepo.preview(tripId, currency, storedRate!, note.trim() || null);
       setPreview(result);
       setSelected(new Set(result.rows.filter((row) => row.selected).map((row) => `${row.type}:${row.id}`)));
     } catch {
@@ -172,7 +172,7 @@ export default function ExchangeRateManager({
     if (!canEdit || !preview) return;
     setBusy(true);
     try {
-      await budgetApi.applyExchangeRate(
+      await exchangeRateRepo.apply(
         tripId,
         preview.currency,
         preview.preview_id,
@@ -195,7 +195,7 @@ export default function ExchangeRateManager({
 
   return (
     <div className="space-y-4">
-      <p className="m-0 text-sm text-content-muted">{t('costs.exchangeRates.description')}</p>
+      <p className="m-0 text-body text-content-muted">{t('costs.exchangeRates.description')}</p>
 
       <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
         <CurrencySelect
@@ -210,7 +210,7 @@ export default function ExchangeRateManager({
           style={{ width: '100%' }}
         />
         <div className="rounded-xl border border-edge bg-surface-input px-3 py-2">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-body">
             <span className="whitespace-nowrap text-content-muted">1 {currency} =</span>
             <NumericInput
               mode="decimal"
@@ -226,7 +226,7 @@ export default function ExchangeRateManager({
             <span className="whitespace-nowrap text-content-muted">{normalizedTripCurrency}</span>
           </div>
           {inverse && (
-            <p className="m-0 mt-1 text-xs text-content-faint">
+            <p className="m-0 mt-1 text-caption text-content-faint">
               {t('costs.exchangeRates.inverse', {
                 tripCurrency: normalizedTripCurrency,
                 rate: inverse,
@@ -237,7 +237,7 @@ export default function ExchangeRateManager({
         </div>
       </div>
 
-      <div className="rounded-xl border border-edge bg-surface-secondary p-3 text-xs text-content-muted">
+      <div className="rounded-xl border border-edge bg-surface-secondary p-3 text-caption text-content-muted">
         {resolution ? (
           <div className="flex flex-wrap gap-x-2 gap-y-1">
             <strong className="text-content">
@@ -275,14 +275,14 @@ export default function ExchangeRateManager({
             onChange={(event) => setNote(event.target.value)}
             maxLength={500}
             placeholder={t('costs.exchangeRates.notePlaceholder')}
-            className="w-full rounded-xl border border-edge bg-surface-input px-3 py-2 text-sm text-content"
+            className="w-full rounded-xl border border-edge bg-surface-input px-3 py-2 text-body text-content"
           />
           <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               disabled={!validRate || busy}
               onClick={save}
-              className="rounded-lg border border-edge px-3 py-2 text-xs font-semibold text-content disabled:opacity-40"
+              className="rounded-lg border border-edge px-3 py-2 text-caption font-semibold text-content disabled:opacity-40"
             >
               {t('costs.exchangeRates.saveDefault')}
             </button>
@@ -290,7 +290,7 @@ export default function ExchangeRateManager({
               type="button"
               disabled={!validRate || busy}
               onClick={makePreview}
-              className="rounded-lg bg-content px-3 py-2 text-xs font-semibold text-surface disabled:opacity-40"
+              className="rounded-lg bg-content px-3 py-2 text-caption font-semibold text-surface disabled:opacity-40"
             >
               {t('costs.exchangeRates.previewChanges')}
             </button>
@@ -300,17 +300,17 @@ export default function ExchangeRateManager({
 
       {preview && (
         <div className="bg-surface-subtle rounded-xl border border-edge p-3">
-          <p className="m-0 text-xs font-semibold text-content">{t('budget.exchangeRates.previewTitle')}</p>
+          <p className="m-0 text-caption font-semibold text-content">{t('budget.exchangeRates.previewTitle')}</p>
           <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
             {preview.rows.length === 0 && (
-              <p className="text-xs text-content-faint">{t('costs.exchangeRates.noMatchingItems')}</p>
+              <p className="text-caption text-content-faint">{t('costs.exchangeRates.noMatchingItems')}</p>
             )}
             {preview.rows.map((row) => {
               const key = `${row.type}:${row.id}`;
               return (
                 <label
                   key={key}
-                  className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg border border-edge px-2 py-2 text-xs text-content-muted"
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg border border-edge px-2 py-2 text-caption text-content-muted"
                 >
                   <input
                     type="checkbox"
@@ -328,7 +328,10 @@ export default function ExchangeRateManager({
                     {t(`costs.exchangeRates.item.${row.type}`)} #{row.id} · {sourceLabel(t, row.source)}
                   </span>
                   <span className="font-mono">
-                    {(row.old_trip_value === null ? t('costs.exchangeRates.awaitingConversion') : row.old_trip_value.toPrecision(6))} → {row.new_trip_value.toPrecision(6)}
+                    {row.old_trip_value === null
+                      ? t('costs.exchangeRates.awaitingConversion')
+                      : row.old_trip_value.toPrecision(6)}{' '}
+                    → {row.new_trip_value.toPrecision(6)}
                   </span>
                 </label>
               );
@@ -339,7 +342,7 @@ export default function ExchangeRateManager({
               type="button"
               disabled={busy || selected.size === 0}
               onClick={apply}
-              className="mt-3 rounded-lg bg-content px-3 py-2 text-xs font-semibold text-surface disabled:opacity-40"
+              className="mt-3 rounded-lg bg-content px-3 py-2 text-caption font-semibold text-surface disabled:opacity-40"
             >
               {t('costs.exchangeRates.applyItems', { count: selected.size })}
             </button>
@@ -348,9 +351,9 @@ export default function ExchangeRateManager({
       )}
 
       <div>
-        <h4 className="m-0 text-sm font-semibold text-content">{t('costs.exchangeRates.savedDefaults')}</h4>
+        <h4 className="m-0 text-body font-semibold text-content">{t('costs.exchangeRates.savedDefaults')}</h4>
         {rates.length === 0 ? (
-          <p className="mt-2 text-xs text-content-faint">{t('costs.exchangeRates.noTripRates')}</p>
+          <p className="mt-2 text-caption text-content-faint">{t('costs.exchangeRates.noTripRates')}</p>
         ) : (
           <div className="mt-2 divide-y divide-edge">
             {rates.map((rate) => (
@@ -361,7 +364,7 @@ export default function ExchangeRateManager({
                     userSelectedCurrency.current = true;
                     setCurrency(rate.currency);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-3 py-2 text-left text-xs"
+                  className="flex min-w-0 flex-1 items-center gap-3 py-2 text-start text-caption"
                 >
                   <strong className="w-10 text-content">{rate.currency}</strong>
                   <span className="min-w-0 flex-1 text-content-muted">

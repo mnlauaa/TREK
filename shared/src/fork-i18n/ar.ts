@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'أيام',
-  'costs.exchangeRates.manage': 'أسعار الصرف',
   'costs.exchangeRates.title': 'أسعار صرف الرحلة',
   'costs.exchangeRates.notePlaceholder': 'ملاحظة اختيارية',
-  'costs.exchangeRates.updateExisting': 'تحديث العناصر الحالية (المعاينة مطلوبة)',
   'costs.exchangeRates.noMatchingItems': 'لا توجد عناصر حالية مطابقة.',
   'costs.exchangeRates.savedDefaults': 'القيم الافتراضية المحفوظة',
   'costs.exchangeRates.noTripRates': 'لا توجد أسعار خاصة بالرحلة.',
   'costs.exchangeRates.applyItems': 'تطبيق على {count} من العناصر',
   'costs.exchangeRates.previewChanges': 'معاينة التغييرات',
   'costs.exchangeRates.saveDefault': 'حفظ كقيمة افتراضية',
-  'costs.exchangeRates.label': 'سعر الصرف',
   'costs.exchangeRates.required': 'مطلوب',
   'costs.exchangeRates.manualRate': 'سعر يدوي',
   'costs.exchangeRates.sourceLabel': 'المصدر: {source}',

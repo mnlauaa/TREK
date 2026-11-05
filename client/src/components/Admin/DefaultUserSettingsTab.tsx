@@ -1,3 +1,4 @@
+import CurrencySelect from '../shared/CurrencySelect'
 import CommonCurrenciesEditor from '../Settings/CommonCurrenciesEditor'
 import React from 'react'
 import { Loader2, Map as MapIcon, Settings2 } from 'lucide-react'
@@ -72,7 +73,7 @@ const EMPTY_CURRENCIES: readonly string[] = []
 export default function DefaultUserSettingsTab(): React.ReactElement {
   const { t, locale } = useTranslation()
   const {
-    defaults, loaded, managed, isSet, save, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
+    defaults, loaded, managed, isSet, save, saveCommonCurrencies, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
     cartoKey, setCartoKey, mapboxStyle, setMapboxStyle, mapPreviewPlaces, mapProvider, glStylePresets, styleKey,
     saveMapProvider, pickTilePreset, pickStylePreset, commitStyle,
   } = useDefaultUserSettings({ errorMessage: errorText, previewCreatedAt: () => String(new Date()) })
@@ -186,12 +187,13 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       {/* Default Currency */}
       <ChoiceRow label={<>{t('settings.currency')} <ResetButton field="default_currency" /></>}>
         <div className="w-[220px] max-w-full">
-          <CustomSelect
+          <CurrencySelect
             value={defaults.default_currency || ''}
             onChange={(value: string) => { if (value) void save({ default_currency: value }) }}
             placeholder={t('settings.currency')}
             searchable
-            options={currenciesWith(defaults.default_currency).map(c => ({ value: c, label: SYMBOLS[c] ? `${c}  ${SYMBOLS[c]}` : c }))}
+            commonCurrencies={defaults.common_currencies ?? EMPTY_CURRENCIES}
+            availableCurrencies={currenciesWith(defaults.default_currency)}
           />
         </div>
       </ChoiceRow>
@@ -199,7 +201,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       <ChoiceRow label={<>{t('settings.commonCurrencies.title')} <ResetButton field="common_currencies" /></>}
         hint={t('settings.commonCurrencies.adminHint')} stacked>
         <CommonCurrenciesEditor value={defaults.common_currencies ?? EMPTY_CURRENCIES}
-          onSave={(value) => save({ common_currencies: value })} />
+          onSave={saveCommonCurrencies} />
       </ChoiceRow>
 
       {/* Blur Booking Codes */}

@@ -128,8 +128,8 @@ describe('SettingsPage', () => {
     });
   });
 
-  describe('FE-PAGE-SETTINGS-006: About tab shown when version loads', () => {
-    it('About tab appears when app version is returned by API', async () => {
+  describe('FE-PAGE-SETTINGS-006: Legal source link when version loads', () => {
+    it('links to legal source and version when the API returns a version', async () => {
       const { http, HttpResponse } = await import('msw');
       const { server } = await import('../../tests/helpers/msw/server');
 
@@ -149,7 +149,7 @@ describe('SettingsPage', () => {
       render(<SettingsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /about/i })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /legal.*2\.9\.10/i })).toHaveAttribute('href', '/legal');
       });
     });
   });

@@ -72,6 +72,7 @@ export interface TripExchangeRate {
   currency: string
   exchange_rate: number
   source_version: string
+  effective_date?: string | null
   set_at: string
   set_by_user_id: number | null
   note: string | null
@@ -106,6 +107,8 @@ type EntityFieldsAreDelivered = [
   NoneUndelivered<Undelivered<PackingItem, 'packingItem'>>,
   NoneUndelivered<Undelivered<TripFile, 'tripFile'>>,
   NoneUndelivered<Undelivered<BudgetItem, 'budgetItem'>>,
+  NoneUndelivered<Undelivered<BudgetSettlement, 'budgetSettlement'>>,
+  NoneUndelivered<Undelivered<TripExchangeRate, 'tripExchangeRate'>>,
   NoneUndelivered<Undelivered<Assignment, 'assignment'>>,
   NoneUndelivered<Undelivered<User, 'user'>>,
 ];

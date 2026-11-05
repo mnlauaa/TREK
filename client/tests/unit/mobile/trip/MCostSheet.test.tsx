@@ -246,19 +246,17 @@ describe('MCostSheet', () => {
     await waitFor(() => expect(addBudgetItem).toHaveBeenCalledWith(1, expect.objectContaining({ category: 'transport' })))
   })
 
-  it('FE-MOB-COSTSH-007: a foreign currency shows the live conversion into the base', () => {
+  it('FE-MOB-COSTSH-007: a foreign currency previews the resolved rate into the base', async () => {
     renderSheet()
     fillBasics('Hotel', '100')
     expect(screen.queryByText(/live rate/)).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'EUR €' }))
+    fireEvent.click(screen.getByRole('button', { name: /^EUR/ }))
     fireEvent.change(screen.getByPlaceholderText('Search'), { target: { value: 'USD' } })
-    fireEvent.click(screen.getByRole('button', { name: 'USD $' }))
+    fireEvent.click(screen.getByRole('button', { name: /^USD/ }))
 
+    expect(await screen.findByText('80,00 €')).toBeInTheDocument()
     expect(screen.getByText('$100.00')).toBeInTheDocument()
-    // 100 USD at 1.25 USD per EUR = 80 EUR.
-    expect(screen.getByRole('dialog').textContent).toContain('80,00')
-    expect(screen.getByText(/live rate/)).toBeInTheDocument()
   })
 
   it('FE-MOB-COSTSH-008: "No one paid yet" saves a planning entry without payers', async () => {
@@ -441,7 +439,7 @@ describe('MCostSheet', () => {
     expect(screen.getByRole('dialog', { name: 'Edit expense' })).toBeInTheDocument()
     expect(nameField()).toHaveValue('Flight to Osaka')
     expect(catTrigger()).toHaveTextContent('Flights')
-    expect(screen.getByRole('button', { name: 'USD $' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^USD/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'bob' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Custom' })).toHaveClass('bg-m-act')
     // USD renders with a dot, so the total and both shares share this placeholder.
@@ -671,8 +669,8 @@ describe('MCostSheet', () => {
     renderSheet({ base: 'USD', editing })
 
     expect(totalField()).toHaveValue('100,00')
-    expect(screen.getByRole('button', { name: 'EUR €' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'USD $' })).toBeNull()
+    expect(screen.getByRole('button', { name: /^EUR/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^USD/ })).toBeNull()
 
     fireEvent.click(saveBtn())
     await waitFor(() => expect(updateBudgetItem).toHaveBeenCalledWith(1, 12, expect.objectContaining({

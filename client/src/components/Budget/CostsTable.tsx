@@ -29,6 +29,7 @@ export interface CostsTableProps {
   baseTotal: (e: BudgetItem) => number
   /** Any amount of an expense in the display currency. */
   toBase: (amount: number, e: BudgetItem) => number
+  awaitingConversion?: (e: BudgetItem) => boolean
   /** The currency an expense was entered in. */
   currencyOf: (e: BudgetItem) => string
   fmt: (amount: number) => string
@@ -186,6 +187,7 @@ function Row({ e, p, editing, setEditing, numFmt }: {
 }) {
   const { t, locale } = useTranslation()
   const total = p.baseTotal(e)
+  const totalLabel = p.awaitingConversion?.(e) ? t('costs.exchangeRates.awaitingConversion') : p.fmt(total)
   const custom = hasCustomMemberSplit(e)
   const persons = e.persons ?? null
   const days = e.days ?? null
@@ -219,18 +221,18 @@ function Row({ e, p, editing, setEditing, numFmt }: {
       <td className={CELL}>
         {totalLock ? (
           <Tooltip label={totalLock} placement="top">
-            <button type="button" onClick={() => p.onOpen(e)} aria-label={`${t('budget.table.total')}: ${p.fmt(total)}`}
+            <button type="button" onClick={() => p.onOpen(e)} aria-label={`${t('budget.table.total')}: ${totalLabel}`}
               className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-[8px] px-1.5 hover:bg-surface-card">
               <Lock size={10} strokeWidth={2.4} className="flex-none text-content-faint" />
               <span className="flex flex-col items-center leading-tight">
-                <span className="font-semibold">{p.fmt(total)}</span>
+                <span className="font-semibold">{totalLabel}</span>
                 {foreign && <span className="mt-0.5 rounded-full bg-surface-tertiary px-1.5 font-geist text-content-muted" style={fs(10)}>{numFmt(e.total_price || 0)} {p.currencyOf(e)}</span>}
               </span>
             </button>
           </Tooltip>
         ) : (
           <EditCell label={t('budget.table.total')} text={p.fmt(total)} canEdit={p.canEdit} editing={isEditing('total_price')} onEdit={() => setEditing({ id: e.id, field: 'total_price' })} align="center"
-            display={<span className="font-semibold">{p.fmt(total)}</span>}
+            display={<span className="font-semibold">{totalLabel}</span>}
             input={<TextInput value={String(e.total_price ?? '')} numeric onSave={v => {
               const n = Number(normalizePastedAmount(v))
               if (v.trim() && Number.isFinite(n)) save({ total_price: n }); else setEditing(null)

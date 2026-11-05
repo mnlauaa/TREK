@@ -66,7 +66,7 @@
         ];
         if (unreadCount > 0 && self.navigator && typeof self.navigator.setAppBadge === 'function') {
           tasks.push(self.navigator.setAppBadge(unreadCount));
-        } else if (self.navigator && typeof self.navigator.clearAppBadge === 'function') {
+        } else if (showFull && self.navigator && typeof self.navigator.clearAppBadge === 'function') {
           tasks.push(self.navigator.clearAppBadge());
         }
         await Promise.allSettled(tasks);
@@ -75,9 +75,11 @@
   });
 
   self.addEventListener('pushsubscriptionchange', (event) => {
-    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) client.postMessage({ type: 'trek:web-push-subscription-changed' });
-    }));
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        for (const client of clients) client.postMessage({ type: 'trek:web-push-subscription-changed' });
+      })
+    );
   });
 
   self.addEventListener('notificationclick', (event) => {
@@ -93,9 +95,16 @@
         const exact = windows.find((client) => client.url === target.href);
         const candidate = exact || windows.find((client) => new URL(client.url).origin === target.origin);
         if (candidate) {
-          if (!exact && typeof candidate.navigate === 'function') await candidate.navigate(target.href);
-          await candidate.focus();
-        } else await self.clients.openWindow(target.href);
+          try {
+            if (!exact && typeof candidate.navigate === 'function') await candidate.navigate(target.href);
+            await candidate.focus();
+            return;
+          } catch {
+            await self.clients.openWindow(target.href);
+            return;
+          }
+        }
+        await self.clients.openWindow(target.href);
       })()
     );
   });

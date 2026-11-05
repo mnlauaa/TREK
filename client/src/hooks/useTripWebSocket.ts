@@ -36,8 +36,10 @@ export function useTripWebSocket(tripId: number | string | undefined, onToursCha
     addListener(toursInvalidation)
     const refreshRetainedData = (event: WebSocketEvent) => {
       if (String(event.tripId ?? '') !== String(tripId)) return
-      if (event.type === 'budget:exchange-rates-applied' || event.type === 'guest:identity-transferred') {
-        void tripStore.loadBudgetItems(tripId)
+      if (event.type === 'guest:identity-transferred') {
+        void useTripStore.getState().hydrateActiveTrip(tripId).catch(() => {})
+      } else if (event.type === 'budget:exchange-rates-applied') {
+        void useTripStore.getState().loadBudgetItems(tripId)
       }
       if (event.type === 'budget:exchange-rates-applied' || event.type === 'budget:exchange-rates-updated') {
         window.dispatchEvent(new CustomEvent('budget:exchange-rates-remote'))
@@ -46,6 +48,12 @@ export function useTripWebSocket(tripId: number | string | undefined, onToursCha
     addListener(refreshRetainedData)
     const localFileSync = () => tripStore.loadFiles?.(tripId)
     window.addEventListener('collab-files-changed', localFileSync)
+    const refreshLocalGuest = (event: Event) => {
+      if (String((event as CustomEvent<number | string>).detail) === String(tripId)) {
+        void useTripStore.getState().hydrateActiveTrip(tripId).catch(() => {})
+      }
+    }
+    window.addEventListener('guest:identity-transferred', refreshLocalGuest)
     return () => {
       leaveTrip(tripId)
       removeListener(handler)
@@ -53,6 +61,7 @@ export function useTripWebSocket(tripId: number | string | undefined, onToursCha
       removeListener(toursInvalidation)
       removeListener(refreshRetainedData)
       window.removeEventListener('collab-files-changed', localFileSync)
+      window.removeEventListener('guest:identity-transferred', refreshLocalGuest)
     }
   }, [tripId, onToursChanged])
 }

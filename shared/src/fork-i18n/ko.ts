@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': '일',
-  'costs.exchangeRates.manage': '환율',
   'costs.exchangeRates.title': '여행 환율',
   'costs.exchangeRates.notePlaceholder': '선택 사항 메모',
-  'costs.exchangeRates.updateExisting': '기존 항목 업데이트(미리보기 필요)',
   'costs.exchangeRates.noMatchingItems': '일치하는 기존 항목이 없습니다.',
   'costs.exchangeRates.savedDefaults': '저장된 기본값',
   'costs.exchangeRates.noTripRates': '여행별 환율이 없습니다.',
   'costs.exchangeRates.applyItems': '{count}개 항목에 적용',
   'costs.exchangeRates.previewChanges': '변경 사항 미리보기',
   'costs.exchangeRates.saveDefault': '기본값 저장',
-  'costs.exchangeRates.label': '환율',
   'costs.exchangeRates.required': '필수',
   'costs.exchangeRates.manualRate': '수동 환율',
   'costs.exchangeRates.sourceLabel': '출처: {source}',

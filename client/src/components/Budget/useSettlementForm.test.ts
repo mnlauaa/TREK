@@ -12,7 +12,21 @@ import { useSettlementForm } from './useSettlementForm';
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
-  budgetApi: { createSettlement: vi.fn(), updateSettlement: vi.fn() },
+  budgetApi: {
+    createSettlement: vi.fn(),
+    updateSettlement: vi.fn(),
+    resolveExchangeRate: vi.fn(async (trip_id: number, item_currency: string) => ({
+      trip_id,
+      item_currency,
+      trip_currency: 'EUR',
+      exchange_rate: 1.25,
+      source: 'global' as const,
+      source_version: 'fixture',
+      effective_date: null,
+      fetched_at: null,
+      stale: false,
+    })),
+  },
 }));
 
 const PEOPLE = [{ id: 1 }, { id: 2 }, { id: 3 }];

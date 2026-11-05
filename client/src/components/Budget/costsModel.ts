@@ -31,13 +31,21 @@ export function currencyOf(e: BudgetItem, ctx: CostsCtx): string {
 }
 
 /** An amount of this expense in the display currency, at the rate the expense was booked at. */
-export function awaitingConversion(row: Pick<BudgetItem, 'currency' | 'exchange_rate' | 'exchange_rate_source'>, tripCurrency: string): boolean {
-  return !!row.currency && row.currency.toUpperCase() !== tripCurrency.toUpperCase() &&
-    bookedInTrip(1, row.currency, row.exchange_rate, tripCurrency, row.exchange_rate_source) === null;
+export function awaitingConversion(
+  row: Pick<BudgetItem, 'currency' | 'exchange_rate' | 'exchange_rate_source'>,
+  tripCurrency: string
+): boolean {
+  return (
+    !!row.currency &&
+    row.currency.toUpperCase() !== tripCurrency.toUpperCase() &&
+    bookedInTrip(1, row.currency, row.exchange_rate, tripCurrency, row.exchange_rate_source) === null
+  );
 }
 
 export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
-  return awaitingConversion(e, ctx.tripCurrency) ? 0 : convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert, e.exchange_rate_source);
+  return awaitingConversion(e, ctx.tripCurrency)
+    ? 0
+    : convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert, e.exchange_rate_source);
 }
 
 /**
@@ -47,7 +55,15 @@ export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
  */
 export function lineOf(amount: number, e: BudgetItem, ctx: CostsCtx, shown: number) {
   if (awaitingConversion(e, ctx.tripCurrency)) return null;
-  return convertedLine(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.displayCurrency, shown, e.exchange_rate_source);
+  return convertedLine(
+    amount,
+    e.currency,
+    e.exchange_rate,
+    ctx.tripCurrency,
+    ctx.displayCurrency,
+    shown,
+    e.exchange_rate_source
+  );
 }
 
 /** Expense total converted to the display/base currency, at its booked rate. */
@@ -122,7 +138,11 @@ function paymentCurrency(s: CostsSettlement, ctx: CostsCtx): string {
 
 /** A recorded payment in the display currency, at the rate frozen when it was settled (#1445). */
 export function paymentAmount(s: CostsSettlement, ctx: CostsCtx): number {
-  return !s.currency ? s.amount : awaitingConversion(s, ctx.tripCurrency) ? 0 : convertBooked(s.amount, s.currency, s.exchange_rate, ctx.tripCurrency, ctx.convert, s.exchange_rate_source);
+  return !s.currency
+    ? s.amount
+    : awaitingConversion(s, ctx.tripCurrency)
+      ? 0
+      : convertBooked(s.amount, s.currency, s.exchange_rate, ctx.tripCurrency, ctx.convert, s.exchange_rate_source);
 }
 
 /** The line under a payment shown converted, explained the way an expense's is (#2525). */
@@ -391,7 +411,14 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
   for (const e of sorted) {
     const cur = opts.currencyOf ? opts.currencyOf(e) : currencyOf(e, opts.ctx);
     const note = readUserNote(e);
-    const inTrip = tripAmountOf(e.total_price || 0, e.currency, e.exchange_rate, trip, opts.ctx.convert, e.exchange_rate_source);
+    const inTrip = tripAmountOf(
+      e.total_price || 0,
+      e.currency,
+      e.exchange_rate,
+      trip,
+      opts.ctx.convert,
+      e.exchange_rate_source
+    );
     rows.push(
       [
         esc(fmtDate(e.expense_date || '')),
@@ -399,8 +426,8 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
         esc(opts.t(catMeta(e.category).labelKey)),
         (e.total_price || 0).toFixed(currencyDecimals(cur)),
         cur,
-        ...(tripCol ? [inTrip.toFixed(currencyDecimals(trip))] : []),
-        baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)),
+        ...(tripCol ? [Number.isFinite(inTrip) ? inTrip.toFixed(currencyDecimals(trip)) : ''] : []),
+        Number.isFinite(inTrip) ? baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)) : '',
         esc(note),
       ].join(sep)
     );

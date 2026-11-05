@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': 'dní',
-  'costs.exchangeRates.manage': 'Směnné kurzy',
   'costs.exchangeRates.title': 'Směnné kurzy cesty',
   'costs.exchangeRates.notePlaceholder': 'Volitelná poznámka',
-  'costs.exchangeRates.updateExisting': 'Aktualizovat existující položky (vyžaduje náhled)',
   'costs.exchangeRates.noMatchingItems': 'Žádné odpovídající existující položky.',
   'costs.exchangeRates.savedDefaults': 'Uložené výchozí hodnoty',
   'costs.exchangeRates.noTripRates': 'Žádné kurzy specifické pro cestu.',
   'costs.exchangeRates.applyItems': 'Použít na {count} položek',
   'costs.exchangeRates.previewChanges': 'Náhled změn',
   'costs.exchangeRates.saveDefault': 'Uložit jako výchozí',
-  'costs.exchangeRates.label': 'Směnný kurz',
   'costs.exchangeRates.required': 'Povinné',
   'costs.exchangeRates.manualRate': 'Ruční kurz',
   'costs.exchangeRates.sourceLabel': 'Zdroj: {source}',

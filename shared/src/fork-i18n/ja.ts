@@ -2,17 +2,14 @@ import type { TranslationStrings } from '../i18n/types';
 
 const fork: TranslationStrings = {
   'dashboard.hero.dayUnitMany': '日',
-  'costs.exchangeRates.manage': '為替レート',
   'costs.exchangeRates.title': '旅行の為替レート',
   'costs.exchangeRates.notePlaceholder': '任意のメモ',
-  'costs.exchangeRates.updateExisting': '既存の項目を更新（プレビュー必須）',
   'costs.exchangeRates.noMatchingItems': '一致する既存の項目はありません。',
   'costs.exchangeRates.savedDefaults': '保存済みの初期値',
   'costs.exchangeRates.noTripRates': '旅行固有のレートはありません。',
   'costs.exchangeRates.applyItems': '{count}件に適用',
   'costs.exchangeRates.previewChanges': '変更をプレビュー',
   'costs.exchangeRates.saveDefault': '初期値として保存',
-  'costs.exchangeRates.label': '為替レート',
   'costs.exchangeRates.required': '必須',
   'costs.exchangeRates.manualRate': '手動レート',
   'costs.exchangeRates.sourceLabel': '取得元：{source}',
