@@ -37,7 +37,6 @@
     "src/nest/memories/synology.controller.ts": 10,
     "src/nest/memories/unified.controller.ts": 7,
     "src/nest/notifications/notifications.controller.ts": 18,
-    "src/nest/notifications/push/push.controller.ts": 3,
     "src/nest/oauth/oauth-api.controller.ts": 8,
     "src/nest/oauth/oauth-public.controller.ts": 3,
     "src/nest/oidc/oidc.controller.ts": 5,

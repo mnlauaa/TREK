@@ -141,12 +141,13 @@ export function buildBuiltinChannels({ mailer, webhook, ntfy, push }: BuiltinCha
   const pushChannel: ExternalChannel = {
     id: WEB_PUSH_CHANNEL_ID,
     source: 'builtin',
-    labelKey: 'settings.notificationPreferences.push',
+    labelKey: 'settings.notificationPreferences.webpush',
+    settingsPath: '/settings?tab=notifications',
     hiddenWhileInstanceUnconfigured: true,
     supportsEvent: (event) => supportsAllButSynology(event) && !ADMIN_SCOPED_EVENTS.has(event),
     isInstanceConfigured: () => push.isAvailable(),
     isConfiguredFor: (userId) => push.hasDevices(userId),
-    sendToUser: (userId, msg) => push.sendToUser(userId, msg),
+    sendToUser: async (userId, msg) => (await push.sendToUser(userId, msg)).sent > 0,
     test: (userId) => push.sendTest(userId),
   };
 

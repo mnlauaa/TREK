@@ -101,6 +101,7 @@
   "PluginUserErasureQueue": "plugins",
   "Plugins": "plugins",
   "PushSubscriptions": "notifications",
+  "WebPushSubscriptions": "notifications",
   "ReservationDayPositions": "reservations",
   "ReservationEndpoints": "reservations",
   "ReservationEndpointsEntity": "reservations",

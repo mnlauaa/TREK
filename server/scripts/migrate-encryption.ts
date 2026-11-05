@@ -455,6 +455,18 @@ async function main() {
     const tableExists = (name: string): boolean =>
       !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
 
+    if (tableExists('web_push_subscriptions')) {
+      const devices = db.prepare('SELECT id, subscription_encrypted FROM web_push_subscriptions').all() as {
+        id: number;
+        subscription_encrypted: string;
+      }[];
+      const update = db.prepare('UPDATE web_push_subscriptions SET subscription_encrypted = ? WHERE id = ?');
+      for (const row of devices) {
+        const ciphertext = migrateApiKeyValue(row.subscription_encrypted, `web_push_subscriptions[${row.id}]`);
+        if (ciphertext !== null) update.run(ciphertext, row.id);
+      }
+    }
+
     if (tableExists('plugin_oauth_tokens')) {
       const tokenRows = db
         .prepare('SELECT plugin_id, user_id, access_token, refresh_token FROM plugin_oauth_tokens')

@@ -8,29 +8,29 @@ import { db as testDb } from '../../../../src/db/database';
 import { AppSettings } from '../../../../src/db/entities/AppSettings.entity';
 import { Notifications } from '../../../../src/db/entities/Notifications.entity';
 import { Settings } from '../../../../src/db/entities/Settings.entity';
+import { WebPushSubscriptions } from '../../../../src/db/entities/WebPushSubscriptions.entity';
 import type { NotificationPreferencesService } from '../../../../src/nest/notifications/notification-preferences.service';
 import type { NotificationsService } from '../../../../src/nest/notifications/notifications.service';
-import { checkPushSubscription } from '../../../../src/nest/notifications/push/push-subscription.helpers';
-import type { PushSubscriptionsService } from '../../../../src/nest/notifications/push/push-subscriptions.service';
 import {
-  PUSH_UNAVAILABLE_ERROR,
   VAPID_PRIVATE_KEY_SETTING,
   type VapidKeysService,
 } from '../../../../src/nest/notifications/push/vapid-keys.service';
 import { generateVapidKeyPair } from '../../../../src/nest/notifications/push/web-push-crypto';
+import type { WebPushService } from '../../../../src/nest/notifications/transports/web-push.service';
 import { createAdmin, createUser, disableNotificationPref, setNotificationChannels } from '../../../helpers/factories';
 import { countRows, deleteRows, findRows, insertRow, updateRows } from '../../../helpers/factories/rows';
 import { readAppSetting } from '../../../helpers/factories/settings';
 import {
   makeNotificationPreferencesService,
   makeNotificationsService,
-  makePushSubscriptionsService,
+  makeWebPushService,
   makeVapidKeysService,
 } from '../../../helpers/notifications';
 import { resetTestDb } from '../../../helpers/test-db';
 import { sharedTestOrm } from '../../../helpers/test-uow';
+import { WEB_PUSH_CHANNEL_ID } from '@trek/shared';
 
-import { createECDH } from 'node:crypto';
+import { createECDH, randomUUID } from 'node:crypto';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 
 // One snapshot connection per file, created inside the factory so nothing has
@@ -64,18 +64,27 @@ vi.mock('../../../../src/utils/ssrfGuard', () => {
 // which are async to resolve on this file's handle.
 let notifications: NotificationsService;
 let prefs: NotificationPreferencesService;
-let subscriptions: PushSubscriptionsService;
+let subscriptions: WebPushService;
 let keys: VapidKeysService;
 
 async function addDevice(userId: number, endpoint = `https://fcm.googleapis.com/fcm/send/u${userId}`): Promise<string> {
   const ua = createECDH('prime256v1');
   ua.generateKeys();
-  const checked = checkPushSubscription({
-    endpoint,
-    keys: { p256dh: ua.getPublicKey('base64url'), auth: Buffer.alloc(16, 7).toString('base64url') },
-  });
-  if ('error' in checked) throw new Error(checked.error);
-  await subscriptions.upsert(userId, checked.value, await keys.getPublicKey());
+  const previous = await prefs.getActiveChannels();
+  setNotificationChannels(testDb, [...previous, WEB_PUSH_CHANNEL_ID].join(','));
+  try {
+    await subscriptions.registerCurrent(userId, {
+      installationId: randomUUID(),
+      intent: 'enable',
+      label: 'Device',
+      subscription: {
+        endpoint,
+        keys: { p256dh: ua.getPublicKey('base64url'), auth: Buffer.alloc(16, 7).toString('base64url') },
+      },
+    });
+  } finally {
+    setNotificationChannels(testDb, previous.join(',') || 'none');
+  }
   return endpoint;
 }
 
@@ -99,7 +108,7 @@ async function breakStoredPrivateKey(): Promise<void> {
 }
 
 const pushColumn = async (userId: number) =>
-  (await prefs.getPreferencesMatrix(userId, 'user')).channels.find((c) => c.id === 'push');
+  (await prefs.getPreferencesMatrix(userId, 'user')).channels.find((c) => c.id === WEB_PUSH_CHANNEL_ID);
 
 const storedKeyRows = async () =>
   (
@@ -109,12 +118,13 @@ const storedKeyRows = async () =>
 beforeAll(async () => {
   notifications = await makeNotificationsService(testDb);
   prefs = await makeNotificationPreferencesService(testDb);
-  subscriptions = await makePushSubscriptionsService(testDb);
+  subscriptions = await makeWebPushService(testDb);
   keys = await makeVapidKeysService(testDb);
 });
 
 beforeEach(() => {
   resetTestDb(testDb);
+  vi.stubEnv('APP_URL', 'https://trek.example.test');
   safeFetchFollow.mockReset();
   safeFetchFollow.mockResolvedValue({ ok: true, status: 201, body: null, headers: { get: () => null } });
   logError.mockClear();
@@ -152,7 +162,7 @@ describe('Web Push in NotificationsService.send()', () => {
     const { user: actor } = createUser(testDb);
     await addDevice(user.id);
     setNotificationChannels(testDb, 'push');
-    disableNotificationPref(testDb, user.id, 'trip_invite', 'push');
+    disableNotificationPref(testDb, user.id, 'trip_invite', WEB_PUSH_CHANNEL_ID);
     await invite(user.id, actor.id);
     expect(safeFetchFollow).not.toHaveBeenCalled();
   });
@@ -175,40 +185,43 @@ describe('Web Push in NotificationsService.send()', () => {
 describe('Web Push in the preference matrix', () => {
   it('WPDISP-005: the user matrix gets a Push column, active by the admin switch, configured by a device', async () => {
     const { user } = createUser(testDb);
-    let push = (await prefs.getPreferencesMatrix(user.id, 'user')).channels.find((c) => c.id === 'push');
+    let push = (await prefs.getPreferencesMatrix(user.id, 'user')).channels.find((c) => c.id === WEB_PUSH_CHANNEL_ID);
     expect(push).toMatchObject({
       source: 'builtin',
-      labelKey: 'settings.notificationPreferences.push',
+      labelKey: 'settings.notificationPreferences.webpush',
       active: false,
       configured: false,
     });
 
     setNotificationChannels(testDb, 'email,push');
     await addDevice(user.id);
-    push = (await prefs.getPreferencesMatrix(user.id, 'user')).channels.find((c) => c.id === 'push');
+    push = (await prefs.getPreferencesMatrix(user.id, 'user')).channels.find((c) => c.id === WEB_PUSH_CHANNEL_ID);
     expect(push).toMatchObject({ active: true, configured: true });
-    expect(await prefs.getActiveChannels()).toEqual(['email', 'push']);
-    expect((await prefs.getPreferencesMatrix(user.id, 'user')).implemented_combos['trip_invite']).toContain('push');
+    expect(await prefs.getActiveChannels()).toEqual(['email', WEB_PUSH_CHANNEL_ID]);
+    expect((await prefs.getPreferencesMatrix(user.id, 'user')).implemented_combos['trip_invite']).toContain(
+      WEB_PUSH_CHANNEL_ID,
+    );
   });
 
   it('WPDISP-006: the admin matrix has no Push column, since push never carries admin events', async () => {
     const { user: admin } = createAdmin(testDb);
     const matrix = await prefs.getPreferencesMatrix(admin.id, 'admin', 'admin');
     expect(matrix.channels.map((c) => c.id)).toEqual(['inapp', 'email', 'webhook', 'ntfy']);
-    expect(matrix.implemented_combos['version_available']).not.toContain('push');
-    expect(matrix.preferences['version_available']).not.toHaveProperty('push');
+    expect(matrix.implemented_combos['version_available']).not.toContain(WEB_PUSH_CHANNEL_ID);
+    expect(matrix.preferences['version_available']).not.toHaveProperty(WEB_PUSH_CHANNEL_ID);
   });
 });
 
 describe('POST /api/notifications/test/push, through the registry', () => {
   it('WPDISP-007: refuses a user without a device and sends to one with', async () => {
     const { user } = createUser(testDb);
-    await expect(notifications.testChannel(user.id, 'push')).resolves.toEqual({
+    await expect(notifications.testChannel(user.id, WEB_PUSH_CHANNEL_ID)).resolves.toEqual({
       success: false,
       error: 'Channel is not configured for this user',
     });
     const endpoint = await addDevice(user.id);
-    await expect(notifications.testChannel(user.id, 'push')).resolves.toEqual({ success: true });
+    setNotificationChannels(testDb, WEB_PUSH_CHANNEL_ID);
+    await expect(notifications.testChannel(user.id, WEB_PUSH_CHANNEL_ID)).resolves.toEqual({ success: true });
     expect(pushedTo()).toEqual([endpoint]);
   });
 });
@@ -217,7 +230,7 @@ describe('Web Push while the stored key pair cannot be used', () => {
   it('WPDISP-008: a send skips push without an error while in-app and webhook still go out', async () => {
     const { user } = createUser(testDb);
     const { user: actor } = createUser(testDb);
-    const endpoint = await addDevice(user.id);
+    await addDevice(user.id);
     await insertRow(await sharedTestOrm(testDb), Settings, {
       user: user.id,
       key: 'webhook_url',
@@ -232,7 +245,7 @@ describe('Web Push while the stored key pair cannot be used', () => {
     expect(pushedTo()).toEqual(['https://hooks.example.test/trek']);
     expect(await countRows(await sharedTestOrm(testDb), Notifications, { recipient: user.id })).toBe(1);
     // The device is kept for when the key is back, and nothing failed on the way.
-    expect((await subscriptions.listForUser(user.id)).map((r) => r.endpoint)).toEqual([endpoint]);
+    expect(await findRows(await sharedTestOrm(testDb), WebPushSubscriptions, { user: user.id })).toHaveLength(1);
     expect(logError).not.toHaveBeenCalledWith(expect.stringContaining('dispatch failed'));
     expect(logError).not.toHaveBeenCalledWith(expect.stringContaining('Web Push failed'));
   });
@@ -245,7 +258,7 @@ describe('Web Push while the stored key pair cannot be used', () => {
     if (ciphertext === null) throw new Error('the private key should be stored by now');
     await breakStoredPrivateKey();
 
-    expect(await pushColumn(user.id)).toMatchObject({ active: false, configured: true });
+    expect(await pushColumn(user.id)).toMatchObject({ active: false, configured: false });
     // Only push: email keeps its column, SMTP or not, as it always has.
     expect((await prefs.getPreferencesMatrix(user.id, 'user')).channels.find((c) => c.id === 'email')?.active).toBe(
       true,
@@ -267,17 +280,18 @@ describe('Web Push while the stored key pair cannot be used', () => {
     // What deleting both rows to start over leaves under a running server.
     await deleteRows(await sharedTestOrm(testDb), AppSettings, { key: { $like: 'web_push_vapid_%' } });
 
-    expect(await pushColumn(user.id)).toMatchObject({ active: true, configured: true });
+    expect(await pushColumn(user.id)).toMatchObject({ active: true, configured: false });
     expect(await storedKeyRows()).toEqual([]);
   });
 
   it('WPDISP-010: the test send says push is unavailable and sends nothing', async () => {
     const { user } = createUser(testDb);
     await addDevice(user.id);
+    setNotificationChannels(testDb, WEB_PUSH_CHANNEL_ID);
     await breakStoredPrivateKey();
-    await expect(notifications.testChannel(user.id, 'push')).resolves.toEqual({
+    await expect(notifications.testChannel(user.id, WEB_PUSH_CHANNEL_ID)).resolves.toEqual({
       success: false,
-      error: PUSH_UNAVAILABLE_ERROR,
+      error: 'Channel is not configured for this user',
     });
     expect(safeFetchFollow).not.toHaveBeenCalled();
   });
@@ -302,11 +316,9 @@ describe('Web Push while the VAPID_* pair is broken and an older pair is stored'
     await expect(invite(user.id, actor.id)).resolves.toEqual({ attempted: 1, delivered: 1 });
 
     expect(safeFetchFollow).not.toHaveBeenCalled();
-    expect((await subscriptions.listForUser(user.id)).map((r) => [r.endpoint, r.vapid_public_key])).toEqual([
-      [endpoint, pair.publicKey],
-    ]);
+    expect(await findRows(await sharedTestOrm(testDb), WebPushSubscriptions, { user: user.id })).toHaveLength(1);
     expect(await storedKeyRows()).toEqual(stored);
-    expect(await pushColumn(user.id)).toMatchObject({ active: false, configured: true });
+    expect(await pushColumn(user.id)).toMatchObject({ active: false, configured: false });
 
     vi.stubEnv('VAPID_PRIVATE_KEY', pair.privateKey);
     expect(await pushColumn(user.id)).toMatchObject({ active: true, configured: true });

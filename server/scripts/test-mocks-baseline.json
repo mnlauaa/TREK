@@ -206,7 +206,6 @@
     "tests/unit/nest/notification-transports.test.ts": 1,
     "tests/unit/nest/notifications.inapp-prefs.test.ts": 1,
     "tests/unit/nest/notifications.service.test.ts": 1,
-    "tests/unit/nest/notifications/push-subscriptions.service.test.ts": 1,
     "tests/unit/nest/notifications/vapid-keys.service.test.ts": 1,
     "tests/unit/nest/notifications/web-push-dispatch.test.ts": 1,
     "tests/unit/nest/notifications/web-push.service.test.ts": 1,

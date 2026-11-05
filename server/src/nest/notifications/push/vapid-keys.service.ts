@@ -125,7 +125,23 @@ export class VapidKeysService implements OnApplicationBootstrap {
    * request context (the StorageHealthNotifierService shape).
    */
   async onApplicationBootstrap(): Promise<void> {
-    await withRequestContext(this.orm, () => this.succeeds(() => this.getKeys()));
+    await withRequestContext(this.orm, () =>
+      this.succeeds(async () => {
+        const keys = await this.getKeys();
+        if (keys.source !== 'env' || !readEnv().push.usesForkKeys) return;
+        await this.uow.transactional(async () => {
+          const stored = await this.readStored();
+          if (
+            stored.state === 'usable' &&
+            stored.keys.publicKey === keys.publicKey &&
+            stored.keys.privateKey === keys.privateKey
+          )
+            return;
+          await this.writeSetting(VAPID_PUBLIC_KEY_SETTING, keys.publicKey);
+          await this.writeSetting(VAPID_PRIVATE_KEY_SETTING, encrypt_api_key(keys.privateKey));
+        });
+      }),
+    );
   }
 
   /**
@@ -142,6 +158,7 @@ export class VapidKeysService implements OnApplicationBootstrap {
   /**
    * The pair to sign with, creating the stored one first while neither row
    * exists. Throws PushUnavailableError while the pair it would use cannot be.
+   * @txStandalone The instance identity is provisioned once, independently of any device registration.
    */
   async getKeys(): Promise<ResolvedVapidKeys> {
     const fromEnv = this.envKeys();
@@ -151,6 +168,13 @@ export class VapidKeysService implements OnApplicationBootstrap {
 
   async getPublicKey(): Promise<string> {
     return (await this.getKeys()).publicKey;
+  }
+
+  async peekPublicKey(): Promise<string | null> {
+    const fromEnv = this.envKeys();
+    if (fromEnv) return fromEnv.publicKey;
+    const stored = await this.readStored();
+    return stored.state === 'absent' ? null : this.usableStored(stored).publicKey;
   }
 
   /**
@@ -215,7 +239,10 @@ export class VapidKeysService implements OnApplicationBootstrap {
 
   /** What the VAPID_* variables hold. The fingerprint only tells one broken state from the next. */
   private readEnvPair(): EnvPair {
-    const { vapidPublicKey, vapidPrivateKey } = readEnv().push;
+    const { vapidPublicKey, vapidPrivateKey, vapidSubject } = readEnv().push;
+    if (vapidSubject && !isVapidSubject(vapidSubject)) {
+      return { state: 'unusable', fingerprint: 'subject', problem: 'The VAPID subject is invalid' };
+    }
     if (!vapidPublicKey && !vapidPrivateKey) return { state: 'unset' };
     if (!vapidPublicKey || !vapidPrivateKey) {
       return {

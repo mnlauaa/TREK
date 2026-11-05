@@ -424,6 +424,46 @@ describe('migrate-encryption.ts rotates the stores the app writes', () => {
     expect(output).toContain('All secrets successfully re-encrypted.');
   }, 30000);
 
+  it('rotates encrypted Web Push payloads without altering their device identity or status', () => {
+    const seed = new Database(dbPath);
+    seed.exec(BASE_SCHEMA);
+    seed.exec(`CREATE TABLE web_push_subscriptions (
+      id INTEGER PRIMARY KEY, installation_id TEXT, endpoint_hash TEXT, status TEXT, subscription_encrypted TEXT
+    )`);
+    const payload = JSON.stringify({ endpoint: 'https://push.example.test/device', keys: { auth: 'test-auth' } });
+    const prior = encryptWith('old-key', payload);
+    const current = encryptWith('new-key', payload);
+    // test-sql-allow: seed the offline encryption script's standalone database fixture
+    const insert = seed.prepare('INSERT INTO web_push_subscriptions VALUES (?, ?, ?, ?, ?)');
+    insert.run(1, 'device-one', 'first-hash', 'active', prior);
+    insert.run(2, 'device-two', 'second-hash', 'revoked', current);
+    seed.close();
+
+    execFileSync(process.execPath, ['--import', 'tsx', 'scripts/migrate-encryption.ts'], {
+      cwd: SERVER_ROOT,
+      env: { ...process.env, DB_PATH: dbPath },
+      input: ['old-key', 'new-key', 'yes', ''].join(String.fromCharCode(10)),
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+
+    const after = new Database(dbPath, { readonly: true });
+    // test-sql-allow: verify the standalone encryption script's outputs
+    const [rotated, untouched] = after.prepare('SELECT * FROM web_push_subscriptions ORDER BY id').all() as {
+      subscription_encrypted: string;
+    }[];
+    after.close();
+    expect(rotated).toMatchObject({ installation_id: 'device-one', endpoint_hash: 'first-hash', status: 'active' });
+    expect(decryptWith('new-key', rotated.subscription_encrypted)).toBe(payload);
+    expect(decryptWith('old-key', rotated.subscription_encrypted)).toBeNull();
+    expect(untouched).toMatchObject({
+      installation_id: 'device-two',
+      endpoint_hash: 'second-hash',
+      status: 'revoked',
+      subscription_encrypted: current,
+    });
+  }, 30000);
+
   it('ROTPAR-013: re-encrypts the AI Parsing addon key and moves the key file to the new key', () => {
     const seed = new Database(dbPath);
     seed.exec(BASE_SCHEMA);
