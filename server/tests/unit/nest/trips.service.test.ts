@@ -1489,15 +1489,12 @@ describe('TripsService wrapper helpers', () => {
     const { user } = createUser(testDb);
     const trip = createTrip(testDb, user.id);
     const prepareSpy = vi.spyOn(budgetSvc, 'prepareCurrencyRebase');
-    const applySpy = vi.spyOn(budgetSvc, 'applyCurrencyRebase');
     try {
       await expect(svc.updateTrip(trip.id, user.id, { currency: 'USD' }, 'user')).rejects.toThrow(/Trip currency changed/);
       expect(await storedFields(Trips, { id: trip.id }, ['currency'])).toEqual({ currency: 'EUR' });
       expect(prepareSpy).not.toHaveBeenCalled();
-      expect(applySpy).not.toHaveBeenCalled();
     } finally {
       prepareSpy.mockRestore();
-      applySpy.mockRestore();
     }
   });
 

@@ -1060,11 +1060,8 @@ export class BudgetService {
     // Every figure goes out in whole steps of that currency: whole won or yen (#2604).
     const displayUnit = 10 ** Math.max(0, 2 - currencyDecimals(currency));
     const toDisplay = (cents: number[], total?: number) => allocateDisplayCents(cents, displayFactor, total, displayUnit);
-    // A recorded settle-up amount is entered in whatever display currency the payer
-    // was viewing. New rows capture that currency and the rate frozen at settle time
-    // (#1445), so a settled position stays balanced when live rates drift. Legacy rows
-    // (currency = NULL) have no frozen rate, so fall back to the old behaviour: assume
-    // they were entered in the current display base and convert with live rates.
+    // Currencyless legacy transfers are interpreted in the current display base.
+    // New transfers record their currency and frozen rate when entered.
     const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string) =>
       sCurrency
         ? tripConverter(sCurrency, sRate, tripCurrency, source)
