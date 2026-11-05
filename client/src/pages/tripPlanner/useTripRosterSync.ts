@@ -6,7 +6,7 @@ import { useTripStore, type TripGone } from '../../store/tripStore';
 import { useServerPing } from '../../sync/useServerPing';
 
 /** The events after which the planner reads the trip's roster again. */
-const MEMBER_EVENTS = ['member:added', 'member:removed', 'member:updated'] as const;
+const MEMBER_EVENTS = ['member:added', 'guest:identity-transferred', 'member:removed', 'member:updated'] as const;
 
 /**
  * Keeps the planner's roster current and leaves a trip that went away.

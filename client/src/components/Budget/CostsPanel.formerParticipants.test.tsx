@@ -9,7 +9,6 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTripStore } from '../../store/tripStore';
 import CostsPanel from './CostsPanel';
-import { resetFreezeAttempts } from './useFreezeMissingRates';
 
 const tripMembers = [
   { id: 1, username: 'alice', avatar_url: null },
@@ -24,7 +23,6 @@ function seedAudTrip() {
   seedStore(useSettingsStore, { settings: { ...useSettingsStore.getState().settings, default_currency: 'AUD' } });
   seedStore(useTripStore, { trip: buildTrip({ id: 1, currency: 'AUD' }) });
   clearExchangeRateCache();
-  resetFreezeAttempts();
   localStorage.setItem('trek_fx_AUD', JSON.stringify({ rates: { AUD: 1, VND: 18241.3, EUR: 0.61 }, ts: Date.now() }));
 }
 

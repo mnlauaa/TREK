@@ -1,5 +1,5 @@
-import type { BudgetParticipantFinal, BudgetUnconverted, CostCategory } from '@trek/shared';
-import { convertBooked, convertedLine, tripAmountOf } from '../../hooks/useExchangeRates';
+import type { BudgetParticipantFinal, BudgetSettlement, BudgetUnconverted, CostCategory } from '@trek/shared';
+import { bookedInTrip, convertBooked, convertedLine, tripAmountOf } from '../../hooks/useExchangeRates';
 import type { BudgetItem } from '../../types';
 import { currencyDecimals } from '../../utils/formatters';
 import { currenciesWith, SYMBOLS } from './BudgetPanel.constants';
@@ -31,8 +31,13 @@ export function currencyOf(e: BudgetItem, ctx: CostsCtx): string {
 }
 
 /** An amount of this expense in the display currency, at the rate the expense was booked at. */
+export function awaitingConversion(row: Pick<BudgetItem, 'currency' | 'exchange_rate' | 'exchange_rate_source'>, tripCurrency: string): boolean {
+  return !!row.currency && row.currency.toUpperCase() !== tripCurrency.toUpperCase() &&
+    bookedInTrip(1, row.currency, row.exchange_rate, tripCurrency, row.exchange_rate_source) === null;
+}
+
 export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
-  return convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert);
+  return awaitingConversion(e, ctx.tripCurrency) ? 0 : convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert, e.exchange_rate_source);
 }
 
 /**
@@ -41,7 +46,8 @@ export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
  * value printed beside it.
  */
 export function lineOf(amount: number, e: BudgetItem, ctx: CostsCtx, shown: number) {
-  return convertedLine(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.displayCurrency, shown);
+  if (awaitingConversion(e, ctx.tripCurrency)) return null;
+  return convertedLine(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.displayCurrency, shown, e.exchange_rate_source);
 }
 
 /** Expense total converted to the display/base currency, at its booked rate. */
@@ -107,23 +113,7 @@ export interface CostsBalance {
 }
 
 /** A recorded settle-up transfer ("Ajouter un paiement") — history, not a suggestion like {@link CostsSettlementFlow}. */
-export interface CostsSettlement {
-  id: number;
-  from_user_id: number;
-  to_user_id: number;
-  amount: number;
-  // Legacy rows predate this column (null) and are read as the display currency.
-  currency?: string | null;
-  // The rate frozen when the transfer was settled, units of `currency` per 1 trip
-  // currency (#1445). Absent, or exactly 1, on rows written before the freeze existed.
-  exchange_rate?: number;
-  created_at?: string;
-  // The day the transfer actually happened; editable, unlike created_at (when it
-  // was recorded). Null/absent on rows predating this field.
-  settled_at?: string | null;
-  /** A free-text note on the payment (#2340). */
-  note?: string | null;
-}
+export type CostsSettlement = Omit<BudgetSettlement, 'trip_id'> & Partial<Pick<BudgetSettlement, 'trip_id'>>;
 
 /** The currency a recorded payment was entered in: legacy rows without one were in the display currency. */
 function paymentCurrency(s: CostsSettlement, ctx: CostsCtx): string {
@@ -132,18 +122,20 @@ function paymentCurrency(s: CostsSettlement, ctx: CostsCtx): string {
 
 /** A recorded payment in the display currency, at the rate frozen when it was settled (#1445). */
 export function paymentAmount(s: CostsSettlement, ctx: CostsCtx): number {
-  return convertBooked(s.amount, paymentCurrency(s, ctx), s.exchange_rate, ctx.tripCurrency, ctx.convert);
+  return !s.currency ? s.amount : awaitingConversion(s, ctx.tripCurrency) ? 0 : convertBooked(s.amount, s.currency, s.exchange_rate, ctx.tripCurrency, ctx.convert, s.exchange_rate_source);
 }
 
 /** The line under a payment shown converted, explained the way an expense's is (#2525). */
 export function paymentLineOf(s: CostsSettlement, ctx: CostsCtx, shown: number) {
+  if (!s.currency || awaitingConversion(s, ctx.tripCurrency)) return null;
   return convertedLine(
     s.amount,
     paymentCurrency(s, ctx),
     s.exchange_rate,
     ctx.tripCurrency,
     ctx.displayCurrency,
-    shown
+    shown,
+    s.exchange_rate_source
   );
 }
 
@@ -399,7 +391,7 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
   for (const e of sorted) {
     const cur = opts.currencyOf ? opts.currencyOf(e) : currencyOf(e, opts.ctx);
     const note = readUserNote(e);
-    const inTrip = tripAmountOf(e.total_price || 0, e.currency, e.exchange_rate, trip, opts.ctx.convert);
+    const inTrip = tripAmountOf(e.total_price || 0, e.currency, e.exchange_rate, trip, opts.ctx.convert, e.exchange_rate_source);
     rows.push(
       [
         esc(fmtDate(e.expense_date || '')),

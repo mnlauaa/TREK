@@ -1,3 +1,4 @@
+import MExchangeRateSheet from './MExchangeRateSheet'
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import TransitJourneyModal from '../../../../components/Planner/TransitJourneyModal'
@@ -124,6 +125,7 @@ export default function MTripSheets({ planner, shell }: MTripSheetsProps) {
       <MTransportSheet planner={planner} shell={shell} />
       <MBrowseActionsSheet planner={planner} shell={shell} />
       <MMehrSheet planner={planner} shell={shell} />
+      {shell.sheet?.id === 'rates' && <MExchangeRateSheet planner={planner} shell={shell} />}
       {/* The assistant's full-screen chat, mounted with the trip so it keeps going while the map is up. */}
       <MAssistantScreen planner={planner} shell={shell} />
       {/* The stage's own sheets. Each one checks shell.sheet?.id itself, the draft

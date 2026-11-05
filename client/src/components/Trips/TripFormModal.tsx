@@ -1,3 +1,4 @@
+import CurrencySelect from '../shared/CurrencySelect'
 import { useState, useEffect, useRef } from 'react'
 import Modal from '../shared/Modal'
 import { Calendar, Camera, Search, X, UserPlus, Bell } from 'lucide-react'
@@ -462,11 +463,10 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
 
         <div>
           <label className={labelCls}>{t('dashboard.currency')}</label>
-          <CustomSelect
+          <CurrencySelect
             value={formData.currency}
             onChange={v => canEditTrip && update('currency', v)}
             disabled={!canEditTrip}
-            options={currenciesWith(formData.currency).map(c => ({ value: c, label: `${c} (${SYMBOLS[c] || c})` }))}
             searchable
           />
         </div>

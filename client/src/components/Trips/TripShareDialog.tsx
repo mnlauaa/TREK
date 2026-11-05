@@ -1,3 +1,4 @@
+import GuestIdentityTransferModal from './GuestIdentityTransferModal'
 import { useId, useState, type ReactNode } from 'react'
 import { Check, Copy, Crown, Link2, LogOut, Pencil, Plus, Settings, Trash2, UserMinus, UserPlus, UserRound, Users } from 'lucide-react'
 import { useTranslation } from '../../i18n'
@@ -58,6 +59,7 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
   const { t } = useTranslation()
   const labelId = useId()
   const m = useTripMembers({ isOpen: true, tripId, onClose, onMembersChanged })
+  const [identityOpen, setIdentityOpen] = useState(false)
   const [ask, setAsk] = useState<Ask | null>(null)
   const [area, setArea] = useState<Area>('people')
   const journalSection = useTripJournalSectionVisible(tripId)
@@ -98,6 +100,12 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
             {m.canManageMembers && <InviteUser m={m} />}
             <MembersList m={m} onAsk={setAsk} />
             {(m.isCurrentOwner || m.guests.length > 0) && <GuestsList m={m} onAsk={setAsk} />}
+            {m.guests.length > 0 && (
+              <DialogButton onClick={() => setIdentityOpen(true)}>{t('members.identityTransfer.thisIsMe')}</DialogButton>
+            )}
+            <GuestIdentityTransferModal tripId={tripId} open={identityOpen}
+              onClose={() => setIdentityOpen(false)}
+              onTransferred={() => { onMembersChanged?.(); onClose() }} />
           </AreaPanel>
           {m.canManageShare && (
             <AreaPanel area={panelOf('sharing')} shown={current.id === 'sharing'} titled>

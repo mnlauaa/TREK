@@ -1280,6 +1280,7 @@ export default function LoginPage(): React.ReactElement {
         </div>
       </div>
 
+      <a href="/legal" className="absolute bottom-4 text-sm text-content-muted underline">{t('legal.title')}</a>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
 

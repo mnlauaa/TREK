@@ -22,6 +22,7 @@ export type Defaults = RoutingDefaults & {
   time_format?: string;
   week_start?: WeekStart;
   default_currency?: string;
+  common_currencies?: string[];
   blur_booking_codes?: boolean;
   map_tile_url?: string;
   carto_api_key?: string;

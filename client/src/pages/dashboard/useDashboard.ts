@@ -1,3 +1,4 @@
+import { getDepartureTransport } from './dashboardModel'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { tripsApi, authApi, reservationsApi } from '../../api/client'
@@ -134,7 +135,7 @@ export function useDashboard() {
     if (!spotlight) { setHeroBundle(null); return }
     let cancelled = false
     tripsApi.bundle(spotlight.id)
-      .then((b: HeroBundle) => { if (!cancelled) setHeroBundle({ members: b.members || [], places: b.places || [] }) })
+      .then((b: HeroBundle) => { if (!cancelled) setHeroBundle({ members: b.members || [], places: b.places || [], days: b.days || [], reservations: b.reservations || [] }) })
       .catch(() => { if (!cancelled) setHeroBundle(null) })
     return () => { cancelled = true }
   }, [spotlight?.id])
@@ -238,7 +239,7 @@ export function useDashboard() {
     // cross-cutting
     demoMode, locale, t, navigate,
     // data + derived
-    spotlight, heroBundle, stats, upcoming, gridTrips, isLoading,
+    spotlight, heroBundle, departure: heroBundle ? getDepartureTransport(heroBundle.reservations ?? [], heroBundle.days ?? []) : null, stats, upcoming, gridTrips, isLoading,
     loadError: loadError || authCheckFailed, retryLoad,
     // ui state
     tripFilter, setTripFilter, viewMode, toggleViewMode,

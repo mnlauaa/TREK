@@ -135,6 +135,7 @@ export interface Settings {
   dark_mode: boolean | string
   /** Display currency for Costs. Empty/null = follow each trip's own currency. */
   default_currency: string | null
+  common_currencies: string[]
   language: string
   /** Language for place names and addresses in search (#1799); empty follows `language`. */
   place_language?: string

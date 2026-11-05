@@ -14,7 +14,6 @@ import { downloadBlob } from '../../utils/fileDownload';
 import { localToday } from '../Planner/today';
 import type { CostsSettlementResponse } from './costsModel';
 import { useCostsLedger } from './useCostsLedger';
-import { useFreezeMissingRates } from './useFreezeMissingRates';
 
 // FE-BUDGET-LEDGER-001 to FE-BUDGET-LEDGER-013
 
@@ -39,7 +38,6 @@ vi.mock('../../api/client', async (importOriginal) => ({
     deleteSettlement: vi.fn(),
   },
 }));
-vi.mock('./useFreezeMissingRates', () => ({ useFreezeMissingRates: vi.fn() }));
 vi.mock('../../utils/fileDownload', () => ({ downloadBlob: vi.fn() }));
 
 type Member = NonNullable<BudgetItem['members']>[number];
@@ -181,14 +179,6 @@ describe('useCostsLedger: loading', () => {
     expect(result.current.settlement).toEqual(SETTLEMENT);
   });
 
-  it('FE-BUDGET-LEDGER-006: hands the unconverted rows to the rate freeze, which reads the settlement again once healed', async () => {
-    const { result } = setup();
-    await waitFor(() => expect(result.current.settlement).not.toBeNull());
-    const last = vi.mocked(useFreezeMissingRates).mock.lastCall?.[0];
-    expect(last).toMatchObject({ tripId: 7, tripCurrency: 'EUR', canEdit: true, unconverted: undefined });
-    act(() => last?.onHealed());
-    await waitFor(() => expect(settlementMock()).toHaveBeenCalledTimes(2));
-  });
 });
 
 describe('useCostsLedger: totals and filters', () => {

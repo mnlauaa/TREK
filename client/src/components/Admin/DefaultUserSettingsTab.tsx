@@ -1,3 +1,4 @@
+import CommonCurrenciesEditor from '../Settings/CommonCurrenciesEditor'
 import React from 'react'
 import { Loader2, Map as MapIcon, Settings2 } from 'lucide-react'
 import { useTranslation } from '../../i18n'
@@ -65,6 +66,8 @@ function colorModeValue(value: string | boolean | undefined): string {
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
 }
+
+const EMPTY_CURRENCIES: readonly string[] = []
 
 export default function DefaultUserSettingsTab(): React.ReactElement {
   const { t, locale } = useTranslation()
@@ -191,6 +194,12 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
             options={currenciesWith(defaults.default_currency).map(c => ({ value: c, label: SYMBOLS[c] ? `${c}  ${SYMBOLS[c]}` : c }))}
           />
         </div>
+      </ChoiceRow>
+
+      <ChoiceRow label={<>{t('settings.commonCurrencies.title')} <ResetButton field="common_currencies" /></>}
+        hint={t('settings.commonCurrencies.adminHint')} stacked>
+        <CommonCurrenciesEditor value={defaults.common_currencies ?? EMPTY_CURRENCIES}
+          onSave={(value) => save({ common_currencies: value })} />
       </ChoiceRow>
 
       {/* Blur Booking Codes */}

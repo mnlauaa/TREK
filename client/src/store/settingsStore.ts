@@ -1,3 +1,4 @@
+import { commonCurrencyListSchema } from '@trek/shared'
 import { create } from 'zustand'
 import { settingsApi } from '../api/client'
 import type { Settings } from '../types'
@@ -15,6 +16,7 @@ interface SettingsState {
 
   loadSettings: () => Promise<void>
   updateSetting: (key: keyof Settings, value: Settings[keyof Settings]) => Promise<void>
+  resetSetting: (key: "common_currencies") => Promise<string[]>
   setLanguageLocal: (lang: string) => void
   setLanguageTransient: (lang: string) => void
   updateSettings: (settingsObj: Partial<Settings>) => Promise<void>
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dark_mode: false,
   // Empty = no personal display currency, so Costs falls back to the trip's own.
   default_currency: '',
+  common_currencies: [],
   // Explicit in-app choice first, then the mirror of the account's server-side
   // language (written by loadSettings below), then the browser's, then English.
   // Without the mirror an offline cold start would boot in English: the account's
@@ -178,6 +181,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateSetting: async (key: keyof Settings, value: Settings[keyof Settings]) => {
+    if (key === 'common_currencies') {
+      const currencies = commonCurrencyListSchema.parse(value)
+      await settingsApi.set(key, currencies)
+      set((state) => ({ settings: { ...state.settings, common_currencies: currencies } }))
+      return
+    }
     const next =
       key === 'map_tile_url' && typeof value === 'string' ? cleanTileTemplate(value) : value
     if (key === 'carto_api_key' && next !== get().settings.carto_api_key) void clearTileCache()
@@ -192,6 +201,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       console.error('Failed to save setting:', err)
       throw new Error(getApiErrorMessage(err, 'Error saving setting'))
     }
+  },
+
+  resetSetting: async (key) => {
+    const { value } = await settingsApi.reset(key)
+    set((state) => ({ settings: { ...state.settings, [key]: value } }))
+    return value
   },
 
   setLanguageLocal: (lang: string) => {

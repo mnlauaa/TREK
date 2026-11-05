@@ -25,7 +25,6 @@ import MSettingsMap from './MSettingsMap'
 import MSettingsNotifications from './MSettingsNotifications'
 import MSettingsIntegrations from './MSettingsIntegrations'
 import MSettingsAccount from './MSettingsAccount'
-import MSettingsAbout from './MSettingsAbout'
 
 interface SectionTab {
   id: string
@@ -42,7 +41,7 @@ interface SectionTab {
 export default function MSettings() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { hasIntegrations, hasPlugins, appVersion, activeTab, setActiveTab, managed } = useSettings()
+  const { hasIntegrations, hasPlugins, appVersion, activeTab, setActiveTab } = useSettings()
   const [dropOpen, setDropOpen] = useState(false)
 
   const tabs: SectionTab[] = [
@@ -54,12 +53,7 @@ export default function MSettings() {
     ...(hasPlugins ? [{ id: 'plugins', label: t('settings.tabs.plugins'), icon: Puzzle }] : []),
     { id: 'offline', label: t('settings.tabs.offline'), icon: CloudOff },
     { id: 'account', label: t('settings.tabs.account'), icon: User },
-    // Same call as the desktop page: About is about the project — what TREK is,
-    // where to file a bug, where to support it — and a customer of a hosted
-    // instance is the audience for none of it. The version and the source link
-    // move to the footer below, because AGPL §13 wants those offered wherever
-    // people reach the software over a network.
-    ...(appVersion && !managed ? [{ id: 'about', label: t('settings.tabs.about'), icon: Info }] : []),
+
   ]
 
   const active = tabs.find((tab) => tab.id === activeTab) || tabs[0]
@@ -119,20 +113,11 @@ export default function MSettings() {
       {active.id === 'plugins' && hasPlugins && <MSettingsPlugins />}
       {active.id === 'offline' && <MSettingsOffline />}
       {active.id === 'account' && <MSettingsAccount />}
-      {active.id === 'about' && appVersion && <MSettingsAbout appVersion={appVersion} />}
-
-      {managed && appVersion && (
-        <p className="mt-8 text-center text-caption text-m-muted">
-          <a
-            href="https://github.com/liketrek/TREK"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="no-underline"
-          >
-            v{appVersion}
-          </a>
-        </p>
-      )}
+      <p className="mt-8 text-center text-caption text-m-muted">
+        <button type="button" onClick={() => navigate('/legal')} className="underline">
+          {t('legal.title')}{appVersion && ` · v${appVersion}`}
+        </button>
+      </p>
     </div>
   )
 }

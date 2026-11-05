@@ -1,3 +1,8 @@
+import { reconcileWebPush, updateAppBadge } from './services/webPush'
+import { useInAppNotificationStore } from './store/inAppNotificationStore'
+import { useParams } from 'react-router'
+import WebPushInvitation from './components/Notifications/WebPushInvitation'
+import { NewMemberIdentityCheck } from './components/Trips/GuestIdentityTransferModal'
 import React, { useEffect, useState, useRef, ReactNode, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router'
 import { useAuthStore } from './store/authStore'
@@ -31,7 +36,6 @@ import { useInAppNotificationListener } from './hooks/useInAppNotificationListen
 import { useRoadtripPreferencesSync } from './hooks/useRoadtripPreferencesSync'
 import { registerSyncTriggers, unregisterSyncTriggers } from './sync/syncTriggers'
 import OfflineBanner from './components/Layout/OfflineBanner'
-import NewVersionNotice from './components/Layout/NewVersionNotice'
 import { SystemNoticeHost } from './components/SystemNotices/SystemNoticeHost.js'
 import HelpPanel from './components/Help/HelpPanel'
 // Notice action registrations (side-effect imports):
@@ -52,6 +56,7 @@ const FilesPage = lazyWithRetry(() => import('./pages/FilesPage'))
 const AdminPage = lazyWithRetry(() => import('./pages/AdminPage'))
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'))
 const VacayPage = lazyWithRetry(() => import('./pages/VacayPage'))
+const LegalPage = lazyWithRetry(() => import('./pages/LegalPage'))
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'))
 const AtlasPage = lazyWithRetry(() => import('./pages/AtlasPage'))
 const JourneyPage = lazyWithRetry(() => import('./pages/JourneyPage'))
@@ -305,6 +310,16 @@ function RouteFallback() {
   )
 }
 
+function TripPlannerRoute() {
+  const { id } = useParams<{ id: string }>()
+  return (
+    <>
+      <ViewportRoute phone={MTripScreen} desktop={TripPlannerPage} />
+      {id && <NewMemberIdentityCheck tripId={id} />}
+    </>
+  )
+}
+
 export default function App() {
   const { loadUser, isAuthenticated, demoMode, setManaged, setDemoMode, setDevMode, setIsPrerelease, setAppVersion, setHasMapsKey, setHasAmapKey, setPlacesProvider, setServerTimezone, setAppRequireMfa, setTripRemindersEnabled, setPlacesPhotosEnabled, setPlacesAutocompleteEnabled, setPlacesDetailsEnabled, setPlacesEnrichEnabled, setPlaceShadowEnabled } = useAuthStore()
   const { loadSettings } = useSettingsStore()
@@ -402,6 +417,21 @@ export default function App() {
   // interceptor's covers all of /public/. A route that is public to one and not
   // to the other is exactly the seam that puts a 401 back.
   const hideAuthedWidgets = isAuthPage || isAuthPublicPath(location.pathname)
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const worker = navigator.serviceWorker
+    const refresh = (event: MessageEvent) => {
+      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileWebPush().catch(() => {})
+    }
+    worker?.addEventListener('message', refresh)
+    const unsubscribe = useInAppNotificationStore.subscribe((state, previous) => {
+      if (state.unreadCount !== previous.unreadCount) void updateAppBadge(state.unreadCount)
+    })
+    return () => {
+      worker?.removeEventListener('message', refresh)
+      unsubscribe()
+    }
+  }, [isAuthenticated])
 
   return (
     <TranslationProvider>
@@ -418,7 +448,9 @@ export default function App() {
         </ErrorBoundary>
       )}
       <ErrorBoundary boundaryId="widget:offline-banner" fallback={null}><OfflineBanner /></ErrorBoundary>
-      <ErrorBoundary boundaryId="widget:new-version" fallback={null}><NewVersionNotice /></ErrorBoundary>
+      {!hideAuthedWidgets && isAuthenticated && (
+        <ErrorBoundary boundaryId="widget:web-push-invitation" fallback={null}><WebPushInvitation /></ErrorBoundary>
+      )}
       {/* One boundary for all route chunks, above <Routes> so it stays mounted
           across navigations. react-router runs location updates inside a transition,
           so a mounted boundary keeps the current page on screen instead of flashing
@@ -426,6 +458,7 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
+          <Route path="/legal" element={<PublicRoute><LegalPage /></PublicRoute>} />
           <Route path="/login" element={<PublicRoute redirectAuthed><LoginPage /></PublicRoute>} />
           <Route path="/shared/:token" element={<PublicRoute><SharedTripPage /></PublicRoute>} />
           <Route path="/public/journey/:token" element={<PublicRoute><JourneyPublicPage /></PublicRoute>} />
@@ -472,7 +505,7 @@ export default function App() {
             path="/trips/:id"
             element={
               <ProtectedRoute>
-                <ViewportRoute phone={MTripScreen} desktop={TripPlannerPage} />
+                <TripPlannerRoute />
               </ProtectedRoute>
             }
           />

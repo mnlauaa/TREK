@@ -159,14 +159,14 @@ describe('convertBooked', () => {
     expect(convertBooked(120, 'USD', 1.2, 'EUR', live)).toBe(100)
   })
 
-  it('falls back to live rates for a row that never froze one', () => {
-    // Rate 1 is the column default, not a booked rate: rows predating the freeze carry it.
-    expect(convertBooked(120, 'USD', 1, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', undefined, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', null, 'EUR', live)).toBe(60)
+  it('excludes legacy foreign rows without a rate, but accepts frozen parity with provenance', () => {
+    expect(convertBooked(120, 'USD', 1, 'EUR', live, 'explicit')).toBe(120)
+    expect(convertBooked(120, 'USD', 1, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, 'USD', undefined, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, 'USD', null, 'EUR', live)).toBeNaN()
     // A rate that cannot divide is no rate at all.
-    expect(convertBooked(120, 'USD', 0, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', -2, 'EUR', live)).toBe(60)
+    expect(convertBooked(120, 'USD', 0, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, 'USD', -2, 'EUR', live)).toBeNaN()
   })
 
   it('goes through the trip currency when the reader displays a third one', () => {
@@ -195,7 +195,7 @@ describe('convertBooked', () => {
     expect(convertBooked(801.76, 'USD', 1.17, 'EUR', liveUsd)).toBeCloseTo((801.76 / 1.17) * 1.1398, 6)
     expect(convertBooked(801.76, 'USD', 1.17, 'EUR', liveUsd)).not.toBeCloseTo(801.76, 1)
     // Without a booked rate there is nothing to go through, and dollars stay dollars.
-    expect(convertBooked(801.76, 'USD', 1, 'EUR', liveUsd)).toBe(801.76)
+    expect(convertBooked(801.76, 'USD', 1, 'EUR', liveUsd)).toBeNaN()
   })
 })
 
@@ -328,10 +328,9 @@ describe('tripAmountOf', () => {
     expect(tripAmountOf(100, 'EUR', 1, 'EUR', live)).toBe(100)
   })
 
-  it('counts a row that never froze a rate at today\'s', () => {
-    expect(tripAmountOf(1000, 'JPY', 1, 'EUR', live)).toBeCloseTo(10, 10)
-    // Without rates the conversion is the identity, as it is on the server.
-    expect(tripAmountOf(1000, 'JPY', null, 'EUR', (a: number) => a)).toBe(1000)
+  it('excludes a foreign row that never froze a rate', () => {
+    expect(tripAmountOf(1000, 'JPY', 1, 'EUR', live)).toBeNaN()
+    expect(tripAmountOf(1000, 'JPY', null, 'EUR', (a: number) => a)).toBeNaN()
   })
 })
 

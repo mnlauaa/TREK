@@ -1,3 +1,4 @@
+import { useItemExchangeRate } from './useItemExchangeRate';
 import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 
 import { useTranslation } from '../../i18n';
@@ -175,7 +176,8 @@ export function useExpenseForm({
   const ticketInfo = useMemo(() => calculateTicketShares(ticketItems), [ticketItems]);
 
   const totalNum = isTicketMode ? ticketInfo.total : Number.parseFloat(total) || 0;
-  const fx = preview(totalNum, currency);
+  const rate = useItemExchangeRate(tripId, currency, tripCur, editing);
+  const fx = rate.valid && !rate.unavailable ? preview(totalNum, currency, rate.storedRate) : null;
   const splitSum = [...participants].reduce((sum, id) => sum + (Number.parseFloat(customAmounts[id]) || 0), 0);
   const customBalanced = Math.round(splitSum * 100) === Math.round(totalNum * 100);
   // How much is still to be handed out, read on the total's own side: on a refund
@@ -219,7 +221,7 @@ export function useExpenseForm({
   const payersOk = !multiPayer || (payerIds.size > 0 && payersBalanced(payerAmounts, payerIds, totalNum));
   // A negative total is a valid entry (a refund, #2176); only zero has nothing to say.
   const valid =
-    name.trim().length > 0 &&
+    rate.valid && name.trim().length > 0 &&
     payersOk &&
     (isTicketMode
       ? ticketValid
@@ -387,6 +389,7 @@ export function useExpenseForm({
       name: name.trim(),
       category: cat,
       currency,
+      ...rate.write,
       payers: payerList,
       members: memberList,
       member_ids: memberIds,
@@ -437,6 +440,7 @@ export function useExpenseForm({
     total,
     onTotalChange,
     totalNum,
+    rate,
     fx,
     participants,
     toggleParticipant,

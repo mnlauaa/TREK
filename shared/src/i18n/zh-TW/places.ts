@@ -27,7 +27,7 @@ const places: TranslationStrings = {
   'places.kmlImportNoneSelected': '請至少選擇一種類型。',
   'places.selectionCount': '已選 {count} 項',
   'places.deleteSelected': '刪除所選',
-  'places.changeCategory': '變更類別',
+  'places.changeCategory': '變更分類',
   'places.categoryChanged': '已更新 {count} 個地點',
   'places.kmlKmzImported': '已從 KMZ/KML 匯入 {count} 個地點',
   'places.urlResolved': '已從 URL 匯入地點',

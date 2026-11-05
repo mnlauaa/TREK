@@ -21,6 +21,7 @@ export function detectBrowserLanguage(): string | null {
     // pt-BR has no exact match (our code is 'br'), so map it explicitly.
     // pt-PT and bare 'pt' are NOT mapped — they fall through to null.
     if (lang.toLowerCase() === 'pt-br') return 'br';
+    if (lang.toLowerCase() === 'zh-hk') return 'zh-TW';
 
     const prefix = lang.split('-')[0]?.toLowerCase();
     const prefixMatch = supported.find((s) => s.toLowerCase() === prefix);

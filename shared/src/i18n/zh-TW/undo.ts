@@ -10,7 +10,7 @@ const undo: TranslationStrings = {
   'undo.optimize': '路線已最佳化',
   'undo.deletePlace': '地點已刪除',
   'undo.deletePlaces': '地點已刪除',
-  'undo.changeCategory': '已變更類別',
+  'undo.changeCategory': '分類已變更',
   'undo.moveDay': '地點已移至另一天',
   'undo.lock': '地點鎖定已切換',
   'undo.importGpx': 'GPX 匯入',

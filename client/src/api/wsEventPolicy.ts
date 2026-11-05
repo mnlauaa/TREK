@@ -67,6 +67,9 @@ export const HANDLED_OUTSIDE_TRIP_STORE = [
   'budget:settlement-created',
   'budget:settlement-updated',
   'budget:settlement-deleted',
+  'budget:exchange-rates-updated',
+  'budget:exchange-rates-applied',
+  'guest:identity-transferred',
   // Bags and who looks after a category: components/Packing/useBagTotalsPing and
   // usePackingCategoryAssignees read them again, for both packing lists.
   'packing:bag-created',

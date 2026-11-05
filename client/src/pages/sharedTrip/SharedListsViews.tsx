@@ -71,7 +71,7 @@ export function SharedPackingView({ items }: { items: PackingItem[] }) {
 
 // ── Costs ──────────────────────────────────────────────────────────────────
 
-interface Expense { id: number; name: string; category?: string | null; total_price?: number | string | null; currency?: string | null; exchange_rate?: number | null }
+interface Expense { id: number; name: string; category?: string | null; total_price?: number | string | null; currency?: string | null; exchange_rate?: number | null; exchange_rate_source?: string | null }
 
 interface CostsProps {
   items: Expense[]
@@ -92,19 +92,19 @@ export function SharedCostsView({ items, base, tripCurrency, convert }: CostsPro
   const { t, locale } = useTranslation()
   if (items.length === 0) return <EmptySection icon={<Wallet size={22} />} text={t('shared.emptyCosts')} />
   const amountOf = (i: Expense) => Number.parseFloat(String(i.total_price ?? '')) || 0
-  const valueOf = (i: Expense) => convertBooked(amountOf(i), i.currency, i.exchange_rate, tripCurrency, convert)
+  const valueOf = (i: Expense) => convertBooked(amountOf(i), i.currency, i.exchange_rate, tripCurrency, convert, i.exchange_rate_source)
   // In the reader's own number format with the currency's code: a public page has
   // no idea where its reader is, and "$" alone does not say which dollar.
   // Whole cents: a converted amount otherwise printed a third decimal.
-  const money = (v: number) => `${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${base}`
+  const money = (v: number) => Number.isFinite(v) ? `${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${base}` : t('costs.exchangeRates.awaitingConversion')
   // What was entered, beside a row shown converted, as the Costs list prints it.
   const enteredOf = (i: Expense): string | null => {
-    const entered = convertedLine(amountOf(i), i.currency, i.exchange_rate, tripCurrency, base, valueOf(i))?.entered
+    const entered = convertedLine(amountOf(i), i.currency, i.exchange_rate, tripCurrency, base, valueOf(i), i.exchange_rate_source)?.entered
     if (!entered) return null
     const d = currencyDecimals(entered.currency)
     return `${entered.amount.toLocaleString(locale, { minimumFractionDigits: d, maximumFractionDigits: d })} ${entered.currency}`
   }
-  const sumOf = (list: Expense[]) => list.reduce((s, i) => s + valueOf(i), 0)
+  const sumOf = (list: Expense[]) => list.reduce((s, i) => s + (valueOf(i) || 0), 0)
   const total = sumOf(items)
   // Grouped by the fixed key and labelled in the reader's language, as the Costs
   // tab does: the stored value is a key ("flights") or an old free-text label.

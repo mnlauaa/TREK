@@ -1,5 +1,5 @@
 import { PLUGIN_SESSION_MAX_KEYS, PLUGIN_SESSION_MAX_KEY_LENGTH, PLUGIN_SESSION_MAX_VALUE_BYTES } from './index.js';
-import type { PluginContext, PluginDefinition, PluginRequest, PluginResponse, Trip, Place, Day, Reservation, PackingItem, TripFile, BudgetItem, User, NotificationMessage, PluginActionResult, PluginSessionStorage } from './index.js';
+import type { PluginContext, PluginDefinition, PluginRequest, PluginResponse, Trip, Place, Day, Reservation, PackingItem, TripFile, BudgetItem, BudgetSettlement, TripExchangeRate, ExchangeRateResolution, ExchangeRateSource, User, NotificationMessage, PluginActionResult, PluginSessionStorage } from './index.js';
 import { CHANNEL_EVENTS } from './manifest.js';
 import { PermissionDenied, HOOK_PERMISSION, USER_DATA_PERMISSION, EVENTS_PERMISSION, JOBS_PERMISSION } from './permissions.js';
 
@@ -29,7 +29,7 @@ export interface MockHostOptions {
   trips?: Record<
     number,
     {
-      members: number[]; data?: unknown; places?: unknown[]; reservations?: unknown[]; costs?: unknown[];
+      members: number[]; data?: unknown; places?: unknown[]; reservations?: unknown[]; costs?: unknown[]; rates?: TripExchangeRate[]; settlements?: BudgetSettlement[];
       days?: unknown[]; assignments?: unknown[]; packing?: unknown[]; files?: unknown[];
       accommodations?: unknown[]; bags?: unknown[]; todos?: unknown[]; daynotes?: unknown[];
       notes?: unknown[]; polls?: unknown[]; messages?: unknown[];
@@ -399,6 +399,108 @@ export function createMockHost(opts: MockHostOptions = {}): MockHost {
   // In-memory namespaced metadata store for ctx.meta (per mock plugin).
   const metaStore: Record<string, unknown> = {};
   const metaKey = (et: string, eid: number, key: string) => `${et}:${eid}:${key}`;
+
+  type MockTrip = NonNullable<MockHostOptions['trips']>[number]
+  let exchangeRateSequence = 0
+  const positiveRate = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+  const tripCurrency = (trip: MockTrip): string =>
+    String((trip.data as { currency?: unknown } | undefined)?.currency ?? 'EUR').toUpperCase()
+  const resolveFixtureRate = (tripId: number, trip: MockTrip, input: string): ExchangeRateResolution | null => {
+    const base = tripCurrency(trip)
+    const currency = String(input || base).toUpperCase()
+    if (currency === base) {
+      return {
+        trip_id: tripId,
+        trip_currency: base,
+        item_currency: currency,
+        exchange_rate: 1,
+        source: 'identity',
+        source_version: `identity:${base}`,
+        effective_date: null,
+        fetched_at: null,
+        stale: false,
+      }
+    }
+    const tripRate = (trip.rates ?? []).find((rate) => rate.currency.toUpperCase() === currency)
+    if (tripRate) {
+      return {
+        trip_id: tripId,
+        trip_currency: base,
+        item_currency: currency,
+        exchange_rate: tripRate.exchange_rate,
+        source: 'trip',
+        source_version: tripRate.source_version,
+        effective_date: typeof tripRate.effective_date === 'string' ? tripRate.effective_date : null,
+        fetched_at: tripRate.set_at,
+        stale: false,
+      }
+    }
+    const globalRate = opts.ratesResult?.[currency]
+    if (!positiveRate(globalRate)) return null
+    return {
+      trip_id: tripId,
+      trip_currency: base,
+      item_currency: currency,
+      exchange_rate: globalRate,
+      source: 'global',
+      source_version: `mock-global:${base}`,
+      effective_date: null,
+      fetched_at: new Date().toISOString(),
+      stale: false,
+    }
+  }
+  const freezeFixtureRate = (
+    tripId: number,
+    trip: MockTrip,
+    input: Record<string, unknown>,
+    userId: number,
+    existing?: Record<string, unknown>
+  ) => {
+    for (const key of [
+      'exchange_rate_source',
+      'exchange_rate_source_version',
+      'exchange_rate_effective_date',
+      'exchange_rate_set_at',
+      'exchange_rate_set_by_user_id',
+      'exchange_rate_reset_at',
+    ])
+      delete input[key]
+    const base = tripCurrency(trip)
+    const currency = String(input.currency ?? existing?.currency ?? base).toUpperCase()
+    const oldCurrency = existing ? String(existing.currency ?? base).toUpperCase() : null
+    let rate: number
+    let source: ExchangeRateSource
+    let sourceVersion: string
+    let effectiveDate: string | null = null
+    if (currency === base) {
+      rate = 1
+      source = 'identity'
+      sourceVersion = `identity:${base}`
+      input.exchange_rate_note = null
+    } else if (input.exchange_rate !== undefined) {
+      if (!positiveRate(input.exchange_rate)) throw new Error('exchange_rate must be finite and greater than zero')
+      rate = input.exchange_rate
+      source = 'explicit'
+      sourceVersion = `explicit:mock-${++exchangeRateSequence}`
+    } else {
+      if (existing && currency === oldCurrency) return
+      const resolution = resolveFixtureRate(tripId, trip, currency)
+      if (!resolution) throw new Error('no exchange rate is available; enter a manual rate')
+      rate = resolution.exchange_rate
+      source = resolution.source
+      sourceVersion = resolution.source_version
+      effectiveDate = resolution.effective_date
+    }
+    Object.assign(input, {
+      exchange_rate: rate,
+      exchange_rate_source: source,
+      exchange_rate_source_version: sourceVersion,
+      exchange_rate_effective_date: effectiveDate,
+      exchange_rate_set_at: new Date().toISOString(),
+      exchange_rate_set_by_user_id: userId,
+    })
+  }
 
   // Per-host daily budgets for ai.*/notify.send, mirroring daily-budget.ts. Plain
   // counters, no timers: this mock never rolls the window over at UTC midnight (see
@@ -1287,7 +1389,9 @@ export function createMockHost(opts: MockHostOptions = {}): MockHost {
           if (t.canEditCosts === false) {
             throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`);
           }
-          const item = { id: (t.costs?.length ?? 0) + 1, trip_id: tripId, ...input };
+          const frozen = { ...input };
+          freezeFixtureRate(tripId, t, frozen, uid);
+          const item = { id: (t.costs?.length ?? 0) + 1, trip_id: tripId, ...frozen };
           (t.costs ??= []).push(item);
           return item;
         },
@@ -1301,7 +1405,9 @@ export function createMockHost(opts: MockHostOptions = {}): MockHost {
           }
           const item = rows(t.costs).find((x) => x.id === itemId);
           if (!item) throw new Error(`RESOURCE_FORBIDDEN: no cost ${itemId} on trip ${tripId}`);
-          Object.assign(item, input);
+          const frozen = { ...input };
+          freezeFixtureRate(tripId, t, frozen, uid, item);
+          Object.assign(item, frozen);
           return item as BudgetItem;
         },
         async delete(tripId, itemId) {
@@ -1317,6 +1423,108 @@ export function createMockHost(opts: MockHostOptions = {}): MockHost {
           if (i < 0) throw new Error(`RESOURCE_FORBIDDEN: no cost ${itemId} on trip ${tripId}`);
           list.splice(i, 1);
           return { deleted: true };
+        },
+        async listRates(tripId) {
+          need('db:read:costs', 'costs.listRates')
+          const t = assertMember(tripId, requireActingUser())
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          return t.rates ?? []
+        },
+        async resolveRate(tripId, currency) {
+          need('db:read:costs', 'costs.resolveRate')
+          const t = assertMember(tripId, requireActingUser())
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          return resolveFixtureRate(tripId, t, currency)
+        },
+        async setRate(tripId, currencyInput, exchangeRate, note) {
+          need('db:write:costs', 'costs.setRate')
+          const uid = requireActingUser()
+          const t = assertMember(tripId, uid)
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          if (t.canEditCosts === false)
+            throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`)
+          if (!positiveRate(exchangeRate)) throw new Error('exchange_rate must be finite and greater than zero')
+          const currency = currencyInput.toUpperCase()
+          if (currency === tripCurrency(t)) throw new Error('the trip currency always uses a 1:1 identity rate')
+          const now = new Date().toISOString()
+          const rate: TripExchangeRate = {
+            trip_id: tripId,
+            currency,
+            exchange_rate: exchangeRate,
+            effective_date: null,
+            source_version: `trip:${tripId}:${currency}:${now}`,
+            set_at: now,
+            set_by_user_id: uid,
+            note: note ?? null,
+          }
+          const rates = (t.rates ??= [])
+          const i = rates.findIndex((candidate) => candidate.currency.toUpperCase() === currency)
+          if (i < 0) rates.push(rate)
+          else rates[i] = rate
+          return rate
+        },
+        async deleteRate(tripId, currencyInput) {
+          need('db:write:costs', 'costs.deleteRate')
+          const uid = requireActingUser()
+          const t = assertMember(tripId, uid)
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          if (t.canEditCosts === false)
+            throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`)
+          const rates = (t.rates ??= [])
+          const i = rates.findIndex((candidate) => candidate.currency.toUpperCase() === currencyInput.toUpperCase())
+          if (i < 0) throw new Error(`RESOURCE_FORBIDDEN: no trip exchange rate for ${currencyInput}`)
+          rates.splice(i, 1)
+          return { deleted: true }
+        },
+        async listSettlements(tripId) {
+          need('db:read:costs', 'costs.listSettlements')
+          const t = assertMember(tripId, requireActingUser())
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          return t.settlements ?? []
+        },
+        async createSettlement(tripId, input) {
+          need('db:write:costs', 'costs.createSettlement')
+          const uid = requireActingUser()
+          const t = assertMember(tripId, uid)
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          if (t.canEditCosts === false)
+            throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`)
+          const frozen = { ...input }
+          freezeFixtureRate(tripId, t, frozen, uid)
+          const settlement = {
+            id: (t.settlements?.length ?? 0) + 1,
+            trip_id: tripId,
+            ...frozen,
+          } as BudgetSettlement
+          ;(t.settlements ??= []).push(settlement)
+          return settlement
+        },
+        async updateSettlement(tripId, settlementId, input) {
+          need('db:write:costs', 'costs.updateSettlement')
+          const uid = requireActingUser()
+          const t = assertMember(tripId, uid)
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          if (t.canEditCosts === false)
+            throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`)
+          const settlement = (t.settlements ?? []).find((candidate) => candidate.id === settlementId)
+          if (!settlement) throw new Error(`RESOURCE_FORBIDDEN: no settlement ${settlementId} on trip ${tripId}`)
+          const frozen = { ...input }
+          freezeFixtureRate(tripId, t, frozen, uid, settlement)
+          Object.assign(settlement, frozen)
+          return settlement
+        },
+        async deleteSettlement(tripId, settlementId) {
+          need('db:write:costs', 'costs.deleteSettlement')
+          const uid = requireActingUser()
+          const t = assertMember(tripId, uid)
+          requireAddon(opts.budgetAddonEnabled, 'costs')
+          if (t.canEditCosts === false)
+            throw new Error(`RESOURCE_FORBIDDEN: no permission to edit costs on trip ${tripId}`)
+          const list = (t.settlements ??= [])
+          const i = list.findIndex((candidate) => candidate.id === settlementId)
+          if (i < 0) throw new Error(`RESOURCE_FORBIDDEN: no settlement ${settlementId} on trip ${tripId}`)
+          list.splice(i, 1)
+          return { deleted: true }
         },
       },
       places: {

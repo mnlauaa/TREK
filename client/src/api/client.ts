@@ -144,8 +144,26 @@ apiClient.interceptors.request.use(
     (error) => Promise.reject(error)
 )
 
+import type {
+  ExchangeRateBatchApplyResult,
+  ExchangeRateBatchPreview,
+  ExchangeRateResolution,
+  ExchangeRateSnapshot,
+  GuestIdentityTransferCandidatesResponse,
+  GuestIdentityTransferResponse,
+  NewMemberIdentityCheckResponse,
+  PublicConfig,
+  SettingResetKey,
+  SettingResetResponse,
+  TripExchangeRate,
+  WebPushCurrentRequest,
+  WebPushCurrentResult,
+  WebPushDeviceListResult,
+} from '@trek/shared'
+import { webPushConfigResultSchema, webPushCurrentResultSchema, webPushDeviceListResultSchema } from '@trek/shared'
+
 export function isAuthPublicPath(pathname: string): boolean {
-  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password']
+  const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/legal']
   const publicPrefixes = ['/shared/', '/public/']
   return publicPaths.includes(pathname) || publicPrefixes.some((p) => pathname.startsWith(p))
 }
@@ -379,6 +397,14 @@ export const oauthApi = {
 }
 
 export const tripsApi = {
+  runNewMemberIdentityCheck: (id: number | string): Promise<NewMemberIdentityCheckResponse> =>
+    apiClient.post(`/trips/${id}/new-member-identity-check`).then((r) => r.data),
+  declineNewMemberIdentityCheck: (id: number | string) =>
+    apiClient.post(`/trips/${id}/new-member-identity-check/decline`).then((r) => r.data),
+  guestIdentityTransferCandidates: (id: number | string): Promise<GuestIdentityTransferCandidatesResponse> =>
+    apiClient.get(`/trips/${id}/guest-identity-transfers/candidates`).then((r) => r.data),
+  transferGuestIdentity: (id: number | string, guestUserId: number): Promise<GuestIdentityTransferResponse> =>
+    apiClient.post(`/trips/${id}/guests/${guestUserId}/identity-transfer`).then((r) => r.data),
   list: (params?: Record<string, unknown>) => apiClient.get('/trips', { params }).then(r => r.data),
   create: (data: TripCreateRequest) => apiClient.post('/trips', data).then(r => r.data),
   get: (id: number | string) => apiClient.get(`/trips/${id}`).then(r => r.data),
@@ -1352,6 +1378,29 @@ export const airportsApi = {
 }
 
 export const budgetApi = {
+  listExchangeRates: (tripId: number | string): Promise<{ rates: TripExchangeRate[] }> =>
+    apiClient.get(`/trips/${tripId}/exchange-rates`).then((r) => r.data),
+  resolveExchangeRate: (tripId: number | string, currency: string): Promise<ExchangeRateResolution> =>
+    apiClient.get(`/trips/${tripId}/exchange-rates/resolve`, { params: { currency } }).then((r) => r.data),
+  setExchangeRate: (tripId: number | string, currency: string, exchange_rate: number, note?: string | null) =>
+    apiClient
+      .put(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}`, { exchange_rate, note })
+      .then((r) => r.data),
+  deleteExchangeRate: (tripId: number | string, currency: string) =>
+    apiClient.delete(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}`).then((r) => r.data),
+  previewExchangeRate: (tripId: number | string, currency: string, exchange_rate: number, note?: string | null): Promise<ExchangeRateBatchPreview> =>
+    apiClient
+      .post(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}/preview`, { exchange_rate, note })
+      .then((r) => r.data),
+  applyExchangeRate: (
+    tripId: number | string,
+    currency: string,
+    preview_id: string,
+    selected: Array<{ type: 'expense' | 'settlement'; id: number }>
+  ): Promise<ExchangeRateBatchApplyResult> =>
+    apiClient
+      .post(`/trips/${tripId}/exchange-rates/${encodeURIComponent(currency)}/apply`, { preview_id, selected })
+      .then((r) => r.data),
   list: (tripId: number | string) => apiClient.get(`/trips/${tripId}/budget`).then(r => r.data),
   create: (tripId: number | string, data: BudgetCreateItemRequest) => apiClient.post(`/trips/${tripId}/budget`, data).then(r => r.data),
   update: (tripId: number | string, id: number, data: BudgetUpdateItemRequest) => apiClient.put(`/trips/${tripId}/budget/${id}`, data).then(r => r.data),
@@ -1371,6 +1420,11 @@ export const budgetApi = {
   reorderItems: (tripId: number | string, orderedIds: number[]) => apiClient.put(`/trips/${tripId}/budget/reorder/items`, { orderedIds }).then(r => r.data),
   reorderCategories: (tripId: number | string, orderedCategories: string[]) => apiClient.put(`/trips/${tripId}/budget/reorder/categories`, { orderedCategories } satisfies BudgetReorderCategoriesRequest).then(r => r.data),
 }
+
+export const exchangeRatesApi = {
+  snapshot: (base = 'EUR'): Promise<ExchangeRateSnapshot> =>
+    apiClient.get('/exchange-rates', { params: { base } }).then((r) => r.data),
+};
 
 export const filesApi = {
   list: (tripId: number | string, trash?: boolean) => apiClient.get(`/trips/${tripId}/files`, { params: trash ? { trash: 'true' } : {} }).then(r => r.data),
@@ -1489,7 +1543,7 @@ export const weatherApi = {
 }
 
 export const configApi = {
-  getPublicConfig: (): Promise<{ defaultLanguage: string }> =>
+  getPublicConfig: (): Promise<PublicConfig> =>
       apiClient.get('/config').then(r => r.data),
 }
 
@@ -1505,6 +1559,7 @@ export const helpApi = {
 }
 
 export const settingsApi = {
+  reset: (key: SettingResetKey): Promise<SettingResetResponse> => apiClient.delete(`/settings/${key}`).then(r => r.data),
   get: () => apiClient.get('/settings').then(r => r.data),
   set: (key: string, value: unknown) => {
     const body: SettingUpsertRequest = { key, value }
@@ -1610,6 +1665,22 @@ export const tripInviteApi = {
 const CHANNEL_TEST_TIMEOUT = 40000
 
 export const notificationsApi = {
+  webPushConfig: () =>
+    apiClient
+      .get('/notifications/web-push/config')
+      .then((r) => parseInDev(webPushConfigResultSchema, r.data, 'notifications.webPushConfig')),
+  webPushDevices: (signal?: AbortSignal): Promise<WebPushDeviceListResult> =>
+    apiClient
+      .get('/notifications/web-push/devices', { signal })
+      .then((r) => parseInDev(webPushDeviceListResultSchema, r.data, 'notifications.webPushDevices')),
+  webPushCurrent: (payload: WebPushCurrentRequest): Promise<WebPushCurrentResult> =>
+    apiClient
+      .put('/notifications/web-push/current', payload)
+      .then((r) => parseInDev(webPushCurrentResultSchema, r.data, 'notifications.webPushCurrent')),
+  renameWebPushDevice: (id: number, label: string) =>
+    apiClient.patch(`/notifications/web-push/devices/${id}`, { label }).then((r) => r.data),
+  revokeWebPushDevice: (id: number, signal?: AbortSignal) => apiClient.delete(`/notifications/web-push/devices/${id}`, { signal }).then((r) => r.data),
+  testWebPushDevice: (id: number) => apiClient.post(`/notifications/web-push/devices/${id}/test`).then((r) => r.data),
   getPreferences: () => apiClient.get('/notifications/preferences').then(r => r.data),
   updatePreferences: (prefs: Record<string, Record<string, boolean>>) => apiClient.put('/notifications/preferences', prefs).then(r => r.data),
   testSmtp: (email?: string) => apiClient.post('/notifications/test-smtp', { email }, { timeout: CHANNEL_TEST_TIMEOUT }).then(r => checkInDev(channelTestResultSchema, r.data, 'notifications.testSmtp')),

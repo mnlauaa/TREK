@@ -1,3 +1,4 @@
+import CurrencySelect from '../../../components/shared/CurrencySelect'
 import React, { useEffect, useRef, useState } from 'react'
 import { Archive, ArchiveRestore, Bell, Camera, Search, X } from 'lucide-react'
 import { useTranslation } from '../../../i18n'
@@ -246,13 +247,12 @@ export default function MNewTripSheet({ open, trip: tripProp, onClose, onSave, o
 
         <div className="mt-2">
           <FieldLabel>{t('dashboard.currency')}</FieldLabel>
-          <CustomSelect
+          <CurrencySelect
             value={currency}
             onChange={v => { if (canEditTrip) { setError(''); setCurrency(String(v)) } }}
             disabled={!canEditTrip}
             searchable
             size="sm"
-            options={currenciesWith(currency).map(c => ({ value: c, label: `${c} (${SYMBOLS[c] || c})` }))}
             style={{ width: '100%', marginTop: 5 }}
           />
         </div>

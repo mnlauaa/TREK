@@ -5,7 +5,6 @@ import type { MTripShellApi, TripPlanner } from '../../../../src/mobile/screens/
 import { budgetApi } from '../../../../src/api/client'
 import { localToday } from '../../../../src/components/Planner/today'
 import { clearAll } from '../../../../src/db/offlineDb'
-import { resetFreezeAttempts } from '../../../../src/components/Budget/useFreezeMissingRates'
 import { clearExchangeRateCache } from '../../../../src/hooks/useExchangeRates'
 import { useAuthStore } from '../../../../src/store/authStore'
 import { useSettingsStore } from '../../../../src/store/settingsStore'
@@ -834,30 +833,15 @@ describe('MCostsTab', () => {
 
   // The server could not fetch rates, so the museum's pounds never froze one and the
   // settlement left them out. An editor's phone lends its own rate and reads again.
-  it('FE-MOB-COSTT-047: an editor heals a bill the server could not convert and reads the settlement again', async () => {
-    resetFreezeAttempts()
-    let healed = false
-    server.use(
-      http.get('/api/trips/:id/budget/settlement', ({ request }) => {
-        settlementBases.push(new URL(request.url).searchParams.get('base') ?? '')
-        return HttpResponse.json(healed
-          ? { ...SETTLEMENT, unconverted: { item_ids: [], settlement_ids: [], currencies: [] } }
-          : { ...SETTLEMENT, unconverted: { item_ids: [12], settlement_ids: [], currencies: ['GBP'] } })
-      }),
-    )
-    const freeze = vi.spyOn(budgetApi, 'freezeRates').mockImplementation(async () => {
-      healed = true
-      return { items: [{ ...MUSEUM, exchange_rate: 0.5 }], settlements: [], unresolved: [] }
-    })
+  it('FE-MOB-COSTT-047: an editor sees a missing legacy rate without a write on open', async () => {
+    serveSettlement({ ...SETTLEMENT, unconverted: { item_ids: [12], settlement_ids: [], currencies: ['GBP'] } })
+    const freeze = vi.spyOn(budgetApi, 'freezeRates')
     await renderTab()
-
-    await waitFor(() => expect(freeze).toHaveBeenCalledWith(7, { fallback_fx: { base: 'USD', rates: { GBP: 0.5 } } }))
-    await waitFor(() => expect(settlementBases).toHaveLength(2))
-    expect(freeze).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('costs.exchangeRates.awaitingConversion')).toBeInTheDocument()
+    expect(freeze).not.toHaveBeenCalled()
   })
 
   it('FE-MOB-COSTT-048: a read-only member\'s phone never freezes a rate', async () => {
-    resetFreezeAttempts()
     serveSettlement({ ...SETTLEMENT, unconverted: { item_ids: [12], settlement_ids: [], currencies: ['GBP'] } })
     const freeze = vi.spyOn(budgetApi, 'freezeRates')
     await renderTab(planner({ can: vi.fn(() => false) as unknown as TripPlanner['can'] }))

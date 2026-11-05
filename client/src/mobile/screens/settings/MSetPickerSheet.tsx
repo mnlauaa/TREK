@@ -5,6 +5,7 @@ import MSheet from '../../components/MSheet'
 export interface MSetPickerOption {
   value: string
   label: ReactNode
+  isHeader?: boolean
 }
 
 interface MSetPickerSheetProps {
@@ -26,6 +27,7 @@ export default function MSetPickerSheet({ open, onClose, title, options, value, 
       <div className="px-[14px] pb-2 pt-4 text-[0.875rem] font-extrabold text-m-ink">{title}</div>
       <div className="min-h-0 overflow-y-auto px-2 pb-3">
         {options.map((opt) => {
+          if (opt.isHeader) return <div key={opt.value} className="px-3 pt-3 text-caption font-semibold text-m-muted">{opt.label}</div>
           const active = opt.value === value
           return (
             <button

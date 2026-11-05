@@ -1,3 +1,6 @@
+import { DEFAULT_SETTINGS, useSettingsStore } from '../../../store/settingsStore'
+import CommonCurrenciesEditor from '../../../components/Settings/CommonCurrenciesEditor'
+import { buildCurrencyOptions } from '../../../components/shared/currencyOptions'
 import { useState } from 'react'
 import { ChevronDown, Languages, Map, Rocket } from 'lucide-react'
 import { useTranslation, SUPPORTED_LANGUAGES } from '../../../i18n'
@@ -194,16 +197,28 @@ export default function MSettingsGeneral() {
         </div>
       </MSetCard>
 
+      <MSetCard title={t('settings.commonCurrencies.title')} icon={Languages} className="mt-3">
+        <p className="mb-2 text-[0.6875rem] text-m-faint">{t('settings.commonCurrencies.hint')}</p>
+        <CommonCurrenciesEditor mobile value={settings.common_currencies ?? DEFAULT_SETTINGS.common_currencies}
+          onSave={(value) => useSettingsStore.getState().updateSetting('common_currencies', value)}
+          onReset={() => useSettingsStore.getState().resetSetting('common_currencies')} />
+      </MSetCard>
+
       <MSetPickerSheet
         open={currencyOpen}
         onClose={() => setCurrencyOpen(false)}
         title={t('settings.currency')}
         value={currency}
         onSelect={(v) => save('default_currency', v)}
-        options={[
-          { value: '', label: t('settings.currencyTrip') },
-          ...currenciesWith(currency).map((c) => ({ value: c, label: `${c} — ${SYMBOLS[c] || c}` })),
-        ]}
+        options={buildCurrencyOptions({
+          commonCurrencies: settings.common_currencies,
+          availableCurrencies: currenciesWith(currency),
+          currentCurrency: currency,
+          locale,
+          commonLabel: t('settings.commonCurrencies.group'),
+          otherLabel: t('settings.otherCurrencies.group'),
+          specialOptions: [{ value: '', label: t('settings.currencyTrip') }],
+        })}
       />
 
       <MSetPickerSheet

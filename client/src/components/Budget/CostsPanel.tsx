@@ -1,3 +1,8 @@
+import { ArrowLeftRight as RateIcon } from 'lucide-react'
+import ExchangeRateManager from './ExchangeRateManager'
+import ItemExchangeRateFields from './ItemExchangeRateFields'
+import CurrencySelect from '../shared/CurrencySelect'
+import { awaitingConversion } from './costsModel'
 import { Fragment, useState, useMemo, useCallback, useId, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, BarChart3, Plus, Search, ArrowRight, ArrowLeftRight, Check, RotateCcw, Pencil, Trash2, AlertCircle, Download, StickyNote, ChevronDown, Receipt, Paperclip, ScanLine, Users } from 'lucide-react'
 import { useTripStore } from '../../store/tripStore'
@@ -81,6 +86,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
     settlementOnTripChange: true, skipUnfinishedShares: true, csvCurrencyAsStored: true,
   })
   const curOf = useCallback((e: BudgetItem) => (e.currency || tripCurrency), [tripCurrency])
+  const [rateManagerOpen, setRateManagerOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<BudgetItem | null>(null)
   const deleteConfirm = useExpenseDeleteConfirm(budgetItems, handleDelete)
@@ -251,13 +257,22 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
 
   return (
     <div className="costs-root" style={{ minHeight: '100%', background: 'var(--c-bg)', padding: isMobile ? '6px 14px 28px' : '24px 28px 48px' }}>
+     {rateManagerOpen && (
+       <DialogShell onClose={() => setRateManagerOpen(false)} labelledBy="exchange-rates-title"
+         header={<DialogHeader labelId="exchange-rates-title" onClose={() => setRateManagerOpen(false)}
+           tint={NEUTRAL_TINT} title={t('costs.exchangeRates.title')} tile={<DialogTile><RateIcon size={20} /></DialogTile>} />}>
+         <ExchangeRateManager tripId={tripId} tripCurrency={tripCurrency}
+           usedCurrencies={[...budgetItems, ...settlement?.settlements ?? []].flatMap(item => item.currency ? [item.currency] : [])}
+           canEdit={canEdit} onChanged={() => { void loadBudgetItems(tripId); loadSettlement() }} />
+       </DialogShell>
+     )}
      {isMobile ? MobileBody() : (
      <div style={{ maxWidth: '100%', margin: '0 auto' }}>
       <CostsToolbar dateMeta={dateMeta} people={people} me={me} colorFor={colorFor}
         canEdit={canEdit} canSettle={(settlement?.flows || []).length > 0}
         onSettleAll={settleAll} onAddExpense={() => { setEditing(null); setModalOpen(true) }}
         onScanReceipt={receiptScan.offered ? receiptScan.open : undefined}
-        view={view} onView={setView}
+        view={view} onView={setView} onExchangeRates={() => setRateManagerOpen(true)}
         filters={{
           query: search, onQuery: setSearch,
           owner: filter, onOwner: setFilter,
@@ -734,7 +749,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
         {/* The money, and what to do with it. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, whiteSpace: 'nowrap' }}>
-            <span className="bg-surface-card border border-edge-faint text-content" style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '0' : '6px 13px', borderRadius: 999, border: isMobile ? 0 : undefined, background: isMobile ? 'none' : undefined, fontSize: isMobile ? 'calc(18px * var(--fs-scale-subtitle, 1))' : 'calc(15px * var(--fs-scale-subtitle, 1))', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(baseTotal(e))}</span>
+            <span className="bg-surface-card border border-edge-faint text-content" style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '0' : '6px 13px', borderRadius: 999, border: isMobile ? 0 : undefined, background: isMobile ? 'none' : undefined, fontSize: isMobile ? 'calc(18px * var(--fs-scale-subtitle, 1))' : 'calc(15px * var(--fs-scale-subtitle, 1))', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{awaitingConversion(e, tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : fmt(baseTotal(e))}</span>
             {!unfinished && (e.members || []).length > 0 && Math.abs(net) > 0.01 && (
               <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? 0 : '2px 9px', borderRadius: 999, background: isMobile ? 'none' : (net > 0 ? 'rgba(22,163,74,0.13)' : 'rgba(220,38,38,0.13)'), fontSize: 'calc(11.5px * var(--fs-scale-caption, 1))', fontWeight: 600, color: net > 0 ? '#16a34a' : '#dc2626' }}>
                 {net > 0 ? t('costs.youLent', { amount: fmt(net) }) : t('costs.youBorrowed', { amount: fmt(-net) })}
@@ -826,7 +841,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
             so its amount lands on the same axis as every expense above it. */}
         {!isMobile && NoteCell({ note: s.note || '', noteKey: 's' + s.id, color: '#16a34a' })}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'center' }}>
-          <span className="bg-surface-card border border-edge-faint text-content" style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 13px', borderRadius: 999, fontSize: 'calc(15px * var(--fs-scale-subtitle, 1))', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmt(settled(s))}</span>
+          <span className="bg-surface-card border border-edge-faint text-content" style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 13px', borderRadius: 999, fontSize: 'calc(15px * var(--fs-scale-subtitle, 1))', fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{awaitingConversion(s, tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : fmt(settled(s))}</span>
         </div>
       </div>
       {canEdit && (
@@ -1034,9 +1049,9 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
 function SettlementModal({ tripId, people, me, editing, currency, tripCurrency, onClose, onSaved }: {
   tripId: number; people: TripMember[]; me: number; editing: Settlement | null; currency: string; tripCurrency: string; onClose: () => void; onSaved: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const toast = useToast()
-  const { fromId, setFromId, toId, setToId, amount, setAmount, currency: cur, setCurrency: setCur, day, setDay, note, setNote, saving, valid, save } =
+  const { fromId, setFromId, toId, setToId, amount, setAmount, currency: cur, setCurrency: setCur, day, setDay, note, setNote, saving, rate, valid, save } =
     useSettlementForm({ tripId, tripCurrency, base: currency, people, me, editing, t, toast, onSaved })
   const opts = people.map(p => ({ value: String(p.id), label: p.id === me ? t('costs.you') : p.username }))
 
@@ -1089,11 +1104,11 @@ function SettlementModal({ tripId, people, me, editing, currency, tripCurrency, 
           </div>
         </EditorField>
         <EditorField label={t('costs.currency')}>
-          <CustomSelect value={cur} onChange={v => setCur(String(v))} searchable
-            options={currencyOptions(cur)}
-            style={{ width: '100%' }} />
+          <CurrencySelect value={cur} onChange={setCur} style={{ width: '100%' }} />
         </EditorField>
       </div>
+      <ItemExchangeRateFields rate={rate} currency={cur} tripCurrency={tripCurrency}
+        amount={Number(amount) || 0} t={t} locale={locale} />
       <EditorField label={t('costs.day')}>
         <CustomDatePicker value={day} onChange={setDay} style={{ width: '100%' }} />
       </EditorField>
@@ -1127,7 +1142,7 @@ export function ExpenseModal({ tripId, base, people, me, editing, prefill, onClo
   const isMobile = useIsMobile()
   const titleId = useId()
   const {
-    cat, currency, customAmounts, customBalanced, day, disableMultiPayer, each, enableMultiPayer, equalShares, fx,
+    cat, currency, customAmounts, customBalanced, day, disableMultiPayer, each, enableMultiPayer, equalShares, fx, rate,
     handleAddEmptyItem, handleCustomAmountChange, handleReceiptFileSelect, handleRemoveItem, handleRemovePendingReceipt,
     handleRemoveReceipt, handleToggleItemParticipant, handleUpdateItemName, handleUpdateItemPrice, isTicketMode,
     multiPayer, name, nameOf, note, onPayerAmountChange, onTotalChange, participants, payerAmounts, payerId, payerIds,
@@ -1514,16 +1529,16 @@ export function ExpenseModal({ tripId, base, people, me, editing, prefill, onClo
             </div>
           </EditorField>
           <EditorField label={t('costs.currency')}>
-            <CustomSelect value={currency} onChange={v => setCurrency(String(v))} searchable
-              options={currencyOptions(currency)}
-              style={{ width: '100%' }} />
+            <CurrencySelect value={currency} onChange={setCurrency} style={{ width: '100%' }} />
           </EditorField>
           <EditorField label={t('costs.day')}>
             <CustomDatePicker value={day} onChange={setDay} style={{ width: '100%' }} />
           </EditorField>
         </div>
 
-        {fx && (
+        <ItemExchangeRateFields rate={rate} currency={currency} tripCurrency={tripCur}
+          amount={totalNum} t={t} locale={locale} />
+        {fx && currency === tripCur && (
           <div className="flex flex-wrap items-center gap-1.5 text-content-faint" style={fs(12, 'body')}>
             {badge(formatMoney(totalNum, currency, locale))}
             {fx.inTrip != null && <>

@@ -1,3 +1,5 @@
+import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields'
+import CurrencySelect from '../../../../components/shared/CurrencySelect'
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Plus, Trash2, Wallet, Receipt, Paperclip } from 'lucide-react'
 import MSheet from '../../../components/MSheet'
@@ -62,7 +64,7 @@ export default function MCostSheet({ tripId, base, people, me, editing, prefill,
   // opening in the trip's own (#2525).
   const {
     sym, nameOf, tripCur, name, setName, cat, setCat, currency, setCurrency, day, setDay, note, setNote, total, onTotalChange,
-    totalNum, fx, participants, toggleParticipant, payerId, setPayerId, multiPayer, enableMultiPayer, disableMultiPayer,
+    totalNum, rate, fx, participants, toggleParticipant, payerId, setPayerId, multiPayer, enableMultiPayer, disableMultiPayer,
     payerIds, payerAmounts, togglePayer, onPayerAmountChange, payersOk, splitMode, setSplitMode, isTicketMode, ticketItems,
     ticketInfo, handleAddEmptyItem, handleUpdateItemName, handleUpdateItemPrice, handleRemoveItem, handleToggleItemParticipant,
     customAmounts, handleCustomAmountChange, splitSum, customBalanced, each, equalShares, placeholderShares,
@@ -162,12 +164,11 @@ export default function MCostSheet({ tripId, base, people, me, editing, prefill,
         <div className="mt-3 flex gap-2">
           <div className="min-w-0 flex-1">
             <Eyebrow className="mb-[5px] uppercase">{t('costs.currency')}</Eyebrow>
-            <CustomSelect
+            <CurrencySelect
               value={currency}
-              onChange={v => setCurrency(String(v))}
+              onChange={setCurrency}
               searchable
               size="sm"
-              options={currencyOptions(currency)}
               style={{ width: '100%' }}
             />
           </div>
@@ -177,8 +178,10 @@ export default function MCostSheet({ tripId, base, people, me, editing, prefill,
           </div>
         </div>
 
+        <ItemExchangeRateFields rate={rate} currency={currency} tripCurrency={tripCur}
+          amount={totalNum} t={t} locale={locale} mobile />
         {/* CONVERSION HINT */}
-        {fx && (
+        {fx && currency === tripCur && (
           <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[12px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 py-[9px] text-[0.71875rem] text-m-muted">
             <span>{formatMoney(totalNum, currency, locale)}</span>
             {fx.inTrip != null && <>

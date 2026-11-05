@@ -1,3 +1,4 @@
+import CommonCurrenciesEditor from '../../../components/Settings/CommonCurrenciesEditor'
 import React, { useState } from 'react'
 import { ChevronDown, Settings2 } from 'lucide-react'
 import { useTranslation } from '../../../i18n'
@@ -19,6 +20,8 @@ import RoutingInstanceFields from '../../../components/Admin/RoutingInstanceFiel
 // Mobile-native rebuild of the desktop DefaultUserSettingsTab. Identical data
 // layer (adminApi defaults, per-change auto-save, reset-to-built-in) — only the
 // presentation is relaid on the admin mobile design system.
+const EMPTY_CURRENCIES: readonly string[] = []
+
 export default function MAdminDefaultUserSettings(): React.ReactElement {
   const { t, locale } = useTranslation()
   const {
@@ -129,6 +132,12 @@ export default function MAdminDefaultUserSettings(): React.ReactElement {
             hint={t('settings.currencyHint')}
           >
             <MSetSelectRow label={currencyLabel} trailing={chevron} onClick={() => setCurrencyOpen(true)} />
+          </MAdminField>
+
+          <MAdminField label={<>{t('settings.commonCurrencies.title')} <ResetButton field="common_currencies" /></>}
+            hint={t('settings.commonCurrencies.adminHint')}>
+            <CommonCurrenciesEditor mobile value={defaults.common_currencies ?? EMPTY_CURRENCIES}
+              onSave={(value) => save({ common_currencies: value })} />
           </MAdminField>
 
           {/* Blur Booking Codes */}

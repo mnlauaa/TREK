@@ -84,7 +84,7 @@ export function planCosts({ days, assignments, reservations, budgetItems, costsE
   for (const item of budgetItems) {
     const amount = item.total_price || 0
     if (amount === 0) continue
-    const booked = bookedInTrip(amount, item.currency, item.exchange_rate, trip)
+    const booked = bookedInTrip(amount, item.currency, item.exchange_rate, trip, item.exchange_rate_source)
     const entry = booked != null
       ? { amount: booked, currency: trip }
       : { amount, currency: (item.currency || trip).toUpperCase() }

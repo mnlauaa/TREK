@@ -1,3 +1,4 @@
+import { useItemExchangeRate } from './useItemExchangeRate';
 import { useEffect, useState } from 'react';
 
 import { withFallbackFx } from '../../hooks/useExchangeRates';
@@ -77,13 +78,14 @@ export function useSettlementForm({
   }, [open, editing, me, base, people]);
 
   const amt = Number.parseFloat(amount.replace(',', '.')) || 0;
-  const valid = amt > 0 && fromId !== toId && !!day;
+  const rate = useItemExchangeRate(tripId, currency, tripCurrency, editing ? { ...editing, currency: editing.currency || base } : null, open !== false);
+  const valid = rate.valid && amt > 0 && fromId !== toId && !!day;
 
   const save = async () => {
     if (!valid || (oneSaveAtATime && saving)) return;
     setSaving(true);
     const data = withFallbackFx(
-      { from_user_id: fromId, to_user_id: toId, amount: amt, currency, settled_at: day, note: note.trim() || null },
+      { from_user_id: fromId, to_user_id: toId, amount: amt, currency, ...rate.write, settled_at: day, note: note.trim() || null },
       tripCurrency
     );
     try {
@@ -122,6 +124,7 @@ export function useSettlementForm({
     note,
     setNote,
     saving,
+    rate,
     valid,
     save,
   };

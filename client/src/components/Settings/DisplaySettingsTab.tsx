@@ -1,3 +1,6 @@
+import { useSettingsStore } from '../../store/settingsStore'
+import CommonCurrenciesEditor from './CommonCurrenciesEditor'
+import { buildCurrencyOptions } from '../shared/currencyOptions'
 import React, { useState, useEffect, useRef } from 'react'
 import { Languages, Map, ChevronDown, Rocket } from 'lucide-react'
 import { SUPPORTED_LANGUAGES, useTranslation } from '../../i18n'
@@ -116,15 +119,26 @@ export default function DisplaySettingsTab(): React.ReactElement {
                   onChange={async v => {
                     await save('default_currency', String(v))
                   }}
-                  options={[
-                    { value: '', label: t('settings.currencyTrip') },
-                    ...currenciesWith(settings.default_currency || '').map(c => ({ value: c, label: `${c} — ${SYMBOLS[c] || c}` })),
-                  ]}
+                  options={buildCurrencyOptions({
+                    commonCurrencies: settings.common_currencies,
+                    availableCurrencies: currenciesWith(settings.default_currency),
+                    currentCurrency: settings.default_currency,
+                    locale,
+                    commonLabel: t('settings.commonCurrencies.group'),
+                    otherLabel: t('settings.otherCurrencies.group'),
+                    specialOptions: [{ value: '', label: t('settings.currencyTrip') }],
+                  })}
                   searchable
                 />
               </div>
             }
           />
+
+          <SettingRow label={t('settings.commonCurrencies.title')} hint={t('settings.commonCurrencies.hint')} stacked>
+            <CommonCurrenciesEditor value={settings.common_currencies ?? DEFAULT_SETTINGS.common_currencies}
+              onSave={(value) => useSettingsStore.getState().updateSetting('common_currencies', value)}
+              onReset={() => useSettingsStore.getState().resetSetting('common_currencies')} />
+          </SettingRow>
 
           {/* Language: every option at a glance on a wide window, a compact list on a narrow one.
               The shared demo account always runs in English. */}

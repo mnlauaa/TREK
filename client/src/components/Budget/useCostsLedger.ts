@@ -25,13 +25,14 @@ import {
   type CostsSettlementResponse,
 } from './costsModel';
 import { knownPersonNames } from './CostsPanel.helpers';
-import { useFreezeMissingRates } from './useFreezeMissingRates';
 
 /** The events after which the balances are read again from the server. */
 const SETTLEMENT_RELOAD_EVENTS = [
   'budget:settlement-created',
   'budget:settlement-updated',
   'budget:settlement-deleted',
+  'budget:exchange-rates-applied',
+  'guest:identity-transferred',
   'budget:updated',
   'budget:members-updated',
   'budget:member-paid-updated',
@@ -87,17 +88,19 @@ export function useCostsLedger({
   // Display/base currency = the user's preferred currency (Settings), falling back
   // to the trip's own currency. Everything in Costs is converted to and shown in it.
   const displayCurrency = useSettingsStore((s) => s.settings.default_currency);
-  const base = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
+  const requestedBase = (displayCurrency || trip?.currency || 'EUR').toUpperCase();
   // Pre-rework rows stored currency = NULL, meaning "the trip's own currency".
-  const tripCurrency = (trip?.currency || base).toUpperCase();
+  const tripCurrency = (trip?.currency || requestedBase).toUpperCase();
+  const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
+  const base = settlement?.currency || requestedBase;
   // Anchored on the trip currency's quote, the one the server books with (#2525).
-  const { convert, displayPerTrip } = useExchangeRates(base, tripCurrency);
+  const { convert } = useExchangeRates(base, tripCurrency);
+  const { displayPerTrip } = useExchangeRates(requestedBase, tripCurrency);
   const ctx: CostsCtx = useMemo(
     () => ({ me, tripCurrency, displayCurrency: base, convert }),
     [me, tripCurrency, base, convert]
   );
 
-  const [settlement, setSettlement] = useState<CostsSettlementResponse | null>(null);
   // A failed settlement read leaves `settlement` null, which the views would
   // otherwise present as "everyone is square", a balance claim we cannot make.
   const [settlementError, setSettlementError] = useState(false);
@@ -107,13 +110,13 @@ export function useCostsLedger({
   const readSettlement = useCallback(
     () =>
       budgetRepo
-        .settlement(tripId, base, base !== tripCurrency ? displayPerTrip : null)
+        .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
         .then((s) => {
           setSettlement(s);
           setSettlementError(false);
         })
         .catch(() => setSettlementError(true)),
-    [tripId, base, tripCurrency, displayPerTrip]
+    [tripId, requestedBase, tripCurrency, displayPerTrip]
   );
   const loadSettlement = useCallback(() => {
     void readSettlement();
@@ -162,15 +165,18 @@ export function useCostsLedger({
     loadSettlement();
   };
 
-  // Rows the server could not count get a rate frozen from the browser's, and the
-  // settlement is read again once they count.
-  useFreezeMissingRates({
-    tripId,
-    tripCurrency,
-    canEdit,
-    unconverted: settlement?.unconverted,
-    onHealed: loadSettlement,
-  });
+  useEffect(() => {
+    const refresh = () => {
+      void loadBudgetItems(tripId);
+      loadSettlement();
+    };
+    window.addEventListener('budget:exchange-rates-changed', refresh);
+    window.addEventListener('guest:identity-transferred', refresh);
+    return () => {
+      window.removeEventListener('budget:exchange-rates-changed', refresh);
+      window.removeEventListener('guest:identity-transferred', refresh);
+    };
+  }, [loadBudgetItems, loadSettlement, tripId]);
 
   const [search, setSearch] = useState('');
   const [segment, setSegment] = useState<CostsSegment>('all');

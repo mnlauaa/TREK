@@ -67,11 +67,11 @@ const login: TranslationStrings = {
   'login.oidcRedirecting': '正在跳轉到 {name}…',
   'login.oidcRedirectSlow': '還在這裡？繼續前往 {name}',
   'login.demoHint': '試用演示——無需註冊',
-  'login.passkey.signIn': '使用 Passkey 登入',
-  'login.passkey.failed': 'Passkey 登入失敗，請重試。',
-  'login.insecureCookie.title': '透過 HTTP 無法保持登入',
+  'login.passkey.signIn': '使用 通行密鑰 登入',
+  'login.passkey.failed': '通行密鑰 登入失敗，請重試。',
+  'login.insecureCookie.title': '透過 HTTP 無法保持登入狀態',
   'login.insecureCookie.body':
-    '你目前使用純 HTTP 連線，瀏覽器會丟棄 TREK 的安全工作階段 Cookie，下一個請求會失敗並顯示「Access token required」。解決方式：改用 HTTPS，或在家用環境中設定 COOKIE_SECURE=false。',
+    '您正透過一般 HTTP 連線，因此瀏覽器會捨棄 TREK 的安全工作階段 Cookie，導致下一個請求出現「Access token required」錯誤。解決方法：改用 HTTPS；若是家用伺服器，請設定 COOKIE_SECURE=false。',
   'login.insecureCookie.link': '開啟疑難排解指南',
 };
 export default login;

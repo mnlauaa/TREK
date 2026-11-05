@@ -1,3 +1,5 @@
+import DepartureCountdownBoard from '../../../pages/dashboard/DepartureCountdownBoard'
+import type { DepartureTransport } from '../../../pages/dashboard/dashboardModel'
 import React, { useEffect, useState } from 'react'
 import {
   Archive, ArchiveRestore, ArrowRight, Bell, CalendarDays, CalendarPlus, Copy,
@@ -49,6 +51,7 @@ export default function MDashboard(): React.ReactElement {
     showForm, setShowForm, editingTrip, setEditingTrip,
     deleteTrip, setDeleteTrip, copyTrip, setCopyTrip, applyCoverUpdate,
     handleCreate, handleUpdate, confirmDelete, handleArchive, handleUnarchive, confirmCopy,
+    departure,
   } = useDashboard()
 
   const user = useAuthStore(s => s.user)
@@ -266,6 +269,7 @@ export default function MDashboard(): React.ReactElement {
 
         {spotlight && (
           <MSpotlightCard
+            departure={departure}
             trip={spotlight}
             t={t}
             onOpen={() => navigate(`/trips/${spotlight.id}`)}
@@ -326,7 +330,8 @@ export default function MDashboard(): React.ReactElement {
 }
 
 // ── Spotlight ────────────────────────────────────────────────────────────────
-function MSpotlightCard({ trip, t, onOpen, actions }: {
+function MSpotlightCard({ trip, t, onOpen, actions, departure }: {
+  departure: DepartureTransport | null
   trip: DashboardTrip
   t: (key: string, params?: Record<string, string | number>) => string
   onOpen: () => void
@@ -395,6 +400,7 @@ function MSpotlightCard({ trip, t, onOpen, actions }: {
             <span className="absolute bottom-0 left-0 top-0 rounded-full bg-white" style={{ width: `${progress}%` }} />
           </div>
         )}
+        {departure && <DepartureCountdownBoard departure={departure} compact />}
         <div className={`flex gap-[6px] ${ongoing ? '' : 'mt-[9px]'}`}>
           <SpotlightPill icon={<CalendarDays size={11} strokeWidth={2.2} />} label={t('dashboard.mobile.spotlightDays', { count: days })} />
           <SpotlightPill icon={<MapPin size={11} strokeWidth={2.2} />} label={t('dashboard.hero.destinations', { count: places })} />

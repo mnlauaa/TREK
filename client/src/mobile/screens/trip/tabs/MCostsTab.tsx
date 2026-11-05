@@ -1,3 +1,6 @@
+import { awaitingConversion } from '../../../../components/Budget/costsModel'
+import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields'
+import CurrencySelect from '../../../../components/shared/CurrencySelect'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AlertCircle, ArrowDown, ArrowLeftRight, ArrowRight, ArrowUp, Check, ChevronDown, ChevronUp,
@@ -640,7 +643,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
             )}
           </div>
           <span className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
-            {formatMoney(total, base, locale)}
+            {awaitingConversion(item, ctx.tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : formatMoney(total, base, locale)}
           </span>
         </div>
 
@@ -727,7 +730,7 @@ function PaymentRow({ settlement, ctx, base, locale, t, personName, canEdit, onE
             )}
           </div>
           <span className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
-            {formatMoney(amount, base, locale)}
+            {awaitingConversion(settlement, ctx.tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : formatMoney(amount, base, locale)}
           </span>
         </div>
         {settlement.note && <RowNote note={settlement.note} />}
@@ -845,7 +848,8 @@ function AddPaymentSheet({ open, editing, onClose, tripId, base, tripCurrency, p
   t: TFn
   onSaved: () => void
 }) {
-  const { fromId, setFromId, toId, setToId, amount, setAmount, currency, setCurrency, day, setDay, note, setNote, saving, valid, save } =
+  const { locale } = useTranslation()
+  const { fromId, setFromId, toId, setToId, amount, setAmount, currency, setCurrency, day, setDay, note, setNote, saving, rate, valid, save } =
     useSettlementForm({ tripId, tripCurrency, base, people, me, editing, open, t, toast, onSaved, oneSaveAtATime: true })
 
   const title = editing ? t('costs.editPayment') : t('costs.addPayment')
@@ -883,12 +887,11 @@ function AddPaymentSheet({ open, editing, onClose, tripId, base, tripCurrency, p
         <div className="mt-[14px] flex gap-2">
           <div className="min-w-0 flex-1">
             <Eyebrow className="mb-[7px] uppercase">{t('costs.currency')}</Eyebrow>
-            <CustomSelect
+            <CurrencySelect
               value={currency}
-              onChange={v => setCurrency(String(v))}
+              onChange={setCurrency}
               searchable
               size="sm"
-              options={currencyOptions(currency)}
               style={{ width: '100%' }}
             />
           </div>
@@ -898,7 +901,9 @@ function AddPaymentSheet({ open, editing, onClose, tripId, base, tripCurrency, p
           </div>
         </div>
 
-        <Eyebrow className="mb-[6px] mt-[14px] uppercase">{t('costs.note')}</Eyebrow>
+        <ItemExchangeRateFields rate={rate} currency={currency} tripCurrency={tripCurrency}
+        amount={Number(amount) || 0} t={t} locale={locale} mobile />
+      <Eyebrow className="mb-[6px] mt-[14px] uppercase">{t('costs.note')}</Eyebrow>
         <textarea
           value={note}
           onChange={e => setNote(e.target.value)}

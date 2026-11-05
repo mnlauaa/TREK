@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings, SlidersHorizontal, Paintbrush, Map, Bell, Plug, CloudOff, User, Info, Blocks } from 'lucide-react'
+import { Settings, SlidersHorizontal, Paintbrush, Map, Bell, Plug, CloudOff, User, Blocks } from 'lucide-react'
 import { useTranslation } from '../i18n'
 import PageShell from '../components/Layout/PageShell'
 import PageSidebar, { type PageSidebarTab } from '../components/Layout/PageSidebar'
@@ -10,7 +10,6 @@ import MapSettingsTab from '../components/Settings/MapSettingsTab'
 import NotificationsTab from '../components/Settings/NotificationsTab'
 import IntegrationsTab from '../components/Settings/IntegrationsTab'
 import AccountTab from '../components/Settings/AccountTab'
-import AboutTab from '../components/Settings/AboutTab'
 import HelpAnchor from '../components/Help/HelpAnchor'
 import { getHelpContext } from '../help/registry'
 import OfflineTab from '../components/Settings/OfflineTab'
@@ -26,7 +25,7 @@ export default function SettingsPage(): React.ReactElement {
 function SettingsPageDesktop(): React.ReactElement {
   const { t } = useTranslation()
   // Page = wiring container: addon/version loading + active-tab state in the hook.
-  const { hasPlugins, appVersion, activeTab, setActiveTab, managed } = useSettings()
+  const { hasPlugins, appVersion, activeTab, setActiveTab } = useSettings()
   // Every tab is its own help screen; a tab without one falls back to the settings overview.
   const helpId = getHelpContext(`settings-${activeTab}`) ? `settings-${activeTab}` : 'settings'
 
@@ -43,13 +42,7 @@ function SettingsPageDesktop(): React.ReactElement {
       : []),
     { id: 'offline', label: t('settings.tabs.offline'), icon: CloudOff },
     { id: 'account', label: t('settings.tabs.account'), icon: User },
-    // About is where the project lives: what TREK is, where to report a bug,
-    // where to support it. A customer of a hosted instance is the audience for
-    // none of that, so the tab goes and the sidebar footer below carries the one
-    // thing that has to stay — the link to the source (AGPL §13).
-    ...(appVersion && !managed
-      ? [{ id: 'about', label: t('settings.tabs.about'), icon: Info }]
-      : []),
+
   ]
 
   return (
@@ -65,22 +58,9 @@ function SettingsPageDesktop(): React.ReactElement {
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            footer={
-              appVersion
-                ? managed
-                  // No About tab here, so this is the prominent source offer
-                  // AGPL §13 asks for when people use it over a network.
-                  ? <a
-                      href="https://github.com/liketrek/TREK"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="no-underline text-content-faint hover:text-content-secondary"
-                    >
-                      v{appVersion}
-                    </a>
-                  : `v${appVersion}`
-                : ''
-            }
+            footer={<a href="/legal" className="text-content-faint hover:text-content-secondary">
+              {t('legal.title')}{appVersion && ` · v${appVersion}`}
+            </a>}
           >
             {activeTab === 'display' && <DisplaySettingsTab />}
             {activeTab === 'appearance' && <AppearanceSettingsTab />}
@@ -90,7 +70,7 @@ function SettingsPageDesktop(): React.ReactElement {
             {activeTab === 'plugins' && hasPlugins && <PluginSettingsTab />}
             {activeTab === 'offline' && <OfflineTab />}
             {activeTab === 'account' && <AccountTab />}
-            {activeTab === 'about' && appVersion && <AboutTab appVersion={appVersion} />}
+
           </PageSidebar>
         </div>
     </PageShell>

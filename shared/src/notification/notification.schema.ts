@@ -59,7 +59,7 @@ export type UnreadCountResult = z.infer<typeof unreadCountResultSchema>;
 // ── Web Push (#894) ──────────────────────────────────────────────────────────
 
 /** Id of the built-in Web Push channel in the preference matrix and the admin CSV. */
-export const WEB_PUSH_CHANNEL_ID = 'push';
+export const WEB_PUSH_CHANNEL_ID = 'webpush';
 
 /**
  * The longest push endpoint the server takes, well above what the push

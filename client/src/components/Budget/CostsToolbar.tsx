@@ -1,3 +1,4 @@
+import { ArrowLeftRight } from 'lucide-react'
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { Check, Download, Filter, Plus, RotateCcw, Rows3, ScanLine, Search, Table2, X } from 'lucide-react'
 import { useTranslation } from '../../i18n'
@@ -37,6 +38,7 @@ interface CostsToolbarProps {
   canEdit: boolean
   /** Whether there is any suggested transfer left to settle. */
   canSettle: boolean
+  onExchangeRates?: () => void
   onSettleAll: () => void
   onAddExpense: () => void
   /** Opens the receipt scan; left out when the AI model reads no images. */
@@ -57,7 +59,7 @@ const BAR_BTN = 'relative grid h-9 w-9 flex-none place-items-center rounded-[10p
  * Bookings, Lists and Files open with: the tab's name and what the numbers
  * cover, then how to narrow the ledger and the actions on the right.
  */
-export default function CostsToolbar({ dateMeta, people, me, colorFor, canEdit, canSettle, onSettleAll, onAddExpense, onScanReceipt, filters, view, onView }: CostsToolbarProps) {
+export default function CostsToolbar({ dateMeta, people, me, colorFor, canEdit, canSettle, onSettleAll, onExchangeRates, onAddExpense, onScanReceipt, filters, view, onView }: CostsToolbarProps) {
   const { t } = useTranslation()
   const searchRef = useRef<HTMLInputElement>(null)
   const chip = 'inline-flex items-center whitespace-nowrap rounded-full bg-surface-card px-3 py-1.5 font-medium text-content-muted shadow-sm'
@@ -94,6 +96,13 @@ export default function CostsToolbar({ dateMeta, people, me, colorFor, canEdit, 
         </span>
       </div>
 
+      {onExchangeRates && (
+        <Tooltip label={t('costs.exchangeRates.title')}>
+          <button type="button" className={BAR_BTN} aria-label={t('costs.exchangeRates.title')} onClick={onExchangeRates}>
+            <ArrowLeftRight size={15} />
+          </button>
+        </Tooltip>
+      )}
       {filters && (
         <>
           <label className="flex h-9 w-[200px] items-center gap-2 rounded-[10px] bg-surface-card px-3 text-content-faint focus-within:ring-2 focus-within:ring-[color:var(--text-primary)]">

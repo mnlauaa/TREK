@@ -34,6 +34,16 @@ export function useTripWebSocket(tripId: number | string | undefined, onToursCha
       }
     }
     addListener(toursInvalidation)
+    const refreshRetainedData = (event: WebSocketEvent) => {
+      if (String(event.tripId ?? '') !== String(tripId)) return
+      if (event.type === 'budget:exchange-rates-applied' || event.type === 'guest:identity-transferred') {
+        void tripStore.loadBudgetItems(tripId)
+      }
+      if (event.type === 'budget:exchange-rates-applied' || event.type === 'budget:exchange-rates-updated') {
+        window.dispatchEvent(new CustomEvent('budget:exchange-rates-remote'))
+      }
+    }
+    addListener(refreshRetainedData)
     const localFileSync = () => tripStore.loadFiles?.(tripId)
     window.addEventListener('collab-files-changed', localFileSync)
     return () => {
@@ -41,6 +51,7 @@ export function useTripWebSocket(tripId: number | string | undefined, onToursCha
       removeListener(handler)
       removeListener(collabFileSync)
       removeListener(toursInvalidation)
+      removeListener(refreshRetainedData)
       window.removeEventListener('collab-files-changed', localFileSync)
     }
   }, [tripId, onToursChanged])

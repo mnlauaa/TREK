@@ -78,6 +78,7 @@ export function useCurrencyConverter() {
       });
   }, [isLoaded, updateSetting]);
 
+  const commonCurrencies = useSettingsStore((s) => s.settings.common_currencies) ?? [];
   const currencies: string[] = rates ? Object.keys(rates).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) : CURRENCIES;
   const rate = rates?.[to] ?? null;
   const converted = rate != null ? (Number.parseFloat(amount.replace(',', '.')) || 0) * rate : null;
@@ -86,5 +87,7 @@ export function useCurrencyConverter() {
     setTo(from);
   };
 
-  return { from, to, setFrom, setTo, amount, setAmount, currencies, rate, converted, swap, fetchRates };
+  const preferred = commonCurrencies.filter((code) => currencies.includes(code));
+  const ordered = [...preferred, ...currencies.filter((code) => !preferred.includes(code))];
+  return { from, to, setFrom, setTo, amount, setAmount, currencies: ordered, rate, converted, swap, fetchRates };
 }

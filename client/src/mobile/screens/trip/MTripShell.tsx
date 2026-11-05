@@ -1,3 +1,4 @@
+import { ArrowLeftRight as RateIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { findFocusDayId, findTodayDayId } from '../../../components/Planner/today'
 import { takeResumeDay } from '../../../utils/resumeRoute'
@@ -232,35 +233,20 @@ export default function MTripShell({
   const [openFilesTrashSignal, setOpenFilesTrashSignal] = useState(0)
   const [openDocSyncSignal, setOpenDocSyncSignal] = useState(0)
 
-  // The mobile plan is single-day: make sure a day is active once days arrive.
-  // Only seed once so an intentional deselect elsewhere is not fought. Open on
-  // today while the trip is running, otherwise on the next day that is still
-  // ahead — a gap in the dates should not throw you back to day 1 — and fall
-  // back to the first day once the whole trip is behind us.
-  const seededDayRef = useRef(false)
+  const trTab = planner.activeTab
+  const lastDayRef = useRef<number | null>(null)
   useEffect(() => {
-    // Re-entering the same trip from the dashboard starts with that trip's old
-    // selection still in the store. The first render treats it as seeded, then
-    // loadTrip clears it. Reset the guard with that load cycle so the freshly
-    // loaded days get their normal today/Day 1 selection.
-    if (isLoading) {
-      seededDayRef.current = false
+    if (isLoading || days.length === 0) return
+    const id = planner.selectedDayId
+    if (id != null && days.some(d => d.id === id)) {
+      lastDayRef.current = id
       return
     }
-    if (seededDayRef.current) return
-    // A day that is already active counts as seeded: a later deselect is the
-    // user's, and re-seeding it here would be exactly the fight this guard
-    // exists to avoid.
-    if (planner.selectedDayId != null) { seededDayRef.current = true; return }
-    if (days.length === 0) return
-    seededDayRef.current = true
-    // Off the same helper file as the desktop day plan (#1567), so the two
-    // cannot drift on what "today" means.
-    // A relaunch after the system closed the app goes back to the day it was on (#666).
-    const resumed = takeResumeDay(tripId)
-    const resumedDay = resumed != null && days.some(d => d.id === resumed) ? resumed : null
-    planner.tripActions.setSelectedDay(resumedDay ?? findFocusDayId(days) ?? days[0].id)
-  }, [isLoading, planner.selectedDayId, days, planner.tripActions, tripId])
+    if (id == null && ((trTab === 'plan' && view === 'map') || (trTab === 'roadtrip' && rtView === 'map'))) return
+    const previous = takeResumeDay(tripId) ?? lastDayRef.current
+    const valid = previous != null && days.some(d => d.id === previous) ? previous : null
+    planner.tripActions.setSelectedDay(valid ?? findFocusDayId(days) ?? days[0].id)
+  }, [isLoading, days, planner.selectedDayId, planner.tripActions, tripId, trTab, view, rtView])
 
   // Swiping the day panel (#2051) can move the day well past the chips on
   // screen — the rail overflows from roughly six days on — so the active chip
@@ -290,7 +276,6 @@ export default function MTripShell({
     })
   }, [planner.selectedDayId, days, dayRail])
 
-  const trTab = planner.activeTab
 
   useEffect(() => {
     if (trTab === 'tour-planner') planner.handleTabChange('plan')
@@ -328,7 +313,6 @@ export default function MTripShell({
   // The day an "all days" deselect came from, so the toggle can put it back.
   // A remote day:deleted can retire it while it is parked here, hence the
   // membership check before it is trusted.
-  const lastDayRef = useRef<number | null>(null)
   const dayToRestore = (): number | null =>
     (lastDayRef.current != null && days.some(d => d.id === lastDayRef.current)
       ? lastDayRef.current
@@ -641,6 +625,9 @@ export default function MTripShell({
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-[7px]">
             <PrimaryPill label={t('costs.addExpense')} onClick={() => setAddExpenseSignal(s => s + 1)} />
             <MReceiptScanButton tripId={tripId} canEdit={planner.can('budget_edit', trip)} />
+            <MIconBtn ariaLabel={t('costs.exchangeRates.title')} onClick={() => openSheet('rates')} size={40} className="text-m-muted backdrop-blur-[24px] backdrop-saturate-[1.7]">
+              <RateIcon size={15} strokeWidth={2} />
+            </MIconBtn>
             <MIconBtn ariaLabel={t('budget.exportCsv')} onClick={() => setExportCostsCsvSignal(s => s + 1)} size={40} className="text-m-muted backdrop-blur-[24px] backdrop-saturate-[1.7]">
               <FileDown size={15} strokeWidth={2} />
             </MIconBtn>

@@ -15,7 +15,6 @@ import type { BudgetParticipantFinal } from '@trek/shared'
 import type { BudgetItem } from '../../types'
 import CostsPanel, { ExpenseModal } from './CostsPanel'
 import { splitEqualShares, calculateTicketShares, type TicketItem } from './CostsPanel.helpers'
-import { resetFreezeAttempts } from './useFreezeMissingRates'
 
 const tripMembers = [
   { id: 1, username: 'alice', avatar_url: null },
@@ -2525,45 +2524,20 @@ describe('CostsPanel: a bill the server cannot convert', () => {
     seedStore(useSettingsStore, { settings: { ...useSettingsStore.getState().settings, default_currency: 'AUD' } })
     seedStore(useTripStore, { trip: buildTrip({ id: 1, currency: 'AUD' }) })
     clearExchangeRateCache()
-    resetFreezeAttempts()
     localStorage.setItem('trek_fx_AUD', JSON.stringify({ rates: { AUD: 1, VND: 18241.3, EUR: 0.61 }, ts: Date.now() }))
   })
   afterEach(clearExchangeRateCache)
 
-  it('FE-W5COSTS-090: VND/AUD regression: an editor heals the bill with the cached quote and the healed balances load', async () => {
-    let healed = false
-    const frozen: unknown[] = []
-    server.use(
-      http.get('/api/trips/1/budget', () => HttpResponse.json({ items: [pho()] })),
-      http.get('/api/trips/1/budget/settlement', () => HttpResponse.json(healed
-        ? {
-            // 8,920,000 VND at 18,241.3 is 489.00 AUD, half of it Bob's.
-            balances: [
-              { user_id: 1, username: 'alice', avatar_url: null, balance: 244.5 },
-              { user_id: 2, username: 'bob', avatar_url: null, balance: -244.5 },
-            ],
-            flows: [{ from: { user_id: 2, username: 'bob' }, to: { user_id: 1, username: 'alice' }, amount: 244.5 }],
-            settlements: [],
-            currency: 'AUD',
-            unconverted: { item_ids: [], settlement_ids: [], currencies: [] },
-          }
-        : leftOut)),
-      http.post('/api/trips/1/budget/freeze-rates', async ({ request }) => {
-        frozen.push(await request.json())
-        healed = true
-        return HttpResponse.json({ items: [{ ...pho(), exchange_rate: 18241.3 }], settlements: [], unresolved: [] })
-      }),
-    )
-    render(<CostsPanel tripId={1} tripMembers={tripMembers} />)
-
-    // Only the currency the settlement is missing, at the rate the browser holds.
-    await waitFor(() => expect(frozen).toEqual([{ fallback_fx: { base: 'AUD', rates: { VND: 18241.3 } } }]))
-    // The settlement is read again and Bob's half can be settled.
-    expect(await screen.findByRole('button', { name: /^Settle(:|$)/ })).toBeInTheDocument()
-    expect(screen.getAllByText(/244\.50/).length).toBeGreaterThan(0)
-    // Nothing on the page counts the bill as 8,920,000 dollars any more.
+  it('shows a legacy VND expense awaiting conversion without freezing cached quotes on open', async () => {
+    let frozen = 0
+    server.use(http.post('/api/trips/1/budget/freeze-rates', () => {
+      frozen += 1
+      return HttpResponse.json({ items: [], settlements: [], unresolved: [] })
+    }))
+    mount([pho()], leftOut)
+    expect(await screen.findByText('Awaiting conversion')).toBeInTheDocument()
     expect(screen.queryByText(/\$8,920,000/)).toBeNull()
-    expect(frozen).toHaveLength(1)
+    expect(frozen).toBe(0)
   })
 
   it('FE-W5COSTS-091: a viewer\'s browser never freezes anything', async () => {
