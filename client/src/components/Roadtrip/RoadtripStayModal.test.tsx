@@ -241,13 +241,14 @@ describe('RoadtripStayModal for a stop left at a set time', () => {
     expect(screen.queryByText('7 h 30 min')).not.toBeInTheDocument()
   })
 
-  it('FE-STAYMODAL-022: an End the place carries too goes with the removal, or the slider would not be the truth', async () => {
+  it('FE-STAYMODAL-022: clearing an inherited End changes only this visit', async () => {
     const updatePlace = vi.fn(async () => undefined)
     seedStore(useTripStore, { places: [{ id: 9, name: 'Rasthof Dammer Berge', end_time: '14:00' }] })
     useTripStore.setState({ updatePlace } as never)
     open(leaving)
     fireEvent.click(screen.getByRole('button', { name: 'Remove end time' }))
-    await waitFor(() => expect(updatePlace).toHaveBeenCalledWith(4, 9, { end_time: null }))
+    await waitFor(() => expect(setAssignmentTimes).toHaveBeenCalled())
+    expect(updatePlace).not.toHaveBeenCalled()
     expect(setAssignmentTimes).toHaveBeenCalledWith(4, 11, 102, { place_time: null, end_time: null })
     await waitFor(() => expect(slider().value).toBe('30'))
   })

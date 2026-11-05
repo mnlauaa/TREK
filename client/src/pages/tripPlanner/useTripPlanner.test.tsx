@@ -197,7 +197,10 @@ beforeEach(() => {
   vi.spyOn(healthApi, 'features').mockResolvedValue({ bookingImport: false, aiParsing: false })
   vi.spyOn(tripsApi, 'getMembers').mockResolvedValue({ owner: null, members: [] })
   vi.spyOn(accommodationsApi, 'list').mockResolvedValue({ accommodations: [] })
-  vi.spyOn(assignmentsApi, 'updateTime').mockResolvedValue({})
+  vi.spyOn(assignmentsApi, 'updateTime').mockImplementation(async (_tripId, id, times) => ({
+    assignment: { ...Object.values(useTripStore.getState().assignments).flat().find(a => a.id === id)!,
+      times_explicit: true, assignment_time: times.place_time, assignment_end_time: times.end_time },
+  }))
   vi.spyOn(assignmentsApi, 'updateNotes').mockResolvedValue({})
   vi.spyOn(airtrailApi, 'sync').mockResolvedValue({ changed: 0 })
   vi.spyOn(mapsApi, 'reverse').mockResolvedValue({ name: '', address: '' } as never)
@@ -1163,6 +1166,7 @@ describe('useTripPlanner — place CRUD', () => {
       await result.current.handleSavePlace({ name: 'Nara' })
     })
     expect(assignmentsApi.updateNotes).not.toHaveBeenCalled()
+    expect(assignmentsApi.updateTime).not.toHaveBeenCalled()
 
     // An empty string is an explicit clear and goes out as null.
     await act(async () => {

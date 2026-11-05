@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import {
+  assignmentStayRequestSchema,
   assignmentCreateRequestSchema,
   assignmentReorderRequestSchema,
   assignmentMoveRequestSchema,
@@ -25,3 +26,5 @@ export class AssignmentEndDayDto extends createZodDto(assignmentEndDayRequestSch
 export class AssignmentNotesDto extends createZodDto(assignmentNotesRequestSchema) {}
 export class AssignmentTransportDto extends createZodDto(assignmentTransportRequestSchema) {}
 export class AssignmentParticipantsDto extends createZodDto(assignmentParticipantsRequestSchema) {}
+
+export class AssignmentStayDto extends createZodDto(assignmentStayRequestSchema) {}

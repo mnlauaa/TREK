@@ -9,6 +9,7 @@ export const FORK_SCHEMA_MIGRATION_IDS = [
   'fork/enhanced-fx-v1',
   'fork/guest-identity-v1',
   'fork/web-push-v1',
+  'fork/itinerary-timing-v1',
 ] as const;
 
 export type ForkSchemaMigrationId = (typeof FORK_SCHEMA_MIGRATION_IDS)[number];
@@ -175,7 +176,7 @@ export function classifyForkLineage(db: Database.Database, version: number): str
   if (version >= 201 && naver && naver.type !== 'integration') return 'mixed-or-unsupported';
   if (!hasLedger && custom) return 'mixed-or-unsupported';
 
-  const artifacts = [crosswalk, fx, guest, webPush];
+  const artifacts = [crosswalk, fx, guest, webPush, hasColumn(db, 'day_assignments', 'stay_minutes') && hasColumn(db, 'day_assignments', 'times_explicit') && hasColumn(db, 'days', 'timing_json')];
   if (ids.some((id) => !artifacts[FORK_SCHEMA_MIGRATION_IDS.indexOf(id as ForkSchemaMigrationId)])) {
     return 'mixed-or-unsupported';
   }
@@ -383,11 +384,20 @@ function webPushV1(db: Database.Database): void {
   `);
 }
 
+function itineraryTimingV1(db: Database.Database): void {
+  addColumn(db, 'day_assignments', 'stay_minutes INTEGER CHECK(stay_minutes BETWEEN 0 AND 1440)');
+  addColumn(db, 'day_assignments', 'times_explicit INTEGER NOT NULL DEFAULT 0');
+  const existed = hasColumn(db, 'days', 'timing_json');
+  addColumn(db, 'days', `timing_json TEXT NOT NULL DEFAULT '{"enabled":true,"start":"09:00","travel":[]}'`);
+  if (!existed) db.exec(`UPDATE days SET timing_json = '{"enabled":false,"start":"09:00","travel":[]}'`);
+}
+
 const FORK_MIGRATIONS: readonly ForkMigration[] = [
   { id: 'fork/v4-schema-crosswalk', run: crosswalkV4Schema },
   { id: 'fork/enhanced-fx-v1', run: enhancedFxV1 },
   { id: 'fork/guest-identity-v1', run: guestIdentityV1 },
   { id: 'fork/web-push-v1', run: webPushV1 },
+  { id: 'fork/itinerary-timing-v1', run: itineraryTimingV1 },
 ];
 
 export function runForkMigrations(db: Database.Database): void {

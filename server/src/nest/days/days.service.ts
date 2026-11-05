@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { addIsoDays, MAX_TRIP_DAYS, planDatedAppend } from '@trek/shared';
+import { type DayTiming, addIsoDays, MAX_TRIP_DAYS, planDatedAppend } from '@trek/shared';
 import type { RoadtripDayBoundary, TrekWsPayload, TrekWsTripEventName } from '@trek/shared';
 import { RealtimeService } from '../realtime/realtime.service';
 import { DatabaseService, type TripAccess } from '../database/database.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { QueryHelpersService } from '../query-helpers/query-helpers.service';
 import { carryVias, locatedStopIds, reseatOwnStop } from '../accommodations/night-seat';
-import { formatAssignmentWithPlace } from '../common/rowShape';
+import { formatAssignmentWithPlace, withDayTiming } from '../common/rowShape';
 import { TRIP_SELECT } from '../trips/trip-select';
 import type { AssignmentRow, Day, DayNote, User } from '../../types';
 
@@ -105,8 +105,8 @@ export class DaysService {
     const assignments = this.db.all<AssignmentRow>(`
     SELECT da.*, p.id as place_id, p.name as place_name, p.description as place_description,
       p.lat, p.lng, p.address, p.category_id, p.price, p.currency as place_currency,
-      COALESCE(da.assignment_time, p.place_time) as place_time,
-      COALESCE(da.assignment_end_time, p.end_time) as end_time,
+      CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as place_time,
+      CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as end_time,
       p.duration_minutes, p.notes as place_notes,
       p.image_url, p.transport_mode, p.google_place_id, p.google_ftid, p.osm_id, p.amap_poi_id, p.website, p.phone, p.stop_type, p.fill_percent,
       c.name as category_name, c.color as category_color, c.icon as category_icon
@@ -129,6 +129,11 @@ export class DaysService {
         id: a.id,
         day_id: a.day_id,
         order_index: a.order_index,
+        place_id: a.place_id,
+        assignment_time: a.assignment_time ?? null,
+        assignment_end_time: a.assignment_end_time ?? null,
+        stay_minutes: a.stay_minutes ?? null,
+        times_explicit: a.times_explicit === 1,
         end_day: a.end_day === 1,
         notes: a.notes,
         // Repeated here for the same reason stop_type is: the day list hides the stop
@@ -190,8 +195,8 @@ export class DaysService {
     const allAssignments = this.db.all<AssignmentRow>(`
     SELECT da.*, p.id as place_id, p.name as place_name, p.description as place_description,
       p.lat, p.lng, p.address, p.category_id, p.price, p.currency as place_currency,
-      COALESCE(da.assignment_time, p.place_time) as place_time,
-      COALESCE(da.assignment_end_time, p.end_time) as end_time,
+      CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as place_time,
+      CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as end_time,
       p.duration_minutes, p.notes as place_notes,
       p.image_url, p.transport_mode, p.google_place_id, p.google_ftid, p.osm_id, p.amap_poi_id, p.website, p.phone, p.stop_type, p.fill_percent,
       c.name as category_name, c.color as category_color, c.icon as category_icon
@@ -225,7 +230,7 @@ export class DaysService {
     }
 
     const daysWithAssignments = days.map(day => ({
-      ...day,
+      ...withDayTiming(day),
       assignments: assignmentsByDayId[day.id] || [],
       notes_items: notesByDayId[day.id] || [],
     }));
@@ -243,11 +248,16 @@ export class DaysService {
     );
 
     const day = this.db.get<Day>('SELECT * FROM days WHERE id = ?', result.lastInsertRowid)!;
-    return { ...day, assignments: [] };
+    return { ...withDayTiming(day), assignments: [] };
   }
 
   getDay(id: string | number, tripId: string | number) {
     return this.db.get<Day>('SELECT * FROM days WHERE id = ? AND trip_id = ?', id, tripId);
+  }
+
+  setTiming(id: string | number, timing: DayTiming) {
+    this.db.run('UPDATE days SET timing_json = ? WHERE id = ?', JSON.stringify(timing), id);
+    return { ...withDayTiming(this.db.get<Day>('SELECT * FROM days WHERE id = ?', id)!), assignments: this.getAssignmentsForDay(id) };
   }
 
   update(id: string | number, current: Day, fields: { notes?: string; title?: string | null }) {
@@ -261,7 +271,7 @@ export class DaysService {
       id
     );
     const updatedDay = this.db.get<Day>('SELECT * FROM days WHERE id = ?', id)!;
-    return { ...updatedDay, assignments: this.getAssignmentsForDay(id) };
+    return { ...withDayTiming(updatedDay), assignments: this.getAssignmentsForDay(id) };
   }
 
   /**
@@ -272,7 +282,7 @@ export class DaysService {
   setDefaultTransportMode(id: string | number, mode: string | null) {
     this.db.run('UPDATE days SET default_transport_mode = ? WHERE id = ?', mode ?? null, id);
     const updatedDay = this.db.get<Day>('SELECT * FROM days WHERE id = ?', id)!;
-    return { ...updatedDay, assignments: this.getAssignmentsForDay(id) };
+    return { ...withDayTiming(updatedDay), assignments: this.getAssignmentsForDay(id) };
   }
 
   /**
@@ -505,7 +515,7 @@ export class DaysService {
         return result.lastInsertRowid;
       });
       const day = this.db.get<Day>('SELECT * FROM days WHERE id = ?', newRowid)!;
-      return { ...day, assignments: [], notes_items: [] };
+      return { ...withDayTiming(day), assignments: [], notes_items: [] };
     }
 
     // Dated trip: rebuild N+1 contiguous dates from the earliest date.
@@ -534,7 +544,7 @@ export class DaysService {
       return insertedId;
     });
     const day = this.db.get<Day>('SELECT * FROM days WHERE id = ?', newId)!;
-    return { ...day, assignments: [], notes_items: [] };
+    return { ...withDayTiming(day), assignments: [], notes_items: [] };
   }
 
   /**
@@ -575,7 +585,7 @@ export class DaysService {
       const boundaries = this.shiftBoundariesBack(trip, position);
       this.db.run('UPDATE trips SET end_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', plan.date, trip);
       const day = this.db.get<Day>('SELECT * FROM days WHERE id = ?', inserted.lastInsertRowid)!;
-      return { day: { ...day, assignments: [], notes_items: [] }, endDate: plan.date, boundaries };
+      return { day: { ...withDayTiming(day), assignments: [], notes_items: [] }, endDate: plan.date, boundaries };
     });
     return { ...appended, trip: this.getTripForViewer(trip, viewerId) };
   }

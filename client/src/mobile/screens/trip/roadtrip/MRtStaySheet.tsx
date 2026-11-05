@@ -16,8 +16,10 @@ import { INNER_CLS, displayTime } from '../sheets/MTripSheetUi'
 
 /** What the chain hands over when a stop's stay is tapped. */
 interface RtStaySheetPayload {
+  fromItinerary?: boolean
+  arrival?: string | null
   placeId?: number
-  /** The stay the place carries right now; absent and zero mean the same thing. */
+  /** The resolved stay for this visit. */
   minutes?: number | null
   name?: string
   /** Where the stop sheet was standing, so saving can hand the traveller back to it. */
@@ -53,10 +55,8 @@ const clampMinutes = (value: number): number => Math.min(MAX, Math.max(0, Math.r
  * How long the traveller stays at one stop, on the phone ('rtstay', payload
  * { placeId, minutes, name }).
  *
- * Writes `places.duration_minutes` through `planner.setRoadtripStay`, which is the same
- * single write the desktop dialog makes. Zero rather than null clears it: the update
- * statement folds a null into "leave it alone", so a null could give a stop a stay but
- * never take one away.
+ * Saves the selected visit's duration override through `planner.setRoadtripStay`.
+ * Without a selected visit, it updates the place default. Zero is a valid stay.
  *
  * Two things this sheet deliberately does not do:
  *
@@ -73,7 +73,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
   const open = shell.sheet?.id === 'rtstay'
   const payload = (shell.sheet?.payload ?? {}) as RtStaySheetPayload
   const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
-  const canEdit = planner.can('place_edit', planner.trip)
+  const canEdit = planner.can(payload.assignmentId ? 'day_edit' : 'place_edit', planner.trip)
 
   // Hold the last payload so the name and the number survive the exit animation
   // instead of blinking out while the sheet slides away.
@@ -109,6 +109,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
   // decides whether there is a stay to choose here at all.
   const located = stage && stop?.assignmentId != null ? locateStop([stage], stop.assignmentId) : null
   const arrival = useMemo(() => {
+    if (stop?.fromItinerary) return stop.arrival ?? null
     if (located) return located.entry?.arrival ?? null
     if (!stage || stopPlaceId == null) return null
     // A stored stop at the place: the hotel a day sets out from shares the place of the
@@ -116,7 +117,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     const index = stage.stops.findIndex(s => isStoredStop(s) && s.placeId === stopPlaceId)
     if (index === -1) return null
     return stage.schedule.entries[index]?.arrival ?? null
-  }, [located, stage, stopPlaceId])
+  }, [located, stage, stopPlaceId, stop])
   const leave = useLeaveMode(located && {
     leaveAt: located.stop.leaveAt,
     arrival: located.entry?.arrival,
@@ -160,11 +161,11 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     const value = minutes
     setSaving(true)
     try {
-      await planner.setRoadtripStay(placeId, value)
+      await planner.setRoadtripStay(placeId, value, stop ?? undefined)
       // 'rtstop' is located by day and assignment, not by place: spreading this sheet's own
       // payload into it opened a sheet that resolved to nothing, drew nothing, and still
       // counted as open, which blocks the day swipe until something else closes it.
-      if (stop?.dayId != null && stop.assignmentId != null) {
+      if (!stop?.fromItinerary && stop?.dayId != null && stop.assignmentId != null) {
         shell.openSheet('rtstop', { dayId: stop.dayId, assignmentId: stop.assignmentId })
       } else {
         shell.closeSheet()

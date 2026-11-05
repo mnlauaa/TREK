@@ -13,7 +13,7 @@ import {
 import type { User } from '../../types';
 import { DaysService, DayReorderError, DayAppendError, type DatedDayAppend } from './days.service';
 import { DayRemovalService, DayDeleteError, type DayRemoval } from './day-removal.service';
-import { DayCreateDto, DayReorderDto, DayTransportDto, DayUpdateDto } from './days.dto';
+import { DayCreateDto, DayReorderDto, DayTransportDto, DayUpdateDto, DayTimingDto } from './days.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
@@ -128,6 +128,20 @@ export class DaysController {
     // the service's presence sentinels preserve the omitted column (the client
     // updates notes and title in separate requests).
     const day = this.days.update(id, current as never, body);
+    this.days.broadcast(tripId, 'day:updated', { day }, socketId);
+    return { day };
+  }
+
+  @RequirePermission('day_edit')
+  @Put(':id/timing')
+  timing(
+    @Param('tripId') tripId: string,
+    @Param('id') id: string,
+    @Body() body: DayTimingDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    if (!this.days.getDay(id, tripId)) throw new HttpException({ error: 'Day not found' }, 404);
+    const day = this.days.setTiming(id, body);
     this.days.broadcast(tripId, 'day:updated', { day }, socketId);
     return { day };
   }

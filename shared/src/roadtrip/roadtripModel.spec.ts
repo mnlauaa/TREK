@@ -1307,6 +1307,7 @@ describe('a departure terminal on its timetable’s day', () => {
   it('FE-ROADTRIP-MODEL-112: only a ride’s departure terminal is held to its day', () => {
     expect(scheduleStopOf(terminal('departure', '14:15', '15:15'))).toEqual({
       anchor: '14:15',
+      timetable: true,
       dwellMinutes: 60,
       departureAt: 915,
       dated: true,

@@ -113,7 +113,7 @@ describe('automatic daily travel times', () => {
     expect(result.current.totalStops).toBe(2)
     expect(result.current.totalDuration).toBe(43200)
     expect(result.current.days[0].schedule.entries.map(e => e.arrival)).toEqual(['07:00', '18:00'])
-    expect(result.current.days[1].schedule.entries.map(e => e.arrival)).toEqual(['08:00', '09:00'])
+    expect(result.current.days[1].schedule.entries.map(e => e.arrival)).toEqual(['08:00', '10:00'])
     expect(result.current.days[1].stops[1]).toMatchObject({ assignmentId: 2, ownerDayId: 1, ownerIndex: 1 })
     const end = result.current.days[0].stops[1]
     rerender({ stops: [{ ...original[0], dwell: 120 }, original[1]] })

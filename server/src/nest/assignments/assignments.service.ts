@@ -96,8 +96,8 @@ export class AssignmentsService {
     const a = this.dbs.get<AssignmentRow>(`
       SELECT da.*, p.id as place_id, p.name as place_name, p.description as place_description,
         p.lat, p.lng, p.address, p.category_id, p.price, p.currency as place_currency,
-        COALESCE(da.assignment_time, p.place_time) as place_time,
-        COALESCE(da.assignment_end_time, p.end_time) as end_time,
+        CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as place_time,
+        CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as end_time,
         p.duration_minutes, p.notes as place_notes,
         p.image_url, p.transport_mode, p.google_place_id, p.google_ftid, p.osm_id, p.amap_poi_id, p.website, p.phone, p.stop_type, p.fill_percent,
         c.name as category_name, c.color as category_color, c.icon as category_icon
@@ -132,8 +132,8 @@ export class AssignmentsService {
     const assignments = this.dbs.all<AssignmentRow>(`
       SELECT da.*, p.id as place_id, p.name as place_name, p.description as place_description,
         p.lat, p.lng, p.address, p.category_id, p.price, p.currency as place_currency,
-        COALESCE(da.assignment_time, p.place_time) as place_time,
-        COALESCE(da.assignment_end_time, p.end_time) as end_time,
+        CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as place_time,
+        CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as end_time,
         p.duration_minutes, p.notes as place_notes,
         p.image_url, p.transport_mode, p.google_place_id, p.google_ftid, p.osm_id, p.amap_poi_id, p.website, p.phone, p.stop_type, p.fill_percent,
         c.name as category_name, c.color as category_color, c.icon as category_icon
@@ -253,10 +253,15 @@ export class AssignmentsService {
    * such a day the order stored and the order drawn can differ. The old sort did the
    * same.
    */
+  setStay(id: string | number, minutes: number | null) {
+    this.dbs.run('UPDATE day_assignments SET stay_minutes = ? WHERE id = ?', minutes, id);
+    return this.getAssignmentWithPlace(Number(id));
+  }
+
   updateTime(id: string | number, placeTime: unknown, endTime: unknown): AssignmentTimeUpdate {
     const sorted = this.dbs.transaction(() => {
       const stored = this.dbs.get<{ day_id: number; start: string | null }>(`
-        SELECT da.day_id, COALESCE(da.assignment_time, p.place_time, acc.check_in) AS start
+        SELECT da.day_id, COALESCE(CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END, acc.check_in) AS start
         FROM day_assignments da
         JOIN places p ON da.place_id = p.id
         LEFT JOIN day_accommodations acc ON acc.id = da.accommodation_id
@@ -265,7 +270,7 @@ export class AssignmentsService {
 
       // Falsy times (null, undefined, '') all clear the override — an empty
       // string is a clear, not a stored value.
-      this.dbs.run('UPDATE day_assignments SET assignment_time = ?, assignment_end_time = ? WHERE id = ?',
+      this.dbs.run('UPDATE day_assignments SET assignment_time = ?, assignment_end_time = ?, times_explicit = 1 WHERE id = ?',
         placeTime || null, endTime || null, id);
 
       // Only a start that moved sorts. An end is a label. A start sent again as it
@@ -297,7 +302,7 @@ export class AssignmentsService {
     // afternoon stop sorted that one and left the hotel sitting in front of or
     // behind it by accident.
     const rows = this.dbs.all<DayStopRow>(`
-      SELECT da.id, da.order_index, COALESCE(da.assignment_time, p.place_time, acc.check_in) as effective_time,
+      SELECT da.id, da.order_index, COALESCE(CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END, acc.check_in) as effective_time,
         (p.lat IS NOT NULL AND p.lng IS NOT NULL) as located
       FROM day_assignments da
       JOIN places p ON da.place_id = p.id

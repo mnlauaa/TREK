@@ -44,6 +44,7 @@ export interface Trip {
 }
 
 export interface Day {
+  timing_json?: string;
   id: number;
   trip_id: number;
   day_number: number;
@@ -107,6 +108,8 @@ export interface Tag {
 }
 
 export interface DayAssignment {
+  stay_minutes?: number | null;
+  times_explicit?: number;
   id: number;
   day_id: number;
   place_id: number;

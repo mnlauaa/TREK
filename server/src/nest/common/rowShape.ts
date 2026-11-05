@@ -1,4 +1,5 @@
-import type { AssignmentRow, Tag, Participant } from '../../types';
+import { dayTimingRequestSchema } from '@trek/shared';
+import type { AssignmentRow, Tag, Participant, Day } from '../../types';
 import type { PlaceRatingRow } from '../query-helpers/query-helpers.service';
 
 /**
@@ -19,6 +20,8 @@ export function formatAssignmentWithPlace(a: AssignmentRow, tags: Partial<Tag>[]
     assignment_time: a.assignment_time ?? null,
     assignment_end_time: a.assignment_end_time ?? null,
     end_day: a.end_day === 1,
+    stay_minutes: a.stay_minutes ?? null,
+    times_explicit: a.times_explicit === 1,
     leg_transport_mode: a.leg_transport_mode ?? null,
     incoming_leg_transport_mode: a.incoming_leg_transport_mode ?? null,
     // Which booking put this stop here, if a booking did. The day list has nothing
@@ -73,4 +76,9 @@ export function ratingAggregate(ratings: PlaceRatingRow[] | undefined) {
     rating_avg: rows.length > 0 ? rows.reduce((s, r) => s + r.rating, 0) / rows.length : null,
     rating_count: rows.length,
   };
+}
+
+export function withDayTiming<T extends Day>(day: T) {
+  const { timing_json, ...rest } = day;
+  return { ...rest, timing: dayTimingRequestSchema.parse(timing_json ? JSON.parse(timing_json) : { enabled: false, start: '09:00', travel: [] }) };
 }

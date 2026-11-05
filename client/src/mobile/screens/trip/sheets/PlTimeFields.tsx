@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Eyebrow } from './PlSheetChrome'
 import CustomTimePicker from '../../../../components/shared/CustomTimePicker'
@@ -29,8 +29,9 @@ export default function PlTimeFields({
   planner, startTime, endTime, onChange, assignmentId, dayAssignments, hasTimeError,
 }: PlTimeFieldsProps) {
   const { t } = planner
+  const [showFixed, setShowFixed] = useState(false)
   // Opened from the road trip tab, where the End of a visit is when the drive leaves it.
-  // The plan tab reads the day as Days does, and there End stays a plain label.
+  // Both views preserve the same fixed times and derive the stay until End.
   const endIsLeave = planner.activeTab === 'roadtrip'
 
   const collisions = useMemo(() => {
@@ -50,6 +51,8 @@ export default function PlTimeFields({
       return s1 < (e2 || '23:59') && s2 < (e1 || '23:59') && s1 !== e2 && s2 !== e1
     })
   }, [assignmentId, dayAssignments, startTime, endTime])
+
+  if (!showFixed && !startTime && !endTime) return <button type="button" className="rounded px-2 py-2 text-caption text-accent-on focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setShowFixed(true)}>{t('timing.fixed')}</button>
 
   return (
     <div className="mt-3">

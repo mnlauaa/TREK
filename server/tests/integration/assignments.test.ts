@@ -439,3 +439,40 @@ describe('Assignment participants', () => {
     expect(update.body.assignment.place.end_time).toBe('16:00');
   });
 });
+
+describe('visit timing', () => {
+  it('isolates duration and explicit clears between two visits and preserves the place', async () => {
+    const { user } = createUser(testDb);
+    const { trip, day, place } = setupAssignmentFixtures(user.id);
+    testDb.prepare('UPDATE places SET place_time = ?, end_time = ?, duration_minutes = ? WHERE id = ?').run('10:00', '11:00', 60, place.id);
+    const nextDay = createDay(testDb, trip.id, { day_number: 2 });
+    const create = async (dayId: number) => (await request(app).post(`/api/trips/${trip.id}/days/${dayId}/assignments`).set('Cookie', authCookie(user.id)).send({ place_id: place.id }).expect(201)).body.assignment;
+    const first = await create(day.id);
+    const second = await create(nextDay.id);
+    const url = `/api/trips/${trip.id}/assignments/${first.id}`;
+    const stay = await request(app).put(`${url}/stay`).set('Cookie', authCookie(user.id)).send({ stay_minutes: 0 }).expect(200);
+    expect(stay.body.assignment).toMatchObject({ stay_minutes: 0, place: { place_time: '10:00', end_time: '11:00' } });
+    await request(app).put(`${url}/stay`).set('Cookie', authCookie(user.id)).send({ stay_minutes: -1 }).expect(400);
+    await request(app).put(`${url}/stay`).send({ stay_minutes: 10 }).expect(401);
+    const cleared = await request(app).put(`${url}/time`).set('Cookie', authCookie(user.id)).send({ place_time: null, end_time: null }).expect(200);
+    expect(cleared.body.assignment).toMatchObject({ times_explicit: true, stay_minutes: 0, place: { place_time: null, end_time: null } });
+    const listed = await request(app).get(`/api/trips/${trip.id}/days`).set('Cookie', authCookie(user.id)).expect(200);
+    expect(listed.body.days[1].assignments.find((a: { id: number }) => a.id === second.id)).toMatchObject({ stay_minutes: null, place: { place_time: '10:00', end_time: '11:00' } });
+    expect(testDb.prepare('SELECT place_time, end_time, duration_minutes FROM places WHERE id = ?').get(place.id)).toEqual({ place_time: '10:00', end_time: '11:00', duration_minutes: 60 });
+    const foreign = createTrip(testDb, user.id);
+    await request(app).put(`/api/trips/${foreign.id}/assignments/${first.id}/stay`).set('Cookie', authCookie(user.id)).send({ stay_minutes: 10 }).expect(404);
+  });
+
+  it('persists validated day preferences and new-day defaults', async () => {
+    const { user } = createUser(testDb);
+    const { trip, day } = setupAssignmentFixtures(user.id);
+    const url = `/api/trips/${trip.id}/days/${day.id}/timing`;
+    const timing = { enabled: true, start: '09:00', travel: [] };
+    const days = await request(app).get(`/api/trips/${trip.id}/days`).set('Cookie', authCookie(user.id)).expect(200);
+    expect(days.body.days[0].timing).toEqual(timing);
+    const response = await request(app).put(url).set('Cookie', authCookie(user.id)).send({ ...timing, start: '08:30' }).expect(200);
+    expect(response.body.day.timing.start).toBe('08:30');
+    await request(app).put(url).set('Cookie', authCookie(user.id)).send({ ...timing, start: '24:00' }).expect(400);
+    await request(app).put(url).send(timing).expect(401);
+  });
+});

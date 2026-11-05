@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Automatické časy',
+  'timing.arrival': 'Odhadovaný příjezd',
+  'timing.departure': 'Odhadovaný odjezd',
+  'timing.fixed': 'Nastavit pevné časy',
+  'timing.unknown': 'Neznámé',
+  'timing.bookingConflict': 'Doba návštěvy nepokrývá tuto rezervaci.',
+  'timing.booking': 'Zobrazit rezervaci',
+  'timing.travel': 'Cesta v minutách',
+  'timing.dayOffset': '+{days} dní',
+
   'roadtrip.stay.portals': 'Najít ubytování',
   'roadtrip.stay.portalHint': 'Na portálu ověřte cíl, termín a hosty. Na CHECK24 hledejte ručně.',
   'roadtrip.charging.available': 'volné',

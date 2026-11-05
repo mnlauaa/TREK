@@ -1,3 +1,4 @@
+import { saveVisitStay } from '../api/itineraryTiming'
 import { assignmentSchema } from '@trek/shared'
 import { saveAssignmentEndDay } from '../api/assignmentEndDay'
 import { assignmentsApi } from '../api/client'
@@ -14,6 +15,20 @@ export interface AssignmentTimes {
 }
 
 export const assignmentRepo = {
+  async setStay(tripId: number | string, assignment: Assignment, minutes: number | null): Promise<Assignment> {
+    if (!isEffectivelyOffline()) {
+      const saved = await saveVisitStay(tripId, assignment.id, { stay_minutes: minutes })
+      await cacheAssignment(saved).catch(err => console.warn('Offline cache not updated after saving visit stay:', err))
+      return saved
+    }
+    const updated = { ...assignment, stay_minutes: minutes }
+    await offlineDb.transaction('rw', offlineDb.days, offlineDb.mutationQueue, async () => {
+      await mutationQueue.enqueue({ id: generateUUID(), tripId: Number(tripId), method: 'PUT',
+        url: `/trips/${tripId}/assignments/${assignment.id}/stay`, body: { stay_minutes: minutes }, resource: 'assignments', entityId: assignment.id })
+      await cacheAssignment(updated)
+    })
+    return updated
+  },
   async setEndDay(tripId: number | string, assignment: Assignment, endDay: boolean): Promise<Assignment> {
     if (!isEffectivelyOffline()) {
       const saved = await saveAssignmentEndDay(tripId, assignment.id, { end_day: endDay })
@@ -44,7 +59,7 @@ export const assignmentRepo = {
       await cacheAssignment(saved)
       return saved
     }
-    const updated = { ...assignment, assignment_time: times.place_time, assignment_end_time: times.end_time }
+    const updated = { ...assignment, times_explicit: true, assignment_time: times.place_time, assignment_end_time: times.end_time }
     await offlineDb.transaction('rw', offlineDb.days, offlineDb.mutationQueue, async () => {
       await mutationQueue.enqueue({
         id: generateUUID(), tripId: Number(tripId), method: 'PUT',

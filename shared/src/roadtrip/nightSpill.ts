@@ -50,6 +50,7 @@ interface Placed {
   departure: string | null;
 
   dayOffset: number;
+  departureDayOffset: number;
 
   /** The findings the day's own schedule filed at this stop, minutes and all. */
   marks: ScheduleWarning[];
@@ -102,7 +103,7 @@ export function spillChains(plan: PlanDay[], quietDays: QuietDay[], legFor: LegL
     const schedule = computeSchedule(
       d.stops.map(scheduleStopOf),
       legs.map((l) => l?.duration),
-      { notBefore },
+      { notBefore, reachable: true },
     );
     // Where this day's last clock lands, carried to whichever day that turns out to be.
     const ends = schedule.endsAt ?? null;
@@ -160,6 +161,7 @@ export function spillChains(plan: PlanDay[], quietDays: QuietDay[], legFor: LegL
         departure: entry?.departure ?? null,
 
         dayOffset: moved ? 0 : offset,
+        departureDayOffset: (moved ? 0 : offset) + (entry.departureDayOffset ?? entry.dayOffset) - entry.dayOffset,
 
         marks: marks.filter((w) => !(moved && w.code === 'overnight')),
         fromDayNumber: moved ? d.dayNumber : null,
@@ -205,7 +207,10 @@ export function spillChains(plan: PlanDay[], quietDays: QuietDay[], legFor: LegL
           arrival: p.arrival,
           departure: p.departure,
           anchored: hasChosenArrival(p.stop),
+          plannedArrival: p.stop.time ?? p.stop.checkInTime ?? null,
+          plannedDeparture: p.stop.leaveAt ?? null,
           dayOffset: p.dayOffset,
+          departureDayOffset: p.departureDayOffset,
         })),
         warnings: placed.flatMap((p, i) => p.marks.map((w) => ({ ...w, index: i }))),
       },

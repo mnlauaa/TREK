@@ -1343,6 +1343,7 @@ interface TimeSectionProps {
 }
 
 function TimeSection({ form, handleChange, assignmentId, dayAssignments, hasTimeError, endIsLeave, t }: TimeSectionProps) {
+  const [showFixed, setShowFixed] = useState(false)
 
   const collisions = useMemo(() => {
     if (!assignmentId || !form.place_time || form.place_time.length < 5) return []
@@ -1363,6 +1364,8 @@ function TimeSection({ form, handleChange, assignmentId, dayAssignments, hasTime
       return s1 < (e2 || '23:59') && s2 < (e1 || '23:59') && s1 !== e2 && s2 !== e1
     })
   }, [assignmentId, dayAssignments, form.place_time, form.end_time])
+
+  if (!showFixed && !form.place_time && !form.end_time) return <button type="button" className="rounded px-2 py-2 text-caption text-accent-on focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setShowFixed(true)}>{t('timing.fixed')}</button>
 
   return (
     <div>

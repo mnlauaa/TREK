@@ -2,6 +2,20 @@ import { assignmentSchema } from '../assignment/assignment.schema';
 
 import { z } from 'zod';
 
+/** Manual minutes apply only to this exact directed leg and route mode. */
+export const travelMinutesOverrideSchema = z.object({
+  from: z.string().min(1).max(100),
+  to: z.string().min(1).max(100),
+  mode: z.string().min(1).max(64),
+  minutes: z.number().int().min(0).max(1440),
+});
+export const dayTimingRequestSchema = z.object({
+  enabled: z.boolean(),
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  travel: z.array(travelMinutesOverrideSchema).max(500),
+});
+export type DayTiming = z.infer<typeof dayTimingRequestSchema>;
+
 /**
  * Day + day-note API contract — single source of truth for the
  * /api/trips/:tripId/days and /api/trips/:tripId/days/:dayId/notes endpoints.
@@ -44,6 +58,7 @@ export const daySchema = z.object({
   day_number: z.number().optional(),
   date: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
+  timing: dayTimingRequestSchema.optional(),
   notes: z.string().nullable().optional(),
   // Whole-day default route mode (#1281); per-segment leg modes override it.
   default_transport_mode: z.string().nullable().optional(),

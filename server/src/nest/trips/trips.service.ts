@@ -1,3 +1,4 @@
+import { dayTimingRequestSchema } from '@trek/shared';
 import { Injectable } from '@nestjs/common';
 import path from 'path';
 import { DatabaseService } from '../database/database.service';
@@ -500,9 +501,9 @@ export class TripsService {
 
       const oldDays = this.db.prepare('SELECT * FROM days WHERE trip_id = ? ORDER BY day_number').all(sourceTripId) as any[];
       const dayMap = new Map<number, number | bigint>();
-      const insertDay = this.db.prepare('INSERT INTO days (trip_id, day_number, date, notes, title) VALUES (?, ?, ?, ?, ?)');
+      const insertDay = this.db.prepare('INSERT INTO days (trip_id, day_number, date, notes, title, timing_json) VALUES (?, ?, ?, ?, ?, ?)');
       for (const d of oldDays) {
-        const r = insertDay.run(newTripId, d.day_number, d.date, d.notes, d.title);
+        const r = insertDay.run(newTripId, d.day_number, d.date, d.notes, d.title, d.timing_json);
         dayMap.set(d.id, r.lastInsertRowid);
       }
 
@@ -570,8 +571,8 @@ export class TripsService {
       `).all(sourceTripId) as any[];
       const assignmentMap = new Map<number, number | bigint>();
       const insertAssignment = this.db.prepare(`
-        INSERT INTO day_assignments (day_id, place_id, order_index, notes, reservation_status, reservation_notes, reservation_datetime, assignment_time, assignment_end_time, end_day)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO day_assignments (day_id, place_id, order_index, notes, reservation_status, reservation_notes, reservation_datetime, assignment_time, assignment_end_time, end_day, stay_minutes, times_explicit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const a of oldAssignments) {
         const newDayId = dayMap.get(a.day_id);
@@ -579,7 +580,7 @@ export class TripsService {
         if (newDayId && newPlaceId) {
           const r = insertAssignment.run(newDayId, newPlaceId, a.order_index, a.notes,
             a.reservation_status, a.reservation_notes, a.reservation_datetime,
-            a.assignment_time, a.assignment_end_time, a.end_day ?? 0);
+            a.assignment_time, a.assignment_end_time, a.end_day ?? 0, a.stay_minutes ?? null, a.times_explicit ?? 0);
           assignmentMap.set(a.id, r.lastInsertRowid);
         }
       }
@@ -755,6 +756,22 @@ export class TripsService {
         insertCategoryOrder.run(newTripId, o.category, o.sort_order);
       }
 
+      // Manual durations refer to visits/bookings, not row positions. Re-key them in the copy.
+      for (const oldDay of oldDays) {
+        if (!oldDay.timing_json) continue;
+        const timing = dayTimingRequestSchema.parse(JSON.parse(oldDay.timing_json));
+        const remap = (key: string): string | null => {
+          const [kind, id, ...suffix] = key.split(':');
+          if (kind === 'hotel' || kind === 'point') return key;
+          const next = kind === 'assignment' ? assignmentMap.get(Number(id)) : kind === 'reservation' ? reservationMap.get(Number(id)) : undefined;
+          return next === undefined ? null : [kind, String(next), ...suffix].join(':');
+        };
+        timing.travel = timing.travel.flatMap(leg => {
+          const from = remap(leg.from), to = remap(leg.to);
+          return from && to ? [{ ...leg, from, to }] : [];
+        });
+        this.db.prepare('UPDATE days SET timing_json = ? WHERE id = ?').run(JSON.stringify(timing), dayMap.get(oldDay.id));
+      }
       return Number(newTripId);
     });
 

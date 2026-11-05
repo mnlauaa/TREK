@@ -141,3 +141,15 @@ describe('dayRepo.appendDated', () => {
     await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('Offline cache not updated after adding a day:', expect.any(Error)))
   })
 })
+
+it('queues day timing and exact travel endpoints offline without changing visits', async () => {
+  const day = buildDay({ id: 81, trip_id: 5, assignments: [] })
+  await offlineDb.days.put(day)
+  setOnline(false)
+  const timing = { enabled: true, start: '09:00', travel: [{ from: 'assignment:1', to: 'assignment:2', mode: 'walking', minutes: 0 }] }
+  await dayRepo.setTiming(5, day, timing)
+  expect((await offlineDb.days.get(81))?.timing).toEqual(timing)
+  expect(await offlineDb.mutationQueue.toArray()).toEqual([expect.objectContaining({
+    url: '/trips/5/days/81/timing', method: 'PUT', body: timing, resource: 'days', entityId: 81,
+  })])
+})

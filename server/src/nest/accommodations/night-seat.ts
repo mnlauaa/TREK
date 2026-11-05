@@ -52,7 +52,7 @@ interface PinnedVia {
 export function dayStops(db: SeatConnection, dayId: number): SeatRow[] {
   return db.prepare(`
     SELECT da.id, da.order_index,
-           CASE WHEN other.id IS NULL THEN COALESCE(da.assignment_time, p.place_time) ELSE other.check_in END AS at,
+           CASE WHEN other.id IS NULL THEN CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END ELSE other.check_in END AS at,
            other.id AS night_id, (p.lat IS NOT NULL AND p.lng IS NOT NULL) AS located
     FROM day_assignments da JOIN places p ON p.id = da.place_id
     LEFT JOIN day_accommodations other ON other.id = da.accommodation_id

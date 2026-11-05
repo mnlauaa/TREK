@@ -1,3 +1,4 @@
+import { buildItineraryTiming, itineraryInitialTravel } from '../../../../components/Planner/timing/itineraryTimingModel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTripStore } from '../../../../store/tripStore'
 import { useRouteCalculation } from '../../../../hooks/useRouteCalculation'
@@ -98,6 +99,11 @@ export function useMPlanTimeline(planner: TripPlanner) {
   )
 
   // ── Up next (go mode) — a real countdown, re-evaluated every half minute ──
+  const timingPlan = useMemo(() => day?.timing?.enabled ? buildItineraryTiming(
+    merged, day.id, day.timing, connSegments, day.default_transport_mode ?? routeProfile,
+    itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations: tripAccommodations, optimizeFromAccommodation: settings.optimize_from_accommodation }, connSegments, routeProfile),
+  ) : undefined, [day, merged, connSegments, routeProfile, days, assignments, reservations, tripAccommodations, settings.optimize_from_accommodation])
+
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000)
@@ -416,7 +422,7 @@ export function useMPlanTimeline(planner: TripPlanner) {
   }, [planner, day])
 
   return {
-    day, rows, hotelLegs, merged, hotelChips, weather, weatherTemp, upNext,
+    day, rows, hotelLegs, timingPlan, merged, hotelChips, weather, weatherTemp, upNext,
     weatherPlaceName: weatherAnchor?.name ?? null,
     language, timeFormat: settings.time_format,
     openTransitKeys, toggleTransit,

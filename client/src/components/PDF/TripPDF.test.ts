@@ -1338,3 +1338,16 @@ describe('a printed day follows the plan (#1978)', () => {
     expect(seen).toEqual([...seen].sort((a, b) => a - b))
   })
 })
+
+it('prints shared stay predictions and keeps unknown travel visibly unknown', async () => {
+  await downloadTripPDF({ ...minimalArgs,
+    days: [{ ...minimalArgs.days[0], timing: { enabled: true, start: '17:45', travel: [] } }],
+    assignments: { '1': [
+      { id: 1, day_id: 1, place_id: 1, order_index: 0, stay_minutes: 90, place: { id: 1, name: 'First' } },
+      { id: 2, day_id: 1, place_id: 2, order_index: 1, stay_minutes: 60, place: { id: 2, name: 'Second' } },
+    ] },
+  });
+  const html = getIframe()!.srcdoc;
+  expect(html).toContain('19:15');
+  expect(html).toContain('timing.unknown');
+});

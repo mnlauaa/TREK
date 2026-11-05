@@ -1389,3 +1389,22 @@ describe('Trip cover upload parity', () => {
     expect(res.body.error).toBe('Trip not found');
   });
 });
+
+it('copies visit timing and remaps manual travel endpoints to the copied visits', async () => {
+  const { user } = createUser(testDb);
+  const trip = createTrip(testDb, user.id, { start_date: '2026-10-06', end_date: '2026-10-06' });
+  const day = testDb.prepare('SELECT id FROM days WHERE trip_id = ?').get(trip.id) as { id: number };
+  const place = createPlace(testDb, trip.id, { name: 'Two visits' });
+  testDb.prepare('UPDATE places SET place_time = ? WHERE id = ?').run('10:00', place.id);
+  const first = createDayAssignment(testDb, day.id, place.id);
+  const second = createDayAssignment(testDb, day.id, place.id, { order_index: 1 });
+  testDb.prepare('UPDATE day_assignments SET stay_minutes = 0, times_explicit = 1, assignment_time = NULL WHERE id = ?').run(first.id);
+  const timing = { enabled: true, start: '08:30', travel: [{ from: `assignment:${first.id}`, to: `assignment:${second.id}`, mode: 'walking', minutes: 12 }] };
+  testDb.prepare('UPDATE days SET timing_json = ? WHERE id = ?').run(JSON.stringify(timing), day.id);
+  const copied = await request(app).post(`/api/trips/${trip.id}/copy`).set('Cookie', authCookie(user.id)).send({});
+  expect(copied.status).toBe(201);
+  const read = await request(app).get(`/api/trips/${copied.body.trip.id}/days`).set('Cookie', authCookie(user.id));
+  const result = read.body.days[0];
+  expect(result.assignments[0]).toMatchObject({ stay_minutes: 0, times_explicit: true, assignment_time: null });
+  expect(result.timing).toEqual({ ...timing, travel: [{ ...timing.travel[0], from: `assignment:${result.assignments[0].id}`, to: `assignment:${result.assignments[1].id}` }] });
+});

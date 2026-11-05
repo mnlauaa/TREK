@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Tự động tính thời gian',
+  'timing.arrival': 'Dự kiến đến',
+  'timing.departure': 'Dự kiến rời đi',
+  'timing.fixed': 'Đặt giờ cố định',
+  'timing.unknown': 'Chưa xác định',
+  'timing.bookingConflict': 'Thời gian ghé thăm không bao trùm thời gian đặt chỗ này.',
+  'timing.booking': 'Xem đặt chỗ',
+  'timing.travel': 'Thời gian di chuyển (phút)',
+  'timing.dayOffset': '+{days} ngày',
+
   'roadtrip.stay.portals': 'Tìm chỗ ở',
   'roadtrip.stay.portalHint': 'Kiểm tra điểm đến, ngày và khách trên cổng đặt chỗ. Tìm thủ công trên CHECK24.',
   'roadtrip.charging.available': 'còn trống',

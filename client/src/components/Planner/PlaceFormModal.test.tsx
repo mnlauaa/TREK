@@ -1471,6 +1471,7 @@ describe('PlaceFormModal', () => {
     const assignment = buildAssignment({ id: 12, day_id: 4, place });
 
     render(<PlaceFormModal {...defaultProps} place={place} assignmentId={12} dayAssignments={[assignment]} onSave={onSave} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Set fixed times' }));
     const [start, end] = screen.getAllByTestId('time-picker');
     fireEvent.change(start, { target: { value: '09:00' } });
     fireEvent.change(end, { target: { value: '10:30' } });
