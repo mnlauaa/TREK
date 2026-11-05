@@ -40,8 +40,8 @@ export function mergeAssignmentPlace(a: Assignment, place: Place): Assignment {
     ...a,
     place: {
       ...place,
-      place_time: a.assignment_time ?? place.place_time,
-      end_time: a.assignment_end_time ?? place.end_time,
+      place_time: a.times_explicit ? a.assignment_time ?? null : a.assignment_time ?? place.place_time,
+      end_time: a.times_explicit ? a.assignment_end_time ?? null : a.assignment_end_time ?? place.end_time,
     },
   }
 }

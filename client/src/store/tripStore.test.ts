@@ -548,3 +548,18 @@ describe('tripStore', () => {
     });
   });
 });
+
+it('receives collaborator visit timing and day preferences without changing place or booking times', async () => {
+  const place = buildPlace({ id: 500, trip_id: 1, place_time: '10:00' });
+  const visit = buildAssignment({ id: 900, day_id: 1, place });
+  const booking = buildReservation({ id: 800, reservation_time: '10:00' });
+  const day = buildDay({ id: 1, trip_id: 1, assignments: [visit] });
+  seedStore(useTripStore, { days: [day], assignments: { '1': [visit] }, places: [place], reservations: [booking] });
+  useTripStore.getState().handleRemoteEvent({ type: 'assignment:updated', assignment: { ...visit, stay_minutes: 0, times_explicit: true, assignment_time: null } });
+  const timing = { enabled: true, start: '09:00', travel: [] };
+  useTripStore.getState().handleRemoteEvent({ type: 'day:updated', day: { ...day, timing } });
+  expect(useTripStore.getState().assignments['1'][0]).toMatchObject({ stay_minutes: 0, times_explicit: true, assignment_time: null });
+  expect(useTripStore.getState().days[0].timing).toEqual(timing);
+  expect(useTripStore.getState().places[0].place_time).toBe('10:00');
+  expect(useTripStore.getState().reservations[0].reservation_time).toBe('10:00');
+});

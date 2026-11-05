@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Αυτόματος υπολογισμός χρόνου',
+  'timing.arrival': 'Εκτιμώμενη άφιξη',
+  'timing.departure': 'Εκτιμώμενη αναχώρηση',
+  'timing.fixed': 'Ορισμός σταθερών ωρών',
+  'timing.unknown': 'Άγνωστο',
+  'timing.bookingConflict': 'Οι ώρες επίσκεψης δεν καλύπτουν αυτή την κράτηση.',
+  'timing.booking': 'Προβολή κράτησης',
+  'timing.travel': 'Διαδρομή σε λεπτά',
+  'timing.dayOffset': '+{days} ημέρες',
+
   'roadtrip.stay.portals': 'Βρείτε κατάλυμα',
   'roadtrip.stay.portalHint':
     'Ελέγξτε προορισμό, ημερομηνίες και επισκέπτες στην πύλη. Στο CHECK24 αναζητήστε χειροκίνητα.',

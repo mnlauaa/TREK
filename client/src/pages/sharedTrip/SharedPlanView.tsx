@@ -1,3 +1,7 @@
+import type { Reservation } from '../../types'
+import { buildItineraryTiming, itineraryInitialTravel } from '../../components/Planner/timing/itineraryTimingModel'
+import type { DayRouteInputs } from '../../components/Map/dayRoutePlan'
+import type { DayTiming } from '@trek/shared'
 import { getMergedItems, getTransportForDay, hidesOnMiddleDay } from '../../utils/dayMerge'
 import { isDayInAccommodationRange } from '../../utils/dayOrder'
 import { SharedDayCard } from './SharedDayCard'
@@ -16,11 +20,11 @@ interface Assignment {
 interface SharedPlanViewProps {
   // The share payload is an open-ended snapshot, typed loosely at the hook.
   data: {
-    days?: { id: number; day_number: number; title?: string | null; date?: string | null }[]
+    days?: { id: number; day_number: number; title?: string | null; date?: string | null; timing?: DayTiming }[]
     assignments?: Record<string, Assignment[]>
     dayNotes?: Record<string, { id: number; text: string; time?: string | null; sort_order?: number | null }[]>
     places?: (MapPlace & { category_id?: number | null })[]
-    reservations?: { id: number; type: string; title: string; day_id?: number | null; end_day_id?: number | null }[]
+    reservations?: Reservation[]
     accommodations?: { id: number; place_name?: string | null; start_day_id?: number | null; end_day_id?: number | null }[]
     categories?: { id: number; color?: string | null; icon?: string | null }[]
     cartoApiKey?: string | null
@@ -30,6 +34,7 @@ interface SharedPlanViewProps {
   onPickDayOnMap: (id: number | null) => void
   collapsedDays: ReadonlySet<number>
   onToggleDay: (id: number) => void
+  onOpenBooking?: () => void
   /** The owner shared only travel and stays (#1712): empty days and the unplanned pool stay out. */
   travelOnly?: boolean
 }
@@ -39,7 +44,7 @@ interface SharedPlanViewProps {
  * them and staying in view while they scroll. On a phone the map comes first
  * and the days follow under it.
  */
-export function SharedPlanView({ data, selectedDay, onSelectDay, onPickDayOnMap, collapsedDays, onToggleDay, travelOnly = false }: SharedPlanViewProps) {
+export function SharedPlanView({ data, selectedDay, onSelectDay, onPickDayOnMap, collapsedDays, onToggleDay, onOpenBooking, travelOnly = false }: SharedPlanViewProps) {
   const days = [...(data.days || [])].sort((a, b) => a.day_number - b.day_number)
   const assignments = data.assignments || {}
 
@@ -101,6 +106,9 @@ export function SharedPlanView({ data, selectedDay, onSelectDay, onPickDayOnMap,
             dayTransports: transports,
             dayId: day.id,
           }).filter(item => !(item.type === 'transport' && hidesOnMiddleDay(item.data, day.id)))
+          const timingPlan = day.timing?.enabled ? buildItineraryTiming({ items: items, dayId: day.id, timing: day.timing, segments: [], profile: 'driving', initialSeconds: itineraryInitialTravel(day.id, {
+            days, assignments, reservations: data.reservations || [], accommodations: data.accommodations || [], optimizeFromAccommodation: true,
+          } as DayRouteInputs, []) }) : undefined
           const stays = (data.accommodations || []).filter(a => isDayInAccommodationRange(day, a.start_day_id, a.end_day_id, days))
           if (travelOnly && !dayHasEntries(items.length, stays.length)) return null
           return (
@@ -113,6 +121,9 @@ export function SharedPlanView({ data, selectedDay, onSelectDay, onPickDayOnMap,
               onSelect={() => onSelectDay(selectedDay === day.id ? null : day.id)}
               onToggleCollapse={() => onToggleDay(day.id)}
               items={items}
+              timingPlan={timingPlan}
+              bookings={data.reservations || []}
+              onOpenBooking={onOpenBooking}
               stays={stays}
               // A share can still carry an assignment for a deleted place. The list
               // skips those rows, so the count must not count them either.

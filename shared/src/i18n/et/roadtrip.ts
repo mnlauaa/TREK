@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Automatic timing',
+  'timing.arrival': 'Estimated arrival',
+  'timing.departure': 'Estimated departure',
+  'timing.fixed': 'Set fixed times',
+  'timing.unknown': 'Unknown',
+  'timing.bookingConflict': 'Visit times do not cover this booking.',
+  'timing.booking': 'View booking',
+  'timing.travel': 'Travel minutes',
+  'timing.dayOffset': '+{days} day(s)',
+
   'roadtrip.stay.portals': 'Otsi majutust',
   'roadtrip.stay.portalHint': 'Kontrolli portaalis sihtkohta, kuupäevi ja külalisi. CHECK24 nõuab käsitsi otsingut.',
   'roadtrip.charging.available': 'saadaval',

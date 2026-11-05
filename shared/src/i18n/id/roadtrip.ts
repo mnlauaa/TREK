@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Waktu otomatis',
+  'timing.arrival': 'Perkiraan tiba',
+  'timing.departure': 'Perkiraan berangkat',
+  'timing.fixed': 'Tetapkan waktu',
+  'timing.unknown': 'Belum diketahui',
+  'timing.bookingConflict': 'Waktu kunjungan tidak mencakup waktu reservasi ini.',
+  'timing.booking': 'Lihat reservasi',
+  'timing.travel': 'Perjalanan dalam menit',
+  'timing.dayOffset': '+{days} hari',
+
   'roadtrip.stay.portals': 'Cari penginapan',
   'roadtrip.stay.portalHint': 'Periksa tujuan, tanggal, dan tamu di portal. Cari secara manual di CHECK24.',
   'roadtrip.charging.available': 'tersedia',

@@ -180,4 +180,14 @@ describe('an online edit of a visit with an older write still queued', () => {
     expect(assignmentsApi.clearDay).not.toHaveBeenCalled()
     expect((await offlineDb.mutationQueue.toArray()).map(m => m.status).sort()).toEqual(['failed', 'pending'])
   })
+
+})
+
+it('queues a visit stay independently of its fixed times', async () => {
+  const saved = await assignmentRepo.setStay(9, assignment, 0)
+  expect(saved).toMatchObject({ stay_minutes: 0, assignment_time: '07:00' })
+  expect((await offlineDb.days.get(1))?.assignments?.[0]).toMatchObject({ stay_minutes: 0, assignment_time: '07:00' })
+  expect(await offlineDb.mutationQueue.toArray()).toEqual([expect.objectContaining({
+    url: '/trips/9/assignments/7/stay', body: { stay_minutes: 0 }, resource: 'assignments', entityId: 7,
+  })])
 })

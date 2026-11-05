@@ -1,3 +1,5 @@
+import { pdfTimingChip } from './pdfTiming'
+import { buildItineraryTiming, itineraryInitialTravel } from '../Planner/timing/itineraryTimingModel'
 // Trip PDF via browser print window
 import { createElement } from 'react'
 import { getCategoryIcon } from '../shared/categoryIcons'
@@ -23,11 +25,7 @@ import { getFlightLegs, getTrainLegs, usesStationRoute } from '../../utils/fligh
 import { onlyMyPlan, planAssignments } from './pdfScope'
 import { createPdfMarkdown, PDF_MARKDOWN_CSS } from './pdfMarkdown'
 
-/**
- * Every day starts a new page by default. On a trip of short days that prints
- * one sheet per handful of lines, so the preview offers the flowing layout the
- * in-app view already uses, and remembers which one was picked (#1292).
- */
+/** The saved print preference for starting each day on a new page. */
 const PAGE_BREAK_KEY = 'trek_pdf_page_break_per_day'
 
 /**
@@ -367,6 +365,8 @@ export async function downloadTripPDF({ trip, days, places, assignments: allStor
       return !hidesOnMiddleDay(r, day.id)
     })
 
+    const routedDay = tripRoute?.days.find(d => d.dayId === day.id)
+    const timingPlan = day.timing?.enabled ? buildItineraryTiming({ items: merged, dayId: day.id, timing: day.timing, segments: routedDay?.segments ?? [], profile: day.default_transport_mode ?? 'driving', initialSeconds: itineraryInitialTravel(day.id, { days: sorted, assignments, reservations, accommodations: accommodationList, optimizeFromAccommodation: useSettingsStore.getState().settings.optimize_from_accommodation }, routedDay?.segments ?? []) }) : undefined
     let pi = 0
     const itemsHtml = merged.length === 0
       ? `<div class="empty-day">${escHtml(tr('dayplan.emptyDay'))}</div>`
@@ -528,6 +528,7 @@ export async function downloadTripPDF({ trip, days, places, assignments: allStor
                </div>`
 
           const chips = [
+            pdfTimingChip(timingPlan, item.data.id, { clock: fmtTime, translate: tr, escape: escHtml }),
             place.place_time ? `<span class="chip">${svgClock}${escHtml(fmtTime(place.place_time))}</span>` : '',
             place.price && Number.parseFloat(place.price) > 0 ? `<span class="chip chip-green">${svgMoney}${formatMoney(Number(place.price), place.currency || trip.currency, loc)}</span>` : '',
           ].filter(Boolean).join('')

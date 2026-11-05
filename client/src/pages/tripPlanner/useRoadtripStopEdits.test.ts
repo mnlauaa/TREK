@@ -301,9 +301,9 @@ describe('useRoadtripStopEdits', () => {
     await act(async () => {
       await result.current.setRoadtripStopKind(3, null)
       await result.current.setRoadtripStopFill(3, null)
-      await result.current.setRoadtripStay(3, 45)
+      await expect(result.current.setRoadtripStay(3, 45)).rejects.toThrow('gone')
     })
-    expect(toast.error.mock.calls.map(call => call[0])).toEqual(['locked', 'common.unknownError', 'gone'])
+    expect(toast.error.mock.calls.map(call => call[0])).toEqual(['locked', 'common.unknownError'])
 
     allowed = false
     rerender()
@@ -476,12 +476,12 @@ describe('useRoadtripStopEdits', () => {
       await result.current.saveStopDraftAsNight({ endDayId: 2, checkIn: '', checkOut: '' })
       await result.current.setRoadtripStopKind(3, 'fuel')
       await result.current.setRoadtripStopFill(3, 40)
-      await result.current.setRoadtripStay(3, 15)
+      await expect(result.current.setRoadtripStay(3, 15)).rejects.toBe('?')
       await result.current.reorderRoadtripStop(1, 14, 0)
       await result.current.moveRoadtripStopToDay(1, 13, 2, 1)
     })
     expect(toast.error.mock.calls.map(call => call[0])).toEqual([
-      'common.unknownError', 'no room', 'common.unknownError', 'locked', 'common.unknownError',
+      'common.unknownError', 'no room', 'common.unknownError', 'locked',
       'common.unknownError', 'common.unknownError',
     ])
   })

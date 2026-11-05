@@ -1,3 +1,5 @@
+
+import type { DayTiming } from '@trek/shared'
 import { dayRepo } from '../../repo/dayRepo'
 import type { StoreApi } from 'zustand'
 import type { TripStoreState } from '../tripStore'
@@ -9,6 +11,7 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface DaysSlice {
+  setDayTiming: (tripId: number | string, dayId: number, timing: DayTiming) => Promise<void>
   reorderDays: (tripId: number | string, orderedIds: number[]) => Promise<void>
   insertDay: (tripId: number | string, position?: number) => Promise<Day | undefined>
   appendDatedDay: (tripId: number | string) => Promise<Day>
@@ -41,6 +44,14 @@ export function withoutDay(state: DayState, dayId: number): DayState {
 }
 
 export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
+  setDayTiming: async (tripId, dayId, timing) => {
+    const day = get().days.find(d => d.id === dayId)
+    if (!day) throw new Error('Day not found')
+    const replace = (next: Day) => set(state => ({ days: state.days.map(d => d.id === dayId ? { ...d, timing: next.timing } : d) }))
+    replace({ ...day, timing })
+    try { replace(await dayRepo.setTiming(tripId, day, timing)) }
+    catch (err) { replace(day); throw err }
+  },
   // Move whole days. Day rows stay stable (assignments/notes/bookings ride along
   // by id); only positions change and, on a dated trip, dates stay pinned to
   // their slots while the content moves across them. Optimistically reorder the

@@ -1,0 +1,85 @@
+import { devices, expect, test } from '@playwright/test';
+import { dismissSystemNotices } from './helpers';
+
+for (const mobile of [false, true]) {
+  test.describe(mobile ? 'mobile visit timing' : 'desktop visit timing', () => {
+    if (mobile)
+      test.use({ viewport: devices['Pixel 7'].viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    test('compact controls persist visit stay and keep booking ownership', async ({ page }) => {
+      await page.goto('/dashboard');
+      await dismissSystemNotices(page);
+      const created = await page.request.post('/api/trips', {
+        data: { title: `Timing ${Date.now()}`, start_date: '2099-06-01', end_date: '2099-06-01' },
+      });
+      expect(created.ok()).toBeTruthy();
+      const { trip } = await created.json();
+      const { days } = await (await page.request.get(`/api/trips/${trip.id}/days`)).json();
+      const day = days[0];
+      expect(day.timing).toEqual({ enabled: true, start: '09:00', travel: [] });
+      await page.request.put(`/api/trips/${trip.id}/days/${day.id}/timing`, {
+        data: { ...day.timing, start: '17:45' },
+      });
+      const { place } = await (
+        await page.request.post(`/api/trips/${trip.id}/places`, {
+          data: { name: 'Dinner visit', lat: 48.85, lng: 2.35 },
+        })
+      ).json();
+      const { assignment } = await (
+        await page.request.post(`/api/trips/${trip.id}/days/${day.id}/assignments`, { data: { place_id: place.id } })
+      ).json();
+      await page.request.put(`/api/trips/${trip.id}/assignments/${assignment.id}/stay`, { data: { stay_minutes: 90 } });
+      const bookingResult = await page.request.post(`/api/trips/${trip.id}/reservations`, {
+        data: {
+          title: 'Dinner booking',
+          type: 'restaurant',
+          day_id: day.id,
+          assignment_id: assignment.id,
+          reservation_time: '2099-06-01T18:00',
+          reservation_end_time: '2099-06-01T19:30',
+        },
+      });
+      expect(bookingResult.ok()).toBeTruthy();
+      const { reservation } = await bookingResult.json();
+      await page.goto(`/trips/${trip.id}`);
+      if (mobile) await page.getByRole('button', { name: 'Plan', exact: true }).first().click();
+      const stay = page.getByRole('button', { name: /^Time at this stop.*1 h 30/ }).first();
+      await expect(stay).toBeVisible({ timeout: 30000 });
+      await expect(page.getByText(/Estimated departure.*19:15/).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Set fixed times' }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'View booking' }).first()).toBeVisible();
+      await stay.click();
+      if (mobile) await page.getByRole('button', { name: '2 h', exact: true }).click();
+      else await page.getByRole('slider').first().fill('120');
+      await page.getByRole('button', { name: /Save/i, exact: true }).last().click();
+      await expect(page.getByText(/Estimated departure.*19:45/).first()).toBeVisible();
+      await page.reload();
+      await expect(page.getByText(/Estimated departure.*19:45/).first()).toBeVisible();
+      if (mobile) await page.getByRole('button', { name: 'Plan', exact: true }).first().click();
+      await page.getByRole('button', { name: 'Set fixed times', exact: true }).first().click();
+      await page.getByRole('textbox', { name: 'End', exact: true }).fill('14:00');
+      await page.getByRole('textbox', { name: 'End', exact: true }).press('Tab');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText(/Estimated departure.*17:45/).first()).toBeVisible();
+      await expect(page.getByText(/after the time you set to leave/).first()).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'End', exact: true })).toHaveValue('14:00');
+      await page.getByRole('textbox', { name: 'End', exact: true }).fill('');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText(/Estimated departure.*19:45/).first()).toBeVisible();
+      await page.screenshot({ path: `/tmp/trek-itinerary-${mobile ? 'mobile' : 'desktop'}.png`, fullPage: true });
+      const persisted = await (await page.request.get(`/api/trips/${trip.id}/days`)).json();
+      const bookings = await (await page.request.get(`/api/trips/${trip.id}/reservations`)).json();
+      expect(bookings.reservations.find((b) => b.id === reservation.id)).toMatchObject({
+        reservation_time: '2099-06-01T18:00',
+        reservation_end_time: '2099-06-01T19:30',
+      });
+      expect(persisted.days[0].assignments[0]).toMatchObject({
+        stay_minutes: 120,
+        assignment_time: null,
+        assignment_end_time: null,
+      });
+      await page.getByRole('button', { name: 'View booking', exact: true }).first().click();
+      await expect(page.getByRole('button', { name: 'Set fixed times', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Dinner booking', { exact: true }).first()).toBeVisible();
+    });
+  });
+}

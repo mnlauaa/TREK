@@ -1,3 +1,9 @@
+import type { Reservation } from '../../types'
+import type { DayTiming } from '@trek/shared'
+import { Fragment } from 'react'
+import { VisitTiming } from '../../components/Planner/timing/ItineraryTiming'
+import type { TimingPlan } from '../../components/Planner/timing/ItineraryTiming'
+import { getAssignmentReservations } from '../../utils/dayMerge'
 import { ChevronDown, ChevronRight, Hotel } from 'lucide-react'
 import { fs, NEUTRAL_TINT } from '../../components/shared/DialogShell'
 import { getCategoryIcon } from '../../components/shared/categoryIcons'
@@ -18,7 +24,10 @@ import { spanLabelKey, transportFacts, type SharedTransport } from './sharedTrip
 const DAY_HEAD_SELECTED = 'color-mix(in srgb, var(--accent) 12%, transparent)'
 
 export interface SharedDayCardProps {
-  day: { id: number; title?: string | null; date?: string | null; day_number: number }
+  day: { id: number; title?: string | null; date?: string | null; day_number: number; timing?: DayTiming }
+  timingPlan?: TimingPlan
+  bookings?: Reservation[]
+  onOpenBooking?: () => void
   index: number
   selected: boolean
   collapsed: boolean
@@ -42,6 +51,7 @@ export interface SharedDayCardProps {
 export function SharedDayCard(p: SharedDayCardProps) {
   const { t, locale } = useTranslation()
   const { day } = p
+  const timingPlan = p.timingPlan
   // A stays-only day on a travel link is its head alone: its hotel pill says it all.
   const hasBody = !(p.travelOnly && p.items.length === 0)
   const date = day.date
@@ -95,13 +105,14 @@ export function SharedDayCard(p: SharedDayCardProps) {
               if (item.type === 'note') return <NoteRow key={`n-${item.data.id}`} note={item.data} />
               if (!item.data.place) return null
               return (
-                <PlaceRow
-                  key={`p-${item.data.id}`}
+                <Fragment key={`p-${item.data.id}`}><PlaceRow
                   place={item.data.place}
                   notes={item.data.notes}
                   number={p.stopNumber[item.data.id]}
                   category={p.categories.find(c => c.id === item.data.place.category_id) ?? item.data.place.category ?? null}
                 />
+                {timingPlan && <VisitTiming assignment={item.data} day={{ ...day, trip_id: 0 }} tripId={0} plan={timingPlan} editable={false} bookings={getAssignmentReservations(p.bookings || [], item.data.id)} onOpenBooking={p.onOpenBooking} />}
+                </Fragment>
               )
             })
           )}

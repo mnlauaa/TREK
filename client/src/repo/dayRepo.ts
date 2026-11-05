@@ -1,3 +1,5 @@
+import { saveDayTiming } from '../api/itineraryTiming'
+import type { DayTiming } from '@trek/shared'
 import { daysApi } from '../api/client'
 import { offlineDb, replaceTripRows, upsertTrip } from '../db/offlineDb'
 import { generateUUID, mutationQueue } from '../sync/mutationQueue'
@@ -31,6 +33,15 @@ async function enqueueDayWrite(tripId: number | string, dayId: number, url: stri
 }
 
 export const dayRepo = {
+  async setTiming(tripId: number | string, day: Day, timing: DayTiming): Promise<Day> {
+    if (!(await mutationQueue.mustQueue('days', day.id))) {
+      const saved = await saveDayTiming(tripId, day.id, timing)
+      cacheAfterWrite(cacheDayFields(day.id, saved), 'saving day timing')
+      return { ...day, ...saved }
+    }
+    await enqueueDayWrite(tripId, day.id, `/trips/${tripId}/days/${day.id}/timing`, timing, { timing })
+    return { ...day, timing }
+  },
   async list(tripId: number | string): Promise<{ days: Day[] }> {
     return onlineThenCache(
       async () => {

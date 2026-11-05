@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Automatikus időzítés',
+  'timing.arrival': 'Várható érkezés',
+  'timing.departure': 'Várható indulás',
+  'timing.fixed': 'Rögzített időpontok',
+  'timing.unknown': 'Ismeretlen',
+  'timing.bookingConflict': 'A látogatás ideje nem fedi le ezt a foglalást.',
+  'timing.booking': 'Foglalás megtekintése',
+  'timing.travel': 'Utazási idő percben',
+  'timing.dayOffset': '+{days} nap',
+
   'roadtrip.stay.portals': 'Szállás keresése',
   'roadtrip.stay.portalHint':
     'Ellenőrizd az úti célt, dátumokat és vendégeket a portálon. A CHECK24 oldalon keress kézzel.',

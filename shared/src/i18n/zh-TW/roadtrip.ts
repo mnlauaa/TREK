@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': '自動安排時間',
+  'timing.arrival': '預計抵達',
+  'timing.departure': '預計離開',
+  'timing.fixed': '設定固定時間',
+  'timing.unknown': '尚未確定',
+  'timing.bookingConflict': '預計停留時段未涵蓋此預訂時間。',
+  'timing.booking': '查看預訂',
+  'timing.travel': '交通時間（分鐘）',
+  'timing.dayOffset': '+{days} 天',
+
   'roadtrip.stay.portals': '尋找住宿',
   'roadtrip.stay.portalHint': '請在平台核對目的地、日期和入住人數。CHECK24需手動搜尋。',
   'roadtrip.charging.available': '可用',

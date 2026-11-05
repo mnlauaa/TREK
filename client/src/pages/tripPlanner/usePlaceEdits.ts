@@ -1,3 +1,4 @@
+import { visitTimes } from '@trek/shared'
 import { useCallback, useMemo, useState } from 'react'
 import { roadtripInsertion } from '../../components/Roadtrip/dayWindow'
 import { reanchorAfterInsert } from '../../components/Roadtrip/roadtripModel'
@@ -117,9 +118,14 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
         const assignments = useTripStore.getState().assignments
         const dayKey = Object.keys(assignments).find(key => assignments[key].some(a => a.id === editingAssignmentId))
         if (dayKey) {
-          await tripActions.setAssignmentTimes(tripId, Number(dayKey), editingAssignmentId, {
-            place_time: place_time || null, end_time: end_time || null,
-          })
+          if (place_time !== undefined || end_time !== undefined) {
+            const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)!
+            const current = visitTimes(visit)
+            await tripActions.setAssignmentTimes(tripId, Number(dayKey), editingAssignmentId, {
+              place_time: place_time === undefined ? current.start : place_time || null,
+              end_time: end_time === undefined ? current.end : end_time || null,
+            })
+          }
           // The form only includes assignment_notes when the user changed it, so
           // an untouched note never produces a PUT (#2163). '' clears like null.
           // Through the visit's repo as well, so the cached day keeps the new note.

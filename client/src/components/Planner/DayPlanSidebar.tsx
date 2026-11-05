@@ -1,6 +1,8 @@
+import { DayTimingControls, VisitTiming, TravelTimingControl } from './timing/ItineraryTiming'
+import { buildItineraryTiming, itineraryInitialTravel } from './timing/itineraryTimingModel'
 import { useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { isServiceStopType } from '../Roadtrip/roadtripModel'
-/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+
 interface DragDataPayload { placeId?: string; assignmentId?: string; noteId?: string; reservationId?: string; fromDayId?: string; phase?: 'single' | 'start' | 'middle' | 'end'; /** A corridor hit on its way onto the drive (#1797) — not a place yet. */ poiOsmId?: string }
 declare global { interface Window { __dragData: DragDataPayload | null } }
 
@@ -210,6 +212,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   onExpandedDaysChange,
   pushUndo,
   onRouteRefresh,
+
   initialScrollTop,
   showRouteToolsWhenExpanded,
   } = withDayPlanDefaults(props)
@@ -229,17 +232,11 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     return new Set<number>(days.map(d => d.id))
   })
   useEffect(() => { onExpandedDaysChange?.(expandedDays) }, [expandedDays])
-  // Per-segment legs keyed by day id, then by the start place's assignment id (or the
-  // transport's reservation id). Nested per day so several Route-toggled mobile days
-  // can't collide in one flat map — assignment ids and reservation ids come from
-  // independent sequences and would overwrite each other across days (#1374).
+  // Assignment and reservation IDs can collide across days, so route legs are grouped by day (#1374).
   const [routeLegs, setRouteLegs] = useState<Record<number, Record<number, RouteSegment>>>({})
-  // Hotel bookend legs keyed by day id. Desktop keys only the selected day; mobile
-  // keys every day whose Route toggle is on, so each shows its own bookends (#1374).
+  // Hotel legs are grouped by day for independently expanded mobile days (#1374).
   const [hotelLegs, setHotelLegs] = useState<Record<number, { top?: { seg: RouteSegment; name: string; targetId?: number }; bottom?: { seg: RouteSegment; name: string; targetId?: number } }>>({})
-  // Mobile only: days the user tapped "Route" on. Their leg distances show inline in
-  // the expanded day, so seeing distances doesn't require selecting the day (which
-  // closes the mobile sheet) — #1374.
+  // Mobile route toggles do not select a day or close its sheet (#1374).
   const [expandedRouteDayIds, setExpandedRouteDayIds] = useState<Set<number>>(new Set())
   const optimizeFromAccommodation = useSettingsStore(s => s.settings.optimize_from_accommodation)
   // Recompute the hotel/route legs when the user flips km↔mi so the connector
@@ -570,7 +567,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   }
 
   // Pre-compute merged items for all days so the render loop doesn't recompute on unrelated state changes (e.g. hover)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   const mergedItemsMap = useMemo(() => {
     const map: Record<number, ReturnType<typeof getMergedItems>> = {}
     days.forEach(day => { map[day.id] = getMergedItems(day.id) })
@@ -579,22 +576,17 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, assignments, dayNotes, reservations, transportPosVersion, mirrorServiceStops])
 
-  // Days whose inline route legs should be computed & shown. Desktop: the selected
-  // day while the Route toggle is on. Mobile: each expanded day the user tapped
-  // "Route" on — shown inline so seeing distances between places doesn't require
-  // selecting the day, which would close the mobile sheet (#1374).
-  const routeDayIds = useMemo<number[]>(() => (
+  // Timing needs estimates even when the route is hidden. Mobile selection closes its sheet (#1374).
+  const routeDayIds = useMemo<number[]>(() => Array.from(new Set([
+    ...days.filter(d => d.timing?.enabled && expandedDays.has(d.id)).map(d => d.id),
+    ...(
     showRouteToolsWhenExpanded
       ? days.filter(d => expandedRouteDayIds.has(d.id) && expandedDays.has(d.id)).map(d => d.id)
       : (routeShown && selectedDayId ? [selectedDayId] : [])
-  ), [showRouteToolsWhenExpanded, expandedRouteDayIds, expandedDays, days, routeShown, selectedDayId])
+  )])), [showRouteToolsWhenExpanded, expandedRouteDayIds, expandedDays, days, routeShown, selectedDayId])
   const routeDayKey = routeDayIds.join(',')
 
-  // Per-segment travel times shown as connectors between a day's located stops.
-  // Groups located places into runs (split at transports), one cached OSRM call per
-  // run keyed by the start place's assignment id, plus the hotel bookend legs. Shares
-  // RouteCalculator's cache with the map. Runs for every day in routeDayIds — one
-  // selected day on desktop, each Route-toggled day on mobile (#1374).
+  // Route estimates share the map cache and run independently for each visible day (#1374).
   useEffect(() => {
     if (legsAbortRef.current) legsAbortRef.current.abort()
     if (routeDayIds.length === 0) { setRouteLegs({}); setHotelLegs({}); return }
@@ -1130,6 +1122,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   }, [days, assignments, reservations, budgetItems, costsEnabled, currency, costBase, locale, fxRates])
 
   return {
+
     toast,
     t,
     locale,
@@ -1249,6 +1242,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
     onEditTransport,
     onEditReservation,
     onOpenBooking,
+
     onAddBookingToAssignment,
     onScrollTopChange,
     showRouteToolsWhenExpanded,
@@ -1483,9 +1477,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
       <div className={`scroll-container flex flex-col gap-2 p-2${draggingId ? '' : ' trek-stagger'}`} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }} ref={scrollContainerRef} onScroll={(e) => onScrollTopChange?.((e.currentTarget as HTMLElement).scrollTop)}>
         {days.map((day, index) => {
           const isSelected = selectedDayId === day.id
-          // Shared by the click and the key handler so the two can never drift
-          // apart — pressing Enter on the row has to toggle, not just select.
-          // Named for the selection, not the expand/collapse `toggleDay` above.
+          // Click and Enter both toggle selection, independently of expansion.
           const toggleDaySelection = () => {
             if (isSelected) { onSelectDay(null); if (onDayDetail) onDayDetail(null) }
             else { onSelectDay(day.id); if (onDayDetail) onDayDetail(day) }
@@ -1495,16 +1487,10 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
           const formattedDate = formatDate(day.date, locale)
           const heading = dayHeadingParts(day.title || t('dayplan.dayN', { n: index + 1 }), formattedDate, dateFirst)
           const loc = da.find(a => a.place?.lat && a.place?.lng)
-          // Route tools normally need 2+ stops, but a single located place is still
-          // routable when accommodation optimization can bookend it with a hotel
-          // (hotel → place → hotel, the same line the map draws) — otherwise the tools
-          // vanish on such a day (#1330). Purely additive to the 2+ case.
-          // The weather anchor below must not depend on the optimize-from-accommodation
-          // setting — where you wake up is a fact about the day, not a routing choice —
-          // so the bookend lookup runs unconditionally (mirrors useMPlanTimeline) while
-          // the route tools keep honoring the setting via routeBookends.
+          // A hotel makes one located stop routable (#1330). Weather uses the hotel even when routing does not.
           const dayBookends = getDayBookendHotels(day, days, accommodations)
           const routeBookends = optimizeFromAccommodation !== false ? dayBookends : null
+          const timingPlan = day.timing?.enabled ? buildItineraryTiming({ items: mergedItemsMap[day.id] || [], dayId: day.id, timing: day.timing, segments: Object.values(routeLegs[day.id] || {}), profile: day.default_transport_mode ?? routeProfile, initialSeconds: itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations, optimizeFromAccommodation }, Object.values(routeLegs[day.id] || {}).concat(hotelLegs[day.id]?.top?.seg ? [hotelLegs[day.id]!.top!.seg] : []), routeProfile) }) : undefined
           const hasRouteBookend = !!(
             (routeBookends?.morning?.place_lat != null && routeBookends?.morning?.place_lng != null) ||
             (routeBookends?.evening?.place_lat != null && routeBookends?.evening?.place_lng != null)
@@ -1758,6 +1744,9 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                     dropAfterLastItem(day.id, { assignmentId, noteId })
                   }}
                 >
+                  <DayTimingControls day={day} tripId={tripId} editable={canEditDays} />
+                  {timingPlan?.legs.filter(leg => leg.from.startsWith('hotel:')).map(leg =>
+                    <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                   {hotelLegs[day.id]?.top && (() => {
                     const targetId = hotelLegs[day.id]?.top?.targetId
                     const connector = <HotelRouteConnector seg={hotelLegs[day.id]!.top!.seg} name={hotelLegs[day.id]!.top!.name} profile={routeProfile} placement="top" />
@@ -1958,6 +1947,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               display: 'flex', alignItems: 'center', gap: 8,
                               paddingBlock: 6, paddingInlineEnd: 4, paddingInlineStart: gripsShown ? 2 : 8,
                               borderRadius: 12,
+
                               cursor: 'pointer',
                               // A locked stop keeps a whisper of the danger tone; the lock on its avatar says why.
                               background: isLocked ? LOCKED_ROW : isPlaceSelected ? 'var(--bg-selected)' : undefined,
@@ -2012,9 +2002,12 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                                   </Tooltip>
                                 )}
                               </div>
+                              <VisitTiming assignment={assignment} day={day} tripId={tripId} plan={timingPlan} editable={canEditDays}
+                                bookings={getAssignmentReservations(reservations, assignment.id)} onOpenBooking={onOpenBooking ?? onEditReservation} />
                               <DayPlanPlaceSubline place={place} cat={cat} tourTimes={tourTimes} isTourPlace={!!isTourPlace} timeFormat={timeFormat} assignmentId={assignment.id} tourStageKey={assignment.tour_stage_key} />
                               {/* TIME-02: the tour's end runs past the start of the day's next timed item. */}
                               {dayRowTour && <TourOverrunLine overrun={dayItemOverrun(merged, idx, day.id, tourOfPlace)} />}
+
                               {assignment.notes && (
                                 // Day-specific note on this stop (#2163) — one muted
                                 // caption line so the timeline shows the note exists
@@ -2138,6 +2131,8 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                             <MoreButton label={t('files.menu')} items={placeMenu()} size={24} />
                             </div>
                           </div>
+                              {timingPlan?.legs.filter(leg => leg.from === `assignment:${assignment.id}`).map(leg =>
+                                <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                           {daySchedule.byAssignment[day.id]?.[assignment.id]?.map(si => <PluginDayScheduleRow key={`${si.pluginId}:${si.id}`} item={si} />)}
                           {routeLegs[day.id]?.[assignment.id] && (canEditDays ? (
                             <Tooltip label={t('dayplan.transportMode.change')} placement="top">
@@ -2267,6 +2262,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               margin: '2px 0',
                               borderRadius: 12,
                               border: `1px solid ${tintOf(color, 24)}`,
+
                               borderTop: showDropLine ? '2px solid var(--text-primary)' : undefined,
                               borderBottom: showDropLineAfter ? '2px solid var(--text-primary)' : undefined,
                               background: tintOf(color, 7),
@@ -2368,6 +2364,8 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               <TransitItineraryInline legs={transitMeta.legs} t={t} />
                             </div>
                           )}
+                          {timingPlan?.legs.filter(leg => leg.from === `reservation:${res.id}:${spanPhase}:${res.__leg?.index ?? 0}`).map(leg =>
+                            <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                           {daySchedule.byReservation[day.id]?.[res.id]?.map(si => <PluginDayScheduleRow key={`${si.pluginId}:${si.id}`} item={si} />)}
                           {routeLegs[day.id]?.[res.id] && (() => {
                             const nextPlaceId = merged.slice(idx + 1).find(i => i.type === 'place' && i.data.place?.lat && i.data.place?.lng)?.data.id

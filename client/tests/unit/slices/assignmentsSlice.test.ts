@@ -491,31 +491,31 @@ describe('assignmentsSlice', () => {
   });
 
   describe('setAssignmentTimes', () => {
-    // The pool place still carries an End of its own, which the visit shows once its
-    // own override is gone, exactly as a fresh read of the day would.
+    // Explicit clearing belongs to this visit; the pool place retains its default.
     const pool = () => buildPlace({ id: 10, trip_id: 1, place_time: null, end_time: '18:00' });
     const visit = () => buildAssignment({
       id: 5, day_id: 1, place_id: 10, assignment_time: '09:00', assignment_end_time: '14:00',
       place: { ...pool(), place_time: '09:00', end_time: '14:00' },
     });
 
-    it('FE-ASSIGN-020: clears the End at once, with the place End showing through, and keeps the Start', async () => {
+    it('FE-ASSIGN-020: clears the End at once without inheriting the place End and keeps the Start', async () => {
       seedStore(useTripStore, { places: [pool()], assignments: { '1': [visit()] } });
       let seen: unknown;
       server.use(
         http.put('/api/trips/1/assignments/5/time', async ({ request }) => {
           seen = await request.json();
           const mid = useTripStore.getState().assignments['1'][0];
-          expect(mid).toMatchObject({ assignment_end_time: null, place: { end_time: '18:00', place_time: '09:00' } });
-          return HttpResponse.json({ assignment: { ...visit(), assignment_end_time: null, place: { ...pool(), place_time: '09:00' } } });
+          expect(mid).toMatchObject({ times_explicit: true, assignment_end_time: null, place: { end_time: null, place_time: '09:00' } });
+          return HttpResponse.json({ assignment: { ...visit(), times_explicit: true, assignment_end_time: null, place: { ...pool(), place_time: '09:00', end_time: null } } });
         }),
       );
 
       await useTripStore.getState().setAssignmentTimes(1, 1, 5, { place_time: '09:00', end_time: null });
 
       expect(seen).toEqual({ place_time: '09:00', end_time: null });
+      expect(useTripStore.getState().places[0].end_time).toBe('18:00');
       expect(useTripStore.getState().assignments['1'][0]).toMatchObject({
-        assignment_time: '09:00', assignment_end_time: null, place: { end_time: '18:00' },
+        times_explicit: true, assignment_time: '09:00', assignment_end_time: null, place: { end_time: null },
       });
     });
 

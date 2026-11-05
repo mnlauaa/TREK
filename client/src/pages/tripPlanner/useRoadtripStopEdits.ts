@@ -323,14 +323,15 @@ export function useRoadtripStopEdits(options: RoadtripStopEditsOptions) {
    * alone" (`COALESCE(?, duration_minutes)`), so a null could give a stop a stay but
    * never take one away. The rail reads zero and absent as the same thing.
    */
-  const setRoadtripStay = useCallback(async (placeId: number, minutes: number) => {
-    if (!can('place_edit', trip)) return
-    try {
+  const setRoadtripStay = useCallback(async (placeId: number, minutes: number, visit?: { assignmentId?: number; dayId?: number }) => {
+    const target = visit ?? stayDraft
+    if (!can(target?.assignmentId ? 'day_edit' : 'place_edit', trip)) return
+    if (target?.assignmentId && target.dayId != null) {
+      await tripActions.setAssignmentStay(tripId, target.dayId, target.assignmentId, minutes)
+    } else {
       await tripActions.updatePlace(tripId, placeId, { duration_minutes: minutes })
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('common.unknownError'))
     }
-  }, [tripId, tripActions, toast, t, can, trip])
+  }, [tripId, tripActions, can, trip, stayDraft])
 
   /**
    * Moves a stop onto another day, from the road trip rail.

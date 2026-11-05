@@ -1,3 +1,4 @@
+import { saveVisitStay } from '../api/itineraryTiming'
 import { assignmentSchema } from '@trek/shared'
 import { saveAssignmentEndDay } from '../api/assignmentEndDay'
 import { assignmentsApi } from '../api/client'
@@ -236,6 +237,7 @@ export const assignmentRepo = {
     mutationQueue.sendSoon()
   },
 
+
   async setEndDay(tripId: number | string, assignment: Assignment, endDay: boolean): Promise<Assignment> {
     if (!(await mutationQueue.mustQueue('assignments', assignment.id))) {
       const saved = await saveAssignmentEndDay(tripId, assignment.id, { end_day: endDay })
@@ -281,13 +283,31 @@ export const assignmentRepo = {
    * The route writes both columns every time, so a caller changing one of them hands the
    * other in as it stands; leaving it out would clear it.
    */
+  async setStay(tripId: number | string, assignment: Assignment, minutes: number | null): Promise<Assignment> {
+    if (!(await mutationQueue.mustQueue('assignments', assignment.id))) {
+      const saved = await saveVisitStay(tripId, assignment.id, { stay_minutes: minutes })
+      await cacheAssignment(saved)
+      return saved
+    }
+    const updated = { ...assignment, stay_minutes: minutes }
+    await offlineDb.transaction('rw', offlineDb.days, offlineDb.mutationQueue, async () => {
+      await mutationQueue.enqueue({
+        id: generateUUID(), tripId: Number(tripId), method: 'PUT',
+        url: visitUrl(tripId, assignment.id, 'stay'), body: { stay_minutes: minutes }, ...visitTarget(assignment.id),
+      })
+      await cacheAssignment(updated)
+    })
+    mutationQueue.sendSoon()
+    return updated
+  },
+
   async setTimes(tripId: number | string, assignment: Assignment, times: AssignmentTimes): Promise<Assignment> {
     if (!(await mutationQueue.mustQueue('assignments', assignment.id))) {
       const saved = assignmentSchema.parse((await assignmentsApi.updateTime(tripId, assignment.id, times)).assignment)
       await cacheAssignment(saved)
       return saved
     }
-    const updated = { ...assignment, assignment_time: times.place_time, assignment_end_time: times.end_time }
+    const updated = { ...assignment, times_explicit: true, assignment_time: times.place_time, assignment_end_time: times.end_time }
     await offlineDb.transaction('rw', offlineDb.days, offlineDb.mutationQueue, async () => {
       await mutationQueue.enqueue({
         id: generateUUID(), tripId: Number(tripId), method: 'PUT',

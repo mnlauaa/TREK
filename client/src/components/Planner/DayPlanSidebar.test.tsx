@@ -1,4 +1,3 @@
-// FE-PLANNER-DAYPLAN-001 to FE-PLANNER-DAYPLAN-232
 import { render, screen, waitFor, fireEvent, within, act } from '../../../tests/helpers/render'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -19,7 +18,6 @@ import { calculateRouteWithLegs, generateCoMapsUrl, generateGoogleMapsUrl } from
 import DayPlanSidebar from './DayPlanSidebar'
 import { makeMarkerDraggable } from '../Map/markerDrag'
 
-// ── Hoisted mock state (accessible in vi.mock factories) ────────────────────
 const mockDayNotesState = vi.hoisted(() => ({
   noteUi: {} as Record<string, any>,
   dayNotes: {} as Record<string, any[]>,
@@ -33,7 +31,6 @@ const mockDayNotesState = vi.hoisted(() => ({
   moveNote: vi.fn(),
 }))
 
-// ── Module mocks ────────────────────────────────────────────────────────────
 
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal() as any
@@ -74,7 +71,10 @@ vi.mock('../Map/RouteCalculator', () => ({
 
 // PlaceAvatar needs IntersectionObserver
 class MockIO { observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn() }
-beforeAll(() => { (globalThis as any).IntersectionObserver = MockIO })
+beforeAll(() => {
+  (globalThis as any).IntersectionObserver = MockIO
+  Element.prototype.scrollTo = vi.fn()
+})
 
 vi.mock('../../services/photoService', () => ({
   getCached: vi.fn(() => null),

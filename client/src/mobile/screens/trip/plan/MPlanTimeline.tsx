@@ -1,3 +1,4 @@
+import { DayTimingControls, VisitTiming, TravelTimingControl } from '../../../../components/Planner/timing/ItineraryTiming'
 import { useRef, useState, type MouseEvent } from 'react'
 import { ArrowRight, BedDouble, CalendarDays, CalendarRange, ChevronRight, Compass, LogIn, LogOut, MapPin, Pencil, PencilLine, Route, Ticket, TrainFront, Undo2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -19,7 +20,7 @@ import { usePluginDaySchedule } from '../../../../components/Plugins/PluginDaySc
 import { Fragment } from 'react'
 import MDancingTrek from '../../../components/MDancingTrek'
 import type { MPlanTimelineProps } from '../MTripShell'
-import type { MergedItem } from '../../../../utils/dayMerge'
+import { getSpanPhase, type MergedItem } from '../../../../utils/dayMerge'
 import type { RouteSegment } from '../../../../types'
 import type { Assignment } from '../../../../types'
 import type { ComponentType, ReactNode } from 'react'
@@ -164,11 +165,15 @@ export default function MPlanTimeline({ planner, shell }: MPlanTimelineProps) {
         className="absolute inset-x-4 overflow-x-hidden overflow-y-auto overscroll-contain rounded-[22px] border border-[color:var(--m-cbr)] bg-[color:var(--m-card)] px-3.5 pb-2 pt-1 backdrop-blur-[24px] backdrop-saturate-[1.6] bottom-[calc(env(safe-area-inset-bottom,0px)+90px)]"
         style={{ top: `calc(var(--m-safe-top, 12px) + ${editing ? 140 : tl.upNext ? 216 : 102}px)` }}
       >
+        {day && <DayTimingControls key={day.id} day={day} tripId={planner.tripId} editable={editing} />}
+        {day && tl.timingPlan?.legs.filter(leg => leg.from.startsWith('hotel:')).map(leg =>
+          <TravelTimingControl key={`${day.id}:${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={planner.tripId} leg={leg} editable={editing} />)}
         {planner.toursEnabled && tl.rows.some(row => row.kind === 'place' && row.invalidTour) && (
           <div role="status" className="border-b border-[color:var(--warning)] p-2 text-sm text-[color:var(--warning)]">
             {t('tours.dayRoute.endpointUnknown')}
           </div>
         )}
+
         {day && (
           <TimelineHeader
             tl={tl}
@@ -210,6 +215,11 @@ export default function MPlanTimeline({ planner, shell }: MPlanTimelineProps) {
                     onRemove={() => tl.removeAssignment(row.assignment)}
                     overrun={planner.toursEnabled ? tl.tourOverrun(row.item) : null}
                   />
+                  {row.assignment.place && <VisitTiming assignment={row.assignment} day={day} tripId={planner.tripId} plan={tl.timingPlan} editable={editing}
+                    bookings={row.linkedReservations} onOpenBooking={() => shell.setTrTab('buchungen')}
+                    onStay={draft => shell.openSheet('rtstay', { ...draft, fromItinerary: true })} />}
+                  {tl.timingPlan?.legs.filter(leg => leg.from === `assignment:${row.assignment.id}`).map(leg =>
+                    <TravelTimingControl key={`${day.id}:${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={planner.tripId} leg={leg} editable={editing} />)}
                   {dayScheduleFor('assignment', row.assignment.id)}
                 </Fragment>
               )
@@ -227,6 +237,8 @@ export default function MPlanTimeline({ planner, shell }: MPlanTimelineProps) {
                       else shell.openSheet('transport', { reservationId: row.res.id, legIndex: row.res.__leg?.index })
                     }}
                   />
+                  {tl.timingPlan?.legs.filter(leg => leg.from === `reservation:${row.res.id}:${getSpanPhase(row.res, day.id)}:${row.item.data.__leg?.index ?? 0}`).map(leg =>
+                    <TravelTimingControl key={`${day.id}:${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={planner.tripId} leg={leg} editable={editing} />)}
                   {dayScheduleFor('reservation', row.res.id)}
                 </Fragment>
               )
@@ -245,6 +257,8 @@ export default function MPlanTimeline({ planner, shell }: MPlanTimelineProps) {
                     onOpenJourney={() => tl.openTransitJourney(row.res)}
                     late={tl.journeyLate(row.item)}
                   />
+                  {tl.timingPlan?.legs.filter(leg => leg.from === `reservation:${row.res.id}:${getSpanPhase(row.res, day.id)}:${row.item.data.__leg?.index ?? 0}`).map(leg =>
+                    <TravelTimingControl key={`${day.id}:${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={planner.tripId} leg={leg} editable={editing} />)}
                   {dayScheduleFor('reservation', row.res.id)}
                 </Fragment>
               )

@@ -1,6 +1,6 @@
 import type { TourListItem } from '@trek/shared';
 import { AlertTriangle } from 'lucide-react';
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import type { Assignment } from '../../types';
 import CustomTimePicker from '../shared/CustomTimePicker';
@@ -43,6 +43,8 @@ export function TimeSection({
     [assignmentId, dayAssignments, form.place_time, form.end_time]
   );
   const errorId = useId();
+  const [showFixed, setShowFixed] = useState(false);
+  if (!showFixed && !form.place_time && !form.end_time && !tour) return <button type="button" className="rounded px-2 py-2 text-caption text-accent-on focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setShowFixed(true)}>{t('timing.fixed')}</button>;
 
   return (
     <div className="flex flex-col gap-2">

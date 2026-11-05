@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': '시간 자동 계산',
+  'timing.arrival': '예상 도착',
+  'timing.departure': '예상 출발',
+  'timing.fixed': '시간 지정',
+  'timing.unknown': '미정',
+  'timing.bookingConflict': '예상 방문 시간이 이 예약 시간을 포함하지 않습니다.',
+  'timing.booking': '예약 보기',
+  'timing.travel': '이동 시간(분)',
+  'timing.dayOffset': '+{days}일',
+
   'roadtrip.stay.portals': '숙소 찾기',
   'roadtrip.stay.portalHint': '포털에서 목적지, 날짜, 인원을 확인하세요. CHECK24에서는 직접 검색하세요.',
   'roadtrip.charging.available': '이용 가능',

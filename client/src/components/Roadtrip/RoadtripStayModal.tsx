@@ -1,4 +1,4 @@
-import React, { useEffect, useId } from 'react'
+import React, { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Hourglass, Minus, Plus, ArrowRight } from 'lucide-react'
 import { DialogButton, DialogFooter, DialogHeader, DialogShell, DialogTile, FooterSpacer, NEUTRAL_TINT, fs } from '../shared/DialogShell'
 import { useTranslation } from '../../i18n/TranslationContext'
@@ -72,6 +72,8 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
   const { minutes, setMinutes, saving, setSaving, nudge, preview: times } = useStayDraft({
     arrival: stop?.arrival, is12h, initial: 0, wholeMinutes: false,
   })
+
+  const [error, setError] = useState<string | null>(null)
   const leave = useLeaveMode(stop)
   const labelId = useId()
 
@@ -85,9 +87,12 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
   const commit = async (value: number) => {
     if (saving) return
     setSaving(true)
+    setError(null)
     try {
       await onSave(stop.placeId, value)
       onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('common.unknownError'))
     } finally {
       setSaving(false)
     }
@@ -114,9 +119,11 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
         </DialogFooter>
       )}
     >
+      {error && <p role="alert" className="text-danger">{error}</p>}
       {/* The number, the way a timer shows one. Minus and plus flank it so a value can
           be nudged without hunting for the slider's thumb. */}
       <div className="flex flex-col gap-4 rounded-[14px] border border-edge-faint bg-surface-secondary px-4 pb-4 pt-5">
+
         <div className="flex items-center justify-center gap-4">
           <button type="button" onClick={() => nudge(-STEP)} disabled={minutes === 0} aria-label={`-${STEP}`} className={STEP_BUTTON}>
             <Minus size={15} aria-hidden />
