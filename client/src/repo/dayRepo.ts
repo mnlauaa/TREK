@@ -21,7 +21,7 @@ const timingWrites = new Map<string, Promise<Day>>()
 
 function serializeTiming(key: string, write: () => Promise<Day>): Promise<Day> {
   const previous = timingWrites.get(key)
-  const next = previous ? previous.then(write, write) : write()
+  const next = previous !== undefined ? previous.then(write, write) : write()
   timingWrites.set(key, next)
   const clear = () => { if (timingWrites.get(key) === next) timingWrites.delete(key) }
   void next.then(clear, clear)
