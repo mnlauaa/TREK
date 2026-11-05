@@ -32,6 +32,14 @@ export class BudgetItems {
   ticket_json?: string | null;
   place?: Ref<Places> | null;
   place_id?: number | null;
+  exchange_rate_source: string & Opt = 'legacy';
+  exchange_rate_source_version?: string | null;
+  exchange_rate_effective_date?: string | null;
+  exchange_rate_set_at?: string | null;
+  exchangeRateSetByUser?: Ref<Users> | null;
+  exchange_rate_set_by_user_id?: number | null;
+  exchange_rate_note?: string | null;
+  exchange_rate_reset_at?: string | null;
   budget_item_members_collection = new Collection<BudgetItemMembers>(this);
   budget_item_payers_collection = new Collection<BudgetItemPayers>(this);
   file_links_collection = new Collection<FileLinks>(this);
@@ -62,6 +70,14 @@ export const BudgetItemsSchema = defineEntity({
     ticket_json: p.text().nullable(),
     place: () => p.manyToOne(Places).ref().nullable().hidden().defaultRaw(`NULL`).index('idx_budget_items_place_id'),
     place_id: p.integer().nullable().persist(false).defaultRaw(`NULL`).index('idx_budget_items_place_id'),
+    exchange_rate_source: p.text().default('legacy'),
+    exchange_rate_source_version: p.text().nullable(),
+    exchange_rate_effective_date: p.text().nullable(),
+    exchange_rate_set_at: p.text().nullable(),
+    exchangeRateSetByUser: () => p.manyToOne(Users).ref().nullable().hidden().index('idx_budget_items_exchange_rate_set_by'),
+    exchange_rate_set_by_user_id: p.integer().nullable().persist(false).index('idx_budget_items_exchange_rate_set_by'),
+    exchange_rate_note: p.text().nullable(),
+    exchange_rate_reset_at: p.text().nullable(),
     budget_item_members_collection: () => p.oneToMany(BudgetItemMembers).mappedBy('budgetItem').hidden(),
     budget_item_payers_collection: () => p.oneToMany(BudgetItemPayers).mappedBy('budgetItem').hidden(),
     file_links_collection: () => p.oneToMany(FileLinks).mappedBy('budgetItem').hidden(),

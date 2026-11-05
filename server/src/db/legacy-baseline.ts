@@ -1,41 +1,20 @@
+import {
+  classifyPositionalLineage,
+  FORK_RECONCILIATION,
+  FORK_SCHEMA_MIGRATION_IDS,
+  hasTable,
+  normalizeNumericFork,
+  readForkLedger,
+  type PositionalLineage,
+} from './fork-migrations';
 import { knownMigrationNames, unknownMigrations } from './known-migrations';
-import type { Connection, MigrationInfo } from '@mikro-orm/core';
-import type { Migrator } from '@mikro-orm/migrations';
+import type { MigrationInfo } from '@mikro-orm/core';
+import { Migrator } from '@mikro-orm/migrations';
+import type { SqliteConnection } from '@mikro-orm/sqlite';
 
+import type Database from 'better-sqlite3';
 import fs from 'node:fs';
 
-/**
- * Upgrading an install the retired hand-written runner migrated.
- *
- * Before MikroORM owned the schema, `db/migrations.ts` applied a positional
- * array of steps and recorded how far it got as the single `schema_version`
- * row. Such a database has no `mikro_orm_migrations` rows, so on its first boot
- * here the migrator would see every migration as pending and replay the whole
- * history over a schema that already has it. Eight of those migrations are not
- * replay-safe and refuse the boot; the ones that are replay-safe are worse —
- * step 26 overwrites every user-set `day_assignments.assignment_time`. So the
- * replay must never happen.
- *
- * Instead, a legacy database is baselined once: every migration whose legacy
- * step the database already applied is recorded as executed, and the ordinary
- * migrator run then applies only the rest. The baseline itself (`createTables()`)
- * is deliberately NOT recorded: the legacy runner ran the running release's
- * `createTables()` on every boot before its pending steps, and about thirty
- * tables exist only there (no numbered step creates them), so an install older
- * than those tables gets them the same way — the baseline's `IF NOT EXISTS`
- * DDL runs first, then steps N+1 onwards.
- *
- * The rows are recorded inside the same transaction as the migrator run, so a
- * first boot that fails leaves nothing behind and the next boot baselines again.
- * Anything this cannot map exactly refuses the boot rather than guessing — a
- * refused boot leaves the file untouched, a wrong guess does not.
- */
-
-/**
- * Each migration ported from the positional runner says which step it was in
- * its own docstring. That text is the single source of the mapping — there is
- * no second, hand-kept list to drift from it.
- */
 const STEP_MARKER = /Legacy migration step (\d+)\b/g;
 
 export const REFUSAL = '[DB] Refusing to boot:';
@@ -137,19 +116,48 @@ export function buildLegacyStepMap(
   return { baseline, steps, finalStep };
 }
 
-/**
- * The step a positional-runner database stopped at, or null when this is not
- * one: a fresh database has no `schema_version`, and one the migrator has
- * already recorded anything in is past the hand-over.
- */
-async function legacyVersion(connection: Connection, migrator: Migrator): Promise<number | null> {
-  if ((await migrator.getExecuted()).length > 0) return null;
-  const table: unknown[] = await connection.execute(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'`,
-  );
-  if (table.length === 0) return null;
+export class BootstrapMigrator extends Migrator {
+  override async init(): Promise<void> {
+    // The boot already opened SQLite. Stock init can create its ledger outside the transaction.
+    await this.initPaths();
+  }
 
-  const rows: Array<{ version: unknown }> = await connection.execute('SELECT version FROM schema_version');
+  async manifest(): Promise<MigrationInfo[]> {
+    await this.init();
+    return this.discoverMigrations();
+  }
+
+  resetAfterRollback(): void {
+    // MigrationStorage caches successful ledger creation even if SQLite rolled it back.
+    this.initServices();
+  }
+}
+
+type MigrationLineage =
+  | { kind: 'fresh' }
+  | { kind: 'orm'; executed: string[] }
+  | { kind: 'positional'; recordedStep: number; lineage: PositionalLineage };
+
+export function inspectMigrationLineage(db: Database.Database, finalStep = 258): MigrationLineage {
+  const forkLedger = readForkLedger(db);
+  const executed = hasTable(db, 'mikro_orm_migrations')
+    ? (db.prepare('SELECT name FROM mikro_orm_migrations ORDER BY id').all() as { name: string }[]).map(({ name }) =>
+        name.replace(/\.[jt]s$/, ''),
+      )
+    : [];
+  if (new Set(executed).size !== executed.length) throw new Error(`${REFUSAL} duplicate ORM migration names`);
+  if (executed.length > 0) {
+    if (executed.includes(FORK_RECONCILIATION) && forkLedger.length !== FORK_SCHEMA_MIGRATION_IDS.length) {
+      throw new Error(`${REFUSAL} fork reconciliation is recorded without its complete fork ledger`);
+    }
+    return { kind: 'orm', executed };
+  }
+
+  if (!hasTable(db, 'schema_version')) {
+    if (forkLedger.length) throw new Error(`${REFUSAL} fork ledger without migration history`);
+    return { kind: 'fresh' };
+  }
+  const rows = db.prepare('SELECT version FROM schema_version').all() as { version: unknown }[];
   if (rows.length !== 1) {
     throw new Error(`${REFUSAL} schema_version holds ${rows.length} rows; the legacy runner always kept exactly one`);
   }
@@ -157,96 +165,121 @@ async function legacyVersion(connection: Connection, migrator: Migrator): Promis
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
     throw new Error(`${REFUSAL} schema_version ${String(version)} is not a legacy step this release can map`);
   }
-  return version;
-}
-
-/**
- * The pre-ORM Tours branch numbered its own steps after the upstream step it
- * was cut from: 216 to 218 on the older line, 243 to 246 on the later one.
- * Such a database's schema_version counts Tours steps, not the upstream steps
- * of the same numbers, so it is cut back to the last upstream step it really
- * has. The upstream steps then run, and the Tours migration adopts the tables
- * the branch already created.
- */
-async function withoutToursSteps(connection: Connection, version: number): Promise<number> {
-  const toursLine = version >= 216 && version <= 218 ? 215 : version >= 243 && version <= 246 ? 242 : null;
-  if (toursLine === null) return version;
-  const table: unknown[] = await connection.execute(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tour_types'`,
-  );
-  if (table.length === 0) return version;
-  console.log(
-    `[DB] schema_version ${version} was written by the pre-ORM Tours branch; baselining to upstream step ${toursLine}`,
-  );
-  return toursLine;
-}
-
-/**
- * The migrations a positional-runner database already has — steps 1..N, never
- * the baseline (see the file header) — or `[]` for every database that is not
- * one. Writes nothing; {@link migrateToHead} records them.
- */
-export async function planLegacyBaseline(
-  connection: Connection,
-  migrator: Migrator,
-  readSource: ReadSource = readFromDisk,
-): Promise<string[]> {
-  const recorded = await legacyVersion(connection, migrator);
-  if (recorded === null) return [];
-  const version = await withoutToursSteps(connection, recorded);
-
-  const map = buildLegacyStepMap(await migrator.getPending(), readSource);
-  if (version > map.finalStep) {
+  if (version > finalStep) {
     throw new Error(
-      `${REFUSAL} schema_version ${version} is newer than the last legacy step this release knows (${map.finalStep})`,
+      `${REFUSAL} schema_version ${version} is newer than the last legacy step this release knows (${finalStep})`,
     );
   }
-
-  const executed: string[] = [];
-  for (const [step, name] of map.steps) if (step <= version) executed.push(name);
-  console.log(`[DB] Legacy install at schema_version ${version} — baselining ${executed.length} migration(s)`);
-  return executed;
+  return { kind: 'positional', recordedStep: version, lineage: classifyPositionalLineage(db, version) };
 }
 
-/**
- * Runs every pending migration. On a positional-runner database it first
- * records steps 1..N as executed, in the SAME transaction as the run, so the
- * two commit or roll back together.
- */
+function legacyBaseline(lineage: MigrationLineage, manifest: MigrationInfo[], readSource: ReadSource): string[] {
+  if (lineage.kind !== 'positional') return [];
+  const map = buildLegacyStepMap(manifest, readSource);
+  const { upstreamStep } = lineage.lineage;
+  if (upstreamStep > map.finalStep) {
+    throw new Error(
+      `${REFUSAL} schema_version ${upstreamStep} is newer than the last legacy step this release knows (${map.finalStep})`,
+    );
+  }
+  return [...map.steps].filter(([step]) => step <= upstreamStep).map(([, name]) => name);
+}
+
+export async function planLegacyBaseline(
+  connection: SqliteConnection,
+  migrator: BootstrapMigrator,
+  readSource: ReadSource = readFromDisk,
+): Promise<string[]> {
+  const manifest = await migrator.manifest();
+  return legacyBaseline(inspectMigrationLineage(await connection.getNativeClient()), manifest, readSource);
+}
+
+const activeBoots = new WeakMap<SqliteConnection, Promise<void>>();
+
 export async function migrateToHead(
-  connection: Connection,
-  migrator: Migrator,
+  connection: SqliteConnection,
+  migrator: BootstrapMigrator,
   readSource: ReadSource = readFromDisk,
   known: Set<string> = knownMigrationNames(),
   safetyNet: MigrationSafetyNet = NO_SAFETY_NET,
 ): Promise<void> {
-  const baselined = await planLegacyBaseline(connection, migrator, readSource);
-  const executed = (await migrator.getExecuted()).map((row) => row.name);
+  const active = activeBoots.get(connection);
+  if (active) return active;
+  const migration = applyMigrations(connection, migrator, readSource, known, safetyNet);
+  activeBoots.set(connection, migration);
+  try {
+    await migration;
+  } finally {
+    activeBoots.delete(connection);
+  }
+}
+
+async function applyMigrations(
+  connection: SqliteConnection,
+  migrator: BootstrapMigrator,
+  readSource: ReadSource,
+  known: Set<string>,
+  safetyNet: MigrationSafetyNet,
+): Promise<void> {
+  const db = await connection.getNativeClient();
+  const manifest = await migrator.manifest();
+  const state = () => ({
+    lineage: inspectMigrationLineage(db),
+    schemaVersion: db.pragma('schema_version', { simple: true }),
+    dataVersion: db.pragma('data_version', { simple: true }),
+  });
+  const before = state();
+  const { lineage } = before;
+  const executed = lineage.kind === 'orm' ? lineage.executed : [];
   if (unknownMigrations(executed, known).length > 0) {
     const thisRelease = latest(known);
     refuseNewerDatabase(executed, known, thisRelease ? await safetyNet.restoreHint(migrationLabel(thisRelease)) : null);
   }
-  const already = new Set(baselined);
-  const pending = (await migrator.getPending()).filter((migration) => !already.has(migration.name));
+  const baselined = legacyBaseline(lineage, manifest, readSource);
+  const already = new Set([...baselined, ...executed]);
+  const pending = manifest.filter(({ name }) => !already.has(name));
   if (pending.length === 0 && baselined.length === 0) return;
-
   const lastRecorded = latest(executed);
-  const legacy = lastRecorded === null ? await legacyVersion(connection, migrator) : null;
   await safetyNet.beforeMigrate(
-    lastRecorded !== null ? migrationLabel(lastRecorded) : legacy !== null ? `legacy-${legacy}` : null,
+    lastRecorded !== null
+      ? migrationLabel(lastRecorded)
+      : lineage.kind === 'positional'
+        ? `legacy-${lineage.recordedStep}`
+        : null,
   );
-  console.log(`[DB] Applying ${pending.length} pending migration(s)`);
-  if (baselined.length === 0) {
-    await migrator.up();
-    return;
-  }
 
-  const storage = migrator.getStorage();
-  await storage.ensureTable();
-  await connection.transactional(async (trx) => {
-    for (const name of baselined) await storage.logMigration({ name }, trx);
-    await migrator.up({ transaction: trx });
-  });
+  const foreignKeys = db.pragma('foreign_keys', { simple: true });
+  db.pragma('foreign_keys = OFF');
+  try {
+    await connection.transactional(async (trx) => {
+      if (JSON.stringify(state()) !== JSON.stringify(before)) {
+        throw new Error(`${REFUSAL} the database changed after the migration plan was prepared. Retry boot.`);
+      }
+      if (lineage.kind === 'positional' && lineage.lineage.kind === 'numeric-fork') normalizeNumericFork(db);
+      const storage = migrator.getStorage();
+      storage.setMasterMigration(trx);
+      try {
+        await storage.ensureTable();
+        for (const name of baselined) await storage.logMigration({ name }, trx);
+      } finally {
+        storage.unsetMasterMigration();
+      }
+      console.log(`[DB] Applying ${pending.length} pending migration(s)`);
+      await migrator.up({ transaction: trx });
+      const invalid = db.pragma('foreign_key_check') as { table: string; rowid: number | null }[];
+      if (invalid.length) {
+        const [{ table, rowid }] = invalid as [(typeof invalid)[number]];
+        throw new Error(
+          `${REFUSAL} ${invalid.length} foreign key violation(s) after migration; first in ${table} row ${rowid}`,
+        );
+      }
+    });
+  } catch (error) {
+    migrator.resetAfterRollback();
+    throw error;
+  } finally {
+    db.pragma(foreignKeys ? 'foreign_keys = ON' : 'foreign_keys = OFF');
+  }
 }
 
 /**

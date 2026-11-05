@@ -8,7 +8,7 @@
  */
 import { readEnv, type AppEnv } from '../../../src/app-config';
 import { knownMigrationNames } from '../../../src/db/known-migrations';
-import { migrateToHead, migrationLabel } from '../../../src/db/legacy-baseline';
+import { BootstrapMigrator, migrateToHead, migrationLabel } from '../../../src/db/legacy-baseline';
 import { listSnapshots, preMigrateSnapshot, pruneSnapshots } from '../../../src/db/pre-migrate-snapshot';
 import { Migrator } from '@mikro-orm/migrations';
 import { MikroORM } from '@mikro-orm/sqlite';
@@ -52,7 +52,7 @@ function migrate(env: () => AppEnv): Promise<void> {
   const connection = orm.em.getConnection();
   return migrateToHead(
     connection,
-    migrator(),
+    new BootstrapMigrator(orm.em),
     undefined,
     undefined,
     preMigrateSnapshot(connection, env, () => NOW),
@@ -73,7 +73,7 @@ const snapshotsIn = () =>
     .sort();
 
 beforeEach(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trek-premigrate-'));
+  dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'trek-premigrate-'));
   dbFile = path.join(dir, 'travel.db');
   orm = await ormFor(dbFile);
   vi.spyOn(console, 'log').mockImplementation(() => {});

@@ -38,8 +38,11 @@ import { DocumentConnectionsSchema } from './DocumentConnections.entity';
 import { DocumentProviderFieldsSchema } from './DocumentProviderFields.entity';
 import { DocumentProvidersSchema } from './DocumentProviders.entity';
 import { DocumentSyncItemsSchema } from './DocumentSyncItems.entity';
+import { ExchangeRateBatchPreviewsSchema } from './ExchangeRateBatchPreviews.entity';
 import { FerrataTilesSchema } from './FerrataTiles.entity';
 import { FileLinksSchema } from './FileLinks.entity';
+import { ForkSchemaMigrationsSchema } from './ForkSchemaMigrations.entity';
+import { GlobalExchangeRateSnapshotsSchema } from './GlobalExchangeRateSnapshots.entity';
 import { GoogleApiUsageSchema } from './GoogleApiUsage.entity';
 import { GooglePlacePhotoMetaSchema } from './GooglePlacePhotoMeta.entity';
 import { HiddenCountriesSchema } from './HiddenCountries.entity';
@@ -138,6 +141,7 @@ import { TrekPhotoSignalsSchema } from './TrekPhotoSignals.entity';
 import { TrekPhotosSchema } from './TrekPhotos.entity';
 import { TripAlbumLinksSchema } from './TripAlbumLinks.entity';
 import { TripDocumentLinksSchema } from './TripDocumentLinks.entity';
+import { TripExchangeRatesSchema } from './TripExchangeRates.entity';
 import { TripFilesSchema } from './TripFiles.entity';
 import { TripInviteTokensSchema } from './TripInviteTokens.entity';
 import { TripJournalLinkMembersSchema } from './TripJournalLinkMembers.entity';
@@ -162,6 +166,7 @@ import { VacayYearsSchema } from './VacayYears.entity';
 import { VisitedCountriesSchema } from './VisitedCountries.entity';
 import { VisitedRegionsSchema } from './VisitedRegions.entity';
 import { WandererConnectionsSchema } from './WandererConnections.entity';
+import { WebPushSubscriptionsSchema } from './WebPushSubscriptions.entity';
 import { WebauthnChallengesSchema } from './WebauthnChallenges.entity';
 import { WebauthnCredentialsSchema } from './WebauthnCredentials.entity';
 
@@ -205,8 +210,11 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   DocumentProviderFieldsSchema,
   DocumentProvidersSchema,
   DocumentSyncItemsSchema,
+  ExchangeRateBatchPreviewsSchema,
   FerrataTilesSchema,
   FileLinksSchema,
+  ForkSchemaMigrationsSchema,
+  GlobalExchangeRateSnapshotsSchema,
   GoogleApiUsageSchema,
   GooglePlacePhotoMetaSchema,
   HiddenCountriesSchema,
@@ -305,6 +313,7 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   TrekPhotosSchema,
   TripAlbumLinksSchema,
   TripDocumentLinksSchema,
+  TripExchangeRatesSchema,
   TripFilesSchema,
   TripInviteTokensSchema,
   TripJournalLinkMembersSchema,
@@ -329,6 +338,7 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   VisitedCountriesSchema,
   VisitedRegionsSchema,
   WandererConnectionsSchema,
+  WebPushSubscriptionsSchema,
   WebauthnChallengesSchema,
   WebauthnCredentialsSchema,
 ];

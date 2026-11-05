@@ -48,7 +48,8 @@
     "test:integration": "vitest run tests/integration",
     "test:ws": "vitest run tests/websocket",
     "test:e2e": "vitest run tests/e2e",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "audit:v4-upgrade": "node --import tsx scripts/audit-v4-upgrade.ts"
   },
   "mikro-orm": {
     "configPaths": [

@@ -88,14 +88,14 @@ describeLegacyUpgrade(
       const line = logged.find((entry) => entry.startsWith('[DB] Copy of the database before migrating: '));
       expect(line).toBeDefined();
       const snapshot = line!.slice('[DB] Copy of the database before migrating: '.length);
-      expect(path.dirname(snapshot)).toBe(path.dirname(legacyDb.name));
+      expect(fs.realpathSync(path.dirname(snapshot))).toBe(fs.realpathSync(path.dirname(legacyDb.name)));
       expect(path.basename(snapshot)).toMatch(/^pre-migrate-legacy-244-\d{8}T\d{6}Z\.db$/);
       expect(fs.existsSync(snapshot)).toBe(true);
 
       const copy = new Database(snapshot, { readonly: true });
       try {
         expect(copy.prepare('SELECT version FROM schema_version').all()).toEqual([{ version: 244 }]);
-        expect(copy.prepare('SELECT COUNT(*) AS c FROM mikro_orm_migrations').get()).toEqual({ c: 0 });
+        expect(copy.prepare("SELECT 1 FROM sqlite_master WHERE name = 'mikro_orm_migrations'").get()).toBeUndefined();
         expect(copy.prepare('SELECT COUNT(*) AS c FROM users').get()).toEqual({ c: 3 });
         const tripColumns = (
           copy.prepare('SELECT name FROM pragma_table_info(?)').all('trips') as Array<{ name: string }>

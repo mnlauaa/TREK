@@ -2,11 +2,11 @@ import mikroOrmConfig from '../mikro-orm.config';
 import { withRequestContext } from '../nest/database/request-context';
 import { runDemoSeed } from './database';
 import { ensureEmailCaseIndex } from './email-case-index';
-import { migrateToHead, NO_SAFETY_NET } from './legacy-baseline';
+import { BootstrapMigrator, migrateToHead, NO_SAFETY_NET } from './legacy-baseline';
 import { preMigrateSnapshot } from './pre-migrate-snapshot';
 import type { AnyEntity, EntityClass, EntityManager, EntitySchema, IDatabaseDriver, MikroORM } from '@mikro-orm/core';
-import type { Migrator } from '@mikro-orm/migrations';
-import { MikroORM as SqliteMikroORM } from '@mikro-orm/sqlite';
+import type { SqlEntityManager } from '@mikro-orm/sql';
+import { MikroORM as SqliteMikroORM, type SqliteConnection } from '@mikro-orm/sqlite';
 
 /**
  * Schema ownership at startup.
@@ -39,8 +39,8 @@ export type AnyOrm = MikroORM<
  * a backup archive, which is still there to go back to.
  */
 export async function runSchemaBootstrap(orm: AnyOrm, { snapshot = true }: { snapshot?: boolean } = {}): Promise<void> {
-  const migrator = orm.config.getExtension('@mikro-orm/migrator') as Migrator;
-  const connection = orm.em.getConnection();
+  const migrator = new BootstrapMigrator(orm.em as SqlEntityManager);
+  const connection = orm.em.getConnection() as SqliteConnection;
   // A database the retired positional runner migrated has no migrator rows yet;
   // what it already has is recorded in the same transaction as the run, or the
   // run would replay the whole history over it (see legacy-baseline.ts). Every

@@ -41,8 +41,11 @@ import type { DocumentConnectionsTable } from './DocumentConnections.table';
 import type { DocumentProviderFieldsTable } from './DocumentProviderFields.table';
 import type { DocumentProvidersTable } from './DocumentProviders.table';
 import type { DocumentSyncItemsTable } from './DocumentSyncItems.table';
+import type { ExchangeRateBatchPreviewsTable } from './ExchangeRateBatchPreviews.table';
 import type { FerrataTilesTable } from './FerrataTiles.table';
 import type { FileLinksTable } from './FileLinks.table';
+import type { ForkSchemaMigrationsTable } from './ForkSchemaMigrations.table';
+import type { GlobalExchangeRateSnapshotsTable } from './GlobalExchangeRateSnapshots.table';
 import type { GoogleApiUsageTable } from './GoogleApiUsage.table';
 import type { GooglePlacePhotoMetaTable } from './GooglePlacePhotoMeta.table';
 import type { HiddenCountriesTable } from './HiddenCountries.table';
@@ -144,6 +147,7 @@ import type { TrekPhotoSignalsTable } from './TrekPhotoSignals.table';
 import type { TrekPhotosTable } from './TrekPhotos.table';
 import type { TripAlbumLinksTable } from './TripAlbumLinks.table';
 import type { TripDocumentLinksTable } from './TripDocumentLinks.table';
+import type { TripExchangeRatesTable } from './TripExchangeRates.table';
 import type { TripFilesTable } from './TripFiles.table';
 import type { TripInviteTokensTable } from './TripInviteTokens.table';
 import type { TripJournalLinkMembersTable } from './TripJournalLinkMembers.table';
@@ -168,6 +172,7 @@ import type { VacayYearsTable } from './VacayYears.table';
 import type { VisitedCountriesTable } from './VisitedCountries.table';
 import type { VisitedRegionsTable } from './VisitedRegions.table';
 import type { WandererConnectionsTable } from './WandererConnections.table';
+import type { WebPushSubscriptionsTable } from './WebPushSubscriptions.table';
 import type { WebauthnChallengesTable } from './WebauthnChallenges.table';
 import type { WebauthnCredentialsTable } from './WebauthnCredentials.table';
 
@@ -214,8 +219,11 @@ export interface DB {
   document_provider_fields: DocumentProviderFieldsTable;
   document_providers: DocumentProvidersTable;
   document_sync_items: DocumentSyncItemsTable;
+  exchange_rate_batch_previews: ExchangeRateBatchPreviewsTable;
   ferrata_tiles: FerrataTilesTable;
   file_links: FileLinksTable;
+  fork_schema_migrations: ForkSchemaMigrationsTable;
+  global_exchange_rate_snapshots: GlobalExchangeRateSnapshotsTable;
   google_api_usage: GoogleApiUsageTable;
   google_place_photo_meta: GooglePlacePhotoMetaTable;
   hidden_countries: HiddenCountriesTable;
@@ -317,6 +325,7 @@ export interface DB {
   trek_photos: TrekPhotosTable;
   trip_album_links: TripAlbumLinksTable;
   trip_document_links: TripDocumentLinksTable;
+  trip_exchange_rates: TripExchangeRatesTable;
   trip_files: TripFilesTable;
   trip_invite_tokens: TripInviteTokensTable;
   trip_journal_link_members: TripJournalLinkMembersTable;
@@ -341,6 +350,7 @@ export interface DB {
   visited_countries: VisitedCountriesTable;
   visited_regions: VisitedRegionsTable;
   wanderer_connections: WandererConnectionsTable;
+  web_push_subscriptions: WebPushSubscriptionsTable;
   webauthn_challenges: WebauthnChallengesTable;
   webauthn_credentials: WebauthnCredentialsTable;
 }

@@ -9,7 +9,12 @@
  * The end-to-end upgrade of real legacy databases is
  * `tests/integration/legacy-upgrade-v*.test.ts`.
  */
-import { buildLegacyStepMap, migrateToHead, planLegacyBaseline } from '../../../src/db/legacy-baseline';
+import {
+  BootstrapMigrator,
+  buildLegacyStepMap,
+  migrateToHead,
+  planLegacyBaseline,
+} from '../../../src/db/legacy-baseline';
 import {
   createMigrationOrm,
   migrateTo,
@@ -100,6 +105,7 @@ const UNNUMBERED = [
   'Migration20200101046300_an_attached_file_stays_with_its_conversation',
   'Migration20200101046310_an_admin_can_run_a_plugin_outside_its_trek_range',
   'Migration20200101046320_a_place_knows_where_its_details_came_from',
+  'Migration20200101046330_adopt_fork_schema_lineages',
 ];
 // The last step the positional runner ever had; planLegacyBaseline refuses a
 // schema_version past it.
@@ -215,10 +221,14 @@ describe('planLegacyBaseline / migrateToHead', () => {
     await orm.close(true);
   });
 
-  const baseline = () => planLegacyBaseline(orm.em.getConnection(), migratorOf(orm));
-  const migrate = () => migrateToHead(orm.em.getConnection(), migratorOf(orm));
-  const recorded = async () =>
-    (await rawQuery<{ name: string }>(orm, 'SELECT name FROM mikro_orm_migrations ORDER BY id')).map((r) => r.name);
+  const baseline = () => planLegacyBaseline(orm.em.getConnection(), new BootstrapMigrator(orm.em));
+  const migrate = () => migrateToHead(orm.em.getConnection(), new BootstrapMigrator(orm.em));
+  const recorded = async () => {
+    const ledger = await rawQuery(orm, "SELECT 1 FROM sqlite_master WHERE name = 'mikro_orm_migrations'");
+    return ledger.length
+      ? (await rawQuery<{ name: string }>(orm, 'SELECT name FROM mikro_orm_migrations ORDER BY id')).map((r) => r.name)
+      : [];
+  };
 
   it('LEGACYBASE-001: a fresh database (no schema_version) is left alone', async () => {
     await expect(baseline()).resolves.toEqual([]);
@@ -272,25 +282,21 @@ describe('planLegacyBaseline / migrateToHead', () => {
   it('LEGACYBASE-006: the baseline rows commit with the run — a failed first run leaves nothing recorded, so the next boot baselines again', async () => {
     const all = await pendingNames(orm);
     await rawExec(orm, 'CREATE TABLE schema_version (version INTEGER NOT NULL)');
-    await rawExec(orm, 'INSERT INTO schema_version (version) VALUES (241)');
+    await rawExec(orm, 'INSERT INTO schema_version (version) VALUES (10)');
     // An obstacle for Migration20200101040200's rebuild, which runs after the baseline.
     await rawExec(orm, 'CREATE TABLE trek_photo_cache_meta_new (x INTEGER)');
     await expect(migrate()).rejects.toThrow();
     expect(await recorded()).toEqual([]);
 
     // Nothing half-done: the next boot still sees a legacy install and plans the same steps.
-    await expect(baseline()).resolves.toEqual(all.filter((name) => name !== BASELINE).slice(0, 241));
+    await expect(baseline()).resolves.toEqual(all.filter((name) => name !== BASELINE).slice(0, 10));
     expect(await recorded()).toEqual([]);
   });
 
-  it('LEGACYBASE-007: an install the positional runner left past step 242 is baselined to its step, never refused or replayed', async () => {
-    const all = await pendingNames(orm);
-    const numbered = all.filter((name) => !UNNUMBERED.includes(name));
+  it('LEGACYBASE-007: refuses a version that lacks the artifacts of the claimed step', async () => {
     await rawExec(orm, 'CREATE TABLE schema_version (version INTEGER NOT NULL)');
     await rawExec(orm, 'INSERT INTO schema_version (version) VALUES (250)');
-    const planned = await baseline();
-    expect(planned).toEqual(numbered.slice(0, 250));
-    expect(planned.at(-1)).toBe('Migration20200101041100_half_company_holidays_0_5_covers_the');
+    await expect(baseline()).rejects.toThrow(/schema artifacts do not prove a supported/);
     expect(await recorded()).toEqual([]);
   });
 
@@ -327,12 +333,4 @@ describe('planLegacyBaseline / migrateToHead', () => {
       expect(await baseline()).toEqual(numbered.slice(0, upstream));
     },
   );
-
-  it('LEGACYBASE-011: the same schema_version without the Tours tables is an upstream database and keeps its step', async () => {
-    const all = await pendingNames(orm);
-    const numbered = all.filter((name) => !UNNUMBERED.includes(name));
-    await rawExec(orm, 'CREATE TABLE schema_version (version INTEGER NOT NULL)');
-    await rawExec(orm, 'INSERT INTO schema_version (version) VALUES (244)');
-    expect(await baseline()).toEqual(numbered.slice(0, 244));
-  });
 });

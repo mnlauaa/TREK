@@ -13,6 +13,7 @@ export class TripMembers {
   user_id!: number;
   invited_by?: number | null;
   added_at?: string | null;
+  new_member_identity_check_completed_at?: string | null;
   invitedByRef?: Ref<Users> | null;
 }
 
@@ -28,6 +29,7 @@ export const TripMembersSchema = defineEntity({
     user_id: p.integer().persist(false).index('idx_trip_members_user_id'),
     invited_by: p.integer().nullable().persist(false).index('idx_trip_members_invited_by'),
     added_at: p.type(DbTimestampType).nullable().defaultRaw(`CURRENT_TIMESTAMP`),
+    new_member_identity_check_completed_at: p.type(DbTimestampType).nullable(),
     invitedByRef: () => p.manyToOne(Users).ref().joinColumn('invited_by').deleteRule('no action').nullable().hidden().index('idx_trip_members_invited_by'),
   },
 });

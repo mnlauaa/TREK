@@ -1,4 +1,4 @@
-import { buildLegacyStepMap, migrateToHead } from '../../../src/db/legacy-baseline';
+import { BootstrapMigrator, buildLegacyStepMap, migrateToHead } from '../../../src/db/legacy-baseline';
 import { Migration20200101040500_a_place_that_moves_takes_its_atlas as PlaceRegionsTrigger } from '../../../src/db/migrations/Migration20200101040500_a_place_that_moves_takes_its_atlas';
 import { Migration20200101040700_the_2527_trigger_once_more_for_an as PlaceRegionsTriggerAgain } from '../../../src/db/migrations/Migration20200101040700_the_2527_trigger_once_more_for_an';
 import { createSnapshotTestDb } from '../../helpers/db-mock';
@@ -204,7 +204,7 @@ describe('place_regions follows the place it was resolved from (#2527)', () => {
       await rawExec(orm, 'INSERT INTO schema_version (version) VALUES (?)', [PLACE_REGIONS_TRIGGER_VERSION]);
     }
 
-    const boot = () => migrateToHead(orm.em.getConnection(), migratorOf(orm));
+    const boot = () => migrateToHead(orm.em.getConnection(), new BootstrapMigrator(orm.em));
 
     beforeEach(async () => {
       orm = await createMigrationOrm();

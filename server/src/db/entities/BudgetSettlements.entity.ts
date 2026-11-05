@@ -21,6 +21,14 @@ export class BudgetSettlements {
   exchange_rate!: number & Opt;
   settled_at?: string | null;
   note?: string | null;
+  exchange_rate_source: string & Opt = 'legacy';
+  exchange_rate_source_version?: string | null;
+  exchange_rate_effective_date?: string | null;
+  exchange_rate_set_at?: string | null;
+  exchangeRateSetByUser?: Ref<Users> | null;
+  exchange_rate_set_by_user_id?: number | null;
+  exchange_rate_note?: string | null;
+  exchange_rate_reset_at?: string | null;
 }
 
 export const BudgetSettlementsSchema = defineEntity({
@@ -42,5 +50,13 @@ export const BudgetSettlementsSchema = defineEntity({
     exchange_rate: p.double().defaultRaw(`1`),
     settled_at: p.text().nullable(),
     note: p.text().nullable(),
+    exchange_rate_source: p.text().default('legacy'),
+    exchange_rate_source_version: p.text().nullable(),
+    exchange_rate_effective_date: p.text().nullable(),
+    exchange_rate_set_at: p.text().nullable(),
+    exchangeRateSetByUser: () => p.manyToOne(Users).ref().nullable().hidden().index('idx_budget_settlements_exchange_rate_set_by'),
+    exchange_rate_set_by_user_id: p.integer().nullable().persist(false).index('idx_budget_settlements_exchange_rate_set_by'),
+    exchange_rate_note: p.text().nullable(),
+    exchange_rate_reset_at: p.text().nullable(),
   },
 });

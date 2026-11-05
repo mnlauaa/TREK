@@ -20,4 +20,11 @@ export interface BudgetItemsTable {
   exchange_rate: InsertOptional<number>;
   ticket_json: InsertOptional<string | null>;
   place_id: InsertOptional<number | null>;
+  exchange_rate_source: InsertOptional<string>;
+  exchange_rate_source_version: InsertOptional<string | null>;
+  exchange_rate_effective_date: InsertOptional<string | null>;
+  exchange_rate_set_at: InsertOptional<string | null>;
+  exchange_rate_set_by_user_id: InsertOptional<number | null>;
+  exchange_rate_note: InsertOptional<string | null>;
+  exchange_rate_reset_at: InsertOptional<string | null>;
 }

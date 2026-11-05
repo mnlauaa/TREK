@@ -8,4 +8,5 @@ export interface TripMembersTable {
   user_id: number;
   invited_by: InsertOptional<number | null>;
   added_at: InsertOptional<string | null>;
+  new_member_identity_check_completed_at: InsertOptional<string | null>;
 }

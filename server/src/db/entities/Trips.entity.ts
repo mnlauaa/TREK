@@ -16,6 +16,7 @@ import { DayNotes } from './DayNotes.entity';
 import { Days } from './Days.entity';
 import { DocumentConnections } from './DocumentConnections.entity';
 import { DocumentSyncItems } from './DocumentSyncItems.entity';
+import { ExchangeRateBatchPreviews } from './ExchangeRateBatchPreviews.entity';
 import { InviteTokens } from './InviteTokens.entity';
 import { JourneyEntries } from './JourneyEntries.entity';
 import { JourneyTrips } from './JourneyTrips.entity';
@@ -33,6 +34,7 @@ import { TodoItems } from './TodoItems.entity';
 import { TourDrafts } from './TourDrafts.entity';
 import { TripAlbumLinks } from './TripAlbumLinks.entity';
 import { TripDocumentLinks } from './TripDocumentLinks.entity';
+import { TripExchangeRates } from './TripExchangeRates.entity';
 import { TripFiles } from './TripFiles.entity';
 import { TripInviteTokens } from './TripInviteTokens.entity';
 import { TripJournalLinks } from './TripJournalLinks.entity';
@@ -73,6 +75,7 @@ export class Trips {
   days_collection = new Collection<Days>(this);
   document_connections_collection = new Collection<DocumentConnections>(this);
   document_sync_items_collection = new Collection<DocumentSyncItems>(this);
+  exchange_rate_batch_previews_collection = new Collection<ExchangeRateBatchPreviews>(this);
   invite_tokens_collection = new Collection<InviteTokens>(this);
   journey_entries_collection = new Collection<JourneyEntries>(this);
   journey_trips_collection = new Collection<JourneyTrips>(this);
@@ -90,6 +93,7 @@ export class Trips {
   tour_drafts_collection = new Collection<TourDrafts>(this);
   trip_album_links_collection = new Collection<TripAlbumLinks>(this);
   trip_document_links_collection = new Collection<TripDocumentLinks>(this);
+  trip_exchange_rates_collection = new Collection<TripExchangeRates>(this);
   trip_files_collection = new Collection<TripFiles>(this);
   trip_invite_tokens_collection = new Collection<TripInviteTokens>(this);
   trip_journal_links_collection = new Collection<TripJournalLinks>(this);
@@ -139,6 +143,7 @@ export const TripsSchema = defineEntity({
     days_collection: () => p.oneToMany(Days).mappedBy('trip').hidden(),
     document_connections_collection: () => p.oneToMany(DocumentConnections).mappedBy('trip').hidden(),
     document_sync_items_collection: () => p.oneToMany(DocumentSyncItems).mappedBy('trip').hidden(),
+    exchange_rate_batch_previews_collection: () => p.oneToMany(ExchangeRateBatchPreviews).mappedBy('trip').hidden(),
     invite_tokens_collection: () => p.oneToMany(InviteTokens).mappedBy('trip').hidden(),
     journey_entries_collection: () => p.oneToMany(JourneyEntries).mappedBy('sourceTrip').hidden(),
     journey_trips_collection: () => p.oneToMany(JourneyTrips).mappedBy('trip').hidden(),
@@ -156,6 +161,7 @@ export const TripsSchema = defineEntity({
     tour_drafts_collection: () => p.oneToMany(TourDrafts).mappedBy('trip').hidden(),
     trip_album_links_collection: () => p.oneToMany(TripAlbumLinks).mappedBy('trip').hidden(),
     trip_document_links_collection: () => p.oneToMany(TripDocumentLinks).mappedBy('trip').hidden(),
+    trip_exchange_rates_collection: () => p.oneToMany(TripExchangeRates).mappedBy('trip').hidden(),
     trip_files_collection: () => p.oneToMany(TripFiles).mappedBy('trip').hidden(),
     trip_invite_tokens_collection: () => p.oneToMany(TripInviteTokens).mappedBy('trip').hidden(),
     trip_journal_links_collection: () => p.oneToMany(TripJournalLinks).mappedBy('trip').hidden(),

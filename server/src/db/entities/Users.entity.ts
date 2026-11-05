@@ -27,6 +27,7 @@ import { Collections } from './Collections.entity';
 import { DawarichConnections } from './DawarichConnections.entity';
 import { DawarichVisitSuggestions } from './DawarichVisitSuggestions.entity';
 import { DocumentConnections } from './DocumentConnections.entity';
+import { ExchangeRateBatchPreviews } from './ExchangeRateBatchPreviews.entity';
 import { HiddenCountries } from './HiddenCountries.entity';
 import { HiddenRegions } from './HiddenRegions.entity';
 import { IdempotencyKeys } from './IdempotencyKeys.entity';
@@ -68,6 +69,7 @@ import { TourSources } from './TourSources.entity';
 import { TrekPhotos } from './TrekPhotos.entity';
 import { TripAlbumLinks } from './TripAlbumLinks.entity';
 import { TripDocumentLinks } from './TripDocumentLinks.entity';
+import { TripExchangeRates } from './TripExchangeRates.entity';
 import { TripFiles } from './TripFiles.entity';
 import { TripInviteTokens } from './TripInviteTokens.entity';
 import { TripJournalLinkMembers } from './TripJournalLinkMembers.entity';
@@ -88,6 +90,7 @@ import { VacayUserYears } from './VacayUserYears.entity';
 import { VisitedCountries } from './VisitedCountries.entity';
 import { VisitedRegions } from './VisitedRegions.entity';
 import { WandererConnections } from './WandererConnections.entity';
+import { WebPushSubscriptions } from './WebPushSubscriptions.entity';
 import { WebauthnChallenges } from './WebauthnChallenges.entity';
 import { WebauthnCredentials } from './WebauthnCredentials.entity';
 
@@ -144,9 +147,11 @@ export class Users {
   budget_item_members_collection = new Collection<BudgetItemMembers>(this);
   budget_item_payers_collection = new Collection<BudgetItemPayers>(this);
   budget_items_collection = new Collection<BudgetItems>(this);
+  budget_items_collection1 = new Collection<BudgetItems>(this);
   budget_settlements_collection = new Collection<BudgetSettlements>(this);
   budget_settlements_collection1 = new Collection<BudgetSettlements>(this);
   budget_settlements_collection2 = new Collection<BudgetSettlements>(this);
+  budget_settlements_collection3 = new Collection<BudgetSettlements>(this);
   categories_collection = new Collection<Categories>(this);
   collab_links_collection = new Collection<CollabLinks>(this);
   collab_message_reactions_collection = new Collection<CollabMessageReactions>(this);
@@ -163,6 +168,7 @@ export class Users {
   dawarich_connections: Ref<DawarichConnections> | null = null;
   dawarich_visit_suggestions_collection = new Collection<DawarichVisitSuggestions>(this);
   document_connections_collection = new Collection<DocumentConnections>(this);
+  exchange_rate_batch_previews_collection = new Collection<ExchangeRateBatchPreviews>(this);
   hidden_countries_collection = new Collection<HiddenCountries>(this);
   hidden_regions_collection = new Collection<HiddenRegions>(this);
   idempotency_keys_collection = new Collection<IdempotencyKeys>(this);
@@ -209,6 +215,7 @@ export class Users {
   trek_photos_collection = new Collection<TrekPhotos>(this);
   trip_album_links_collection = new Collection<TripAlbumLinks>(this);
   trip_document_links_collection = new Collection<TripDocumentLinks>(this);
+  trip_exchange_rates_collection = new Collection<TripExchangeRates>(this);
   trip_files_collection = new Collection<TripFiles>(this);
   trip_invite_tokens_collection = new Collection<TripInviteTokens>(this);
   trip_journal_link_members_collection = new Collection<TripJournalLinkMembers>(this);
@@ -231,6 +238,7 @@ export class Users {
   visited_countries_collection = new Collection<VisitedCountries>(this);
   visited_regions_collection = new Collection<VisitedRegions>(this);
   wanderer_connections: Ref<WandererConnections> | null = null;
+  web_push_subscriptions_collection = new Collection<WebPushSubscriptions>(this);
   webauthn_challenges_collection = new Collection<WebauthnChallenges>(this);
   webauthn_credentials_collection = new Collection<WebauthnCredentials>(this);
 }
@@ -303,9 +311,11 @@ export const UsersSchema = defineEntity({
     budget_item_members_collection: () => p.oneToMany(BudgetItemMembers).mappedBy('user').hidden(),
     budget_item_payers_collection: () => p.oneToMany(BudgetItemPayers).mappedBy('user').hidden(),
     budget_items_collection: () => p.oneToMany(BudgetItems).mappedBy('paidByUser').hidden(),
+    budget_items_collection1: () => p.oneToMany(BudgetItems).mappedBy('exchangeRateSetByUser').hidden(),
     budget_settlements_collection: () => p.oneToMany(BudgetSettlements).mappedBy('fromUser').hidden(),
     budget_settlements_collection1: () => p.oneToMany(BudgetSettlements).mappedBy('toUser').hidden(),
     budget_settlements_collection2: () => p.oneToMany(BudgetSettlements).mappedBy('createdByUser').hidden(),
+    budget_settlements_collection3: () => p.oneToMany(BudgetSettlements).mappedBy('exchangeRateSetByUser').hidden(),
     categories_collection: () => p.oneToMany(Categories).mappedBy('user').hidden(),
     collab_links_collection: () => p.oneToMany(CollabLinks).mappedBy('user').hidden(),
     collab_message_reactions_collection: () => p.oneToMany(CollabMessageReactions).mappedBy('user').hidden(),
@@ -322,6 +332,7 @@ export const UsersSchema = defineEntity({
     dawarich_connections: () => p.oneToOne(DawarichConnections).ref().mappedBy('user').hidden(),
     dawarich_visit_suggestions_collection: () => p.oneToMany(DawarichVisitSuggestions).mappedBy('user').hidden(),
     document_connections_collection: () => p.oneToMany(DocumentConnections).mappedBy('ownerUser').hidden(),
+    exchange_rate_batch_previews_collection: () => p.oneToMany(ExchangeRateBatchPreviews).mappedBy('createdByUser').hidden(),
     hidden_countries_collection: () => p.oneToMany(HiddenCountries).mappedBy('user').hidden(),
     hidden_regions_collection: () => p.oneToMany(HiddenRegions).mappedBy('user').hidden(),
     idempotency_keys_collection: () => p.oneToMany(IdempotencyKeys).mappedBy('user').hidden(),
@@ -368,6 +379,7 @@ export const UsersSchema = defineEntity({
     trek_photos_collection: () => p.oneToMany(TrekPhotos).mappedBy('owner').hidden(),
     trip_album_links_collection: () => p.oneToMany(TripAlbumLinks).mappedBy('user').hidden(),
     trip_document_links_collection: () => p.oneToMany(TripDocumentLinks).mappedBy('createdByRef').hidden(),
+    trip_exchange_rates_collection: () => p.oneToMany(TripExchangeRates).mappedBy('setByUser').hidden(),
     trip_files_collection: () => p.oneToMany(TripFiles).mappedBy('uploadedByRef').hidden(),
     trip_invite_tokens_collection: () => p.oneToMany(TripInviteTokens).mappedBy('createdByRef').hidden(),
     trip_journal_link_members_collection: () => p.oneToMany(TripJournalLinkMembers).mappedBy('user').hidden(),
@@ -390,6 +402,7 @@ export const UsersSchema = defineEntity({
     visited_countries_collection: () => p.oneToMany(VisitedCountries).mappedBy('user').hidden(),
     visited_regions_collection: () => p.oneToMany(VisitedRegions).mappedBy('user').hidden(),
     wanderer_connections: () => p.oneToOne(WandererConnections).ref().mappedBy('user').hidden(),
+    web_push_subscriptions_collection: () => p.oneToMany(WebPushSubscriptions).mappedBy('user').hidden(),
     webauthn_challenges_collection: () => p.oneToMany(WebauthnChallenges).mappedBy('user').hidden(),
     webauthn_credentials_collection: () => p.oneToMany(WebauthnCredentials).mappedBy('user').hidden(),
   },
