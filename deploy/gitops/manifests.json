@@ -12,7 +12,7 @@
         "name": "trek",
         "namespace": "trek",
         "annotations": {
-          "trek.deploy/revision": "ccd95e19034216a1e87d3ac76f49cfd51914b5f1"
+          "trek.deploy/revision": "0f10bc6b1a641100497912420acfb482c62c89dc"
         }
       },
       "spec": {
@@ -119,7 +119,7 @@
                     }
                   }
                 ],
-                "image": "ghcr.io/mnlauaa/trek@sha256:7cca8e106ea2a26971e52c713449136467b8c14defb3af4463615eb324674fd0",
+                "image": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345",
                 "imagePullPolicy": "IfNotPresent",
                 "livenessProbe": {
                   "failureThreshold": 3,
@@ -312,11 +312,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:7cca8e106ea2a26971e52c713449136467b8c14defb3af4463615eb324674fd0"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "ccd95e19034216a1e87d3ac76f49cfd51914b5f1"
+                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
@@ -412,7 +412,7 @@
             "initContainers": [
               {
                 "name": "ensure-image-pulled",
-                "image": "ghcr.io/mnlauaa/trek@sha256:7cca8e106ea2a26971e52c713449136467b8c14defb3af4463615eb324674fd0",
+                "image": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345",
                 "command": [
                   "/usr/bin/true"
                 ],
@@ -465,11 +465,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:7cca8e106ea2a26971e52c713449136467b8c14defb3af4463615eb324674fd0"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "ccd95e19034216a1e87d3ac76f49cfd51914b5f1"
+                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
@@ -599,11 +599,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:7cca8e106ea2a26971e52c713449136467b8c14defb3af4463615eb324674fd0"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "ccd95e19034216a1e87d3ac76f49cfd51914b5f1"
+                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
