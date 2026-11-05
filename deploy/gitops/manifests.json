@@ -173,14 +173,37 @@
                     "mountPath": "/app/uploads",
                     "name": "uploads"
                   }
-                ]
+                ],
+                "workingDir": "/app/server",
+                "command": [
+                  "/usr/bin/dumb-init",
+                  "--",
+                  "node",
+                  "--require",
+                  "tsconfig-paths/register",
+                  "dist/index.js"
+                ],
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                }
               }
             ],
             "dnsPolicy": "ClusterFirst",
             "restartPolicy": "Always",
             "schedulerName": "default-scheduler",
             "securityContext": {
-              "fsGroup": 1000
+              "fsGroup": 1000,
+              "runAsNonRoot": true,
+              "runAsUser": 1000,
+              "runAsGroup": 1000,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
             },
             "terminationGracePeriodSeconds": 30,
             "volumes": [
@@ -196,7 +219,8 @@
                   "claimName": "trek-uploads"
                 }
               }
-            ]
+            ],
+            "automountServiceAccountToken": false
           }
         }
       }
