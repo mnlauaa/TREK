@@ -400,12 +400,12 @@ function MSpotlightCard({ trip, t, onOpen, actions, departure }: {
             <span className="absolute bottom-0 left-0 top-0 rounded-full bg-white" style={{ width: `${progress}%` }} />
           </div>
         )}
-        {departure && <DepartureCountdownBoard departure={departure} compact />}
         <div className={`flex gap-[6px] ${ongoing ? '' : 'mt-[9px]'}`}>
           <SpotlightPill icon={<CalendarDays size={11} strokeWidth={2.2} />} label={t('dashboard.mobile.spotlightDays', { count: days })} />
           <SpotlightPill icon={<MapPin size={11} strokeWidth={2.2} />} label={t('dashboard.hero.destinations', { count: places })} />
           <SpotlightPill icon={<Users size={11} strokeWidth={2.2} />} label={t('dashboard.hero.travelers', { count: people })} />
         </div>
+        {departure && <DepartureCountdownBoard departure={departure} compact />}
       </div>
     </div>
   )

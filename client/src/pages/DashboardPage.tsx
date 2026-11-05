@@ -460,7 +460,6 @@ function BoardingPassHero({ trip, bundle, departure, locale, onOpen, onEdit, onC
           <h2 className="hero-title">{trip.title}</h2>
         </div>
 
-        {departure && <DepartureCountdownBoard departure={departure} />}
         <div className="hero-pass-wrap">
           {heroPlugins.length > 0 && (
             <div className="hero-pass-overlay" aria-hidden="true">
@@ -473,6 +472,7 @@ function BoardingPassHero({ trip, bundle, departure, locale, onOpen, onEdit, onC
             <div className="hero-pass-inner">{passCells}</div>
           </div>
         </div>
+        {departure && <DepartureCountdownBoard departure={departure} />}
       </div>
     </div>
   )

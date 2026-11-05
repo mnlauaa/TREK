@@ -194,6 +194,15 @@
      row and the boarding pass as wide as that word, with the tools off the card. */
   grid-template-columns: minmax(0, 1fr);
 }
+@media (min-width: 768px) {
+  .trek-dash .hero-trip { height: auto; }
+  .trek-dash .hero-content {
+    position: relative;
+    inset: auto;
+    min-height: 520px;
+    grid-template-rows: auto 1fr auto auto;
+  }
+}
 .trek-dash .hero-top { display: flex; justify-content: space-between; align-items: start; }
 .trek-dash .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;

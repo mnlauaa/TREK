@@ -65,13 +65,15 @@ export default function DepartureCountdownBoard({
       aria-live="off"
       data-testid="departure-countdown-board"
       className={
-        compact ? 'bg-surface/90 mt-2 rounded-xl px-3 py-2 text-content backdrop-blur-md' : 'departure-countdown-board'
+        compact
+          ? 'mt-2 rounded-xl bg-black/25 px-3 py-2 text-white backdrop-blur-md' // theme-lint-disable — fixed dark glass on the cover photo
+          : 'departure-countdown-board'
       }
     >
       <div
         className={compact ? 'mb-1 flex items-center justify-between gap-2 text-caption' : 'departure-countdown-head'}
       >
-        <span className={compact ? 'font-bold uppercase tracking-wider' : 'departure-countdown-title'}>
+        <span className={compact ? 'shrink-0 font-bold uppercase tracking-wider' : 'departure-countdown-title'}>
           {t('dashboard.hero.departureIn')}
         </span>
         <span className={compact ? 'truncate opacity-80' : 'departure-countdown-transport'}>
