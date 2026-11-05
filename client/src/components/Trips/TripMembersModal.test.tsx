@@ -527,6 +527,7 @@ describe('TripMembersModal', () => {
     );
     render(<TripMembersModal {...defaultProps} />);
     await screen.findByText('Grandma');
+    expect(screen.queryByRole('button', { name: 'This is me' })).not.toBeInTheDocument();
     // The guest carries a "Guest" badge.
     expect(screen.getAllByText('Guest').length).toBeGreaterThan(0);
     // The head band counts the owner and the real member (2), not the guest.

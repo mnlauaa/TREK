@@ -100,7 +100,7 @@ function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged }: TripShareD
             {m.canManageMembers && <InviteUser m={m} />}
             <MembersList m={m} onAsk={setAsk} />
             {(m.isCurrentOwner || m.guests.length > 0) && <GuestsList m={m} onAsk={setAsk} />}
-            {m.guests.length > 0 && (
+            {!m.isCurrentOwner && m.guests.length > 0 && (
               <DialogButton onClick={() => setIdentityOpen(true)}>{t('members.identityTransfer.thisIsMe')}</DialogButton>
             )}
 
