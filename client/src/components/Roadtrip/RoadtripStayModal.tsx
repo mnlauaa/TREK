@@ -85,6 +85,7 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
   const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
   const [minutes, setMinutes] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const leave = useLeaveMode(stop)
 
   // Reopened on a different stop, so it starts from that stop's own value rather than
@@ -113,9 +114,12 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
   const commit = async (value: number) => {
     if (saving) return
     setSaving(true)
+    setError(null)
     try {
       await onSave(stop.placeId, value)
       onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('common.unknownError'))
     } finally {
       setSaving(false)
     }
@@ -131,6 +135,7 @@ export default function RoadtripStayModal({ stop, onClose, onSave }: RoadtripSta
       </span>
     }>
       <div className="flex flex-col gap-5">
+        {error && <p role="alert" className="text-danger">{error}</p>}
         <p className="break-words text-center text-caption text-content-muted">{stop.name}</p>
 
         {/* The number, the way a timer shows one. Minus and plus flank it so a value can

@@ -13,6 +13,7 @@ import {
 import type { User } from '../../types';
 import { AssignmentsService } from './assignments.service';
 import {
+  AssignmentStayDto,
   AssignmentCreateDto,
   AssignmentReorderDto,
   AssignmentMoveDto,
@@ -153,6 +154,22 @@ export class AssignmentOpsController {
       throw new HttpException({ error: 'Assignment not found' }, 404);
     }
     return { participants: this.assignments.getParticipants(id) };
+  }
+
+  @RequirePermission('day_edit')
+  @Put(':id/stay')
+  stay(
+    @Param('tripId') tripId: string,
+    @Param('id') id: string,
+    @Body() body: AssignmentStayDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    if (!this.assignments.getAssignmentForTrip(id, tripId)) {
+      throw new HttpException({ error: 'Assignment not found' }, 404);
+    }
+    const assignment = this.assignments.setStay(id, body.stay_minutes);
+    this.assignments.broadcast(tripId, 'assignment:updated', { assignment }, socketId);
+    return { assignment };
   }
 
   @RequirePermission('day_edit')

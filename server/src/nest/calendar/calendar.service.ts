@@ -249,8 +249,8 @@ export class CalendarService {
       const assignments = this.db.prepare(`
         SELECT da.*, p.name as place_name, p.address as place_address,
           p.lat as place_lat, p.lng as place_lng,
-          COALESCE(da.assignment_time, p.place_time) as effective_time,
-          COALESCE(da.assignment_end_time, p.end_time) as effective_end_time
+          CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as effective_time,
+          CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as effective_end_time
         FROM day_assignments da
         JOIN places p ON da.place_id = p.id
         WHERE da.day_id = ?

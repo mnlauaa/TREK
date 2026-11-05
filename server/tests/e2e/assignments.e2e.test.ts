@@ -34,6 +34,7 @@ const { db } = vi.hoisted(() => {
   tmp.exec(`CREATE TABLE day_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, day_id INTEGER NOT NULL,
     place_id INTEGER NOT NULL, order_index INTEGER NOT NULL DEFAULT 0, notes TEXT,
     assignment_time TEXT, assignment_end_time TEXT, leg_transport_mode TEXT,
+    stay_minutes INTEGER, times_explicit INTEGER NOT NULL DEFAULT 0,
     accommodation_id INTEGER,
     created_at TEXT DEFAULT (datetime('now')));`);
   // The auto-sort reads a booked night's hour off its booking, so the table has to be

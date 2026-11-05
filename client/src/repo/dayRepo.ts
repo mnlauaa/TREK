@@ -1,3 +1,6 @@
+import { saveDayTiming } from '../api/itineraryTiming'
+import type { DayTiming } from '@trek/shared'
+import { generateUUID, mutationQueue } from '../sync/mutationQueue'
 import { daysApi } from '../api/client'
 import { offlineDb, upsertDays, upsertTrip } from '../db/offlineDb'
 import { isEffectivelyOffline } from '../sync/networkMode'
@@ -10,6 +13,20 @@ function cacheAfterWrite(write: Promise<unknown>, what: string): void {
 }
 
 export const dayRepo = {
+  async setTiming(tripId: number | string, day: Day, timing: DayTiming): Promise<Day> {
+    if (!isEffectivelyOffline()) {
+      const saved = await saveDayTiming(tripId, day.id, timing)
+      cacheAfterWrite(upsertDays([saved]), 'saving day timing')
+      return saved
+    }
+    const updated = { ...day, timing }
+    await offlineDb.transaction('rw', offlineDb.days, offlineDb.mutationQueue, async () => {
+      await mutationQueue.enqueue({ id: generateUUID(), tripId: Number(tripId), method: 'PUT',
+        url: `/trips/${tripId}/days/${day.id}/timing`, body: timing, resource: 'days', entityId: day.id })
+      await upsertDays([updated])
+    })
+    return updated
+  },
   async list(tripId: number | string): Promise<{ days: Day[] }> {
     return onlineThenCache(
       async () => {

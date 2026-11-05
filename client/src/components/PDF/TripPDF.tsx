@@ -1,3 +1,4 @@
+import { buildItineraryTiming, itineraryInitialTravel } from '../Planner/timing/itineraryTimingModel'
 // Trip PDF via browser print window
 import { createElement } from 'react'
 import { getCategoryIcon } from '../shared/categoryIcons'
@@ -392,6 +393,8 @@ export async function downloadTripPDF({ trip, days, places, assignments: stored 
       return !hidesOnMiddleDay(r, day.id)
     })
 
+    const routedDay = tripRoute?.days.find(d => d.dayId === day.id)
+    const timingPlan = day.timing?.enabled ? buildItineraryTiming(merged, day.id, day.timing, routedDay?.segments ?? [], day.default_transport_mode ?? 'driving', itineraryInitialTravel(day.id, { days: sorted, assignments, reservations, accommodations: accommodationList, optimizeFromAccommodation: useSettingsStore.getState().settings.optimize_from_accommodation }, routedDay?.segments ?? [])) : undefined
     let pi = 0
     const itemsHtml = merged.length === 0
       ? `<div class="empty-day">${escHtml(tr('dayplan.emptyDay'))}</div>`
@@ -549,7 +552,12 @@ export async function downloadTripPDF({ trip, days, places, assignments: stored 
                  ${iconSvg}
                </div>`
 
+          const timingIndex = timingPlan?.nodes.findIndex(n => n.assignment?.id === item.data.id) ?? -1
+          const prediction = timingPlan?.schedule.entries[timingIndex]
+          const predictionTime = (time: string | null, offset: number) => time ? `${fmtTime(time)}${offset ? ` ${tr('timing.dayOffset', { days: offset })}` : ''}` : tr('timing.unknown')
+          const timingChip = prediction ? `<span class="chip">${escHtml(tr('timing.arrival'))} ${escHtml(predictionTime(prediction.arrival, prediction.dayOffset))} · ${escHtml(tr('timing.departure'))} ${escHtml(predictionTime(prediction.departure, prediction.departureDayOffset ?? prediction.dayOffset))}</span>` : ''
           const chips = [
+            timingChip,
             place.place_time ? `<span class="chip">${svgClock}${escHtml(fmtTime(place.place_time))}</span>` : '',
             place.price && Number.parseFloat(place.price) > 0 ? `<span class="chip chip-green">${svgMoney}${formatMoney(Number(place.price), place.currency || trip.currency, loc)}</span>` : '',
           ].filter(Boolean).join('')

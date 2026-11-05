@@ -1,3 +1,5 @@
+import { DayTimingControls, VisitTiming, TravelTimingControl } from './timing/ItineraryTiming'
+import { buildItineraryTiming, itineraryInitialTravel } from './timing/itineraryTimingModel'
 import { useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { isServiceStopType } from '../Roadtrip/roadtripModel'
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
@@ -134,6 +136,7 @@ interface DayPlanSidebarProps {
   /** Opens the journey view for a saved transit entry (#1065). */
   onOpenTransit?: (reservation: Reservation) => void
   onEditTransport?: (reservation: Reservation) => void
+  onViewBooking?: (reservation: Reservation) => void
   onEditReservation?: (reservation: Reservation) => void
   onAddBookingToAssignment?: (dayId: number, assignmentId: number) => void
   initialScrollTop?: number
@@ -185,6 +188,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   onOpenTransit,
   onEditTransport,
   onEditReservation,
+  onViewBooking,
   onAddBookingToAssignment,
   initialScrollTop,
   onScrollTopChange,
@@ -567,11 +571,13 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   // day while the Route toggle is on. Mobile: each expanded day the user tapped
   // "Route" on — shown inline so seeing distances between places doesn't require
   // selecting the day, which would close the mobile sheet (#1374).
-  const routeDayIds = useMemo<number[]>(() => (
+  const routeDayIds = useMemo<number[]>(() => Array.from(new Set([
+    ...days.filter(d => d.timing?.enabled && expandedDays.has(d.id)).map(d => d.id),
+    ...(
     showRouteToolsWhenExpanded
       ? days.filter(d => expandedRouteDayIds.has(d.id) && expandedDays.has(d.id)).map(d => d.id)
       : (routeShown && selectedDayId ? [selectedDayId] : [])
-  ), [showRouteToolsWhenExpanded, expandedRouteDayIds, expandedDays, days, routeShown, selectedDayId])
+  )])), [showRouteToolsWhenExpanded, expandedRouteDayIds, expandedDays, days, routeShown, selectedDayId])
   const routeDayKey = routeDayIds.join(',')
 
   // Per-segment travel times shown as connectors between a day's located stops.
@@ -1175,6 +1181,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     expandedTransitIds,
     setExpandedTransitIds,
     onEditReservation,
+    onViewBooking,
     onAddBookingToAssignment,
     initialScrollTop,
     onScrollTopChange,
@@ -1380,6 +1387,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
     expandedTransitIds,
     setExpandedTransitIds,
     onEditReservation,
+    onViewBooking,
     onAddBookingToAssignment,
     initialScrollTop,
     onScrollTopChange,
@@ -1636,6 +1644,11 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
           // the route tools keep honoring the setting via routeBookends.
           const dayBookends = getDayBookendHotels(day, days, accommodations)
           const routeBookends = optimizeFromAccommodation !== false ? dayBookends : null
+          const timingPlan = day.timing?.enabled ? buildItineraryTiming(
+            mergedItemsMap[day.id] || [], day.id, day.timing, Object.values(routeLegs[day.id] || {}),
+            day.default_transport_mode ?? routeProfile,
+            itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations, optimizeFromAccommodation }, Object.values(routeLegs[day.id] || {}).concat(hotelLegs[day.id]?.top?.seg ? [hotelLegs[day.id]!.top!.seg] : []), routeProfile),
+          ) : undefined
           const hasRouteBookend = !!(
             (routeBookends?.morning?.place_lat != null && routeBookends?.morning?.place_lng != null) ||
             (routeBookends?.evening?.place_lat != null && routeBookends?.evening?.place_lng != null)
@@ -1976,6 +1989,9 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                       handleMergedDrop(day.id, 'note', Number(noteId), lastItem.type, lastItem.data.id, true)
                   }}
                 >
+                  <DayTimingControls day={day} tripId={tripId} editable={canEditDays} />
+                  {timingPlan?.legs.filter(leg => leg.from.startsWith('hotel:')).map(leg =>
+                    <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                   {hotelLegs[day.id]?.top && (() => {
                     const targetId = hotelLegs[day.id]?.top?.targetId
                     const connector = <HotelRouteConnector seg={hotelLegs[day.id]!.top!.seg} name={hotelLegs[day.id]!.top!.name} profile={routeProfile} placement="top" />
@@ -2187,7 +2203,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               setHoveredAssignmentId(null)
                             }}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: 8,
+                              display: 'flex', alignItems: 'flex-start', gap: 8,
                               padding: '7px 8px 7px 10px',
                               cursor: 'pointer',
                               background: lockedIds.has(assignment.id)
@@ -2255,6 +2271,8 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                                   </span>
                                 )}
                               </div>
+                              <VisitTiming assignment={assignment} day={day} tripId={tripId} plan={timingPlan} editable={canEditDays}
+                                bookings={getAssignmentReservations(reservations, assignment.id)} onOpenBooking={onViewBooking ?? onEditReservation} />
                               {(place.description || place.address || cat?.name) && (
                                 <div className="collab-note-md" style={{ marginTop: 2, fontSize: 'calc(10px * var(--fs-scale-caption, 1))', color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2, maxHeight: '1.2em' }}>
                                   <Markdown remarkPlugins={[remarkGfm]}>{place.description || place.address || cat?.name || ''}</Markdown>
@@ -2420,6 +2438,8 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               </Tooltip>
                             )}
                           </div>
+                              {timingPlan?.legs.filter(leg => leg.from === `assignment:${assignment.id}`).map(leg =>
+                                <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                           {daySchedule.byAssignment[day.id]?.[assignment.id]?.map(si => <PluginDayScheduleRow key={`${si.pluginId}:${si.id}`} item={si} />)}
                           {routeLegs[day.id]?.[assignment.id] && (canEditDays ? (
                             <Tooltip label={t('dayplan.transportMode.change')} placement="top">
@@ -2557,7 +2577,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                             onMouseEnter={e => { e.currentTarget.style.background = `${color}12` }}
                             onMouseLeave={e => { e.currentTarget.style.background = `${color}08` }}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: 8,
+                              display: 'flex', alignItems: 'flex-start', gap: 8,
                               padding: '7px 8px 7px 10px',
                               margin: '1px 8px',
                               borderRadius: 6,
@@ -2675,6 +2695,8 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                               <TransitItineraryInline legs={transitMeta.legs} t={t} />
                             </div>
                           )}
+                          {timingPlan?.legs.filter(leg => leg.from === `reservation:${res.id}:${spanPhase}:${res.__leg?.index ?? 0}`).map(leg =>
+                            <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                           {daySchedule.byReservation[day.id]?.[res.id]?.map(si => <PluginDayScheduleRow key={`${si.pluginId}:${si.id}`} item={si} />)}
                           {routeLegs[day.id]?.[res.id] && (() => {
                             const nextPlaceId = merged.slice(idx + 1).find(i => i.type === 'place' && i.data.place?.lat && i.data.place?.lng)?.data.id

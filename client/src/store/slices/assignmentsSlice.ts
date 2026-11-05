@@ -10,6 +10,7 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface AssignmentsSlice {
+  setAssignmentStay: (tripId: number | string, dayId: number, assignmentId: number, minutes: number | null) => Promise<void>
   setAssignmentEndDay: (tripId: number | string, dayId: number, assignmentId: number, endDay: boolean) => Promise<void>
   setAssignmentTimes: (tripId: number | string, dayId: number, assignmentId: number, times: AssignmentTimes) => Promise<void>
   assignPlaceToDay: (tripId: number | string, dayId: number | string, placeId: number | string, position?: number | null) => Promise<Assignment | undefined>
@@ -20,6 +21,16 @@ export interface AssignmentsSlice {
 }
 
 export const createAssignmentsSlice = (set: SetState, get: GetState): AssignmentsSlice => ({
+  setAssignmentStay: async (tripId, dayId, assignmentId, minutes) => {
+    const assignment = get().assignments[String(dayId)]?.find(a => a.id === assignmentId)
+    if (!assignment || assignmentId < 0) throw new Error('Visit is not saved yet')
+    const apply = (stay: number | null | undefined) => set(state => ({ assignments: Object.fromEntries(
+      Object.entries(state.assignments).map(([key, items]) => [key, items.map(a => a.id === assignmentId ? { ...a, stay_minutes: stay } : a)]),
+    ) }))
+    apply(minutes)
+    try { apply((await assignmentRepo.setStay(tripId, assignment, minutes)).stay_minutes) }
+    catch (err) { apply(assignment.stay_minutes); throw err }
+  },
   setAssignmentEndDay: async (tripId, dayId, assignmentId, endDay) => {
     const assignment = get().assignments[String(dayId)]?.find(a => a.id === assignmentId)
     if (!assignment || assignmentId < 0) return
@@ -51,7 +62,7 @@ export const createAssignmentsSlice = (set: SetState, get: GetState): Assignment
     // the cache on the next read.
     const pool = get().places.find(p => p.id === assignment.place_id)
     const merge = (next: Assignment) => (pool ? mergeAssignmentPlace(next, pool) : next)
-    const draft = merge({ ...assignment, assignment_time: times.place_time, assignment_end_time: times.end_time })
+    const draft = merge({ ...assignment, times_explicit: true, assignment_time: times.place_time, assignment_end_time: times.end_time })
     replace(draft)
     try {
       replace(merge({ ...draft, ...await assignmentRepo.setTimes(tripId, draft, times) }))

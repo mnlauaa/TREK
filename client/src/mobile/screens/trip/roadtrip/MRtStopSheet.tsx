@@ -360,7 +360,9 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
             </div>
             {/* The desktop says this in a tooltip, which a phone has nowhere to put. */}
             <div className="mt-2 font-geist text-[0.65625rem] leading-snug text-m-faint">
-              {entry?.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}
+              {entry?.plannedArrival && entry.plannedArrival !== entry.arrival
+                ? `${t('places.startTime')} ${displayTime(entry.plannedArrival, locale, timeFormat)} · ${t('timing.arrival')}`
+                : entry?.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}
             </div>
             {/* Only where it is true. Reached too late the stop is left on arrival, which
                 the finding below says; with the travel hours over first the drive goes on

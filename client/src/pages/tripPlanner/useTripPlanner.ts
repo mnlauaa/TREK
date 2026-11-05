@@ -1,3 +1,4 @@
+import { visitTimes } from '@trek/shared'
 import { useLoadRoadtripSettings, useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { roadtripPreferencesRepo } from '../../repo/roadtripPreferencesRepo'
 import { publishRoadtripPreferences } from '../../store/roadtripPreferencesStore'
@@ -1431,25 +1432,16 @@ export function useTripPlanner() {
     }
   }, [dailyTimesActive, can, trip, tripActions, tripId, toast, t, dayBoundaries.boundaries, dayBoundaries.save])
 
-  /**
-   * How long the traveller stays at one stop.
-   *
-   * Writes `places.duration_minutes`, which the schedule has read since it was written
-   * and which nothing in TREK has ever been able to set — the road trip is the only place
-   * the value means anything, so it is the only place that edits it.
-   *
-   * Zero rather than null to clear: the update statement folds a null into "leave it
-   * alone" (`COALESCE(?, duration_minutes)`), so a null could give a stop a stay but
-   * never take one away. The rail reads zero and absent as the same thing.
-   */
-  const setRoadtripStay = useCallback(async (placeId: number, minutes: number) => {
-    if (!can('place_edit', trip)) return
-    try {
+  /** Save the selected visit; unassigned places retain their shared default. */
+  const setRoadtripStay = useCallback(async (placeId: number, minutes: number, visit?: { assignmentId?: number; dayId?: number }) => {
+    const target = visit ?? stayDraft
+    if (!can(target?.assignmentId ? 'day_edit' : 'place_edit', trip)) return
+    if (target?.assignmentId && target.dayId != null) {
+      await tripActions.setAssignmentStay(tripId, target.dayId, target.assignmentId, minutes)
+    } else {
       await tripActions.updatePlace(tripId, placeId, { duration_minutes: minutes })
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('common.unknownError'))
     }
-  }, [tripId, tripActions, toast, t, can, trip])
+  }, [tripId, tripActions, can, trip, stayDraft])
 
   /**
    * Moves a stop onto another day, from the road trip rail.
@@ -2175,7 +2167,15 @@ export function useTripPlanner() {
       await tripActions.updatePlace(tripId, editingPlace.id, placeData)
       // If editing from assignment context, save time per-assignment
       if (editingAssignmentId) {
-        await assignmentsApi.updateTime(tripId, editingAssignmentId, { place_time: place_time || null, end_time: end_time || null })
+        const visit = Object.values(useTripStore.getState().assignments).flat().find(a => a.id === editingAssignmentId)
+        if (!visit) throw new Error(t('common.unknownError'))
+        if (place_time !== undefined || end_time !== undefined) {
+          const currentTimes = visitTimes(visit)
+          await tripActions.setAssignmentTimes(tripId, visit.day_id, editingAssignmentId, {
+            place_time: place_time === undefined ? currentTimes.start : place_time || null,
+            end_time: end_time === undefined ? currentTimes.end : end_time || null,
+          })
+        }
         // The form only includes assignment_notes when the user changed it, so
         // an untouched note never produces a PUT (#2163). '' clears like null.
         if (assignment_notes !== undefined) {

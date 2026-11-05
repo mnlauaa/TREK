@@ -79,3 +79,18 @@ describe('assignment time persistence', () => {
     expect((await offlineDb.days.get(1))?.assignments?.[0]).toEqual(assignment)
   })
 })
+
+it('queues a stay without sending or clearing fixed times', async () => {
+  vi.mocked(isEffectivelyOffline).mockReturnValue(true)
+  const visit = { id: 901, day_id: 1, place_id: 2, order_index: 0, assignment_time: '10:00', assignment_end_time: '11:00', place: { id: 2, name: 'Museum' } }
+  await offlineDb.days.put({ id: 1, trip_id: 9, assignments: [visit] })
+  await assignmentRepo.setStay(9, visit, 0)
+  const saved = (await offlineDb.days.get(1))?.assignments?.find(a => a.id === 901)
+  expect(saved).toMatchObject({ stay_minutes: 0, assignment_time: '10:00', assignment_end_time: '11:00' })
+  expect((await offlineDb.mutationQueue.toArray()).some(m => m.url.endsWith('/901/stay') && JSON.stringify(m.body) === '{"stay_minutes":0}')).toBe(true)
+  vi.mocked(isEffectivelyOffline).mockReturnValue(false)
+  vi.mocked(apiClient.request).mockResolvedValue({ data: { assignment: { ...visit, stay_minutes: 0 } } })
+  await mutationQueue.flush()
+  expect(await offlineDb.mutationQueue.count()).toBe(0)
+  expect((await offlineDb.days.get(1))?.assignments?.find(a => a.id === 901)).toMatchObject({ stay_minutes: 0, assignment_time: '10:00', assignment_end_time: '11:00' })
+})

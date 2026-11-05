@@ -1,3 +1,4 @@
+import { visitStay, visitTimes } from '@trek/shared'
 import { useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { assembleRoadtrip, bookendStaysOf, carrierLegsFor, carrierSeam, foldRouteRun, hotelBookendsOn, isCarrierMode, isStationaryJoin, mergeRouteSegments, seatCarrierStops, seatNightBookends, standsAsDay, terminalAssignmentId, viasOnLeg, type CarrierSeam, type RoadtripStop, type RoadtripRoutes, type PlanDay, type QuietDay, type RoutedLeg } from '@trek/shared/roadtrip'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -170,13 +171,13 @@ const asStop = (a: Assignment, ownerDayId: number, ownerIndex: number, accommoda
     name: p.name,
     lat: p.lat,
     lng: p.lng,
-    time: a.assignment_time ?? p.place_time ?? null,
+    time: visitTimes(a).start,
     // The visit's End is when the drive leaves it. Unlike a check-out it is the
     // traveller's own statement about this stop, and the stay then runs until it.
-    leaveAt: a.assignment_end_time ?? p.end_time ?? null,
+    leaveAt: visitTimes(a).end,
     checkInTime: stay?.check_in ?? null,
     night: stay !== undefined,
-    dwellMinutes: typeof p.duration_minutes === 'number' ? p.duration_minutes : null,
+    dwellMinutes: visitStay(a),
     endDay: a.end_day === true,
     legMode: a.leg_transport_mode ?? null,
     incomingLegMode: a.incoming_leg_transport_mode ?? null,

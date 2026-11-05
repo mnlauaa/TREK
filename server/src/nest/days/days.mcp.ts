@@ -1,3 +1,4 @@
+import { dayTimingRequestSchema, type DayTiming } from '@trek/shared';
 import {
   McpController, Tool, ResourceTemplate, type McpContext,
   TOOL_ANNOTATIONS_WRITE, TOOL_ANNOTATIONS_DELETE, TOOL_ANNOTATIONS_NON_IDEMPOTENT,
@@ -45,6 +46,23 @@ export class DaysMcp {
     private readonly guards: McpToolGuardsService,
     private readonly removal: DayRemovalService,
   ) {}
+
+  @Tool({
+    name: 'set_day_timing',
+    description: 'Enable itinerary predictions, set the day departure time and manual travel minutes for exact endpoint pairs and modes.',
+    inputSchema: { tripId: z.number().int().positive(), dayId: z.number().int().positive(), ...dayTimingRequestSchema.shape },
+    annotations: TOOL_ANNOTATIONS_WRITE,
+    access: { group: 'trips', mode: 'write' },
+  })
+  async setDayTiming({ tripId, dayId, ...timing }: DayTiming & { tripId: number; dayId: number }, ctx: McpContext) {
+    if (this.auth.isDemoUser(ctx.userId)) return demoDenied();
+    if (!this.days.verifyTripAccess(tripId, ctx.userId)) return noAccess();
+    if (!this.guards.hasTripPermission('day_edit', tripId, ctx.userId)) return permissionDenied();
+    if (!this.days.getDay(dayId, tripId)) return errorResult('Day not found.');
+    const day = this.days.setTiming(dayId, timing);
+    this.guards.safeBroadcast(tripId, 'day:updated', { day });
+    return ok({ day });
+  }
 
   @Tool({
     name: 'update_day',

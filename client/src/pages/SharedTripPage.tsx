@@ -1,3 +1,6 @@
+import { buildItineraryTiming, itineraryInitialTravel } from '../components/Planner/timing/itineraryTimingModel';
+import { VisitTiming } from '../components/Planner/timing/ItineraryTiming';
+import { getAssignmentReservations } from '../utils/dayMerge';
 import L from 'leaflet';
 import {
   Bus,
@@ -516,6 +519,8 @@ export default function SharedTripPage() {
                   dayId: day.id,
                 }).filter((item) => !(item.type === 'transport' && hidesOnMiddleDay(item.data, day.id)));
 
+                const timingPlan = day.timing?.enabled ? buildItineraryTiming(merged, day.id, day.timing, [], day.default_transport_mode ?? 'driving', itineraryInitialTravel(day.id, { days: sortedDays, assignments, reservations: reservations || [], accommodations: accommodations || [], optimizeFromAccommodation: true }, [])) : undefined;
+
                 return (
                   <div
                     key={day.id}
@@ -804,6 +809,7 @@ export default function SharedTripPage() {
                                   {place.name}
                                 </div>
                                 <SharedPlaceDetails place={place} assignmentNotes={item.data.notes} />
+                                {timingPlan && <VisitTiming assignment={item.data} day={day} tripId={trip.id} plan={timingPlan} editable={false} onOpenBooking={() => setActiveTab('bookings')} bookings={getAssignmentReservations(reservations || [], item.data.id)} />}
                               </div>
                               {place.place_time && (
                                 <span

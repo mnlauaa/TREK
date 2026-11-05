@@ -6,7 +6,7 @@ import {
 } from '../../nest-mcp';
 import { McpToolGuardsService } from '../mcp-shared/mcp-tool-guards.service';
 import { z } from 'zod';
-import { assignmentEndDayRequestSchema, type AssignmentEndDayRequest } from '@trek/shared';
+import { assignmentStayRequestSchema, type AssignmentStayRequest, assignmentEndDayRequestSchema, type AssignmentEndDayRequest } from '@trek/shared';
 import { AuthService } from '../auth/auth.service';
 import { noAccess, permissionDenied } from '../../mcp/tools/_shared';
 import { AssignmentsService } from './assignments.service';
@@ -29,6 +29,23 @@ export class AssignmentsMcp {
     private readonly auth: AuthService,
     private readonly guards: McpToolGuardsService,
   ) {}
+
+  @Tool({
+    name: 'set_assignment_stay',
+    description: 'Set minutes spent at one visit. Null restores the place default. Fixed End determines the effective stay without deleting this preference.',
+    inputSchema: { tripId: z.number().int().positive(), assignmentId: z.number().int().positive(), ...assignmentStayRequestSchema.shape },
+    annotations: TOOL_ANNOTATIONS_WRITE,
+    access: { group: 'places', mode: 'write' },
+  })
+  async setAssignmentStay({ tripId, assignmentId, stay_minutes }: AssignmentStayRequest & { tripId: number; assignmentId: number }, ctx: McpContext) {
+    if (this.auth.isDemoUser(ctx.userId)) return demoDenied();
+    if (!this.assignments.verifyTripAccess(tripId, ctx.userId)) return noAccess();
+    if (!this.guards.hasTripPermission('day_edit', tripId, ctx.userId)) return permissionDenied();
+    if (!this.assignments.getAssignmentForTrip(assignmentId, tripId)) return errorResult('Assignment not found.');
+    const assignment = this.assignments.setStay(assignmentId, stay_minutes);
+    this.guards.safeBroadcast(tripId, 'assignment:updated', { assignment });
+    return ok({ assignment });
+  }
 
   @Tool({
     name: 'assign_place_to_day',

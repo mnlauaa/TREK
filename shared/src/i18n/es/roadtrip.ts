@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Horarios automáticos',
+  'timing.arrival': 'Llegada estimada',
+  'timing.departure': 'Salida estimada',
+  'timing.fixed': 'Fijar horarios',
+  'timing.unknown': 'Desconocido',
+  'timing.bookingConflict': 'El horario de la visita no cubre esta reserva.',
+  'timing.booking': 'Ver reserva',
+  'timing.travel': 'Trayecto en minutos',
+  'timing.dayOffset': '+{days} día(s)',
+
   'roadtrip.stay.portals': 'Buscar alojamiento',
   'roadtrip.stay.portalHint':
     'Comprueba el destino, las fechas y los huéspedes en el portal. En CHECK24, busca manualmente.',

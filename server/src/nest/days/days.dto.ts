@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import {
+  dayTimingRequestSchema,
   dayCreateRequestSchema,
   dayReorderRequestSchema,
   dayTransportRequestSchema,
@@ -16,3 +17,5 @@ export class DayCreateDto extends createZodDto(dayCreateRequestSchema) {}
 export class DayReorderDto extends createZodDto(dayReorderRequestSchema) {}
 export class DayUpdateDto extends createZodDto(dayUpdateRequestSchema) {}
 export class DayTransportDto extends createZodDto(dayTransportRequestSchema) {}
+
+export class DayTimingDto extends createZodDto(dayTimingRequestSchema) {}

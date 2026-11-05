@@ -111,8 +111,8 @@ export class RoadtripPlanService {
     );
     const visits = this.db.all<VisitRow>(
       `SELECT a.id, a.day_id, a.order_index, a.place_id, p.name, p.lat, p.lng,
-      COALESCE(a.assignment_time, p.place_time) AS time, COALESCE(a.assignment_end_time, p.end_time) AS end_time,
-      p.duration_minutes, a.end_day,
+      CASE WHEN a.times_explicit = 1 THEN a.assignment_time ELSE COALESCE(a.assignment_time, p.place_time) END AS time, CASE WHEN a.times_explicit = 1 THEN a.assignment_end_time ELSE COALESCE(a.assignment_end_time, p.end_time) END AS end_time,
+      COALESCE(a.stay_minutes, p.duration_minutes, 60) AS duration_minutes, a.end_day,
       a.leg_transport_mode, a.incoming_leg_transport_mode, p.stop_type, p.fill_percent, stay.id AS stay_id, stay.check_in, stay.check_out, checkout.day_number AS checkout_day
       FROM day_assignments a JOIN days d ON d.id = a.day_id JOIN places p ON p.id = a.place_id
       LEFT JOIN day_accommodations stay ON stay.id = (SELECT id FROM day_accommodations WHERE place_id = p.id AND start_day_id = d.id ORDER BY id LIMIT 1)

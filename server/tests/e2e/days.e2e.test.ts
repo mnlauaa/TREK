@@ -29,6 +29,7 @@ const { db } = vi.hoisted(() => {
   // The tables DaysService really queries (real SQL, no service mock).
   tmp.exec(`CREATE TABLE days (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER NOT NULL,
     day_number INTEGER, date TEXT, title TEXT, notes TEXT, default_transport_mode TEXT,
+    timing_json TEXT NOT NULL DEFAULT '{"enabled":true,"start":"09:00","travel":[]}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(trip_id, day_number));`);
   tmp.exec('CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, color TEXT, icon TEXT);');
   tmp.exec(`CREATE TABLE places (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER NOT NULL, name TEXT,
@@ -37,7 +38,8 @@ const { db } = vi.hoisted(() => {
     google_place_id TEXT, google_ftid TEXT, osm_id TEXT, amap_poi_id TEXT, website TEXT, phone TEXT, stop_type TEXT, fill_percent INTEGER);`);
   tmp.exec(`CREATE TABLE day_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, day_id INTEGER NOT NULL,
     place_id INTEGER NOT NULL, order_index INTEGER DEFAULT 0, notes TEXT,
-    assignment_time TEXT, assignment_end_time TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);
+    assignment_time TEXT, assignment_end_time TEXT, stay_minutes INTEGER,
+    times_explicit INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);
   tmp.exec('CREATE TABLE tags (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER, name TEXT, color TEXT);');
   tmp.exec('CREATE TABLE place_tags (place_id INTEGER NOT NULL, tag_id INTEGER NOT NULL);');
   tmp.exec(`CREATE TABLE assignment_participants (assignment_id INTEGER NOT NULL, user_id INTEGER NOT NULL,

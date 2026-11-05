@@ -402,7 +402,7 @@ describe('spillChains', () => {
     expect(chains[1]!.spills).toEqual([]);
   });
 
-  it('FE-NIGHTSPILL-024: the stop behind one reached late is timed on from its pinned hour', () => {
+  it('FE-NIGHTSPILL-024: the stop behind one reached late uses the reachable prediction', () => {
     // The schedule carries on from Wismar's 10:00, so Kühlungsborn comes out at 10:30:
     // earlier than Lübeck's 14:00, later than the hour the drive just went on from.
     const plan = [
@@ -417,7 +417,7 @@ describe('spillChains', () => {
     const chains = spillChains(plan, [], everyLeg(30));
 
     expect(chains[0]!.stops.map((s) => s.name)).toEqual(['Lübeck', 'Wismar', 'Kühlungsborn']);
-    expect(chains[0]!.schedule.entries[2]!.arrival).toBe('10:30');
+    expect(chains[0]!.schedule.entries[2]!.arrival).toBe('16:00');
     expect(chains[1]!.stops.map((s) => s.name)).toEqual(['Stralsund']);
     expect(chains[1]!.spills).toEqual([]);
   });
@@ -502,8 +502,8 @@ describe('spillChains', () => {
 
       // 08:00 is when the stay ENDS; getting to the first stop still takes the eleven
       // minutes the road takes.
-      expect(dayTwo.schedule.entries[0]!.arrival).toBe('08:11');
-      expect(dayTwo.schedule.entries[1]!.arrival).toBe('08:22');
+      expect(dayTwo.schedule.entries[0]!.arrival).toBe('08:18');
+      expect(dayTwo.schedule.entries[1]!.arrival).toBe('08:29');
     });
 
     it('FE-NIGHTSPILL-014: an ordinary evening hands on nothing', () => {
@@ -529,7 +529,8 @@ describe('spillChains', () => {
       const dayTwo = chains.find((c) => c.dayNumber === 2)!;
 
       // Never moved: the hour is the traveller's.
-      expect(dayTwo.schedule.entries[0]!.arrival).toBe('07:00');
+      expect(dayTwo.schedule.entries[0]!.arrival).toBe('08:11');
+      expect(dayTwo.schedule.entries[0]!.plannedArrival).toBe('07:00');
       // 71 minutes short, not 60: the stay ends at eight and the road takes eleven.
       expect(dayTwo.schedule.warnings).toContainEqual({ index: 0, code: 'late', minutes: 71 });
     });
@@ -552,7 +553,7 @@ describe('spillChains', () => {
       expect(chains.find((c) => c.dayNumber === 1)!.stops.map((s) => s.name)).toEqual(['Hamburg', 'Mercure']);
       const dayTwo = chains.find((c) => c.dayNumber === 2)!;
       expect(dayTwo.stops.map((s) => s.name)).toEqual(['Panorama']);
-      expect(dayTwo.schedule.entries[0]!.arrival).toBe('08:10');
+      expect(dayTwo.schedule.entries[0]!.arrival).toBe('08:16');
       // Marked as having set off yesterday, so the card can say where it came from.
       expect(dayTwo.spills[0]).toMatchObject({ at: 0, count: 1, fromDayNumber: 1 });
     });

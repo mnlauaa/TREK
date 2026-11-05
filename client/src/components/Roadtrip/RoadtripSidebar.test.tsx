@@ -1814,3 +1814,11 @@ describe('RoadtripSidebar with a flight the drive gets to late (#2460)', () => {
     expect(button).toHaveAccessibleName(expect.stringMatching(/Departure 15:15\s*Arrival 17:20.*Missed\s*there at 23:54\s*2 h 5 min\s*Open booking$/))
   })
 })
+
+it('keeps the fixed Start visible beside a late reachable prediction', () => {
+  const stops = [stop({ assignmentId: 1, name: 'Late museum', time: '09:00' })]
+  const schedule = { entries: [{ arrival: '10:30', departure: '11:30', anchored: true, dayOffset: 0, plannedArrival: '09:00' }], warnings: [] }
+  wrap(<RoadtripSidebar routes={routes({ days: [day({ stops, schedule })] })} />)
+  expect(screen.getByText('Start 09:00')).toBeInTheDocument()
+  expect(screen.getByLabelText('Estimated arrival')).toHaveTextContent('10:30')
+})

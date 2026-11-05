@@ -1247,6 +1247,7 @@ function Arrival({ entry }: { entry: ScheduleEntry }): React.ReactElement {
   const { t } = useTranslation()
   const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
   const text = formatClockTime(entry.arrival, is12h)
+  const changed = !!entry.plannedArrival && entry.plannedArrival !== entry.arrival
   const carry = <DayCarry days={entry.dayOffset} />
 
   // Every arrival is plain text at the row's right edge, pinned or not. The pinned one
@@ -1254,7 +1255,7 @@ function Arrival({ entry }: { entry: ScheduleEntry }): React.ReactElement {
   // look like it had a button in it. What is left of the distinction is weight and ink —
   // enough to see which time somebody chose, without a second shape in the rail.
   return (
-    <Tooltip label={entry.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}>
+    <Tooltip label={!changed && entry.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}>
     <span
       dir="ltr"
       // The same line box as the stop name beside it, so the two sit on one line however
@@ -1264,8 +1265,8 @@ function Arrival({ entry }: { entry: ScheduleEntry }): React.ReactElement {
       }`}
       style={{ fontSize: FS.time }}
     >
-      {text}
-      {carry}
+      {changed && <span className="block text-caption text-content-secondary">{t('places.startTime')} {formatClockTime(entry.plannedArrival, is12h)}</span>}
+      {changed ? <span aria-label={t('timing.arrival')}>{text}{carry}</span> : <>{text}{carry}</>}
     </span>
     </Tooltip>
   )

@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': '時刻を自動計算',
+  'timing.arrival': '到着予定',
+  'timing.departure': '出発予定',
+  'timing.fixed': '時刻を指定',
+  'timing.unknown': '未定',
+  'timing.bookingConflict': '予定の滞在時間がこの予約時間をカバーしていません。',
+  'timing.booking': '予約を表示',
+  'timing.travel': '移動時間（分）',
+  'timing.dayOffset': '+{days}日',
+
   'roadtrip.stay.portals': '宿泊施設を探す',
   'roadtrip.stay.portalHint':
     '予約サイトで目的地、日付、宿泊人数を確認してください。CHECK24では手動で検索してください。',

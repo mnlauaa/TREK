@@ -1,3 +1,4 @@
+import { withDayTiming } from '../common/rowShape';
 import { Injectable } from '@nestjs/common';
 import crypto from 'crypto';
 import { DatabaseService } from '../database/database.service';
@@ -288,7 +289,7 @@ export class ShareService {
     let dayNotes: Record<number, any[]> = {};
     let places: any[] = [];
     if (permissions.share_map) {
-      days = this.dbs.all<any>('SELECT * FROM days WHERE trip_id = ? ORDER BY day_number ASC', tripId);
+      days = this.dbs.all<any>('SELECT * FROM days WHERE trip_id = ? ORDER BY day_number ASC', tripId).map(withDayTiming);
       const dayIds = days.map(d => d.id);
 
       if (dayIds.length > 0) {
@@ -296,8 +297,8 @@ export class ShareService {
         const allAssignments = this.dbs.all<any>(`
           SELECT da.*, p.id as place_id, p.name as place_name, p.description as place_description,
             p.lat, p.lng, p.address, p.category_id, p.price, p.currency as place_currency,
-            COALESCE(da.assignment_time, p.place_time) as place_time,
-            COALESCE(da.assignment_end_time, p.end_time) as end_time,
+            CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END as place_time,
+            CASE WHEN da.times_explicit = 1 THEN da.assignment_end_time ELSE COALESCE(da.assignment_end_time, p.end_time) END as end_time,
             p.duration_minutes, p.notes as place_notes, p.image_url, p.transport_mode,
             p.website, p.phone,
             c.name as category_name, c.color as category_color, c.icon as category_icon
@@ -315,7 +316,7 @@ export class ShareService {
         for (const a of allAssignments as any[]) {
           if (!byDay[a.day_id]) byDay[a.day_id] = [];
           byDay[a.day_id].push({
-            id: a.id, day_id: a.day_id, order_index: a.order_index, notes: a.notes,
+            id: a.id, place_id: a.place_id, stay_minutes: a.stay_minutes ?? null, times_explicit: a.times_explicit === 1, assignment_time: a.assignment_time ?? null, assignment_end_time: a.assignment_end_time ?? null, day_id: a.day_id, order_index: a.order_index, notes: a.notes,
             // The shared page shows the booking as its own chip on the day, so it needs
             // to know which stop is that booking and leave it out of the list.
             accommodation_id: a.accommodation_id ?? null,

@@ -277,3 +277,26 @@ describe('v4 fork migration lineages', () => {
     expect(db.prepare('SELECT id FROM fork_schema_migrations').all()).toEqual([]);
   });
 });
+
+it('opts existing days out once and defaults subsequent days to automatic timing', () => {
+  const db = createTestDb();
+  try {
+    db.exec("INSERT INTO users (username, email, password_hash) VALUES ('timing-migration', 'timing-migration@example.test', 'unused')");
+    const owner = (db.prepare("SELECT id FROM users WHERE username = 'timing-migration'").get() as { id: number }).id;
+    const trip = db.prepare("INSERT INTO trips (user_id, title) VALUES (?, 'Timing')").run(owner).lastInsertRowid;
+    db.prepare('INSERT INTO days (trip_id, day_number) VALUES (?, 1)').run(trip);
+    db.exec('ALTER TABLE days DROP COLUMN timing_json');
+    db.prepare('DELETE FROM fork_schema_migrations WHERE id = ?').run('fork/itinerary-timing-v1');
+    runForkMigrations(db);
+    const first = db.prepare('SELECT timing_json FROM days WHERE trip_id = ? AND day_number = 1').get(trip) as { timing_json: string };
+    expect(JSON.parse(first.timing_json).enabled).toBe(false);
+    db.prepare('INSERT INTO days (trip_id, day_number) VALUES (?, 2)').run(trip);
+    runMigrations(db);
+    const second = db.prepare('SELECT timing_json FROM days WHERE trip_id = ? AND day_number = 2').get(trip) as { timing_json: string };
+    expect(JSON.parse(second.timing_json)).toEqual({ enabled: true, start: '09:00', travel: [] });
+    db.prepare('UPDATE days SET timing_json = ? WHERE trip_id = ? AND day_number = 1').run(JSON.stringify({ enabled: true, start: '08:30', travel: [] }), trip);
+    runMigrations(db);
+    const restored = db.prepare('SELECT timing_json FROM days WHERE trip_id = ? AND day_number = 1').get(trip) as { timing_json: string };
+    expect(JSON.parse(restored.timing_json)).toEqual({ enabled: true, start: '08:30', travel: [] });
+  } finally { db.close(); }
+});

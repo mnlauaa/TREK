@@ -177,7 +177,7 @@ describe('RoadtripStayModal for a stop left at a set time', () => {
     seedStore(useAuthStore, { user: { id: 1, role: 'user' } })
     seedStore(useTripStore, {
       trip: { id: 4, user_id: 1 },
-      assignments: { '11': [{ id: 102, day_id: 11, place_id: 9, order_index: 0, assignment_time: null, assignment_end_time: '14:00' }] },
+      assignments: { '11': [{ id: 102, day_id: 11, place_id: 9, order_index: 0, assignment_time: null, assignment_end_time: '14:00', place: { id: 9, name: 'Rasthof Dammer Berge' } }] },
     })
     useTripStore.setState({ setAssignmentTimes, refreshDays: vi.fn(async () => undefined) } as never)
   })
@@ -241,14 +241,26 @@ describe('RoadtripStayModal for a stop left at a set time', () => {
     expect(screen.queryByText('7 h 30 min')).not.toBeInTheDocument()
   })
 
-  it('FE-STAYMODAL-022: an End the place carries too goes with the removal, or the slider would not be the truth', async () => {
+  it('FE-STAYMODAL-022: clearing an inherited End changes only this visit', async () => {
     const updatePlace = vi.fn(async () => undefined)
     seedStore(useTripStore, { places: [{ id: 9, name: 'Rasthof Dammer Berge', end_time: '14:00' }] })
     useTripStore.setState({ updatePlace } as never)
     open(leaving)
     fireEvent.click(screen.getByRole('button', { name: 'Remove end time' }))
-    await waitFor(() => expect(updatePlace).toHaveBeenCalledWith(4, 9, { end_time: null }))
+    await waitFor(() => expect(setAssignmentTimes).toHaveBeenCalled())
+    expect(updatePlace).not.toHaveBeenCalled()
     expect(setAssignmentTimes).toHaveBeenCalledWith(4, 11, 102, { place_time: null, end_time: null })
     await waitFor(() => expect(slider().value).toBe('30'))
   })
+})
+
+
+it('keeps the edited stay open and reports a failed save', async () => {
+  const onSave = vi.fn().mockRejectedValue(new Error('read only'))
+  const { onClose } = open({ minutes: 30 }, onSave)
+  fireEvent.change(slider(), { target: { value: '45' } })
+  fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('read only'))
+  expect(slider().value).toBe('45')
+  expect(onClose).not.toHaveBeenCalled()
 })

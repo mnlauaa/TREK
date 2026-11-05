@@ -94,6 +94,7 @@ export function assembleRoadtrip({
             schedule: computeSchedule(
               d.stops.map(scheduleStopOf),
               d.stops.slice(0, -1).map((s, i) => storedLegFor(s, d.stops[i + 1]!)?.seg.duration),
+              { reachable: true },
             ),
           }))
       : splitScheduledDays(chains, [...plan, ...quietDays], storedLegFor);

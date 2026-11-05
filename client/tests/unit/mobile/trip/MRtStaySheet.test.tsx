@@ -83,8 +83,13 @@ describe('MRtStaySheet', () => {
     renderSheet()
     expect(screen.getByRole('dialog', { name: 'Add a stay' })).toBeInTheDocument()
     expect(screen.getByText('Bremen Marktplatz')).toBeInTheDocument()
-    expect(screen.getByText('The stay belongs to the place, so it counts on every day this stop is planned.')).toBeInTheDocument()
+    expect(screen.queryByText('The stay belongs to the place, so it counts on every day this stop is planned.')).not.toBeInTheDocument()
     expect(value()).toHaveTextContent('30')
+  })
+
+  it('explains shared duration only when editing an unassigned place default', () => {
+    renderSheet({}, { sheet: { id: 'rtstay', payload: { placeId: 202, minutes: 30, name: 'Bremen Marktplatz' } } })
+    expect(screen.getByText('The stay belongs to the place, so it counts on every day this stop is planned.')).toBeInTheDocument()
   })
 
   it('FE-MOB-RTSTAY-003: plus and minus move the value in five-minute steps', () => {
@@ -156,11 +161,11 @@ describe('MRtStaySheet', () => {
     expect(screen.queryByText('Leave')).not.toBeInTheDocument()
   })
 
-  it('FE-MOB-RTSTAY-012: saving writes the place and the minutes, then hands back to the stop', async () => {
+  it('FE-MOB-RTSTAY-012: saving writes the selected visit and the minutes, then hands back to the stop', async () => {
     const { planner, shell } = renderSheet()
     fireEvent.click(plus())
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 35))
+    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 35, shell.sheet?.payload))
     // Addressed by day and assignment, which is how 'rtstop' locates a row. Spreading this
     // sheet's own payload left it unable to resolve anything, so it drew nothing while still
     // counting as open, and the day swipe stayed blocked behind it.
@@ -177,7 +182,7 @@ describe('MRtStaySheet', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 30))
+    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 30, shell.sheet?.payload))
     expect(shell.closeSheet).toHaveBeenCalled()
     expect(shell.openSheet).not.toHaveBeenCalledWith('rtstop', expect.anything())
   })
@@ -188,7 +193,7 @@ describe('MRtStaySheet', () => {
     expect(planner.setRoadtripStay).not.toHaveBeenCalled()
     expect(value()).toHaveTextContent('0')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 0))
+    await waitFor(() => expect(planner.setRoadtripStay).toHaveBeenCalledWith(202, 0, shell.sheet?.payload))
     expect(shell.openSheet).toHaveBeenCalledWith('rtstop', { dayId: 11, assignmentId: 102 })
   })
 

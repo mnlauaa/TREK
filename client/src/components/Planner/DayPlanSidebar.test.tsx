@@ -73,7 +73,10 @@ vi.mock('../Map/RouteCalculator', () => ({
 
 // PlaceAvatar needs IntersectionObserver
 class MockIO { observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn() }
-beforeAll(() => { (globalThis as any).IntersectionObserver = MockIO })
+beforeAll(() => {
+  (globalThis as any).IntersectionObserver = MockIO
+  Element.prototype.scrollTo = vi.fn()
+})
 
 vi.mock('../../services/photoService', () => ({
   getCached: vi.fn(() => null),

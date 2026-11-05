@@ -1,6 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Автоматичний розрахунок часу',
+  'timing.arrival': 'Очікуване прибуття',
+  'timing.departure': 'Очікуваний від’їзд',
+  'timing.fixed': 'Задати час',
+  'timing.unknown': 'Невідомо',
+  'timing.bookingConflict': 'Час відвідування не охоплює це бронювання.',
+  'timing.booking': 'Переглянути бронювання',
+  'timing.travel': 'Час у дорозі, хв',
+  'timing.dayOffset': '+{days} дн.',
+
   'roadtrip.stay.portals': 'Знайти житло',
   'roadtrip.stay.portalHint': 'Перевірте місце, дати та гостей на порталі. У CHECK24 шукайте вручну.',
   'roadtrip.charging.available': 'вільні',
