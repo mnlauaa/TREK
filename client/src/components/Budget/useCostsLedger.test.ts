@@ -374,16 +374,19 @@ describe('useCostsLedger: changes written elsewhere', () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.settlement).toEqual(SETTLEMENT));
 
-    const earlier = Promise.withResolvers<CostsSettlementResponse>();
+    let resolveEarlier!: (settlement: CostsSettlementResponse) => void;
+    const earlier = new Promise<CostsSettlementResponse>((resolve) => {
+      resolveEarlier = resolve;
+    });
     const latest = { ...SETTLEMENT, flows: [flow(1, 2, 35)] };
-    settlementMock().mockReturnValueOnce(earlier.promise).mockResolvedValueOnce(latest);
+    settlementMock().mockReturnValueOnce(earlier).mockResolvedValueOnce(latest);
 
     act(() => useTripStore.getState().refreshExchangeRates(7, true));
     await waitFor(() => expect(settlementMock()).toHaveBeenCalledTimes(2));
     act(() => useTripStore.getState().refreshTransferredGuest(7));
     await waitFor(() => expect(result.current.settlement).toEqual(latest));
 
-    await act(async () => earlier.resolve({ ...SETTLEMENT, flows: [flow(1, 2, 20)] }));
+    await act(async () => resolveEarlier({ ...SETTLEMENT, flows: [flow(1, 2, 20)] }));
     expect(result.current.settlement).toEqual(latest);
   });
 });

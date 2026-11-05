@@ -133,7 +133,15 @@ async function onAuthSuccess(userId: number): Promise<void> {
   // an SPA session, so a second login in the same tab would leave the mutation
   // queue without a flush trigger. Re-registering is a no-op while they are up.
   registerSyncTriggers()
-  void setActivePushUser(userId).then(() => reconcileWebPush()).catch(() => {})
+  const setupPush = async () => {
+    try {
+      await setActivePushUser(userId)
+      await reconcileWebPush()
+    } catch {
+      // Push setup can retry on the next sign-in or subscription change.
+    }
+  }
+  void setupPush()
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -249,10 +257,14 @@ export const useAuthStore = create<AuthState>()(
     // user's offline database, and an edit made offline and not yet sent would
     // go with it. Bounded, so a slow server never holds the logout.
     if (!isEffectivelyOffline()) {
-      await Promise.race([
-        mutationQueue.flush().catch(() => {}),
-        new Promise(resolve => setTimeout(resolve, LOGOUT_FLUSH_MS)),
-      ])
+      try {
+        await Promise.race([
+          mutationQueue.flush(),
+          new Promise(resolve => setTimeout(resolve, LOGOUT_FLUSH_MS)),
+        ])
+      } catch {
+        // A failed final flush cannot keep a user signed in.
+      }
     }
     // 1. Gate first so any in-flight flush/syncAll bails before we wipe the DB.
     setAuthed(false)
@@ -291,15 +303,21 @@ export const useAuthStore = create<AuthState>()(
     // connection, with nothing cached to answer from.
     setForcedOffline(false)
     await setActivePushUser(null)
-    await forgetWebPushOnLogout().catch(() => {})
+    try {
+      await forgetWebPushOnLogout()
+    } catch {
+      // The active push user was cleared above, so previews stay private.
+    }
     void updateAppBadge(0)
     // 4. Tell server to clear the httpOnly cookie (best-effort).
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(err => {
+      console.warn('[auth] failed to clear the session cookie during logout', err)
+    })
     // 5. Clear service worker caches containing sensitive data.
     if ('caches' in window) {
-      await Promise.all([
-        caches.delete('api-data').catch(() => {}),
-        caches.delete('user-uploads').catch(() => {}),
+      await Promise.allSettled([
+        caches.delete('api-data'),
+        caches.delete('user-uploads'),
       ])
     }
     // 6. Delete this user's scoped IndexedDB and return to the anonymous DB.

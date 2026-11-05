@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTripWebSocket } from '../../../src/hooks/useTripWebSocket';
 import { useTripStore } from '../../../src/store/tripStore';
+import { buildTrip } from '../../helpers/factories';
 
 vi.mock('../../../src/api/websocket', () => ({
   connect: vi.fn(),
@@ -142,5 +143,40 @@ describe('useTripWebSocket', () => {
   it('FE-HOOK-WS-007: no joinTrip call when tripId is undefined', () => {
     renderHook(() => useTripWebSocket(undefined));
     expect(wsMock.joinTrip).not.toHaveBeenCalled();
+  });
+
+  it('refreshes only the active trip for guest transfers and exchange-rate changes', () => {
+    const initial = useTripStore.getState();
+    const hydrateActiveTrip = vi.fn().mockResolvedValue(undefined);
+    const loadBudgetItems = vi.fn().mockResolvedValue(undefined);
+    useTripStore.setState({ trip: buildTrip({ id: 42 }), hydrateActiveTrip, loadBudgetItems });
+    try {
+      renderHook(() => useTripWebSocket(42));
+      const listeners = vi.mocked(wsMock.addListener).mock.calls.map(([listener]) => listener);
+      const emit = (type: string, tripId: number) => {
+        act(() => {
+          for (const listener of listeners) listener({ type, tripId });
+        });
+      };
+
+      emit('guest:identity-transferred', 43);
+      emit('budget:exchange-rates-applied', 43);
+      expect(hydrateActiveTrip).not.toHaveBeenCalled();
+      expect(loadBudgetItems).not.toHaveBeenCalled();
+
+      emit('guest:identity-transferred', 42);
+      expect(hydrateActiveTrip).toHaveBeenCalledExactlyOnceWith(42);
+      expect(useTripStore.getState().guestIdentityRevision).toBe(initial.guestIdentityRevision);
+
+      emit('budget:exchange-rates-updated', 42);
+      expect(useTripStore.getState().exchangeRatesRevision).toBe(initial.exchangeRatesRevision + 1);
+      expect(loadBudgetItems).not.toHaveBeenCalled();
+
+      emit('budget:exchange-rates-applied', 42);
+      expect(loadBudgetItems).toHaveBeenCalledExactlyOnceWith(42);
+      expect(useTripStore.getState().budgetSettlementRevision).toBe(initial.budgetSettlementRevision);
+    } finally {
+      useTripStore.setState(initial, true);
+    }
   });
 });

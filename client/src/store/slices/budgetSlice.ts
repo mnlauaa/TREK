@@ -12,6 +12,9 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface BudgetSlice {
+  exchangeRatesRevision: number
+  budgetSettlementRevision: number
+  refreshExchangeRates: (tripId: number | string, reloadItems: boolean, origin?: 'local' | 'remote') => void
   loadBudgetItems: (tripId: number | string) => Promise<void>
   addBudgetItem: (tripId: number | string, data: BudgetCreateItemRequest) => Promise<BudgetItem>
   updateBudgetItem: (tripId: number | string, id: number, data: BudgetUpdateItemRequest) => Promise<BudgetItem>
@@ -33,6 +36,18 @@ function openTripCurrency(get: GetState, tripId: number | string): string | null
 }
 
 export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => ({
+  exchangeRatesRevision: 0,
+  budgetSettlementRevision: 0,
+
+  refreshExchangeRates: (tripId, reloadItems, origin = 'local') => {
+    if (String(get().trip?.id) !== String(tripId)) return
+    set(state => ({
+      exchangeRatesRevision: state.exchangeRatesRevision + 1,
+      ...(reloadItems && origin === 'local' && { budgetSettlementRevision: state.budgetSettlementRevision + 1 }),
+    }))
+    if (reloadItems) void get().loadBudgetItems(tripId)
+  },
+
   loadBudgetItems: async (tripId) => {
     try {
       const data = await budgetRepo.list(tripId)

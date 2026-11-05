@@ -315,7 +315,7 @@ function TripPlannerRoute() {
   return (
     <>
       <ViewportRoute phone={MTripScreen} desktop={TripPlannerPage} />
-      {id && <NewMemberIdentityCheck tripId={id} />}
+      {id && <NewMemberIdentityCheck key={id} tripId={id} />}
     </>
   )
 }
@@ -361,7 +361,9 @@ export default function App() {
       useServerVersionStore.getState().note(config?.version)
       // Last, since a new release reloads the page from here.
       await reconcileAppVersion(config?.version)
-    }).catch(() => {})
+    }).catch(error => {
+      console.warn('Could not load the app configuration', error)
+    })
   }, [])
 
   const { settings } = useSettingsStore()
@@ -420,8 +422,15 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return
     const worker = navigator.serviceWorker
+    const reconcileSubscription = async () => {
+      try {
+        await reconcileWebPush()
+      } catch {
+        // Reconciliation can run again on the next subscription change or sign-in.
+      }
+    }
     const refresh = (event: MessageEvent) => {
-      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileWebPush().catch(() => {})
+      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileSubscription()
     }
     worker?.addEventListener?.('message', refresh)
     const unsubscribe = useInAppNotificationStore.subscribe((state, previous) => {

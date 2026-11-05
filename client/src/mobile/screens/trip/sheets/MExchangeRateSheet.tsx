@@ -11,14 +11,17 @@ interface SettlementCurrency {
 }
 
 export default function MExchangeRateSheet({ planner, shell }: MTripSheetsProps) {
-  const { t, tripId, trip, budgetItems, tripActions } = planner;
-  const open = shell.sheet?.id === 'rates';
+  if (shell.sheet?.id !== 'rates') return null;
+  return <ExchangeRateSheet key={planner.tripId} planner={planner} shell={shell} />;
+}
+
+function ExchangeRateSheet({ planner, shell }: MTripSheetsProps) {
+  const { t, tripId, trip, budgetItems } = planner;
   const tripCurrency = (trip?.currency || 'EUR').toUpperCase();
   const canEdit = planner.can('budget_edit', trip);
   const [settlements, setSettlements] = useState<SettlementCurrency[]>([]);
 
   useEffect(() => {
-    if (!open) return;
     let active = true;
     budgetRepo
       .settlement(tripId, tripCurrency)
@@ -31,7 +34,7 @@ export default function MExchangeRateSheet({ planner, shell }: MTripSheetsProps)
     return () => {
       active = false;
     };
-  }, [open, tripCurrency, tripId]);
+  }, [tripCurrency, tripId]);
 
   const usedCurrencies = useMemo(
     () => [
@@ -42,7 +45,7 @@ export default function MExchangeRateSheet({ planner, shell }: MTripSheetsProps)
   );
 
   return (
-    <MSheet open={open} onClose={shell.closeSheet} material="opaque" ariaLabel={t('costs.exchangeRates.title')}>
+    <MSheet open onClose={shell.closeSheet} material="opaque" ariaLabel={t('costs.exchangeRates.title')}>
       <FormSheetHeader
         title={t('costs.exchangeRates.title')}
         onClose={shell.closeSheet}
@@ -54,10 +57,6 @@ export default function MExchangeRateSheet({ planner, shell }: MTripSheetsProps)
           tripCurrency={tripCurrency}
           usedCurrencies={usedCurrencies}
           canEdit={canEdit}
-          onChanged={() => {
-            tripActions.loadBudgetItems(tripId);
-            window.dispatchEvent(new CustomEvent('budget:exchange-rates-changed'));
-          }}
         />
       </div>
     </MSheet>

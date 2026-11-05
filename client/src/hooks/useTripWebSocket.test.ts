@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => {
   const handleRemoteEvent = vi.fn()
   const loadFiles = vi.fn()
   const useTripStore = Object.assign(vi.fn(() => ({ loadFiles })), {
-    getState: () => ({ handleRemoteEvent }),
+    getState: () => ({ handleRemoteEvent, loadFiles }),
   })
   return {
     listeners,

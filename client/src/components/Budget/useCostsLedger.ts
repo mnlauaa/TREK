@@ -1,5 +1,5 @@
 import { liveQuery } from 'dexie';
-import { useCallback, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 
 import { useExchangeRates, withFallbackFx } from '../../hooks/useExchangeRates';
 import { useNetworkMode } from '../../hooks/useNetworkMode';
@@ -7,7 +7,7 @@ import { useTranslation } from '../../i18n';
 import { budgetRepo, type SettlementWriteResult } from '../../repo/budgetRepo';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import type { TripStoreState } from '../../store/tripStore';
+import { useTripStore, type TripStoreState } from '../../store/tripStore';
 import { useServerPing } from '../../sync/useServerPing';
 import type { BudgetItem, Trip } from '../../types';
 import { downloadBlob } from '../../utils/fileDownload';
@@ -63,7 +63,6 @@ export function useCostsLedger({
   trip,
   budgetItems,
   actions,
-  canEdit,
   t,
   toast,
   settlementOnTripChange = false,
@@ -74,7 +73,6 @@ export function useCostsLedger({
   trip: Trip | null | undefined;
   budgetItems: BudgetItem[];
   actions: Pick<TripStoreState, 'loadBudgetItems' | 'deleteBudgetItem'>;
-  canEdit: boolean;
   t: Translate;
   toast: Toaster;
   settlementOnTripChange?: boolean;
@@ -103,20 +101,23 @@ export function useCostsLedger({
   // A failed settlement read leaves `settlement` null, which the views would
   // otherwise present as "everyone is square", a balance claim we cannot make.
   const [settlementError, setSettlementError] = useState(false);
+  const settlementRequest = useRef(0);
 
   // The browser's own figure for the display currency goes along, for the server to
   // answer in it when it cannot fetch a quote itself.
-  const readSettlement = useCallback(
-    () =>
-      budgetRepo
-        .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
-        .then((s) => {
-          setSettlement(s);
-          setSettlementError(false);
-        })
-        .catch(() => setSettlementError(true)),
-    [tripId, requestedBase, tripCurrency, displayPerTrip]
-  );
+  const readSettlement = useCallback(() => {
+    const request = ++settlementRequest.current;
+    return budgetRepo
+      .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
+      .then((s) => {
+        if (request !== settlementRequest.current) return;
+        setSettlement(s);
+        setSettlementError(false);
+      })
+      .catch(() => {
+        if (request === settlementRequest.current) setSettlementError(true);
+      });
+  }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
   const loadSettlement = useCallback(() => {
     void readSettlement();
   }, [readSettlement]);
@@ -153,9 +154,12 @@ export function useCostsLedger({
     return () => subscription.unsubscribe();
   }, [tripId]);
   const synced = !offline && queuedWrites === 0;
+  const settlementRevision = useTripStore((state) =>
+    Number(state.trip?.id) === tripId ? state.budgetSettlementRevision : 0
+  );
   useEffect(() => {
     loadSettlement();
-  }, [budgetItems.length, loadSettlement, synced]);
+  }, [budgetItems.length, loadSettlement, synced, settlementRevision]);
 
   // A payment saved offline has no row until the server records it, so the user
   // is told it is on its way rather than seeing nothing happen.
@@ -163,23 +167,6 @@ export function useCostsLedger({
     if (result.queued) toast.info(t('costs.paymentQueued'));
     loadSettlement();
   };
-
-  useEffect(() => {
-    const refresh = (event: Event) => {
-      if (event.type === 'guest:identity-transferred') {
-        if (Number((event as CustomEvent<number | string>).detail) === tripId) loadSettlement();
-        return;
-      }
-      void loadBudgetItems(tripId);
-      loadSettlement();
-    };
-    window.addEventListener('budget:exchange-rates-changed', refresh);
-    window.addEventListener('guest:identity-transferred', refresh);
-    return () => {
-      window.removeEventListener('budget:exchange-rates-changed', refresh);
-      window.removeEventListener('guest:identity-transferred', refresh);
-    };
-  }, [loadBudgetItems, loadSettlement, tripId]);
 
   const [search, setSearch] = useState('');
   const [segment, setSegment] = useState<CostsSegment>('all');

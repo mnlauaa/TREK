@@ -24,13 +24,15 @@ export function useTripRosterSync(tripId: number, refreshMembers: () => Promise<
   const { t } = useTranslation();
 
   useServerPing(MEMBER_EVENTS, Number.isFinite(tripId), refreshMembers);
-  useEffect(() => {
-    const refresh = (event: Event) => {
-      if (Number((event as CustomEvent<number | string>).detail) === tripId) void refreshMembers();
-    };
-    window.addEventListener('guest:identity-transferred', refresh);
-    return () => window.removeEventListener('guest:identity-transferred', refresh);
-  }, [tripId, refreshMembers]);
+  useEffect(
+    () =>
+      useTripStore.subscribe((state, previous) => {
+        if (Number(state.trip?.id) === tripId && state.guestIdentityRevision !== previous.guestIdentityRevision) {
+          void refreshMembers();
+        }
+      }),
+    [tripId, refreshMembers]
+  );
 
   const gone = useTripStore((s) => s.tripGone);
   const leave = useEffectEvent((why: TripGone['reason']) => {

@@ -1,71 +1,83 @@
 import type { GuestIdentityTransferCandidate } from '@trek/shared';
 import { UserRound } from 'lucide-react';
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { DialogButton, DialogFooter, DialogHeader, DialogShell, DialogTile, NEUTRAL_TINT } from '../shared/DialogShell';
 
 import { useTranslation } from '../../i18n';
 import { tripRepo } from '../../repo/tripRepo';
+import { useTripStore } from '../../store/tripStore';
 import { useToast } from '../shared/Toast';
 
-export default function GuestIdentityTransferModal({
-  tripId,
-  open,
-  candidates: initialCandidates,
-  onClose,
-  onTransferred,
-  onDecline,
-}: {
+interface TransferDialogProps {
   tripId: number | string;
-  open: boolean;
   candidates?: GuestIdentityTransferCandidate[];
   onClose: () => void;
   onTransferred?: () => void;
   onDecline?: () => Promise<void>;
-}): React.ReactElement | null {
+}
+
+export default function GuestIdentityTransferModal({
+  open,
+  ...props
+}: TransferDialogProps & { open: boolean }): React.ReactElement | null {
+  return open ? <TransferDialog key={props.tripId} {...props} /> : null;
+}
+
+function TransferDialog({
+  tripId,
+  candidates: initialCandidates,
+  onClose,
+  onTransferred,
+  onDecline,
+}: TransferDialogProps): React.ReactElement {
   const { t } = useTranslation();
   const toast = useToast();
   const labelId = useId();
-  const [loaded, setLoaded] = useState<{
-    tripId: number | string;
-    candidates: GuestIdentityTransferCandidate[];
-  } | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState<GuestIdentityTransferCandidate[] | 'failed' | null>(null);
   const [busy, setBusy] = useState(false);
+  const writing = useRef(false);
 
   useEffect(() => {
-    if (!open || initialCandidates) return;
+    if (initialCandidates) return;
     let active = true;
-    setLoaded(null);
-    setFailed(false);
     void tripRepo
       .guestIdentityTransferCandidates(tripId)
       .then((result) => {
-        if (active) setLoaded({ tripId, candidates: result.candidates });
+        if (active) setLoaded(result.candidates);
       })
       .catch(() => {
-        if (active) setFailed(true);
+        if (active) setLoaded('failed');
       });
     return () => {
       active = false;
     };
-  }, [initialCandidates, open, tripId]);
-  const candidates = initialCandidates ?? (loaded?.tripId === tripId ? loaded.candidates : null);
-  if (!open) return null;
+  }, [initialCandidates, tripId]);
+  const result = initialCandidates ?? loaded;
+  const candidates = result === 'failed' ? null : result;
 
-  const transfer = async (candidate: GuestIdentityTransferCandidate) => {
-    if (candidate.conflicts.length > 0) return;
+  const submit = async (write: () => Promise<void>) => {
+    if (writing.current) return;
+    writing.current = true;
     setBusy(true);
     try {
-      await tripRepo.transferGuestIdentity(tripId, candidate.guest_user_id);
-      toast.success(t('members.identityTransfer.success'));
-      window.dispatchEvent(new CustomEvent('guest:identity-transferred', { detail: tripId }));
-      onTransferred?.();
+      await write();
       onClose();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('members.identityTransfer.error'));
     } finally {
+      writing.current = false;
       setBusy(false);
     }
+  };
+
+  const transfer = (candidate: GuestIdentityTransferCandidate) => {
+    if (candidate.conflicts.length > 0) return;
+    void submit(async () => {
+      await tripRepo.transferGuestIdentity(tripId, candidate.guest_user_id);
+      toast.success(t('members.identityTransfer.success'));
+      useTripStore.getState().refreshTransferredGuest(tripId);
+      onTransferred?.();
+    });
   };
 
   const impacts = (candidate: GuestIdentityTransferCandidate) =>
@@ -87,7 +99,9 @@ export default function GuestIdentityTransferModal({
       header={
         <DialogHeader
           labelId={labelId}
-          onClose={onClose}
+          onClose={() => {
+            if (!writing.current) onClose();
+          }}
           title={t('members.identityTransfer.title')}
           sub={t('members.identityTransfer.description')}
           tint={NEUTRAL_TINT}
@@ -103,16 +117,8 @@ export default function GuestIdentityTransferModal({
           <DialogFooter>
             <DialogButton
               disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await onDecline();
-                  onClose();
-                } catch {
-                  toast.error(t('members.identityTransfer.error'));
-                } finally {
-                  setBusy(false);
-                }
+              onClick={() => {
+                void submit(onDecline);
               }}
             >
               {t('members.identityTransfer.noneOfThese')}
@@ -122,12 +128,12 @@ export default function GuestIdentityTransferModal({
       }
     >
       <div className="space-y-3">
-        {failed && (
+        {result === 'failed' && (
           <p role="alert" className="text-danger">
             {t('members.identityTransfer.error')}
           </p>
         )}
-        {!failed && candidates === null && <p role="status">{t('common.loading')}</p>}
+        {result === null && <p role="status">{t('common.loading')}</p>}
         {candidates?.map((candidate) => (
           <div key={candidate.guest_user_id} className="bg-surface-subtle rounded-xl border border-edge p-4">
             <div className="flex items-center justify-between gap-3">
@@ -191,7 +197,9 @@ export function NewMemberIdentityCheck({ tripId }: { tripId: number | string }):
           setOpen(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) setOpen(false);
+      });
     return () => {
       active = false;
     };

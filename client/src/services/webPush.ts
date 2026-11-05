@@ -161,20 +161,24 @@ export async function reconcileWebPush(): Promise<WebPushCurrentResult | null> {
 }
 
 async function forgetBrowserSubscription(): Promise<void> {
-  localStorage.removeItem(ENABLED_KEY);
-  const registration = await navigator.serviceWorker?.getRegistration();
-  await (await registration?.pushManager.getSubscription())?.unsubscribe();
+  try {
+    localStorage.removeItem(ENABLED_KEY);
+    const registration = await navigator.serviceWorker?.getRegistration();
+    await (await registration?.pushManager.getSubscription())?.unsubscribe();
+  } catch {
+    // The server revocation can still stop delivery if browser cleanup fails.
+  }
 }
 
 export async function disableCurrentWebPush(deviceId: number): Promise<void> {
   await webPushRepo.revoke(deviceId);
-  void forgetBrowserSubscription().catch(() => {});
+  void forgetBrowserSubscription();
 }
 
 export async function forgetWebPushOnLogout(): Promise<void> {
   const installationId = localStorage.getItem(INSTALLATION_KEY);
   if (!installationId || localStorage.getItem(ENABLED_KEY) !== '1') return;
-  void forgetBrowserSubscription().catch(() => {});
+  void forgetBrowserSubscription();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
   const options = { credentials: 'same-origin', signal: controller.signal } as const;

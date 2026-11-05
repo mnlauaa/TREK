@@ -96,6 +96,7 @@ export interface TripStoreState
    * goes back to the trip list; nothing else reads it.
    */
   tripGone: TripGone | null
+  guestIdentityRevision: number
 
   setSelectedDay: (dayId: number | null) => void
   setPlacesFilter: (filter: string) => void
@@ -108,6 +109,7 @@ export interface TripStoreState
   resetTrip: () => void
   loadTrip: (tripId: number | string) => Promise<void>
   hydrateActiveTrip: (tripId: number | string) => Promise<void>
+  refreshTransferredGuest: (tripId: number | string, origin?: 'local' | 'remote') => void
   refreshDays: (tripId: number | string) => Promise<void>
   updateTrip: (tripId: number | string, data: Partial<Trip> & { date_shift_mode?: 'keep_bookings' | 'shift_all' }) => Promise<Trip>
   addTag: (data: Partial<Tag> & { name: string }) => Promise<Tag>
@@ -140,6 +142,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   isLoading: false,
   error: null,
   tripGone: null,
+  guestIdentityRevision: 0,
 
   setSelectedDay: (dayId: number | null) => set({ selectedDayId: dayId }),
   setPlacesFilter: (filter: string) => set({ placesFilter: filter }),
@@ -171,6 +174,9 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     planMapViewport: null,
     error: null,
     tripGone: null,
+    guestIdentityRevision: 0,
+    exchangeRatesRevision: 0,
+    budgetSettlementRevision: 0,
   }),
 
   clearTripGone: () => set({ tripGone: null }),
@@ -245,6 +251,19 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     // Accommodations live in planner-local state, not this store — nudge the
     // planner to reload them too (e.g. a trip date change made while offline).
     window.dispatchEvent(new CustomEvent('accommodations:refresh'))
+  },
+
+  refreshTransferredGuest: (tripId, origin = 'local') => {
+    if (String(get().trip?.id) !== String(tripId)) return
+    if (origin === 'local') {
+      set(state => ({
+        guestIdentityRevision: state.guestIdentityRevision + 1,
+        budgetSettlementRevision: state.budgetSettlementRevision + 1,
+      }))
+    }
+    void get().hydrateActiveTrip(tripId).catch(error => {
+      console.warn('Could not refresh the trip after guest identity transfer', error)
+    })
   },
 
   refreshDays: async (tripId: number | string) => {

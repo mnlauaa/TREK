@@ -10,7 +10,9 @@ export function useLegalPage(): { config: PublicConfig | null } {
     configRepo
       .publicConfig()
       .then(setConfig)
-      .catch(() => {});
+      .catch(() => {
+        setConfig(null);
+      });
   }, []);
 
   return { config };
