@@ -14,6 +14,7 @@ import type { MirrorSender } from '../accommodations/accommodations.service';
 import { McpToolGuardsService } from '../mcp-shared/mcp-tool-guards.service';
 import { DayRemovalService, DayDeleteError, type DayRemoval } from './day-removal.service';
 import { DaysService, DayReorderError, DayAppendError, type DatedDayAppend, type DaySender } from './days.service';
+import { dayTimingRequestSchema, type DayTiming } from '@trek/shared';
 import {
   DAY_CREATE_DATED_CONFLICT,
   dayCreateRequestSchema,
@@ -54,6 +55,23 @@ export class DaysMcp {
     private readonly guards: McpToolGuardsService,
     private readonly removal: DayRemovalService,
   ) {}
+
+  @Tool({
+    name: 'set_day_timing',
+    description:
+      'Enable itinerary predictions, set the day departure time and manual travel minutes for exact endpoint pairs and modes.',
+    inputSchema: { tripId: idSchema, dayId: idSchema, ...dayTimingRequestSchema.shape },
+    annotations: TOOL_ANNOTATIONS_WRITE,
+    access: { group: 'trips', mode: 'write' },
+  })
+  async setDayTiming({ tripId, dayId, ...timing }: DayTiming & { tripId: number; dayId: number }, ctx: McpContext) {
+    if (!(await this.days.verifyTripAccess(tripId, ctx.userId))) return noAccess();
+    if (!(await this.guards.hasTripPermission('day_edit', tripId, ctx.userId))) return permissionDenied();
+    if (!(await this.days.getDay(dayId, tripId))) return errorResult('Day not found.');
+    const day = await this.days.setTiming(dayId, timing);
+    this.guards.safeBroadcast(tripId, 'day:updated', { day });
+    return ok({ day });
+  }
 
   @Tool({
     name: 'update_day',

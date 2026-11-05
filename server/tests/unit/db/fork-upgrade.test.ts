@@ -91,7 +91,7 @@ describe('upgrading a populated legacy fork', () => {
       expect(sourceStatement(db, 'SELECT id FROM fork_schema_migrations ORDER BY id').pluck().all()).toEqual(
         [...FORK_SCHEMA_MIGRATION_IDS].sort(),
       );
-      if (existingLedger) expect(ledger).toEqual(existingLedger);
+      if (existingLedger) expect(ledger).toEqual(expect.arrayContaining(existingLedger));
 
       const dir = path.dirname(db.name);
       const snapshots = () => fs.readdirSync(dir).filter((entry) => entry.startsWith('pre-migrate-'));

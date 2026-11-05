@@ -108,6 +108,8 @@ export interface DayAssignmentRow {
   created_at: string | null;
   assignment_time: string | null;
   assignment_end_time: string | null;
+  stay_minutes: number | null;
+  times_explicit: number;
   leg_transport_mode: string | null;
   incoming_leg_transport_mode: string | null;
   end_day: number;

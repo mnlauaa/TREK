@@ -3,7 +3,7 @@ import { CurrentUser } from '../auth-core/current-user.decorator';
 import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
 import { DayRemovalService, DayDeleteError, type DayRemoval } from './day-removal.service';
-import { DayCreateDto, DayReorderDto, DayTransportDto, DayUpdateDto } from './days.dto';
+import { DayTimingDto, DayCreateDto, DayReorderDto, DayTransportDto, DayUpdateDto } from './days.dto';
 import { DaysService, DayReorderError, DayAppendError, type DatedDayAppend } from './days.service';
 import { Body, Controller, Delete, Get, Headers, HttpException, Param, Post, Put, UseGuards } from '@nestjs/common';
 
@@ -120,6 +120,20 @@ export class DaysController {
     // the service's presence sentinels preserve the omitted column (the client
     // updates notes and title in separate requests).
     const day = await this.days.update(id, current as never, body);
+    this.days.broadcast(tripId, 'day:updated', { day }, socketId);
+    return { day };
+  }
+
+  @RequirePermission('day_edit')
+  @Put(':id/timing')
+  async timing(
+    @Param('tripId') tripId: string,
+    @Param('id') id: string,
+    @Body() body: DayTimingDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    if (!(await this.days.getDay(id, tripId))) throw new HttpException({ error: 'Day not found' }, 404);
+    const day = await this.days.setTiming(id, body);
     this.days.broadcast(tripId, 'day:updated', { day }, socketId);
     return { day };
   }

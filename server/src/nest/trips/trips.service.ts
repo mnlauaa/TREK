@@ -1,3 +1,5 @@
+import { copyDayTiming } from './trip-timing';
+import { inOrder } from '../common/in-order';
 import { conflict } from '../common/domain-error';
 import { budgetRateColumns } from '../../db/repositories/_shared/budget-rate';
 import { Injectable } from '@nestjs/common';
@@ -170,7 +172,6 @@ export class TripsService {
   ) {}
 
   // Plan 3c Task 7: the raw better-sqlite3 handle used to back `remove`'s
-  // TP32/TP33 (journey_entries) — converted by Plan 3g Task 4 onto
   // `JourneyEntriesRepository` below. Every method in this file
   // reads/writes through `tripsRepo`/`daysRepo`/`journeyEntriesRepo` (or a
   // sibling repository reached the same way `TripsService.canAccessTrip`/
@@ -546,7 +547,6 @@ export class TripsService {
       ownerEmail = (await this.em.getRepository(Users).getEmail(trip.user_id)) ?? undefined; // TP28
     }
 
-    // TP29 — every caller of updateTrip has already passed an access check for
     // this exact trip (canAccessTrip / requireTripEdit), so the access
     // predicate `findForViewer` applies is always trivially satisfied here —
     // same reasoning as `create`'s TP19 re-select above.
@@ -671,7 +671,7 @@ export class TripsService {
       const dayMap = new Map<number, number>();
       for (const d of oldDays) {
         const newDayId = await this.daysRepo.insertDayCopy({ // TP39
-          trip_id: newTripId, day_number: d.day_number, date: d.date, notes: d.notes, title: d.title,
+          trip_id: newTripId, day_number: d.day_number, date: d.date, notes: d.notes, title: d.title, timing_json: d.timing_json,
         });
         dayMap.set(d.id, newDayId);
       }
@@ -762,7 +762,7 @@ export class TripsService {
             day_id: newDayId, place_id: newPlaceId, order_index: a.order_index, notes: a.notes,
             reservation_status: a.reservation_status, reservation_notes: a.reservation_notes,
             reservation_datetime: a.reservation_datetime, assignment_time: a.assignment_time,
-            assignment_end_time: a.assignment_end_time, end_day: a.end_day ?? 0, tour_stage_key: a.tour_stage_key,
+            assignment_end_time: a.assignment_end_time, stay_minutes: a.stay_minutes, times_explicit: a.times_explicit, end_day: a.end_day ?? 0, tour_stage_key: a.tour_stage_key,
           });
           assignmentMap.set(a.id, newAssignmentId);
         }
@@ -848,7 +848,6 @@ export class TripsService {
         reservationMap.set(r.id, newReservationId);
       }
 
-      // TP62/TP64 — Plan 3e Task 2, converted. Read up front: which expenses
       // involve someone the copy will not have decides how each one is copied.
       const oldBudgetMembers = await this.budgetItemMembersRepo.listRawForTrip(sourceTripId);
       const oldBudgetPayers = await this.budgetItemPayersRepo.listRawForTrip(sourceTripId);
@@ -863,12 +862,10 @@ export class TripsService {
       }
       const hasSplitRows = new Set(oldBudgetMembers.map(bm => bm.budget_item_id));
 
-      // TP60 — Plan 3e Task 2, converted.
       const oldBudget = await this.budgetItemsRepo.listAllForTrip(sourceTripId);
       const budgetMap = new Map<number, number>();
       for (const b of oldBudget) {
         const planningOnly = sharedWithOthers.has(b.id);
-        // TP61 — Plan 3e Task 2, converted (`insertCopy`). The persons count of a
         // split is its member count and goes with it; a typed one stays. A receipt
         // split names who had which line, so it goes as well.
         const newItemId = await this.budgetItemsRepo.insertCopy({
@@ -888,22 +885,18 @@ export class TripsService {
       for (const bm of oldBudgetMembers) {
         if (sharedWithOthers.has(bm.budget_item_id)) continue;
         const newItemId = budgetMap.get(bm.budget_item_id);
-        // TP63 — Plan 3e Task 2, converted.
         if (newItemId) await this.budgetItemMembersRepo.insertIgnore({ budget_item_id: newItemId, user_id: bm.user_id, paid: bm.paid ?? 0, amount: bm.amount });
       }
 
       for (const bp of oldBudgetPayers) {
         if (sharedWithOthers.has(bp.budget_item_id)) continue;
         const newItemId = budgetMap.get(bp.budget_item_id);
-        // TP65 — Plan 3e Task 2, converted.
         if (newItemId) await this.budgetItemPayersRepo.insertIgnore({ budget_item_id: newItemId, user_id: bp.user_id, amount: bp.amount ?? 0 });
       }
 
-      // TP66 — Plan 3e Task 3, converted.
       const oldBags = await this.packingBagsRepo.listAllForTrip(sourceTripId);
       const bagMap = new Map<number, number>();
       for (const bag of oldBags) {
-        // TP67 — Plan 3e Task 3, converted (`insertBag`, PK42's own column set).
         const newBagId = await this.packingBagsRepo.insertBag({
           trip_id: newTripId, name: bag.name, color: bag.color, sort_order: bag.sort_order, weight_limit_grams: bag.weight_limit_grams,
         });
@@ -916,11 +909,9 @@ export class TripsService {
       // Shared item reappeared in the copy as a Common item visible to everyone.
       // A restricted item stays restricted, and it stays owned by the copier —
       // recipient rows are not carried over, and the copy has its own roster.
-      // TP68 — Plan 3e Task 3, converted (security-sensitive: the privacy filter).
       const oldPacking = await this.packingItemsRepo.listOwnListForCopy(sourceTripId, newOwnerId);
       for (const p of oldPacking) {
         const isPrivate = p.is_private ? 1 : 0;
-        // TP69 — Plan 3e Task 3, converted.
         await this.packingItemsRepo.insertCopy({
           trip_id: newTripId, name: p.name, category: p.category, sort_order: p.sort_order, weight_grams: p.weight_grams,
           bag_id: p.bag_id ? (bagMap.get(p.bag_id) ?? null) : null,
@@ -938,23 +929,24 @@ export class TripsService {
         }
       }
 
-      // TP72 — Plan 3e Task 4, converted.
       const oldTodos = await this.todoItemsRepo.listAllForTrip(sourceTripId);
       for (const t of oldTodos) {
-        // TP73 — Plan 3e Task 4, converted (`assigned_user_id` deliberately not carried over).
         await this.todoItemsRepo.insertCopy({
           trip_id: newTripId, name: t.name, category: t.category, sort_order: t.sort_order,
           due_date: t.due_date, description: t.description, priority: t.priority,
         });
       }
 
-      // TP74 — Plan 3e Task 2, converted.
       const oldCategoryOrder = await this.budgetCategoryOrderRepo.listForTrip(sourceTripId);
       for (const o of oldCategoryOrder) {
-        // TP75 — Plan 3e Task 2, converted (plain insert, not `OR IGNORE` — matching legacy).
         await this.budgetCategoryOrderRepo.insertCopy(newTripId, o.category, o.sort_order);
       }
 
+      await inOrder(oldDays, async (day) => {
+        const copiedId = dayMap.get(day.id);
+        if (copiedId === undefined) throw new Error('Copied day is missing');
+        await this.daysRepo.setTiming(copiedId, copyDayTiming(day.timing_json, assignmentMap, reservationMap));
+      });
       return newTripId;
     });
   }

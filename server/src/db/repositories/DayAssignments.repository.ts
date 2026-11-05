@@ -1,6 +1,6 @@
-import type { Platform } from '@mikro-orm/core';
+import { caseWhenNotNull, visitTime, columnIncrementedBy, columnRef } from '../dialect/sql-functions';
 import type { DayAssignments } from '../entities/DayAssignments.entity';
-import { caseWhenNotNull, coalesce, columnIncrementedBy, columnRef } from '../dialect/sql-functions';
+import type { DB } from '../kysely/db';
 import { TrekRepository } from './_shared/trek-repository';
 import type {
   AssignmentTimeSortKyselyDB,
@@ -12,7 +12,7 @@ import type {
   RoadtripVisitsKyselyDB,
   SharePublicAssignmentRow,
 } from './day-assignment-rows';
-import type { DB } from '../kysely/db';
+import type { Platform } from '@mikro-orm/core';
 
 export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
   /** The DY1/DY3/AS1/AS3 projection's SELECT list, shared by all three query shapes below. */
@@ -35,8 +35,8 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
       columnRef(platform, 'p.category_id'),
       'p.price',
       'p.currency as place_currency',
-      coalesce(platform, 'da.assignment_time', 'p.place_time').as('place_time'),
-      coalesce(platform, 'da.assignment_end_time', 'p.end_time').as('end_time'),
+      visitTime(platform, 'da.times_explicit', 'da.assignment_time', 'p.place_time').as('place_time'),
+      visitTime(platform, 'da.times_explicit', 'da.assignment_end_time', 'p.end_time').as('end_time'),
       'p.duration_minutes',
       'p.notes as place_notes',
       'p.image_url',
@@ -130,8 +130,8 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
       columnRef(platform, 'p.category_id'),
       'p.price',
       'p.currency as place_currency',
-      coalesce(platform, 'da.assignment_time', 'p.place_time').as('place_time'),
-      coalesce(platform, 'da.assignment_end_time', 'p.end_time').as('end_time'),
+      visitTime(platform, 'da.times_explicit', 'da.assignment_time', 'p.place_time').as('place_time'),
+      visitTime(platform, 'da.times_explicit', 'da.assignment_end_time', 'p.end_time').as('end_time'),
       'p.duration_minutes',
       'p.notes as place_notes',
       'p.image_url',
@@ -365,7 +365,20 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
       .selectFrom('day_assignments as da')
       .innerJoin('places as p', 'p.id', 'da.place_id')
       .leftJoin('day_accommodations as acc', 'acc.id', 'da.accommodation_id')
-      .select((eb) => ['da.day_id as day_id', eb.fn.coalesce('da.assignment_time', 'p.place_time', 'acc.check_in').as('start')])
+      .select((eb) => [
+        'da.day_id as day_id',
+        eb.fn
+          .coalesce(
+            eb
+              .case()
+              .when('da.times_explicit', '=', 1)
+              .then(eb.ref('da.assignment_time'))
+              .else(eb.fn.coalesce('da.assignment_time', 'p.place_time'))
+              .end(),
+            'acc.check_in',
+          )
+          .as('start'),
+      ])
       .where('da.id', '=', id)
       .executeTakeFirst();
     return row as { day_id: number; start: string | null } | undefined;
@@ -376,8 +389,12 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
    * The falsy-clears-to-null coercion (`placeTime || null`) stays in the
    * service (AS17's ruling); this writes the already-decided values.
    */
+  async setStay(id: number, stay_minutes: number | null): Promise<void> {
+    await this.nativeUpdate({ id }, { stay_minutes });
+  }
+
   async setTimes(id: number, assignment_time: string | null, assignment_end_time: string | null): Promise<void> {
-    await this.nativeUpdate({ id }, { assignment_time, assignment_end_time });
+    await this.nativeUpdate({ id }, { assignment_time, assignment_end_time, times_explicit: 1 });
   }
 
   /**
@@ -400,7 +417,17 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
       .select((eb) => [
         'da.id as id',
         'da.order_index as order_index',
-        eb.fn.coalesce('da.assignment_time', 'p.place_time', 'acc.check_in').as('effective_time'),
+        eb.fn
+          .coalesce(
+            eb
+              .case()
+              .when('da.times_explicit', '=', 1)
+              .then(eb.ref('da.assignment_time'))
+              .else(eb.fn.coalesce('da.assignment_time', 'p.place_time'))
+              .end(),
+            'acc.check_in',
+          )
+          .as('effective_time'),
         eb.and([eb('p.lat', 'is not', null), eb('p.lng', 'is not', null)]).as('located'),
       ])
       .where('da.day_id', '=', day_id)
@@ -445,10 +472,7 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
    * {@link listIdsForDay}).
    */
   async listIdsToClear(day_id: number): Promise<number[]> {
-    const rows = await this.qb('da')
-      .select(['da.id'])
-      .where({ day: day_id })
-      .execute<{ id: number }[]>('all', false);
+    const rows = await this.qb('da').select(['da.id']).where({ day: day_id }).execute<{ id: number }[]>('all', false);
     return rows.map((r) => r.id);
   }
 
@@ -484,17 +508,25 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
    * `places`. Same result set, same ordering; the root alias choice is not
    * observable from the row shape.
    */
-  async listItineraryForGpx(trip_id: string | number): Promise<{
-    day_number: number; date: string | null; title: string | null;
-    name: string; lat: number; lng: number;
-  }[]> {
+  async listItineraryForGpx(trip_id: string | number): Promise<
+    {
+      day_number: number;
+      date: string | null;
+      title: string | null;
+      name: string;
+      lat: number;
+      lng: number;
+    }[]
+  > {
     return this.qb('da')
       .join('da.day', 'd')
       .join('da.place', 'p')
       .select(['d.day_number', 'd.date', 'd.title', 'p.name', 'p.lat', 'p.lng'])
       .where('d.trip_id = ? AND p.lat IS NOT NULL AND p.lng IS NOT NULL', [trip_id])
       .orderBy({ 'd.day_number': 'asc', 'da.order_index': 'asc' })
-      .execute<{ day_number: number; date: string | null; title: string | null; name: string; lat: number; lng: number }[]>('all', false);
+      .execute<
+        { day_number: number; date: string | null; title: string | null; name: string; lat: number; lng: number }[]
+      >('all', false);
   }
 
   // ---------------------------------------------------------------------------
@@ -540,6 +572,8 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
     assignment_time: string | null;
     assignment_end_time: string | null;
     end_day: number;
+    stay_minutes?: number | null;
+    times_explicit?: number;
     /** MDT-02: the copied tour keeps its stops' keys, so a day holding one of its stages keeps holding it. */
     tour_stage_key?: string | null;
   }): Promise<number> {
@@ -554,6 +588,8 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
       assignment_time: input.assignment_time,
       assignment_end_time: input.assignment_end_time,
       end_day: input.end_day,
+      stay_minutes: input.stay_minutes ?? null,
+      times_explicit: input.times_explicit ?? 0,
       tour_stage_key: input.tour_stage_key ?? null,
     });
   }
@@ -635,9 +671,21 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
         'p.name as name',
         'p.lat as lat',
         'p.lng as lng',
-        eb.fn.coalesce('a.assignment_time', 'p.place_time').as('time'),
-        eb.fn.coalesce('a.assignment_end_time', 'p.end_time').as('end_time'),
-        'p.duration_minutes as duration_minutes',
+        eb
+          .case()
+          .when('a.times_explicit', '=', 1)
+          .then(eb.ref('a.assignment_time'))
+          .else(eb.fn.coalesce('a.assignment_time', 'p.place_time'))
+          .end()
+          .as('time'),
+        eb
+          .case()
+          .when('a.times_explicit', '=', 1)
+          .then(eb.ref('a.assignment_end_time'))
+          .else(eb.fn.coalesce('a.assignment_end_time', 'p.end_time'))
+          .end()
+          .as('end_time'),
+        eb.fn.coalesce('a.stay_minutes', 'p.duration_minutes', eb.val(60)).as('duration_minutes'),
         'a.end_day as end_day',
         'a.leg_transport_mode as leg_transport_mode',
         'a.incoming_leg_transport_mode as incoming_leg_transport_mode',
@@ -701,7 +749,14 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
         eb
           .case()
           .when('other.id', 'is', null)
-          .then(eb.fn.coalesce('da.assignment_time', 'p.place_time'))
+          .then(
+            eb
+              .case()
+              .when('da.times_explicit', '=', 1)
+              .then(eb.ref('da.assignment_time'))
+              .else(eb.fn.coalesce('da.assignment_time', 'p.place_time'))
+              .end(),
+          )
           .else(eb.ref('other.check_in'))
           .end()
           .as('at'),
@@ -782,10 +837,17 @@ export class DayAssignmentsRepository extends TrekRepository<DayAssignments> {
   }
 
   /** AC25 (`AccommodationsService.ownStops`) — `SELECT id, day_id, place_id, order_index FROM day_assignments WHERE accommodation_id = ?`. `day_id`/`place_id` are `persist(false)` relation mirrors — `columnRef`, the same trap {@link getDayId} documents. */
-  async listOwnedByStay(accommodation_id: number): Promise<{ id: number; day_id: number; place_id: number; order_index: number | null }[]> {
+  async listOwnedByStay(
+    accommodation_id: number,
+  ): Promise<{ id: number; day_id: number; place_id: number; order_index: number | null }[]> {
     const platform = this.getEntityManager().getPlatform();
     return await this.qb('da')
-      .select(['da.id', columnRef(platform, 'da.day_id').as('day_id'), columnRef(platform, 'da.place_id').as('place_id'), 'da.order_index'])
+      .select([
+        'da.id',
+        columnRef(platform, 'da.day_id').as('day_id'),
+        columnRef(platform, 'da.place_id').as('place_id'),
+        'da.order_index',
+      ])
       .where({ accommodation_id })
       .execute<{ id: number; day_id: number; place_id: number; order_index: number | null }[]>('all', false);
   }

@@ -10,7 +10,7 @@ import { Trips } from '../../db/entities/Trips.entity';
 import type { DayAccommodationsRepository } from '../../db/repositories/DayAccommodations.repository';
 import type { DayAssignmentsRepository } from '../../db/repositories/DayAssignments.repository';
 import type { DayNotesRepository } from '../../db/repositories/DayNotes.repository';
-import type { DaysRepository, DayOrderRow, DayRow } from '../../db/repositories/Days.repository';
+import type { DaysRepository, DayOrderRow } from '../../db/repositories/Days.repository';
 import type { ReservationEndpointsRepository } from '../../db/repositories/ReservationEndpoints.repository';
 import type { ReservationsRepository } from '../../db/repositories/Reservations.repository';
 import type { RoadtripDayBoundariesRepository } from '../../db/repositories/RoadtripDayBoundaries.repository';
@@ -21,13 +21,14 @@ import type { User } from '../../types';
 import { carryViasWith, locatedStopIdsWith, reseatOwnStopWith } from '../accommodations/night-seat';
 import { DomainError } from '../common/domain-error';
 import { toRowId } from '../common/row-id';
-import { formatAssignmentWithPlace } from '../common/rowShape';
+import { formatAssignmentWithPlace, withDayTiming } from '../common/rowShape';
 import { UnitOfWork } from '../database/unit-of-work';
 import { PermissionsService } from '../permissions/permissions.service';
 import { QueryHelpersService } from '../query-helpers/query-helpers.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
+import type { DayTiming } from '@trek/shared';
 import { addIsoDays, MAX_TRIP_DAYS, planDatedAppend, reorderedDayDates } from '@trek/shared';
 import type { RoadtripDayBoundary, TrekWsPayload, TrekWsTripEventName } from '@trek/shared';
 
@@ -69,7 +70,7 @@ export type DaySender = <E extends TrekWsTripEventName>(event: E, payload: TrekW
 /** What adding the next dated day did to the trip, for the surface that announces it. */
 export interface DatedDayAppend {
   /** The new day, in the shape the create route answers with. */
-  day: DayRow & { assignments: unknown[]; notes_items: unknown[] };
+  day: ReturnType<typeof withDayTiming> & { assignments: unknown[]; notes_items: unknown[] };
   /** The trip's end date now, which is the new day's date. */
   endDate: string;
   /** The road trip day boundaries after they moved back with their days, or null when none moved. */
@@ -197,6 +198,11 @@ export class DaysService {
         id: a.id,
         day_id: a.day_id,
         order_index: a.order_index,
+        place_id: a.place_id,
+        assignment_time: a.assignment_time ?? null,
+        assignment_end_time: a.assignment_end_time ?? null,
+        stay_minutes: a.stay_minutes ?? null,
+        times_explicit: a.times_explicit === 1,
         end_day: a.end_day === 1,
         route_excluded: a.route_excluded === 1,
         notes: a.notes,
@@ -295,7 +301,7 @@ export class DaysService {
     }
 
     const daysWithAssignments = days.map((day) => ({
-      ...day,
+      ...withDayTiming(day),
       assignments: assignmentsByDayId[day.id] || [],
       notes_items: notesByDayId[day.id] || [],
     }));
@@ -328,7 +334,16 @@ export class DaysService {
         notes: notes || null,
       });
     });
-    return { ...day, assignments: [] };
+    return { ...withDayTiming(day), assignments: [] };
+  }
+
+  async setTiming(id: string | number, timing: DayTiming) {
+    const dayId = toRowId(id);
+    if (dayId === null) throw new DomainError(404, 'Day not found');
+    await this.daysRepo.setTiming(dayId, JSON.stringify(timing));
+    const day = await this.daysRepo.findById(dayId);
+    if (!day) throw new DomainError(404, 'Day not found');
+    return { ...withDayTiming(day), assignments: await this.getAssignmentsForDay(dayId) };
   }
 
   async getDay(id: string | number, tripId: string | number) {
@@ -356,7 +371,7 @@ export class DaysService {
     const title = 'title' in fields ? (fields.title ?? null) : (current.title ?? null);
     await this.daysRepo.updateNotesAndTitle(dayId, notes, title);
     const updatedDay = (await this.daysRepo.findById(dayId))!;
-    return { ...updatedDay, assignments: await this.getAssignmentsForDay(dayId) };
+    return { ...withDayTiming(updatedDay), assignments: await this.getAssignmentsForDay(dayId) };
   }
 
   /**
@@ -368,7 +383,7 @@ export class DaysService {
     const dayId = toRowId(id)!;
     await this.daysRepo.setDefaultTransportMode(dayId, mode ?? null);
     const updatedDay = (await this.daysRepo.findById(dayId))!;
-    return { ...updatedDay, assignments: await this.getAssignmentsForDay(dayId) };
+    return { ...withDayTiming(updatedDay), assignments: await this.getAssignmentsForDay(dayId) };
   }
 
   /**
@@ -652,7 +667,7 @@ export class DaysService {
         return insertedId;
       });
       const day = (await this.daysRepo.findById(newId))!;
-      return { ...day, assignments: [], notes_items: [] };
+      return { ...withDayTiming(day), assignments: [], notes_items: [] };
     }
 
     // Dated trip: rebuild N+1 contiguous dates from the earliest date.
@@ -680,7 +695,7 @@ export class DaysService {
       return insertedId;
     });
     const day = (await this.daysRepo.findById(newId))!;
-    return { ...day, assignments: [], notes_items: [] };
+    return { ...withDayTiming(day), assignments: [], notes_items: [] };
   }
 
   /**
@@ -731,7 +746,7 @@ export class DaysService {
       const boundaries = await this.shiftBoundariesBack(trip, position);
       // DY38
       await this.tripsRepo.setEndDateTouched(trip, plan.date);
-      return { day: { ...day, assignments: [], notes_items: [] }, endDate: plan.date, boundaries };
+      return { day: { ...withDayTiming(day), assignments: [], notes_items: [] }, endDate: plan.date, boundaries };
     });
     return { ...appended, trip: await this.getTripForViewer(trip, viewerId) };
   }

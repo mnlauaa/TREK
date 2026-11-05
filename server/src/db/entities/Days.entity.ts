@@ -1,4 +1,3 @@
-import { Collection, EntityRepositoryType, type Opt, type Ref, defineEntity, p } from '@mikro-orm/core';
 import { DaysRepository } from '../repositories/Days.repository';
 import { DayAccommodations } from './DayAccommodations.entity';
 import { DayAssignments } from './DayAssignments.entity';
@@ -9,6 +8,7 @@ import { Reservations } from './Reservations.entity';
 import { RoadtripDayTracks } from './RoadtripDayTracks.entity';
 import { RoadtripVias } from './RoadtripVias.entity';
 import { Trips } from './Trips.entity';
+import { Collection, EntityRepositoryType, type Opt, type Ref, defineEntity, p } from '@mikro-orm/core';
 
 export class Days {
   [EntityRepositoryType]?: DaysRepository;
@@ -20,6 +20,7 @@ export class Days {
   notes?: string | null;
   title?: string | null;
   default_transport_mode?: string | null;
+  timing_json: string & Opt = '{"enabled":true,"start":"09:00","travel":[]}';
   day_accommodations_collection = new Collection<DayAccommodations>(this);
   day_accommodations_collection1 = new Collection<DayAccommodations>(this);
   day_assignments_collection = new Collection<DayAssignments>(this);
@@ -45,6 +46,7 @@ export const DaysSchema = defineEntity({
     notes: p.text().nullable(),
     title: p.text().nullable(),
     default_transport_mode: p.text().nullable(),
+    timing_json: p.text().default('{"enabled":true,"start":"09:00","travel":[]}'),
     day_accommodations_collection: () => p.oneToMany(DayAccommodations).mappedBy('startDay').hidden(),
     day_accommodations_collection1: () => p.oneToMany(DayAccommodations).mappedBy('endDay').hidden(),
     day_assignments_collection: () => p.oneToMany(DayAssignments).mappedBy('day').hidden(),

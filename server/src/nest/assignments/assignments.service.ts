@@ -449,6 +449,13 @@ export class AssignmentsService {
    * such a day the order stored and the order drawn can differ. The old sort did the
    * same.
    */
+  async setStay(id: string | number, minutes: number | null) {
+    const assignmentId = toRowId(id);
+    if (assignmentId === null) throw new Error('Assignment not found');
+    await this.dayAssignmentsRepo.setStay(assignmentId, minutes);
+    return await this.getAssignmentWithPlace(assignmentId);
+  }
+
   async updateTime(id: string | number, placeTime: unknown, endTime: unknown): Promise<AssignmentTimeUpdate> {
     const idNum = toRowId(id)!;
     const sorted = await this.uow.transactional(async () => {

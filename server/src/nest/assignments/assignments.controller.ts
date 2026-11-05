@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
 import {
   AssignmentCreateDto,
+  AssignmentStayDto,
   AssignmentReorderDto,
   AssignmentMoveDto,
   AssignmentTimeDto,
@@ -176,6 +177,22 @@ export class AssignmentOpsController {
       throw new HttpException({ error: 'Assignment not found' }, 404);
     }
     return { participants: await this.assignments.getParticipants(id) };
+  }
+
+  @RequirePermission('day_edit')
+  @Put(':id/stay')
+  async stay(
+    @Param('tripId') tripId: string,
+    @Param('id') id: string,
+    @Body() body: AssignmentStayDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    if (!(await this.assignments.getAssignmentForTrip(id, tripId))) {
+      throw new HttpException({ error: 'Assignment not found' }, 404);
+    }
+    const assignment = await this.assignments.setStay(id, body.stay_minutes);
+    this.assignments.broadcast(tripId, 'assignment:updated', { assignment }, socketId);
+    return { assignment };
   }
 
   @RequirePermission('day_edit')

@@ -161,19 +161,7 @@ export interface CalendarReservationRow extends ReservationAllColumnsRow {
 
 type CalendarReservationKyselyDB = Pick<DB, 'reservations' | 'places' | 'day_accommodations' | 'days'>;
 
-/**
- * CL4 (`CalendarService.buildTripCalendar`'s assignment read, for every dated
- * day at once) — `SELECT da.*, p.name as place_name, p.address as
- * place_address, p.lat as place_lat, p.lng as place_lng, p.duration_minutes
- * as place_duration_minutes, COALESCE(da.assignment_time, p.place_time) as
- * effective_time, COALESCE(da.assignment_end_time, p.end_time) as
- * effective_end_time FROM
- * day_assignments da JOIN places p ON da.place_id = p.id WHERE da.day_id IN
- * (...) AND da.accommodation_id IS NULL ORDER BY da.order_index, da.created_at,
- * da.id` — the booked-night stop (its own accommodation-linked row) is
- * excluded: it is the booking, and reading it here would put the hotel on the
- * day a second time. Each day's rows keep the per-day order; the id settles a tie.
- */
+
 export interface CalendarStopRow extends DayAssignmentRow {
   place_name: string;
   place_address: string | null;
@@ -933,8 +921,8 @@ export class ReservationsRepository extends TrekRepository<Reservations> {
         'p.lat as place_lat',
         'p.lng as place_lng',
         'p.duration_minutes as place_duration_minutes',
-        eb.fn.coalesce('da.assignment_time', 'p.place_time').as('effective_time'),
-        eb.fn.coalesce('da.assignment_end_time', 'p.end_time').as('effective_end_time'),
+        eb.case().when('da.times_explicit', '=', 1).then(eb.ref('da.assignment_time')).else(eb.fn.coalesce('da.assignment_time', 'p.place_time')).end().as('effective_time'),
+        eb.case().when('da.times_explicit', '=', 1).then(eb.ref('da.assignment_end_time')).else(eb.fn.coalesce('da.assignment_end_time', 'p.end_time')).end().as('effective_end_time'),
       ])
       .where('da.day_id', 'in', day_ids)
       .where('da.accommodation_id', 'is', null)

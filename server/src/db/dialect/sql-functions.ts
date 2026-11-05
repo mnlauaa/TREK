@@ -841,3 +841,11 @@ export function caseWhenNotNull(platform: Platform, testRef: string, thenRef: st
   if (isKnownPlatform(platform)) return raw(`CASE WHEN ${column(testRef)} IS NOT NULL THEN ${column(thenRef)} END`);
   return unsupported(platform);
 }
+
+export function visitTime(platform: Platform, explicit: string, own: string, inherited: string): RawQueryFragment {
+  if (isKnownPlatform(platform))
+    return raw(
+      `CASE WHEN ${column(explicit)} = 1 THEN ${column(own)} ELSE COALESCE(${column(own)}, ${column(inherited)}) END`,
+    );
+  return unsupported(platform);
+}

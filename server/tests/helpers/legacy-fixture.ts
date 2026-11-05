@@ -27,7 +27,8 @@ export type LegacyFixture =
   | 'fork-v180'
   | 'fork-v199'
   | 'fork-v202'
-  | 'fork-v244';
+  | 'fork-v244'
+  | 'fork-v244-itinerary';
 
 const FIXTURES = path.join(__dirname, '../fixtures/legacy');
 

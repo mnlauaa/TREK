@@ -8,6 +8,7 @@ export const FORK_SCHEMA_MIGRATION_IDS = [
   'fork/enhanced-fx-v1',
   'fork/guest-identity-v1',
   'fork/web-push-v1',
+  'fork/itinerary-timing-v1',
 ] as const;
 
 type ForkSchemaMigrationId = (typeof FORK_SCHEMA_MIGRATION_IDS)[number];
@@ -251,6 +252,12 @@ function officialPositionalArtifacts(db: NativeSqliteDatabase): Array<[number, s
   ];
 }
 
+export function hasItineraryTimingArtifacts(db: NativeSqliteDatabase): boolean {
+  return hasColumns(db, 'day_assignments', ['stay_minutes', 'times_explicit']) && hasColumn(db, 'days', 'timing_json');
+}
+
+export const FORK_TIMING_MIGRATION = 'Migration20200101046340_adopt_itinerary_timing';
+
 export const FORK_RECONCILIATION = 'Migration20200101046330_adopt_fork_schema_lineages';
 
 export function readForkLedger(db: NativeSqliteDatabase): { id: string; applied_at: string }[] {
@@ -368,4 +375,5 @@ const forkArtifacts = [
   ['fork/enhanced-fx-v1', hasEnhancedFxArtifacts],
   ['fork/guest-identity-v1', hasGuestIdentityArtifacts],
   ['fork/web-push-v1', hasWebPushArtifacts],
+  ['fork/itinerary-timing-v1', hasItineraryTimingArtifacts],
 ] as const satisfies readonly [ForkSchemaMigrationId, (db: NativeSqliteDatabase) => boolean][];

@@ -10,4 +10,5 @@ export interface DaysTable {
   notes: InsertOptional<string | null>;
   title: InsertOptional<string | null>;
   default_transport_mode: InsertOptional<string | null>;
+  timing_json: InsertOptional<string>;
 }

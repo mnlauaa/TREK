@@ -13,6 +13,7 @@ export interface DayRow {
   notes: string | null;
   title: string | null;
   default_transport_mode: string | null;
+  timing_json: string;
 }
 
 const _dayRowKeys: AssertRowKeys<DayRow, Days> = true;
@@ -170,6 +171,10 @@ export class DaysRepository extends TrekRepository<Days> {
   }
 
   /** DY11 — `UPDATE days SET default_transport_mode = ? WHERE id = ?` (#1281). */
+  async setTiming(id: number, timing_json: string): Promise<void> {
+    await this.nativeUpdate({ id }, { timing_json });
+  }
+
   async setDefaultTransportMode(id: number, mode: string | null): Promise<void> {
     await this.nativeUpdate({ id }, { default_transport_mode: mode });
   }
@@ -237,6 +242,7 @@ export class DaysRepository extends TrekRepository<Days> {
     date: string | null;
     notes: string | null;
     title: string | null;
+    timing_json?: string;
   }): Promise<number> {
     return await this.insert({
       trip: input.trip_id,
@@ -244,6 +250,7 @@ export class DaysRepository extends TrekRepository<Days> {
       date: input.date,
       notes: input.notes,
       title: input.title,
+      ...(input.timing_json === undefined ? {} : { timing_json: input.timing_json }),
     });
   }
 

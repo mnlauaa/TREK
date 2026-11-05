@@ -1,4 +1,5 @@
 import {
+  assignmentStayRequestSchema,
   assignmentCreateRequestSchema,
   assignmentReorderRequestSchema,
   assignmentMoveRequestSchema,
@@ -28,3 +29,5 @@ export class AssignmentNotesDto extends createZodDto(assignmentNotesRequestSchem
 export class AssignmentTransportDto extends createZodDto(assignmentTransportRequestSchema) {}
 export class AssignmentRouteDto extends createZodDto(assignmentRouteRequestSchema) {}
 export class AssignmentParticipantsDto extends createZodDto(assignmentParticipantsRequestSchema) {}
+
+export class AssignmentStayDto extends createZodDto(assignmentStayRequestSchema) {}

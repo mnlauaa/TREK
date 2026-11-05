@@ -2,6 +2,7 @@ import type { NativeSqliteDatabase } from './connection';
 import {
   classifyPositionalLineage,
   FORK_RECONCILIATION,
+  FORK_TIMING_MIGRATION,
   FORK_SCHEMA_MIGRATION_IDS,
   hasColumn,
   hasTable,
@@ -167,7 +168,9 @@ export function inspectMigrationLineage(db: NativeSqliteDatabase, finalStep = 25
   if (executed.length > 0) {
     if (
       executed.includes(FORK_RECONCILIATION) &&
-      (forkLedger.length !== FORK_SCHEMA_MIGRATION_IDS.length ||
+      (FORK_SCHEMA_MIGRATION_IDS.filter(
+        (id) => executed.includes(FORK_TIMING_MIGRATION) || id !== 'fork/itinerary-timing-v1',
+      ).some((id) => !forkLedger.some((row) => row.id === id)) ||
         !hasColumn(db, 'trip_members', 'new_member_identity_check_completed_at'))
     ) {
       throw new Error(`${REFUSAL} fork reconciliation is recorded without its complete fork ledger and schema`);

@@ -21,6 +21,7 @@ import type { ReservationsRepository } from '../../db/repositories/Reservations.
 import type { ShareTokensRepository } from '../../db/repositories/ShareTokens.repository';
 import type { TripsRepository, TripAccess } from '../../db/repositories/Trips.repository';
 import type { User } from '../../types';
+import { withDayTiming } from '../common/rowShape';
 import { UnitOfWork } from '../database/unit-of-work';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PlacePhotoCacheService } from '../place-photos/place-photo-cache.service';
@@ -355,7 +356,7 @@ export class ShareService {
     let dayNotes: Record<number, any[]> = {};
     let places: any[] = [];
     if (permissions.share_map) {
-      days = await this.days.listByTrip(tripId);
+      days = (await this.days.listByTrip(tripId)).map(withDayTiming);
       const dayIds = days.map((d) => d.id);
 
       if (dayIds.length > 0) {
@@ -369,6 +370,11 @@ export class ShareService {
           if (!byDay[a.day_id]) byDay[a.day_id] = [];
           byDay[a.day_id].push({
             id: a.id,
+            place_id: a.place_id,
+            assignment_time: a.assignment_time ?? null,
+            assignment_end_time: a.assignment_end_time ?? null,
+            stay_minutes: a.stay_minutes ?? null,
+            times_explicit: a.times_explicit === 1,
             day_id: a.day_id,
             order_index: a.order_index,
             notes: a.notes,

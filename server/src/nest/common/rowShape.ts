@@ -1,6 +1,8 @@
+import type { DayRow } from '../../db/repositories/Days.repository';
 import type { AssignmentWithPlaceRow } from '../../db/repositories/day-assignment-rows';
 import type { Tag, Participant } from '../../types';
 import type { PlaceRatingRow } from '../query-helpers/query-helpers.service';
+import { dayTimingRequestSchema } from '@trek/shared';
 
 /**
  * Pure reshaping over rows the query helpers load. Neither function touches the
@@ -37,6 +39,8 @@ export function formatAssignmentWithPlace(
     notes: a.notes,
     assignment_time: a.assignment_time ?? null,
     assignment_end_time: a.assignment_end_time ?? null,
+    stay_minutes: a.stay_minutes ?? null,
+    times_explicit: a.times_explicit === 1,
     end_day: a.end_day === 1,
     leg_transport_mode: a.leg_transport_mode ?? null,
     incoming_leg_transport_mode: a.incoming_leg_transport_mode ?? null,
@@ -100,4 +104,9 @@ export function ratingAggregate(ratings: PlaceRatingRow[] | undefined) {
     rating_avg: rows.length > 0 ? rows.reduce((s, r) => s + r.rating, 0) / rows.length : null,
     rating_count: rows.length,
   };
+}
+
+export function withDayTiming<T extends DayRow>(day: T) {
+  const { timing_json, ...rest } = day;
+  return { ...rest, timing: dayTimingRequestSchema.parse(JSON.parse(timing_json)) };
 }
