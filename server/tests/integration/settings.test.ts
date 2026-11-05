@@ -37,14 +37,41 @@ afterAll(async () => {
 });
 
 describe('Settings', () => {
-  it('SET-001: GET /api/settings returns empty object for new user', async () => {
+  it('SET-001: GET /api/settings returns the built-in currency shortcut list for a new user', async () => {
     const { user } = createUser(testDb);
     const res = await request(app).get('/api/settings').set('Cookie', authCookie(user.id));
     expect(res.status).toBe(200);
     expect(res.body.settings).toBeDefined();
     expect(typeof res.body.settings).toBe('object');
-    // New user has no custom settings
-    expect(Object.keys(res.body.settings)).toHaveLength(0);
+    expect(res.body.settings).toEqual({ common_currencies: [] });
+  });
+
+  it('inherits ordered common currencies, preserves an explicit empty override, and resets to the admin default', async () => {
+    const { user } = createUser(testDb);
+    const { user: admin } = createUser(testDb, { role: 'admin' });
+    const setDefaults = await request(app)
+      .put('/api/admin/default-user-settings')
+      .set('Cookie', authCookie(admin.id))
+      .send({ common_currencies: [' jpy ', 'USD'] });
+    expect(setDefaults.status).toBe(200);
+    const get = () => request(app).get('/api/settings').set('Cookie', authCookie(user.id));
+    expect((await get()).body.settings.common_currencies).toEqual(['JPY', 'USD']);
+
+    const set = await request(app)
+      .put('/api/settings')
+      .set('Cookie', authCookie(user.id))
+      .send({ key: 'common_currencies', value: [] });
+    expect(set.status).toBe(200);
+    expect((await get()).body.settings.common_currencies).toEqual([]);
+
+    const invalid = await request(app)
+      .post('/api/settings/bulk')
+      .set('Cookie', authCookie(user.id))
+      .send({ settings: { common_currencies: ['JPY', 'jpy'] } });
+    expect(invalid.status).toBe(400);
+    const reset = await request(app).delete('/api/settings/common_currencies').set('Cookie', authCookie(user.id));
+    expect(reset.body).toEqual({ success: true, key: 'common_currencies', value: ['JPY', 'USD'] });
+    expect((await get()).body.settings.common_currencies).toEqual(['JPY', 'USD']);
   });
 
   it('SET-002: PUT /api/settings sets a key/value pair', async () => {

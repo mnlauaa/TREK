@@ -11,11 +11,27 @@ import { ResponseContract } from '../common/response-contract';
 import { SettingsWritesService } from './settings-writes.service';
 import { AdminDefaultUserSettingsDto, SettingUpsertDto, SettingsBulkDto } from './settings.dto';
 import { SettingsService, isAdminOnlyEndpointSetting } from './settings.service';
-import { Body, Controller, Get, Headers, HttpCode, HttpException, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpException,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import {
   MASKED_SETTING_VALUE,
   PLANNER_TRIP_VIEWS_KEY,
   adminDefaultUserSettingsResponseSchema,
+  commonCurrencyListSchema,
+  settingResetKeySchema,
+  settingResetResponseSchema,
   plannerTripViewsSchema,
   settingUpsertResponseSchema,
   settingsBulkResponseSchema,
@@ -83,6 +99,14 @@ export class SettingsController {
     }
   }
 
+  private parseCommonCurrencies(value: unknown): string[] {
+    const result = commonCurrencyListSchema.safeParse(value);
+    if (!result.success) {
+      throw new HttpException({ error: result.error.issues[0]?.message || 'Invalid common currencies' }, 400);
+    }
+    return result.data;
+  }
+
   @Get()
   @ResponseContract(settingsListResponseSchema)
   async list(@CurrentUser() user: User) {
@@ -108,8 +132,18 @@ export class SettingsController {
     if (body.value === MASKED_SETTING_VALUE) {
       return { success: true, key: body.key, unchanged: true };
     }
-    await this.writes.saveOne(user.id, body.key, body.value, socketId);
-    return { success: true, key: body.key, value: body.value };
+    const value = body.key === 'common_currencies' ? this.parseCommonCurrencies(body.value) : body.value;
+    await this.writes.saveOne(user.id, body.key, value, socketId);
+    return { success: true, key: body.key, value };
+  }
+
+  @Delete(':key')
+  @ResponseContract(settingResetResponseSchema)
+  async reset(@CurrentUser() user: User, @Param('key') key: string, @Headers('x-socket-id') socketId?: string) {
+    const parsed = settingResetKeySchema.safeParse(key);
+    if (!parsed.success) throw new HttpException({ error: 'Setting cannot be reset' }, 400);
+    const value = await this.writes.resetOne(user.id, parsed.data, socketId);
+    return { success: true, key: parsed.data, value };
   }
 
   @Post('bulk')
@@ -118,7 +152,9 @@ export class SettingsController {
   async bulk(@CurrentUser() user: User, @Body() body: SettingsBulkDto, @Headers('x-socket-id') socketId?: string) {
     this.assertMayWriteInstanceEndpoint(body.settings);
     this.assertValidValues(body.settings);
-    const { allowed, blocked } = splitManagedKeys(withoutDemoLockedSettings(user, body.settings), this.env.isManaged());
+    const values = { ...body.settings };
+    if ('common_currencies' in values) values.common_currencies = this.parseCommonCurrencies(values.common_currencies);
+    const { allowed, blocked } = splitManagedKeys(withoutDemoLockedSettings(user, values), this.env.isManaged());
     try {
       const updated = await this.writes.saveMany(user.id, allowed, socketId);
       return { success: true, updated, ...(blocked.length ? { managed_keys: blocked } : {}) };

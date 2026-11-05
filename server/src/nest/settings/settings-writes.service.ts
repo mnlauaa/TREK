@@ -1,7 +1,7 @@
 import { RealtimeService } from '../realtime/realtime.service';
 import { SettingsService } from './settings.service';
 import { Injectable } from '@nestjs/common';
-import { MASKED_SETTING_VALUE } from '@trek/shared';
+import { MASKED_SETTING_VALUE, type SettingResetKey } from '@trek/shared';
 
 /**
  * A user's own settings saved, for every surface, and their other tabs and
@@ -33,6 +33,12 @@ export class SettingsWritesService {
       socketId,
     );
     return written;
+  }
+
+  async resetOne(userId: number, key: SettingResetKey, socketId: string | undefined): Promise<string[]> {
+    const value = await this.settings.resetSetting(userId, key);
+    this.announce(userId, [key], socketId);
+    return value;
   }
 
   private announce(userId: number, keys: string[], socketId: string | undefined): void {

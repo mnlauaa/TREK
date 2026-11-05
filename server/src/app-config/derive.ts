@@ -53,6 +53,7 @@ export function deriveApp(raw: RawEnv) {
     appVersion: imageVersion() ?? raw.APP_VERSION,
     /** Raw APP_URL — trailing-slash stripping differs per site (feeds strips one, notifications strips all). */
     appUrl: raw.APP_URL,
+    sourceCodeUrl: raw.SOURCE_CODE_URL,
     tz: raw.TZ,
     logLevel: raw.LOG_LEVEL,
     /** Resolved: lowercased, validated against the supported set, falls back to 'en' (src/config.ts semantics). */

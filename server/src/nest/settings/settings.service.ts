@@ -10,14 +10,17 @@ import { TripMembershipService } from '../trip-membership/trip-membership.servic
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
 import {
+  FRANKFURTER_CURRENCY_SET,
   MASKED_SETTING_VALUE,
   PLANNER_TRIP_VIEWS_KEY,
   WEEK_START_VALUES,
+  commonCurrencyListSchema,
   compactPlannerTripViews,
   normalizeAppearance,
   plannerTripViewsSchema,
   valhallaProviderSchema,
   type PlannerTripViews,
+  type SettingResetKey,
 } from '@trek/shared';
 
 /**
@@ -46,6 +49,7 @@ export const DEFAULTABLE_USER_SETTING_KEYS = [
   // Instance-wide default currency for Costs (new users inherit it until they
   // pick their own). Free-form ISO code, validated on the client.
   'default_currency',
+  'common_currencies',
   'blur_booking_codes',
   'map_tile_url',
   /**
@@ -164,10 +168,25 @@ function parseValue(raw: string): unknown {
   }
 }
 
+function normalizeStoredCommonCurrencies(value: unknown): string[] {
+  const parsed = commonCurrencyListSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter((code): code is string => typeof code === 'string')
+        .map((code) => code.trim().toUpperCase())
+        .filter((code) => FRANKFURTER_CURRENCY_SET.has(code)),
+    ),
+  ].slice(0, 10);
+}
+
 function serializeValue(key: string, value: unknown): string {
   // The appearance blob drives the DOM on the client — normalize it on the way
   // in so a malformed/partial/future-versioned payload can never be stored (and
   // thus never reach the writer). Unknown/invalid fields collapse to the default.
+  if (key === 'common_currencies') value = commonCurrencyListSchema.parse(value);
   if (key === 'appearance') value = normalizeAppearance(value);
   // null and undefined both mean "cleared" and store '' — the legacy code stored
   // the string "null" for null, which leaked back out of getDecryptedUserSetting
@@ -235,6 +254,9 @@ export class SettingsService {
         defaults[settingKey] = row.value === null ? null : parseValue(row.value);
       }
     }
+    if ('common_currencies' in defaults) {
+      defaults.common_currencies = normalizeStoredCommonCurrencies(defaults.common_currencies);
+    }
     return defaults;
   }
 
@@ -265,7 +287,7 @@ export class SettingsService {
         // per-user equivalents; everything else is stored as plain JSON.
         const stored = ENCRYPTED_SETTING_KEYS.has(key)
           ? (maybe_encrypt_api_key(String(value)) ?? String(value))
-          : JSON.stringify(value);
+          : JSON.stringify(key === 'common_currencies' ? commonCurrencyListSchema.parse(value) : value);
         await this.appSettings.setValue(appKey, stored);
       }
     });
@@ -290,6 +312,10 @@ export class SettingsService {
       } catch {
         userSettings[row.key] = row.value;
       }
+    }
+
+    if ('common_currencies' in userSettings) {
+      userSettings.common_currencies = normalizeStoredCommonCurrencies(userSettings.common_currencies);
     }
 
     // Admin defaults fill in for keys the user hasn't explicitly set. For a
@@ -339,7 +365,15 @@ export class SettingsService {
       merged.carto_api_key = managedMaps.cartoKey;
     }
 
-    return merged;
+    return { common_currencies: [], ...merged };
+  }
+
+  async resetSetting(userId: number, key: SettingResetKey): Promise<string[]> {
+    return this.uow.transactional(async () => {
+      const defaults = await this.getAdminUserDefaults();
+      await this.settings.nativeDelete({ user: userId, key });
+      return normalizeStoredCommonCurrencies(defaults[key]);
+    });
   }
 
   async upsertSetting(userId: number, key: string, value: unknown) {
