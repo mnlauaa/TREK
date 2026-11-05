@@ -2,7 +2,7 @@ import { decodeBase64Url } from '../../../app-config';
 import { isP256Point } from './web-push-crypto';
 import type { WebPushSubscription } from '@trek/shared';
 
-export interface CheckedPushSubscription {
+interface CheckedPushSubscription {
   endpoint: string;
   p256dh: Buffer;
   auth: Buffer;

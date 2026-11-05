@@ -1,7 +1,7 @@
 import type { NativeSqliteDatabase } from './connection';
 
 const LAST_V4_FORK_VERSION = 244;
-export const LEGACY_FORK_BRIDGE_VERSION = 200;
+const LEGACY_FORK_BRIDGE_VERSION = 200;
 
 export const FORK_SCHEMA_MIGRATION_IDS = [
   'fork/v4-schema-crosswalk',
@@ -10,7 +10,7 @@ export const FORK_SCHEMA_MIGRATION_IDS = [
   'fork/web-push-v1',
 ] as const;
 
-export type ForkSchemaMigrationId = (typeof FORK_SCHEMA_MIGRATION_IDS)[number];
+type ForkSchemaMigrationId = (typeof FORK_SCHEMA_MIGRATION_IDS)[number];
 
 export const hasTable = (db: NativeSqliteDatabase, table: string): boolean =>
   !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);

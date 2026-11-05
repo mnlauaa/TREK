@@ -113,7 +113,7 @@ export function summaryShareCents(
   );
 }
 
-export const NOT_FROZEN_RATE = 1;
+const NOT_FROZEN_RATE = 1;
 
 export function positiveRate(rate: unknown): rate is number {
   return typeof rate === 'number' && Number.isFinite(rate) && rate > 0;

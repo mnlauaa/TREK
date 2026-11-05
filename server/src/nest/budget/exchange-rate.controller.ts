@@ -52,10 +52,6 @@ function consumeRateLimit(ip: string, now = Date.now()): boolean {
   return true;
 }
 
-export function resetPublicExchangeRateLimitForTests(): void {
-  rateBuckets.clear();
-}
-
 @Controller('api/exchange-rates')
 @Public('read-only public currency data used by the login/dashboard currency widget')
 export class GlobalExchangeRateController {

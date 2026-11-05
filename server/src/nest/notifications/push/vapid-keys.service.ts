@@ -17,9 +17,6 @@ export const VAPID_PRIVATE_KEY_SETTING = 'web_push_vapid_private_key';
 /** The VAPID contact when nothing better is configured: a real https URL every push service accepts. */
 export const FALLBACK_VAPID_SUBJECT = 'https://github.com/liketrek/TREK';
 
-/** What the push routes answer while the key pair cannot be used. */
-export const PUSH_UNAVAILABLE_ERROR = 'Web Push is currently unavailable on this server';
-
 export interface ResolvedVapidKeys extends VapidKeyPair {
   source: 'env' | 'database';
 }
