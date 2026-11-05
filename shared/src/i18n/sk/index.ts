@@ -1,3 +1,4 @@
+import forkFallback from '../../fork-i18n/en';
 import admin from './admin';
 import airport from './airport';
 import assistant from './assistant';
@@ -85,6 +86,7 @@ import wanderer from './wanderer';
 import wandererWatch from './wandererWatch';
 
 const locale = {
+  ...forkFallback,
   ...common,
   ...trips,
   ...nav,

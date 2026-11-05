@@ -19,6 +19,7 @@ describe('fork locale overlays', () => {
         ? (await import(/* @vite-ignore */ `./${locale}.ts`)).default
         : {};
       const catalog: TranslationStrings = (await import(`../i18n/${locale}/index.ts`)).default;
+      expect(Object.keys(catalog)).toEqual(expect.arrayContaining(Object.keys(english)));
       for (const [key, translated] of Object.entries(overlay)) {
         const original = english[key];
         if (original === undefined) throw new Error(`Unrecognized fork locale key ${key}`);
