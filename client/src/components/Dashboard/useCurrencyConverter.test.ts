@@ -42,7 +42,7 @@ describe('useCurrencyConverter', () => {
     const { result } = renderHook(() => useCurrencyConverter());
     expect(result.current.from).toBe('EUR');
     expect(result.current.to).toBe('USD');
-    expect(result.current.currencies).toBe(CURRENCIES);
+    expect(result.current.currencies).toEqual(CURRENCIES);
     await waitFor(() => expect(result.current.rate).toBe(1.1));
     expect(result.current.converted).toBeCloseTo(110);
     expect(result.current.currencies).toEqual(['CHF', 'EUR', 'USD']);
