@@ -50,13 +50,13 @@ async function enqueueDayWrite(tripId: number | string, dayId: number, url: stri
 export const dayRepo = {
   async setTiming(tripId: number | string, day: Day, timing: DayTiming): Promise<Day> {
     return serializeTiming(`${tripId}:${day.id}`, async () => {
-    if (!(await mutationQueue.mustQueue('days', day.id))) {
-      const saved = await saveDayTiming(tripId, day.id, timing)
-      await settleCacheWrite(cacheDayFields(day.id, { timing: saved.timing }), 'saving day timing')
-      return { ...day, timing: saved.timing }
-    }
-    await enqueueDayWrite(tripId, day.id, `/trips/${tripId}/days/${day.id}/timing`, timing, { timing })
-    return { ...day, timing }
+      if (!(await mutationQueue.mustQueue('days', day.id))) {
+        const saved = await saveDayTiming(tripId, day.id, timing)
+        await settleCacheWrite(cacheDayFields(day.id, { timing: saved.timing }), 'saving day timing')
+        return { ...day, timing: saved.timing }
+      }
+      await enqueueDayWrite(tripId, day.id, `/trips/${tripId}/days/${day.id}/timing`, timing, { timing })
+      return { ...day, timing }
     })
   },
   async list(tripId: number | string): Promise<{ days: Day[] }> {

@@ -43,10 +43,9 @@ export function withoutDay(state: DayState, dayId: number): DayState {
   return { days, assignments, dayNotes, selectedDayId: state.selectedDayId === dayId ? null : state.selectedDayId }
 }
 
-export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => {
+function createDayTimingWriter(set: SetState, get: GetState): DaysSlice['setDayTiming'] {
   const timingWrites = new Map<number, { latest: symbol; confirmed: Day['timing'] }>()
-  return ({
-  setDayTiming: async (tripId, dayId, timing) => {
+  return async (tripId, dayId, timing) => {
     const day = get().days.find(d => d.id === dayId)
     if (!day) throw new Error('Day not found')
     const token = Symbol()
@@ -65,7 +64,11 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => {
     } finally {
       if (pending.latest === token) timingWrites.delete(dayId)
     }
-  },
+  }
+}
+
+export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
+  setDayTiming: createDayTimingWriter(set, get),
   // Move whole days. Day rows stay stable (assignments/notes/bookings ride along
   // by id); only positions change and, on a dated trip, dates stay pinned to
   // their slots while the content moves across them. Optimistically reorder the
@@ -162,4 +165,3 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => {
     }
   },
 })
-}
