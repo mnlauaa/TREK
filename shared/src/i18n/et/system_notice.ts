@@ -41,50 +41,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Töötab mobiilis võrguühenduseta',
   'system_notice.dev_test_modal.title': '[Dev] Testteade',
   'system_notice.dev_test_modal.body': 'See on ainult arenduskeskkonna testteade.',
-  // Thank-you + support the project (shown once per install and once per upgrade)
-  'system_notice.thank_you_support.title': 'Aitäh, et kasutad TREKi',
-  'system_notice.thank_you_support.body':
-    'Aitäh TREKi paigaldamise eest — see tähendab mulle tõesti palju.\n\nOlen üksikarendaja ja teen TREKi vabal ajal. See algas väikese tööriistana minu enda reiside jaoks ning kogukonna toetus ja huvi on mind siiralt üllatanud. Panen TREKi palju südant, kuid seda on kujundanud ka paljud suurepärased välised kaasautorid.\n\n**TREK on avatud lähtekoodiga ja täiesti tasuta — ning jääb selleks igavesti. Ei tasulisi pakette, tellimusi ega varjatud tingimusi. Luban seda.**\n\nKui TREK on sulle kasulik ja soovid selle arendust toetada, aitab väike kohv mul edasi arendada — täiesti vabatahtlikult, kuid iga tass annab hilisõhtuteks jõudu.\n\nAitäh, et oled siin.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% avatud lähtekood GitHubis',
-  'system_notice.thank_you_support.highlight_free': 'Igavesti tasuta — tasulisi pakette ei tule',
-  'system_notice.thank_you_support.highlight_community': 'Loodud koos kogukonnaga',
-  'system_notice.thank_you_support.cta_bmc': 'Osta mulle kohv',
-  'system_notice.thank_you_support.cta_kofi': 'Toeta Ko-fi kaudu',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Uuendus paigaldatud',
-  'system_notice.release_notes.headline': 'Õige koht, kõige ees.',
-  'system_notice.release_notes.intro':
-    'Kohaotsing, aadressiotsing ja teekonnad töötavad nüüd TREKi enda serverites, mida toetab dataforest cloud, ja iga TREK saab jagada oma teadmisi kohtade kohta kõigi teistega.',
-  'system_notice.release_notes.features_label': 'Peamised uuendused',
-  'system_notice.release_notes.features_aside': 'See pole kaugeltki kõik',
-  'system_notice.release_notes.feature_search_title': 'Kohaotsing, mis tabab täppi',
-  'system_notice.release_notes.feature_search_body':
-    'Linnad, saared, vaatamisväärsused ja koodi järgi otsitud lennujaamad tulevad esimesena, kohvikud leitakse sinu lähedusest ja soovitused ilmuvad juba kirjutamise ajal.',
-  'system_notice.release_notes.feature_share_title': 'Jagatud kohaandmed',
-  'system_notice.release_notes.feature_share_body':
-    'Jaga veebilehti, lahtiolekuaegu ja fotosid iga TREKiga, välja kaupa, ja sinu salvestatud kohad saavad juurde selle, mida teised lisasid.',
-  'system_notice.release_notes.feature_routing_title': 'Kiiremad teekonnad',
-  'system_notice.release_notes.feature_routing_body':
-    'Terve päeva teekond arvutatakse korraga kuni kahekümne peatusega, üks aeglane teekond ei pidurda enam teisi ja ühistranspordi puhul küsitakse teiselt teenusepakkujalt, kui esimene midagi ei leia.',
-  'system_notice.release_notes.footnote': 'Lisaks pikk loend väiksemaid muudatusi mujal TREKis.',
-  'system_notice.release_notes.notes_label': 'Väljalaskemärkmed',
-  'system_notice.release_notes.note_eyebrow': 'Sõnum hooldajalt',
-  'system_notice.release_notes.note_title': 'Sina oled põhjus, miks ma TREKi arendamist jätkan.',
-  'system_notice.release_notes.note_body':
-    'TREK algas väikese tööriistana minu enda reiside jaoks. Kirjutasin seda pärast tööd, sest tahtsin paremat viisi reise planeerida. See polegi õieti lakanud kasvamast. Peaaegu kõik, mida kasutad, on loodud hilisõhtuti, nädalavahetustel ja rongides täiskohaga töö kõrvalt. Paljudel õhtutel mõtlesin vaikselt, kas keegi selle kunagi avab.',
-  'system_notice.release_notes.promise_label': 'Lubadus',
-  'system_notice.release_notes.promise_lead': 'TREK jääb igavesti tasuta.',
-  'system_notice.release_notes.promise_text':
-    'Iga funktsioon ja iga uuendus kõigile. Ei tasulisi pakette, tellimusi ega varjatud tingimusi.',
-  'system_notice.release_notes.note_body_after':
-    'Ja siis te avasitegi. Mõne kuuga oli teid tuhandeid: tähed, veateated, tõlked keeltesse, mida ma ei räägi, ja kooditäiendused inimestelt, keda ma pole kunagi kohanud. Vaatan ikka igal hommikul esimese asjana koodihoidlat ja see tundub endiselt veidi uskumatu.',
-  'system_notice.release_notes.note_closing': 'Aitäh, et oled siin. Maurice.',
-  'system_notice.release_notes.support_label': 'Jääme sõltumatuks',
-  'system_notice.release_notes.support_lead': "Ilma Google'i ja teisteta.",
-  'system_notice.release_notes.support_text':
-    'Kohaotsing, aadressiotsing ja teekonnad töötavad TREKi enda serverites, mida täna toetab dataforest cloud. Võitlen selle eest iga päev ja et see nii jääks, vajan sinu tuge.',
-  'system_notice.release_notes.cta_bmc': 'Osta mulle kohv',
-  'system_notice.release_notes.cta_kofi': 'Toeta Ko-fi kaudu',
   'system_notice.pager.prev': 'Eelmine teade',
   'system_notice.pager.next': 'Järgmine teade',
   'system_notice.pager.counter': '{current} / {total}',

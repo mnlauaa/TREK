@@ -11,14 +11,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Funciona sin conexión en móvil',
   'system_notice.dev_test_modal.title': '[Dev] Aviso de prueba',
   'system_notice.dev_test_modal.body': 'Este es un aviso de prueba solo para desarrollo.',
-  'system_notice.thank_you_support.title': 'Gracias por usar TREK',
-  'system_notice.thank_you_support.body':
-    'Un pequeño agradecimiento por instalar TREK — de verdad significa mucho para mí.\n\nSoy un desarrollador independiente y construyo TREK en mi tiempo libre. Empezó como una pequeña herramienta solo para mis propios viajes, y sinceramente me deja sin palabras todo el apoyo y el interés de la comunidad desde entonces. TREK está hecho con mucho cariño de mi parte — pero también gracias a los muchos colaboradores externos increíbles que han ayudado a darle forma.\n\n**TREK es open source y completamente gratuito — y seguirá siéndolo para siempre. Sin planes de pago, sin suscripciones, sin trampa. Te lo prometo.**\n\nSi TREK te resulta útil y quieres apoyar su desarrollo, un pequeño café me ayuda de verdad a seguir construyendo — sin ninguna presión, pero cada taza mantiene vivas las noches en vela.\n\nGracias por estar aquí.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% open source en GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Gratis para siempre — nunca habrá planes de pago',
-  'system_notice.thank_you_support.highlight_community': 'Construido junto a la comunidad',
-  'system_notice.thank_you_support.cta_bmc': 'Invítame a un café',
-  'system_notice.thank_you_support.cta_kofi': 'Apóyame en Ko-fi',
   'system_notice.pager.prev': 'Aviso anterior',
   'system_notice.pager.next': 'Siguiente aviso',
   'system_notice.pager.counter': '{current} / {total}',
@@ -54,40 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': 'Acción requerida: conflicto de cuenta de usuario',
   'system_notice.v3014_whitespace_collision.body':
     'La actualización 3.0.14 detectó uno o más conflictos de nombre de usuario o correo electrónico causados por espacios en blanco al inicio o al final de los valores almacenados. Las cuentas afectadas se renombraron automáticamente. Revisa los registros del servidor en busca de líneas que empiecen por **[migration] WHITESPACE COLLISION** para identificar qué cuentas necesitan revisión.',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Actualización instalada',
-  'system_notice.release_notes.headline': 'El lugar correcto, primero.',
-  'system_notice.release_notes.intro':
-    'La búsqueda de lugares, la búsqueda de direcciones y el cálculo de rutas funcionan ahora en servidores propios de TREK, patrocinados por dataforest cloud, y cada TREK puede compartir lo que sabe de los lugares con todos los demás.',
-  'system_notice.release_notes.features_label': 'Los protagonistas',
-  'system_notice.release_notes.features_aside': 'Y eso no es todo',
-  'system_notice.release_notes.feature_search_title': 'Una búsqueda de lugares que acierta',
-  'system_notice.release_notes.feature_search_body':
-    'Ciudades, islas, monumentos y aeropuertos por su código aparecen primero, las cafeterías salen de tu alrededor y las sugerencias aparecen mientras escribes.',
-  'system_notice.release_notes.feature_share_title': 'Detalles de lugares, compartidos',
-  'system_notice.release_notes.feature_share_body':
-    'Comparte webs, horarios y fotos con cada TREK, campo por campo, y tus lugares guardados se completan con lo que otros han añadido.',
-  'system_notice.release_notes.feature_routing_title': 'Rutas más rápidas',
-  'system_notice.release_notes.feature_routing_body':
-    'Un día entero se calcula de una vez con hasta veinte paradas, una ruta lenta ya no frena a las demás y el transporte público consulta a un segundo proveedor cuando el primero no encuentra nada.',
-  'system_notice.release_notes.footnote': 'Y una larga lista de cambios más pequeños en el resto de TREK.',
-  'system_notice.release_notes.notes_label': 'Notas de versión',
-  'system_notice.release_notes.note_eyebrow': 'Una nota del desarrollador',
-  'system_notice.release_notes.note_title': 'Sois la razón por la que sigo construyendo TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK nació como una pequeña herramienta para mis propios viajes, escrita después del trabajo porque quería una forma mejor de planificarlos. En realidad, nunca ha dejado de crecer. Casi todo lo he construido a altas horas de la noche, los fines de semana, en trenes, junto a un trabajo a jornada completa, y más de una vez me pregunté en silencio si alguien, en algún lugar, llegaría a abrirlo.',
-  'system_notice.release_notes.promise_label': 'La promesa',
-  'system_notice.release_notes.promise_lead': 'TREK seguirá siendo gratis, para siempre.',
-  'system_notice.release_notes.promise_text':
-    'Cada función, cada actualización, para todo el mundo. Sin planes de pago, sin suscripciones, sin trampa.',
-  'system_notice.release_notes.note_body_after':
-    'Y entonces lo abristeis. En pocos meses erais miles: estrellas, informes de errores, traducciones a idiomas que no hablo, pull requests de gente a la que nunca he conocido. Lo primero que hago cada mañana sigue siendo mirar el repositorio, y todavía me cuesta creérmelo.',
-  'system_notice.release_notes.note_closing': 'Gracias por estar aquí. Un abrazo, Maurice.',
-  'system_notice.release_notes.support_label': 'Seguir siendo independiente',
-  'system_notice.release_notes.support_lead': 'Sin Google y compañía.',
-  'system_notice.release_notes.support_text':
-    'La búsqueda de lugares, la búsqueda de direcciones y el cálculo de rutas funcionan en servidores propios de TREK, hoy patrocinados por dataforest cloud. Lucho por ello cada día, y para que siga así hace falta tu apoyo.',
-  'system_notice.release_notes.cta_bmc': 'Invítame a un café',
-  'system_notice.release_notes.cta_kofi': 'Apóyame en Ko-fi',
 };
 export default system_notice;

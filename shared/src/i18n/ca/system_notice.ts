@@ -46,48 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': "Acció requerida: conflicte de compte d'usuari",
   'system_notice.v3014_whitespace_collision.body':
     "L'actualització 3.0.14 va detectar un o més conflictes de nom d'usuari o correu electrònic causats per espais en blanc al principi o al final dels valors emmagatzemats. Els comptes afectats es van reanomenar automàticament. Revisa els registres del servidor a la recerca de línies que comencin per **[migration] WHITESPACE COLLISION** per identificar quins comptes necessiten revisió.",
-
-  'system_notice.thank_you_support.title': 'Gràcies per utilitzar TREK',
-  'system_notice.thank_you_support.body':
-    "Si t'agrada utilitzar TREK, considera donar suport al seu desenvolupament de codi obert.",
-  'system_notice.thank_you_support.highlight_opensource': '100% codi obert a GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Gratuït per sempre — sense nivells de pagament',
-  'system_notice.thank_you_support.highlight_community': 'Construït conjuntament amb la comunitat',
-  'system_notice.thank_you_support.cta_bmc': 'Buy Me a Coffee',
-  'system_notice.thank_you_support.cta_kofi': 'Dona suport a Ko-fi',
-  'system_notice.release_notes.eyebrow': 'Actualització instal·lada',
-  'system_notice.release_notes.headline': 'El lloc correcte, primer.',
-  'system_notice.release_notes.features_label': 'Els protagonistes',
-  'system_notice.release_notes.features_aside': 'I això no és tot',
-  'system_notice.release_notes.feature_search_title': 'Una cerca de llocs que l’encerta',
-  'system_notice.release_notes.feature_search_body':
-    'Ciutats, illes, monuments i aeroports pel seu codi surten primer, les cafeteries surten del teu voltant i els suggeriments apareixen mentre escrius.',
-  'system_notice.release_notes.feature_share_title': 'Detalls dels llocs, compartits',
-  'system_notice.release_notes.feature_share_body':
-    'Comparteix webs, horaris i fotos amb cada TREK, camp per camp, i els teus llocs desats s’omplen amb el que altres han afegit.',
-  'system_notice.release_notes.feature_routing_title': 'Rutes més ràpides',
-  'system_notice.release_notes.feature_routing_body':
-    'Un dia sencer es calcula d’una tirada amb fins a vint parades, una ruta lenta ja no frena les altres i el transport públic consulta un segon proveïdor quan el primer no troba res.',
-  'system_notice.release_notes.footnote': 'I una llarga llista de canvis més petits a la resta de TREK.',
-  'system_notice.release_notes.notes_label': 'Notes de la versió',
-  'system_notice.release_notes.note_eyebrow': 'Una nota del mantenidor',
-  'system_notice.release_notes.note_title': 'Sou el motiu pel qual continuo construint TREK.',
-  'system_notice.release_notes.note_body':
-    "TREK va néixer com una petita eina per als meus propis viatges, escrita després de la feina perquè volia una manera millor de planificar-los. En realitat, mai no ha deixat de créixer. Gairebé tot ho he construït a altes hores de la nit, els caps de setmana, als trens, al costat d'una feina a jornada completa, i més d'una vegada em vaig preguntar en silenci si algú, en algun lloc, l'obriria mai.",
-  'system_notice.release_notes.promise_label': 'La promesa',
-  'system_notice.release_notes.promise_lead': 'TREK continuarà sent gratuït, per sempre.',
-  'system_notice.release_notes.promise_text':
-    'Cada funcionalitat, cada actualització, per a tothom. Sense nivells de pagament, sense subscripcions, sense lletra petita.',
-  'system_notice.release_notes.note_body_after':
-    "I llavors el vau obrir. En pocs mesos éreu milers: estrelles, informes d'errors, traduccions a llengües que no parlo, pull requests de gent que no he conegut mai. El primer que faig cada matí continua sent mirar el repositori, i encara em costa creure-m'ho.",
-  'system_notice.release_notes.note_closing': 'Gràcies per ser aquí. Una abraçada, Maurice.',
-  'system_notice.release_notes.support_label': 'Continuar independents',
-  'system_notice.release_notes.support_lead': 'Sense Google i companyia.',
-  'system_notice.release_notes.support_text':
-    'La cerca de llocs, la cerca d’adreces i el càlcul de rutes funcionen en servidors propis de TREK, avui patrocinats per dataforest cloud. Hi lluito cada dia, i perquè continuï així cal el teu suport.',
-  'system_notice.release_notes.cta_bmc': 'Buy me a coffee',
-  'system_notice.release_notes.cta_kofi': 'Dona suport a Ko-fi',
-  'system_notice.release_notes.intro':
-    'La cerca de llocs, la cerca d’adreces i el càlcul de rutes ara funcionen en servidors propis de TREK, patrocinats per dataforest cloud, i cada TREK pot compartir el que sap dels llocs amb tots els altres.',
 };
 export default system_notice;

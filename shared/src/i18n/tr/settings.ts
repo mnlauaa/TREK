@@ -132,7 +132,6 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Yapılandırıldı. Kimlik bilgilerini eklentinin ayarlar sayfasından yönetin.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
-  'settings.notificationPreferences.push': 'Anlık bildirim',
   'settings.webPush.title': 'Bu cihazda anlık bildirimler',
   'settings.webPush.hint':
     'TREK kapalıyken bile TREK bildirimlerini bu cihazda gösterir. Hangi olayların geleceğini Anlık bildirim sütunu belirler.',

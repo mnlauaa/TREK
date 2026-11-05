@@ -11,15 +11,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Funktioniert offline auf dem Handy',
   'system_notice.dev_test_modal.title': '[Dev] Testhinweis',
   'system_notice.dev_test_modal.body': 'Dies ist ein Testhinweis nur für Entwickler.',
-  // Dankeschön + Projektunterstützung (1x pro Installation und pro Update)
-  'system_notice.thank_you_support.title': 'Danke, dass du TREK nutzt',
-  'system_notice.thank_you_support.body':
-    'Ein kurzes Dankeschön, dass du TREK installiert hast — das bedeutet mir wirklich viel.\n\nIch bin Solo-Entwickler und baue TREK in meiner Freizeit. Angefangen hat alles als kleines Tool nur für meine eigenen Reisen, und ich bin ehrlich überwältigt von der Unterstützung und dem Interesse der Community seitdem. In TREK steckt viel Herzblut von meiner Seite — aber auch viele großartige externe Mitwirkende haben es mitgeprägt.\n\n**TREK ist Open Source und vollständig kostenlos — und das bleibt für immer so. Keine Paid Tiers, keine Abos, kein Haken. Versprochen.**\n\nWenn TREK dir nützt und du die Entwicklung unterstützen möchtest, hilft mir ein kleiner Kaffee wirklich beim Weitermachen — überhaupt kein Druck, aber jede Tasse trägt durch die langen Nächte.\n\nDanke, dass du dabei bist.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% Open Source auf GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Für immer kostenlos – keine Paid Tiers',
-  'system_notice.thank_you_support.highlight_community': 'Gemeinsam mit der Community gebaut',
-  'system_notice.thank_you_support.cta_bmc': 'Buy Me a Coffee',
-  'system_notice.thank_you_support.cta_kofi': 'Ko-fi unterstützen',
   'system_notice.pager.prev': 'Vorherige Meldung',
   'system_notice.pager.next': 'Nächste Meldung',
   'system_notice.pager.counter': '{current} / {total}',
@@ -55,40 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': 'Aktion erforderlich: Benutzerkontokonflikt',
   'system_notice.v3014_whitespace_collision.body':
     'Das 3.0.14-Upgrade hat einen oder mehrere Konflikte bei Benutzernamen oder E-Mail-Adressen festgestellt, die durch führende oder nachgestellte Leerzeichen in gespeicherten Konten verursacht wurden. Betroffene Konten wurden automatisch umbenannt. Prüfe die Serverprotokolle auf Zeilen, die mit **[migration] WHITESPACE COLLISION** beginnen, um die betroffenen Konten zu identifizieren.',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Update installiert',
-  'system_notice.release_notes.headline': 'Der richtige Ort, zuerst.',
-  'system_notice.release_notes.intro':
-    'Ortssuche, Adresssuche und Routing laufen jetzt auf TREKs eigenen Servern, gesponsert von dataforest cloud, und jedes TREK kann sein Wissen über Orte mit allen anderen teilen.',
-  'system_notice.release_notes.features_label': 'Die Highlights',
-  'system_notice.release_notes.features_aside': 'Längst nicht alles',
-  'system_notice.release_notes.feature_search_title': 'Ortssuche, die trifft',
-  'system_notice.release_notes.feature_search_body':
-    'Städte, Inseln, Sehenswürdigkeiten und Flughäfen per Code stehen oben, Cafés kommen aus deiner Nähe, und Vorschläge erscheinen schon beim Tippen.',
-  'system_notice.release_notes.feature_share_title': 'Ortsdetails, geteilt',
-  'system_notice.release_notes.feature_share_body':
-    'Teile Websites, Öffnungszeiten und Fotos Feld für Feld mit jedem TREK, und deine gespeicherten Orte übernehmen, was andere ergänzt haben.',
-  'system_notice.release_notes.feature_routing_title': 'Schnelleres Routing',
-  'system_notice.release_notes.feature_routing_body':
-    'Ein ganzer Tag wird mit bis zu zwanzig Stopps in einem Zug berechnet, eine langsame Route hält den Rest nicht mehr auf, und ÖPNV fragt einen zweiten Anbieter, wenn der erste nichts findet.',
-  'system_notice.release_notes.footnote': 'Dazu kommt eine lange Liste kleinerer Änderungen überall sonst in TREK.',
-  'system_notice.release_notes.notes_label': 'Release Notes',
-  'system_notice.release_notes.note_eyebrow': 'Ein Wort vom Maintainer',
-  'system_notice.release_notes.note_title': 'Du bist der Grund, warum ich TREK weiterbaue.',
-  'system_notice.release_notes.note_body':
-    'TREK hat als kleines Tool für meine eigenen Reisen angefangen, geschrieben nach Feierabend, weil ich sie besser planen wollte. Aufgehört zu wachsen hat es eigentlich nie. Fast alles, was du nutzt, ist spät in der Nacht entstanden, am Wochenende, im Zug, neben einem Vollzeitjob, und an so manchem Abend habe ich mich still gefragt, ob es da draußen überhaupt jemals jemand öffnen würde.',
-  'system_notice.release_notes.promise_label': 'Das Versprechen',
-  'system_notice.release_notes.promise_lead': 'TREK bleibt kostenlos, für immer.',
-  'system_notice.release_notes.promise_text':
-    'Jede Funktion, jedes Update, für alle. Keine Paid Tiers, keine Abos, kein Haken.',
-  'system_notice.release_notes.note_body_after':
-    'Dann kamt ihr. Innerhalb weniger Monate wart ihr Tausende: Sterne, Bug-Reports, Übersetzungen in Sprachen, die ich nicht spreche, Pull Requests von Leuten, die ich nie getroffen habe. Ich schaue noch immer jeden Morgen als Erstes ins Repository, und so richtig real fühlt es sich bis heute nicht an.',
-  'system_notice.release_notes.note_closing': 'Danke, dass du dabei bist. Viele Grüße, Maurice.',
-  'system_notice.release_notes.support_label': 'Unabhängig bleiben',
-  'system_notice.release_notes.support_lead': 'Ohne Google und Co.',
-  'system_notice.release_notes.support_text':
-    'Ortssuche, Adresssuche und Routing laufen auf TREKs eigenen Servern, heute gesponsert von dataforest cloud. Dafür kämpfe ich jeden Tag, und damit es so bleibt, braucht es deine Unterstützung.',
-  'system_notice.release_notes.cta_bmc': 'Buy me a coffee',
-  'system_notice.release_notes.cta_kofi': 'Ko-fi unterstützen',
 };
 export default system_notice;

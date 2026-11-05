@@ -11,14 +11,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Mobilon offline is működik',
   'system_notice.dev_test_modal.title': '[Dev] Teszt értesítés',
   'system_notice.dev_test_modal.body': 'Ez egy csak fejlesztői teszt értesítés.',
-  'system_notice.thank_you_support.title': 'Köszönöm, hogy a TREK-et használod',
-  'system_notice.thank_you_support.body':
-    'Gyors köszönet, hogy telepítetted a TREK-et — őszintén sokat jelent.\n\nEgyedül fejlesztek, és a szabadidőmben építem a TREK-et. Egy kis eszközként indult, csak a saját utazásaimhoz, és azóta őszintén lenyűgöz a közösség támogatása és érdeklődése. A TREK sok szívvel készül a részemről — de annak a sok csodálatos külső közreműködőnek is köszönhetően, akik segítettek formálni.\n\n**A TREK nyílt forráskódú és teljesen ingyenes — és ez örökre így is marad. Nincsenek fizetős csomagok, nincsenek előfizetések, nincs semmi átverés. Ígérem.**\n\nHa a TREK hasznos számodra, és szeretnéd támogatni a fejlesztését, egy kis kávé őszintén segít, hogy tovább építhessem — semmi nyomás, de minden csésze átsegít a késő éjszakákon.\n\nKöszönöm, hogy itt vagy.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% nyílt forráskódú a GitHubon',
-  'system_notice.thank_you_support.highlight_free': 'Örökre ingyenes — soha semmi fizetős csomag',
-  'system_notice.thank_you_support.highlight_community': 'A közösséggel együtt épült',
-  'system_notice.thank_you_support.cta_bmc': 'Vegyél nekem egy kávét',
-  'system_notice.thank_you_support.cta_kofi': 'Támogass a Ko-fi-n',
   'system_notice.pager.prev': 'Előző értesítés',
   'system_notice.pager.next': 'Következő értesítés',
   'system_notice.pager.counter': '{current} / {total}',
@@ -54,39 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': 'Szükséges beavatkozás: felhasználói fiókütközés',
   'system_notice.v3014_whitespace_collision.body':
     'A 3.0.14-es frissítés egy vagy több felhasználónév- vagy e-mail-ütközést észlelt, amelyeket a tárolt értékek elején vagy végén lévő szóközök okoztak. Az érintett fiókok automatikusan át lettek nevezve. Ellenőrizze a szervernaplókat a **[migration] WHITESPACE COLLISION** kezdetű soroknál a felülvizsgálatot igénylő fiókok azonosításához.',
-  'system_notice.release_notes.eyebrow': 'Frissítés telepítve',
-  'system_notice.release_notes.headline': 'Elsőre a jó hely.',
-  'system_notice.release_notes.intro':
-    'A helykeresés, a címkeresés és az útvonaltervezés mostantól a TREK saját szerverein fut, a dataforest cloud támogatásával, és minden TREK megoszthatja a helyekről szerzett tudását az összes többivel.',
-  'system_notice.release_notes.features_label': 'A fő újdonságok',
-  'system_notice.release_notes.features_aside': 'És ez még nem minden',
-  'system_notice.release_notes.feature_search_title': 'Helykeresés, ami eltalálja',
-  'system_notice.release_notes.feature_search_body':
-    'A városok, szigetek, látnivalók és a kódjukkal keresett repülőterek kerülnek előre, a kávézók a környékedről jönnek, a javaslatok pedig már gépelés közben megjelennek.',
-  'system_notice.release_notes.feature_share_title': 'Megosztott helyadatok',
-  'system_notice.release_notes.feature_share_body':
-    'Oszd meg a weboldalakat, a nyitvatartást és a fotókat minden TREK-kel, mezőnként, a mentett helyeid pedig megkapják, amit mások hozzáadtak.',
-  'system_notice.release_notes.feature_routing_title': 'Gyorsabb útvonaltervezés',
-  'system_notice.release_notes.feature_routing_body':
-    'Egy egész nap egyszerre tervezhető, akár húsz megállóval, egy lassú útvonal már nem tartja fel a többit, a tömegközlekedés pedig egy második szolgáltatót is megkérdez, ha az első semmit sem talál.',
-  'system_notice.release_notes.footnote': 'Plusz rengeteg kisebb változás a TREK többi részében.',
-  'system_notice.release_notes.notes_label': 'Kiadási jegyzetek',
-  'system_notice.release_notes.note_eyebrow': 'Egy szó a fejlesztőtől',
-  'system_notice.release_notes.note_title': 'Miattad építem tovább a TREK-et.',
-  'system_notice.release_notes.note_body':
-    'A TREK egy kis eszközként indult a saját utazásaimhoz, munka után írtam, mert jobban szerettem volna megtervezni őket. Azóta igazából folyamatosan nő. Szinte mindent, amit használsz, késő éjjel, hétvégén, vonaton, egy teljes állás mellett építettem, és sok olyan este volt, amikor csendben azon tűnődtem, megnyitja-e egyáltalán valaki valaha.',
-  'system_notice.release_notes.promise_label': 'Az ígéret',
-  'system_notice.release_notes.promise_lead': 'A TREK ingyenes marad, örökre.',
-  'system_notice.release_notes.promise_text':
-    'Minden funkció, minden frissítés, mindenkinek. Nincsenek fizetős csomagok, nincsenek előfizetések, nincs átverés.',
-  'system_notice.release_notes.note_body_after':
-    'Aztán megnyitottátok. Néhány hónap alatt több ezren lettetek: csillagok, hibajelentések, fordítások olyan nyelvekre, amelyeket nem beszélek, pull requestek olyanoktól, akikkel sosem találkoztam. Még mindig a repóval kezdem minden reggelt, és még mindig nem egészen tűnik valóságosnak.',
-  'system_notice.release_notes.note_closing': 'Köszönöm, hogy itt vagy. Maurice',
-  'system_notice.release_notes.support_label': 'A függetlenségért',
-  'system_notice.release_notes.support_lead': 'Google és társai nélkül.',
-  'system_notice.release_notes.support_text':
-    'A helykeresés, a címkeresés és az útvonaltervezés a TREK saját szerverein fut, ma a dataforest cloud támogatásával. Minden nap küzdök ezért, és hogy így is maradjon, szükségem van a támogatásodra.',
-  'system_notice.release_notes.cta_bmc': 'Vegyél nekem egy kávét',
-  'system_notice.release_notes.cta_kofi': 'Támogass a Ko-fi-n',
 };
 export default system_notice;

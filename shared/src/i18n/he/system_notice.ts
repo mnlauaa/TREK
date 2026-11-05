@@ -41,47 +41,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'עובד אופליין במובייל',
   'system_notice.dev_test_modal.title': '[Dev] הודעת בדיקה',
   'system_notice.dev_test_modal.body': 'זוהי הודעת בדיקה לסביבת פיתוח בלבד.',
-  'system_notice.thank_you_support.title': 'תודה שאתם משתמשים ב-TREK',
-  'system_notice.thank_you_support.body':
-    'תודה קטנה על התקנת TREK — זה באמת משמעותי בשבילי.\n\nאני מפתח יחיד ובונה את TREK בזמני הפנוי. הוא התחיל ככלי קטן לטיולים שלי, ואני באמת המום מהתמיכה וההתעניינות של הקהילה מאז. TREK נבנה עם הרבה לב מצדי — וגם בזכות המון תורמים חיצוניים מדהימים שעזרו לעצב אותו.\n\n**TREK הוא קוד פתוח וחינמי לגמרי — וכך הוא יישאר לתמיד. בלי מסלולים בתשלום, בלי מנויים, בלי מלכודות. אני מבטיח.**\n\nאם TREK מועיל לכם ואתם רוצים לתמוך בפיתוח שלו, קפה קטן באמת עוזר לי להמשיך לבנות — בלי שום לחץ, אבל כל כוס מחזיקה את הלילות המאוחרים.\n\nתודה שאתם כאן.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% קוד פתוח ב-GitHub',
-  'system_notice.thank_you_support.highlight_free': 'חינם לתמיד — בלי מסלולים בתשלום',
-  'system_notice.thank_you_support.highlight_community': 'נבנה יחד עם הקהילה',
-  'system_notice.thank_you_support.cta_bmc': 'Buy Me a Coffee',
-  'system_notice.thank_you_support.cta_kofi': 'תמיכה ב-Ko-fi',
-  'system_notice.release_notes.eyebrow': 'העדכון הותקן',
-  'system_notice.release_notes.headline': 'קודם כל, המקום הנכון.',
-  'system_notice.release_notes.intro':
-    'חיפוש מקומות, חיפוש כתובות וניתוב פועלים עכשיו על השרתים של TREK עצמו, בחסות dataforest cloud, וכל TREK יכול לשתף את מה שהוא יודע על מקומות עם כל השאר.',
-  'system_notice.release_notes.features_label': 'החידושים המרכזיים',
-  'system_notice.release_notes.features_aside': 'ולא רק',
-  'system_notice.release_notes.feature_search_title': 'חיפוש מקומות שקולע',
-  'system_notice.release_notes.feature_search_body':
-    'ערים, איים, אתרים מפורסמים ושדות תעופה לפי הקוד שלהם מופיעים ראשונים, בתי קפה מגיעים מהסביבה שלכם, והצעות מופיעות תוך כדי הקלדה.',
-  'system_notice.release_notes.feature_share_title': 'פרטי מקומות, משותפים',
-  'system_notice.release_notes.feature_share_body':
-    'שתפו אתרים, שעות פתיחה ותמונות עם כל TREK, שדה אחר שדה, והמקומות השמורים שלכם מקבלים את מה שאחרים הוסיפו.',
-  'system_notice.release_notes.feature_routing_title': 'ניתוב מהיר יותר',
-  'system_notice.release_notes.feature_routing_body':
-    'יום שלם מנותב בבת אחת עם עד עשרים עצירות, מסלול איטי אחד כבר לא מעכב את השאר, ותחבורה ציבורית פונה לספק שני כשהראשון לא מוצא כלום.',
-  'system_notice.release_notes.footnote': 'ועוד רשימה ארוכה של שינויים קטנים בכל שאר TREK.',
-  'system_notice.release_notes.notes_label': 'הערות גרסה',
-  'system_notice.release_notes.note_eyebrow': 'מילה מהמתחזק',
-  'system_notice.release_notes.note_title': 'בזכותכם אני ממשיך לבנות את TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK התחיל ככלי קטן לטיולים שלי, שנכתב אחרי העבודה כי רציתי דרך טובה יותר לתכנן אותם. הוא אף פעם לא באמת הפסיק לגדול. כמעט כל מה שאתם משתמשים בו נבנה בשעות הלילה המאוחרות, בסופי שבוע, ברכבות, לצד עבודה במשרה מלאה, והיו לא מעט ערבים שבהם תהיתי בשקט אם מישהו בכלל יפתח אותו.',
-  'system_notice.release_notes.promise_label': 'ההבטחה',
-  'system_notice.release_notes.promise_lead': 'TREK נשאר חינמי, לתמיד.',
-  'system_notice.release_notes.promise_text': 'כל תכונה, כל עדכון, לכולם. בלי מסלולים בתשלום, בלי מנויים, בלי מלכודות.',
-  'system_notice.release_notes.note_body_after':
-    'ואז אתם הגעתם. תוך כמה חודשים הייתם אלפים: כוכבים, דיווחי באגים, תרגומים לשפות שאני לא מדבר, בקשות משיכה מאנשים שמעולם לא פגשתי. אני עדיין בודק את המאגר דבר ראשון כל בוקר, וזה עדיין לא לגמרי מרגיש אמיתי.',
-  'system_notice.release_notes.note_closing': 'תודה שאתם כאן, מ-Maurice.',
-  'system_notice.release_notes.support_label': 'נשארים עצמאיים',
-  'system_notice.release_notes.support_lead': "בלי Google ושות'.",
-  'system_notice.release_notes.support_text':
-    'חיפוש מקומות, חיפוש כתובות וניתוב פועלים על השרתים של TREK עצמו, היום בחסות dataforest cloud. אני נלחם על זה כל יום, וכדי שזה יישאר כך אני צריך את התמיכה שלכם.',
-  'system_notice.release_notes.cta_bmc': 'קנו לי קפה',
-  'system_notice.release_notes.cta_kofi': 'תמיכה ב-Ko-fi',
   'system_notice.pager.prev': 'ההודעה הקודמת',
   'system_notice.pager.next': 'ההודעה הבאה',
   'system_notice.pager.counter': '{current} / {total}',

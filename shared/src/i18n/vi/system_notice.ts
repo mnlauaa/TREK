@@ -41,55 +41,10 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Hoạt động ngoại tuyến trên thiết bị di động',
   'system_notice.dev_test_modal.title': '[Dev] Thông báo kiểm tra',
   'system_notice.dev_test_modal.body': 'Đây là thông báo kiểm tra chỉ dành cho nhà phát triển.',
-  // Thank-you + support the project (shown once per install and once per upgrade)
-  'system_notice.thank_you_support.title': 'Cảm ơn bạn đã sử dụng TREK',
-  'system_notice.thank_you_support.body':
-    'Xin gửi lời cảm ơn nhanh chóng đến bạn vì đã cài đặt TREK — nó thực sự có ý nghĩa rất lớn.\n\nTôi là nhà phát triển một mình và tôi xây dựng TREK trong thời gian rảnh rỗi. Nó bắt đầu như một công cụ nhỏ dành riêng cho những chuyến đi của tôi và tôi thực sự rất ngạc nhiên trước sự hỗ trợ và quan tâm từ cộng đồng kể từ đó. TREK được tạo ra bằng cả trái tim của tôi — nhưng cũng nhờ có nhiều cộng tác viên bên ngoài tuyệt vời đã giúp định hình nó.\n\n**TREK là mã nguồn mở và hoàn toàn miễn phí — và nó sẽ mãi mãi như vậy. Không có tầng trả phí, không đăng ký, không bắt được. Tôi hứa.**\n\nNếu TREK hữu ích cho bạn và bạn muốn hỗ trợ sự phát triển của nó, thì một tách cà phê nhỏ thực sự giúp tôi tiếp tục xây dựng — không có chút áp lực nào, nhưng mỗi tách cà phê sẽ giúp bạn tiếp tục những đêm khuya.\n\nCảm ơn bạn đã ở đây.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': 'Nguồn mở 100% trên GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Miễn phí mãi mãi - không bao giờ có bất kỳ cấp độ trả phí nào',
-  'system_notice.thank_you_support.highlight_community': 'Được xây dựng cùng với cộng đồng',
-  'system_notice.thank_you_support.cta_bmc': 'Mua cho tôi một ly cà phê',
-  'system_notice.thank_you_support.cta_kofi': 'Hỗ trợ trên Ko-fi',
   'system_notice.pager.prev': 'Thông báo trước',
   'system_notice.pager.next': 'Thông báo tiếp theo',
   'system_notice.pager.counter': '{current} / {total}',
   'system_notice.pager.goto': 'Vào thông báo {n}',
   'system_notice.pager.position': 'Thông báo {current} của {total}',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Đã cập nhật',
-  'system_notice.release_notes.headline': 'Đúng địa điểm, ngay đầu tiên.',
-  'system_notice.release_notes.intro':
-    'Tìm địa điểm, tìm địa chỉ và chỉ đường giờ chạy trên máy chủ riêng của TREK, được dataforest cloud tài trợ, và mỗi TREK đều có thể chia sẻ những gì nó biết về các địa điểm với tất cả những TREK khác.',
-  'system_notice.release_notes.features_label': 'Những điểm nhấn',
-  'system_notice.release_notes.features_aside': 'Chưa phải tất cả',
-  'system_notice.release_notes.feature_search_title': 'Tìm địa điểm trúng ngay',
-  'system_notice.release_notes.feature_search_body':
-    'Thành phố, hòn đảo, địa danh và sân bay theo mã hiện lên trước, quán cà phê được tìm quanh bạn, và gợi ý xuất hiện ngay khi bạn đang gõ.',
-  'system_notice.release_notes.feature_share_title': 'Chi tiết địa điểm, cùng chia sẻ',
-  'system_notice.release_notes.feature_share_body':
-    'Chia sẻ trang web, giờ mở cửa và ảnh với mọi TREK, theo từng mục, và những địa điểm bạn đã lưu sẽ nhận thêm thông tin người khác bổ sung.',
-  'system_notice.release_notes.feature_routing_title': 'Chỉ đường nhanh hơn',
-  'system_notice.release_notes.feature_routing_body':
-    'Cả một ngày với tối đa hai mươi điểm dừng được chỉ đường trong một lần, một tuyến chậm không còn giữ chân các tuyến khác, và phương tiện công cộng sẽ hỏi nhà cung cấp thứ hai khi nhà cung cấp đầu tiên không tìm thấy gì.',
-  'system_notice.release_notes.footnote':
-    'Và còn cả một danh sách dài những thay đổi nhỏ hơn ở khắp phần còn lại của TREK.',
-  'system_notice.release_notes.notes_label': 'Ghi chú phát hành',
-  'system_notice.release_notes.note_eyebrow': 'Lời nhắn từ người bảo trì',
-  'system_notice.release_notes.note_title': 'Bạn là lý do tôi tiếp tục xây dựng TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK bắt đầu là một công cụ nhỏ cho những chuyến đi của riêng tôi, viết sau giờ làm vì tôi muốn có một cách lên kế hoạch tốt hơn. Từ đó đến giờ nó chưa bao giờ thật sự ngừng lớn lên. Gần như mọi thứ bạn đang dùng đều được làm vào đêm khuya, vào cuối tuần, trên tàu, bên cạnh một công việc toàn thời gian, và đã có không ít buổi tối tôi lặng lẽ tự hỏi liệu có ai ngoài kia sẽ mở nó ra không.',
-  'system_notice.release_notes.promise_label': 'Lời hứa',
-  'system_notice.release_notes.promise_lead': 'TREK luôn miễn phí, mãi mãi.',
-  'system_notice.release_notes.promise_text':
-    'Mọi tính năng, mọi bản cập nhật, cho tất cả mọi người. Không tầng trả phí, không đăng ký, không ràng buộc.',
-  'system_notice.release_notes.note_body_after':
-    'Rồi các bạn đã mở nó. Chỉ trong vài tháng đã có hàng nghìn bạn: những ngôi sao, báo lỗi, bản dịch sang những ngôn ngữ tôi không biết nói, pull request từ những người tôi chưa từng gặp. Đến giờ, việc đầu tiên tôi làm mỗi sáng vẫn là mở kho mã, và cảm giác vẫn chưa hẳn là thật.',
-  'system_notice.release_notes.note_closing': 'Cảm ơn bạn đã ở đây. Thân mến, Maurice.',
-  'system_notice.release_notes.support_label': 'Giữ sự độc lập',
-  'system_notice.release_notes.support_lead': 'Không phụ thuộc Google và các ông lớn.',
-  'system_notice.release_notes.support_text':
-    'Tìm địa điểm, tìm địa chỉ và chỉ đường chạy trên máy chủ riêng của TREK, hiện được dataforest cloud tài trợ. Tôi chiến đấu vì điều đó mỗi ngày, và để giữ được như vậy cần có sự ủng hộ của bạn.',
-  'system_notice.release_notes.cta_bmc': 'Mời tôi một ly cà phê',
-  'system_notice.release_notes.cta_kofi': 'Hỗ trợ trên Ko-fi',
 };
 export default system_notice;

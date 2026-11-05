@@ -10,14 +10,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': '移动端支持离线使用',
   'system_notice.dev_test_modal.title': '[开发] 测试通知',
   'system_notice.dev_test_modal.body': '这是一条仅用于开发环境的测试通知。',
-  'system_notice.thank_you_support.title': '感谢你使用 TREK',
-  'system_notice.thank_you_support.body':
-    '想跟你说声谢谢——谢谢你安装了 TREK，这对我来说真的意义非凡。\n\n我是一名独立开发者，TREK 是我利用业余时间打造的。它最初只是我为自己的旅行做的一个小工具，而社区一路以来给予的支持和关注，老实说让我感到无比惊喜。TREK 是我用满满的热爱做出来的——但也离不开许多了不起的外部贡献者，是他们一起塑造了今天的它。\n\n**TREK 是开源的，完全免费——而且永远都会如此。没有付费档位，没有订阅，没有任何套路。我保证。**\n\n如果 TREK 对你有帮助，并且你愿意支持它的开发，请我喝一杯小小的咖啡，真的能帮我把它继续做下去——完全没有任何压力，但每一杯都让那些挑灯夜战的夜晚有了坚持的动力。\n\n谢谢你来到这里。\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '在 GitHub 上 100% 开源',
-  'system_notice.thank_you_support.highlight_free': '永久免费——绝无付费档位',
-  'system_notice.thank_you_support.highlight_community': '与社区一起共建',
-  'system_notice.thank_you_support.cta_bmc': '请我喝杯咖啡',
-  'system_notice.thank_you_support.cta_kofi': '在 Ko-fi 上支持',
   'system_notice.pager.prev': '上一条通知',
   'system_notice.pager.next': '下一条通知',
   'system_notice.pager.counter': '{current} / {total}',
@@ -52,39 +44,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': '需要操作：用户账户冲突',
   'system_notice.v3014_whitespace_collision.body':
     '3.0.14 版本升级检测到一个或多个由存储账户中首尾空白字符引发的用户名或邮箱冲突。受影响的账户已自动重命名。请检查服务器日志中以 **[migration] WHITESPACE COLLISION** 开头的行，以确认哪些账户需要审查。',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': '更新已安装',
-  'system_notice.release_notes.headline': '对的地方，排在最前。',
-  'system_notice.release_notes.intro':
-    '地点搜索、地址搜索和路线规划现在运行在 TREK 自己的服务器上，由 dataforest cloud 赞助。而且每个 TREK 都能把它对地点的了解分享给所有其他 TREK。',
-  'system_notice.release_notes.features_label': '本次重头戏',
-  'system_notice.release_notes.features_aside': '远不止这些',
-  'system_notice.release_notes.feature_search_title': '一搜就准的地点搜索',
-  'system_notice.release_notes.feature_search_body':
-    '城市、岛屿、地标，以及按代码搜索的机场排在最前，咖啡馆则从你身边找起，边输入边出建议。',
-  'system_notice.release_notes.feature_share_title': '地点详情，大家共享',
-  'system_notice.release_notes.feature_share_body':
-    '把网站、营业时间和照片逐项分享给每一个 TREK，你保存的地点也会自动补上别人添加的信息。',
-  'system_notice.release_notes.feature_routing_title': '更快的路线规划',
-  'system_notice.release_notes.feature_routing_body':
-    '一整天最多二十个停靠点，一次就能规划完。一条慢路线不再拖累其他路线，公共交通在第一个服务商找不到结果时，会再问第二个。',
-  'system_notice.release_notes.footnote': '除此之外，TREK 的其他部分还有一长串小改动。',
-  'system_notice.release_notes.notes_label': '更新说明',
-  'system_notice.release_notes.note_eyebrow': '来自维护者的话',
-  'system_notice.release_notes.note_title': '是你们让我一直坚持做 TREK。',
-  'system_notice.release_notes.note_body':
-    'TREK 最初只是我为自己的旅行做的小工具，下班后一点点写出来，只因为我想更好地规划旅行。后来它就再没停止过成长。你用到的几乎每一样功能，都是在全职工作之外，在深夜、周末和火车上做出来的。也有很多个晚上，我会默默地想，这世上究竟会不会有人打开它。',
-  'system_notice.release_notes.promise_label': '承诺',
-  'system_notice.release_notes.promise_lead': 'TREK 永远免费。',
-  'system_notice.release_notes.promise_text': '每个功能、每次更新，都属于每一个人。没有付费档位，没有订阅，没有套路。',
-  'system_notice.release_notes.note_body_after':
-    '后来，你们真的来了。短短几个月，就来了成千上万的你们：有人点星标、报 bug，有人把它翻译成我不会说的语言，还有素未谋面的人提交 pull request。直到今天，我每天早上第一件事仍是打开仓库看看，而这一切还是有点不像真的。',
-  'system_notice.release_notes.note_closing': '谢谢你来到这里，Maurice 敬上。',
-  'system_notice.release_notes.support_label': '保持独立',
-  'system_notice.release_notes.support_lead': '不靠 Google 之流。',
-  'system_notice.release_notes.support_text':
-    '地点搜索、地址搜索和路线规划都运行在 TREK 自己的服务器上，目前由 dataforest cloud 赞助。我每天都在为此努力，而要一直保持下去，需要你的支持。',
-  'system_notice.release_notes.cta_bmc': '请我喝杯咖啡',
-  'system_notice.release_notes.cta_kofi': '在 Ko-fi 上支持',
 };
 export default system_notice;

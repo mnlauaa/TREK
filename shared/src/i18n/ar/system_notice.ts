@@ -44,47 +44,6 @@ const system_notice: TranslationStrings = {
   'system_notice.pager.position': 'الإشعار {current} من {total}',
   'system_notice.dev_test_modal.title': '[Dev] إشعار تجريبي',
   'system_notice.dev_test_modal.body': 'هذا إشعار تجريبي للمطورين فقط.',
-  'system_notice.thank_you_support.title': 'شكرًا لاستخدامك TREK',
-  'system_notice.thank_you_support.body':
-    'شكرًا سريعًا على تثبيتك TREK — هذا يعني لي الكثير حقًا.\n\nأنا مطوّر منفرد أبني TREK في وقت فراغي. بدأ كأداة صغيرة لرحلاتي الخاصة فحسب، وصدقًا أنا مندهش من الدعم والاهتمام اللذين أبداهما المجتمع منذ ذلك الحين. TREK مصنوع بكثير من الحب من جانبي — ولكن أيضًا بفضل العديد من المساهمين الخارجيين الرائعين الذين ساعدوا في تشكيله.\n\n**TREK مفتوح المصدر ومجاني تمامًا — وسيبقى كذلك إلى الأبد. لا باقات مدفوعة، لا اشتراكات، لا شروط خفية. أعدكم بذلك.**\n\nإذا كان TREK مفيدًا لك وأردت دعم تطويره، فإن فنجان قهوة صغيرًا يساعدني حقًا على مواصلة البناء — لا ضغط على الإطلاق، لكن كل فنجان يبقي الليالي المتأخرة مستمرة.\n\nشكرًا لوجودك هنا.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': 'مفتوح المصدر 100% على GitHub',
-  'system_notice.thank_you_support.highlight_free': 'مجاني للأبد — لا باقات مدفوعة أبدًا',
-  'system_notice.thank_you_support.highlight_community': 'مبني بالتعاون مع المجتمع',
-  'system_notice.thank_you_support.cta_bmc': 'اشترِ لي قهوة',
-  'system_notice.thank_you_support.cta_kofi': 'ادعمني على Ko-fi',
   'system_notice.pager.counter': '{current} / {total}',
-  'system_notice.release_notes.eyebrow': 'تم تثبيت التحديث',
-  'system_notice.release_notes.headline': 'المكان الصحيح، أولًا.',
-  'system_notice.release_notes.intro':
-    'يعمل البحث عن الأماكن والبحث عن العناوين وتخطيط المسارات الآن على خوادم TREK الخاصة، برعاية dataforest cloud، ويمكن لكل نسخة من TREK أن تشارك ما تعرفه عن الأماكن مع جميع النسخ الأخرى.',
-  'system_notice.release_notes.features_label': 'أبرز الجديد',
-  'system_notice.release_notes.features_aside': 'وهذا ليس كل شيء',
-  'system_notice.release_notes.feature_search_title': 'بحث عن الأماكن يصيب الهدف',
-  'system_notice.release_notes.feature_search_body':
-    'تظهر المدن والجزر والمعالم والمطارات برموزها أولًا، وتأتي المقاهي من حولك، وتظهر الاقتراحات أثناء الكتابة.',
-  'system_notice.release_notes.feature_share_title': 'تفاصيل الأماكن للجميع',
-  'system_notice.release_notes.feature_share_body':
-    'شارك المواقع الإلكترونية وساعات العمل والصور مع كل نسخ TREK، حقلًا بحقل، وتحصل أماكنك المحفوظة على ما أضافه الآخرون.',
-  'system_notice.release_notes.feature_routing_title': 'تخطيط مسارات أسرع',
-  'system_notice.release_notes.feature_routing_body':
-    'يُحسب مسار يوم كامل دفعة واحدة بما يصل إلى عشرين محطة، ولم يعد مسار بطيء واحد يؤخر البقية، وتسأل وسائل النقل العام مزودًا ثانيًا عندما لا يجد الأول شيئًا.',
-  'system_notice.release_notes.footnote': 'إلى جانب قائمة طويلة من التغييرات الأصغر في بقية أرجاء TREK.',
-  'system_notice.release_notes.notes_label': 'ملاحظات الإصدار',
-  'system_notice.release_notes.note_eyebrow': 'كلمة من صاحب المشروع',
-  'system_notice.release_notes.note_title': 'أنتم السبب في أنني ما زلت أبني TREK.',
-  'system_notice.release_notes.note_body':
-    'بدأ TREK كأداة صغيرة لرحلاتي الخاصة، كتبتها بعد العمل لأنني أردت طريقة أفضل لتخطيطها. ومنذ ذلك الحين لم يتوقف عن النمو. كل ما تستخدمه تقريبًا بُني في ساعات متأخرة من الليل، وفي عطل نهاية الأسبوع، وفي القطارات، إلى جانب عمل بدوام كامل، وكم من أمسية تساءلت فيها بيني وبين نفسي: هل سيفتحه أحد يومًا؟',
-  'system_notice.release_notes.promise_label': 'الوعد',
-  'system_notice.release_notes.promise_lead': 'سيبقى TREK مجانيًا، إلى الأبد.',
-  'system_notice.release_notes.promise_text': 'كل ميزة، وكل تحديث، للجميع. لا باقات مدفوعة، لا اشتراكات، لا شروط خفية.',
-  'system_notice.release_notes.note_body_after':
-    'ثم فتحتموه. وخلال بضعة أشهر صرتم بالآلاف: نجوم، وبلاغات أخطاء، وترجمات إلى لغات لا أتحدثها، وطلبات دمج من أشخاص لم ألتقِ بهم قط. ما زلت أتفقد المستودع أول شيء كل صباح، وما زال الأمر لا يبدو حقيقيًا تمامًا.',
-  'system_notice.release_notes.note_closing': 'شكرًا لوجودك هنا. مع تحياتي، Maurice.',
-  'system_notice.release_notes.support_label': 'نبقى مستقلين',
-  'system_notice.release_notes.support_lead': 'بدون Google وأمثالها.',
-  'system_notice.release_notes.support_text':
-    'يعمل البحث عن الأماكن والبحث عن العناوين وتخطيط المسارات على خوادم TREK الخاصة، برعاية dataforest cloud اليوم. أناضل من أجل ذلك كل يوم، والحفاظ عليه يحتاج إلى دعمك.',
-  'system_notice.release_notes.cta_bmc': 'اشترِ لي قهوة',
-  'system_notice.release_notes.cta_kofi': 'ادعمني على Ko-fi',
 };
 export default system_notice;

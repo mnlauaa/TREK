@@ -11,14 +11,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Працює офлайн на мобільному',
   'system_notice.dev_test_modal.title': '[Dev] Тестове повідомлення',
   'system_notice.dev_test_modal.body': 'Це тестове повідомлення лише для розробки.',
-  'system_notice.thank_you_support.title': 'Дякую, що користуєтесь TREK',
-  'system_notice.thank_you_support.body':
-    'Невелика подяка за те, що встановили TREK — для мене це справді багато значить.\n\nЯ розробник-одинак і створюю TREK у вільний час. Усе почалося як маленький інструмент для моїх власних поїздок, і відтоді я щиро вражений підтримкою та інтересом спільноти. TREK зроблено з великою любов’ю з мого боку — але також завдяки багатьом чудовим зовнішнім контриб’юторам, які допомогли його сформувати.\n\n**TREK має відкритий код і повністю безкоштовний — і таким залишиться назавжди. Жодних платних тарифів, жодних підписок, жодних підводних каменів. Обіцяю.**\n\nЯкщо TREK корисний для вас і ви хочете підтримати його розробку, невелика кава справді допомагає мені продовжувати — жодного тиску, але кожна чашка підтримує ці пізні ночі.\n\nДякую, що ви тут.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100% відкритий код на GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Безкоштовно назавжди — жодних платних тарифів',
-  'system_notice.thank_you_support.highlight_community': 'Створено разом зі спільнотою',
-  'system_notice.thank_you_support.cta_bmc': 'Пригостити кавою',
-  'system_notice.thank_you_support.cta_kofi': 'Підтримати на Ko-fi',
   'system_notice.pager.prev': 'Попереднє повідомлення',
   'system_notice.pager.next': 'Наступне повідомлення',
   'system_notice.pager.counter': '{current} / {total}',
@@ -54,40 +46,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': 'Потрібна дія: конфлікт облікового запису користувача',
   'system_notice.v3014_whitespace_collision.body':
     'Оновлення 3.0.14 виявило один або кілька конфліктів імен користувачів або електронних адрес, спричинених початковими або кінцевими пробілами в збережених облікових записах. Уражені облікові записи було автоматично перейменовано. Перевірте журнали сервера на рядки, що починаються з **[migration] WHITESPACE COLLISION**, щоб визначити, які облікові записи потребують перевірки.',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Оновлення встановлено',
-  'system_notice.release_notes.headline': 'Потрібне місце, з першого разу.',
-  'system_notice.release_notes.intro':
-    'Пошук місць, пошук адрес і побудова маршрутів тепер працюють на власних серверах TREK за підтримки dataforest cloud, і кожен TREK може ділитися тим, що знає про місця, з усіма іншими.',
-  'system_notice.release_notes.features_label': 'Головні новинки',
-  'system_notice.release_notes.features_aside': 'І це далеко не все',
-  'system_notice.release_notes.feature_search_title': 'Пошук місць, що влучає в ціль',
-  'system_notice.release_notes.feature_search_body':
-    "Міста, острови, пам'ятки та аеропорти за їхнім кодом ідуть першими, кав'ярні шукаються поруч із вами, а підказки з'являються ще під час введення.",
-  'system_notice.release_notes.feature_share_title': 'Спільні відомості про місця',
-  'system_notice.release_notes.feature_share_body':
-    'Діліться сайтами, годинами роботи й фото з усіма TREK, поле за полем, а ваші збережені місця отримують те, що додали інші.',
-  'system_notice.release_notes.feature_routing_title': 'Швидші маршрути',
-  'system_notice.release_notes.feature_routing_body':
-    'Увесь день прокладається за один раз, до двадцяти зупинок, один повільний маршрут більше не затримує решту, а громадський транспорт звертається до другого провайдера, якщо перший нічого не знайшов.',
-  'system_notice.release_notes.footnote': 'А також довгий список дрібніших змін по всьому TREK.',
-  'system_notice.release_notes.notes_label': 'Нотатки до релізу',
-  'system_notice.release_notes.note_eyebrow': 'Слово від мейнтейнера',
-  'system_notice.release_notes.note_title': 'Саме заради вас я далі розвиваю TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK починався як маленький інструмент для моїх власних поїздок, який я писав після роботи, бо хотів планувати їх краще. І відтоді він, власне, не переставав рости. Майже все, чим ви користуєтесь, створено пізно вночі, на вихідних, у поїздах, поруч з основною роботою, і було чимало вечорів, коли я тихо питав себе, чи хтось узагалі колись його відкриє.',
-  'system_notice.release_notes.promise_label': 'Обіцянка',
-  'system_notice.release_notes.promise_lead': 'TREK залишиться безкоштовним назавжди.',
-  'system_notice.release_notes.promise_text':
-    'Кожна функція, кожне оновлення, для всіх. Жодних платних тарифів, жодних підписок, жодних підводних каменів.',
-  'system_notice.release_notes.note_body_after':
-    'А потім його відкрили ви. За кілька місяців вас стали тисячі: зірки, звіти про баги, переклади мовами, якими я не володію, пул-реквести від людей, яких я ніколи не зустрічав. Я й досі щоранку насамперед заглядаю в репозиторій, і досі в це не зовсім віриться.',
-  'system_notice.release_notes.note_closing': 'Дякую, що ви тут. Ваш Maurice',
-  'system_notice.release_notes.support_label': 'Лишатися незалежним',
-  'system_notice.release_notes.support_lead': 'Без Google і компанії.',
-  'system_notice.release_notes.support_text':
-    'Пошук місць, пошук адрес і маршрути працюють на власних серверах TREK, сьогодні за підтримки dataforest cloud. Я борюся за це щодня, і щоб так і залишалося, потрібна ваша підтримка.',
-  'system_notice.release_notes.cta_bmc': 'Пригостити кавою',
-  'system_notice.release_notes.cta_kofi': 'Підтримати на Ko-fi',
 };
 export default system_notice;
