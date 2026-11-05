@@ -74,3 +74,12 @@ it.each(['restaurant', 'event', 'tour', 'train'])('keeps a date-only %s booking 
   expect(plan.nodes.map(n => n.key)).toEqual(['assignment:1', 'assignment:2'])
   expect(plan.schedule.entries[1].arrival).toBe('10:30')
 })
+
+
+it('keeps an orphaned visit as an unknown gap without crashing timing', () => {
+  const orphan = visit(3)
+  orphan.data.place = null
+  const plan = buildItineraryTiming([visit(1), orphan, visit(2)], 1, timing, [], 'walking')
+  expect(plan.nodes.map(n => n.key)).toEqual(['assignment:1', 'assignment:3', 'assignment:2'])
+  expect(plan.schedule.entries.map(e => e.arrival)).toEqual(['09:00', null, null])
+})

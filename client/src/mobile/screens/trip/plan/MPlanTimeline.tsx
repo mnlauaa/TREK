@@ -210,9 +210,9 @@ export default function MPlanTimeline({ planner, shell }: MPlanTimelineProps) {
                     onEdit={canEditPlaces ? () => tl.editAssignment(row.assignment) : undefined}
                     onRemove={() => tl.removeAssignment(row.assignment)}
                   />
-                  <VisitTiming assignment={row.assignment} day={day} tripId={planner.tripId} plan={tl.timingPlan} editable={editing}
+                  {row.assignment.place && <VisitTiming assignment={row.assignment} day={day} tripId={planner.tripId} plan={tl.timingPlan} editable={editing}
                     bookings={row.linkedReservations} onOpenBooking={() => shell.setTrTab('buchungen')}
-                    onStay={draft => shell.openSheet('rtstay', { ...draft, fromItinerary: true })} />
+                    onStay={draft => shell.openSheet('rtstay', { ...draft, fromItinerary: true })} />}
                   {tl.timingPlan?.legs.filter(leg => leg.from === `assignment:${row.assignment.id}`).map(leg =>
                     <TravelTimingControl key={`${day.id}:${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={planner.tripId} leg={leg} editable={editing} />)}
                   {dayScheduleFor('assignment', row.assignment.id)}

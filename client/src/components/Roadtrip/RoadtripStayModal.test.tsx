@@ -177,7 +177,7 @@ describe('RoadtripStayModal for a stop left at a set time', () => {
     seedStore(useAuthStore, { user: { id: 1, role: 'user' } })
     seedStore(useTripStore, {
       trip: { id: 4, user_id: 1 },
-      assignments: { '11': [{ id: 102, day_id: 11, place_id: 9, order_index: 0, assignment_time: null, assignment_end_time: '14:00' }] },
+      assignments: { '11': [{ id: 102, day_id: 11, place_id: 9, order_index: 0, assignment_time: null, assignment_end_time: '14:00', place: { id: 9, name: 'Rasthof Dammer Berge' } }] },
     })
     useTripStore.setState({ setAssignmentTimes, refreshDays: vi.fn(async () => undefined) } as never)
   })
@@ -252,4 +252,15 @@ describe('RoadtripStayModal for a stop left at a set time', () => {
     expect(setAssignmentTimes).toHaveBeenCalledWith(4, 11, 102, { place_time: null, end_time: null })
     await waitFor(() => expect(slider().value).toBe('30'))
   })
+})
+
+
+it('keeps the edited stay open and reports a failed save', async () => {
+  const onSave = vi.fn().mockRejectedValue(new Error('read only'))
+  const { onClose } = open({ minutes: 30 }, onSave)
+  fireEvent.change(slider(), { target: { value: '45' } })
+  fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('read only'))
+  expect(slider().value).toBe('45')
+  expect(onClose).not.toHaveBeenCalled()
 })

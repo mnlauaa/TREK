@@ -876,8 +876,8 @@ describe('useTripPlanner road trip: one stop at a time', () => {
     expect(actions.updatePlace).toHaveBeenCalledWith(42, 1011, { duration_minutes: 0 })
 
     actions.updatePlace.mockRejectedValue(new Error('read only'))
-    await act(async () => { await result.current.setRoadtripStay(1011, 45) })
-    expect(toasts.some(t => t.type === 'error' && t.message === 'read only')).toBe(true)
+    // The editor owns error display and must keep the dialog open on failure.
+    await act(async () => { await expect(result.current.setRoadtripStay(1011, 45)).rejects.toThrow('read only') })
   })
 
   it('FE-TP-ROAD-032: a reader may not set a stay', async () => {

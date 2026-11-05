@@ -27,6 +27,11 @@ export function buildItineraryTiming(items: MergedItem[], dayId: number, timing:
     if (item.type === 'note') continue
     if (item.type === 'place') {
       const assignment = item.data as Assignment
+      if (!assignment.place) {
+        // Keep a broken/orphaned visit as an unknown route gap, without crashing the day.
+        nodes.push({ key: `assignment:${assignment.id}`, assignment, from: null, to: null, stop: { anchor: null, dwellMinutes: 0 } })
+        continue
+      }
       const times = visitTimes(assignment)
       const end = parseClock(times.end)
       nodes.push({ key: `assignment:${assignment.id}`, assignment, from: point(assignment.place), to: point(assignment.place),

@@ -203,15 +203,13 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
           />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-1">
-            {/* Which stop, and what the number actually attaches to. The stay is a column
-                on the place, not on the day's assignment, so a place planned twice keeps
-                one stay for both, and saying so here is cheaper than the surprise. */}
+            {/* Only an unassigned place edits the shared default; a visit owns its stay. */}
             {stop.name && (
               <div className="truncate text-[0.875rem] font-semibold text-m-ink">{stop.name}</div>
             )}
-            <div className="mt-[3px] font-geist text-[0.65625rem] leading-snug text-m-faint">
+            {stop.assignmentId == null && <div className="mt-[3px] font-geist text-[0.65625rem] leading-snug text-m-faint">
               {t('mobileTrip.rtStayScope')}
-            </div>
+            </div>}
 
             {/* The number, the way a timer shows one, with minus and plus either side so a
                 value can be nudged without a control to aim at. */}
