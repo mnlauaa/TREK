@@ -1,4 +1,4 @@
-import { decodeBase64Url, isVapidSubject, readEnv, stripTrailingSlashes } from '../../../app-config';
+import { decodeBase64Url, isVapidSubject, readEnv } from '../../../app-config';
 import { AppSettings } from '../../../db/entities/AppSettings.entity';
 import type { AppSettingsRepository } from '../../../db/repositories/AppSettings.repository';
 import { logError, logInfo } from '../../audit/audit-log.logger';
@@ -66,16 +66,6 @@ const UNUSABLE_MESSAGES: Record<UnusableReason, string> = {
 /** Re-encoded without padding, so the key the browser gets and the one rows are compared with is one string. */
 function canonical(value: string): string {
   return decodeBase64Url(value)?.toString('base64url') ?? value;
-}
-
-/** An https URL on a host other than localhost: what APP_URL has to be to serve as the VAPID contact. */
-function isPublicHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname !== 'localhost';
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -189,8 +179,13 @@ export class VapidKeysService implements OnApplicationBootstrap {
     const env = readEnv();
     const configured = env.push.vapidSubject;
     if (configured && isVapidSubject(configured)) return configured;
-    const appUrl = env.app.appUrl?.trim();
-    return appUrl && isPublicHttpsUrl(appUrl) ? stripTrailingSlashes(appUrl) : FALLBACK_VAPID_SUBJECT;
+    try {
+      const url = new URL(env.app.appUrl?.trim() ?? '');
+      if (url.protocol === 'https:' && url.hostname !== 'localhost') return url.origin;
+    } catch {
+      // APP_URL may be absent before an instance is set up.
+    }
+    return FALLBACK_VAPID_SUBJECT;
   }
 
   /** getKeys() without the create: the same refusals, and a missing stored pair counts as usable. */

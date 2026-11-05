@@ -52,7 +52,7 @@ import { makeDayAssignment } from '../helpers/factories/itinerary';
 import { makePlace } from '../helpers/factories/places';
 import { countRows, deleteRows, findRow, findRows, insertRow, insertRows } from '../helpers/factories/rows';
 import { setUserSetting } from '../helpers/factories/settings';
-import { makeDay } from '../helpers/factories/trips';
+import { addTripMember, makeDay } from '../helpers/factories/trips';
 import { makeUser } from '../helpers/factories/users';
 import { createTestMikroOrmModule, createTestOrm, type TestOrm } from '../helpers/test-orm';
 import { TestUnitOfWorkModule } from '../helpers/test-uow';
@@ -403,6 +403,41 @@ describe('Trips e2e (real auth guard + temp SQLite)', () => {
     expect(await findRow(orm, Trips, { id: tripId })).toBeNull();
     expect(await findRow(orm, JourneyEntries, { type: 'skeleton' })).toBeNull();
     expect((await findRow(orm, JourneyEntries, { id: filledId }))!.source_trip_id).toBeNull();
+  });
+
+  it('checks identity for a new member and transfers a guest through the authenticated trip routes', async () => {
+    const { user: member } = await makeUser(orm, { email: 'guest-transfer-member@example.test' });
+    const tripId = await seedTrip('Transfer');
+    await addTripMember(orm, tripId, member.id);
+    const tripUrl = `/api/trips/${tripId}`;
+    const owner = sessionCookie(1);
+    const signedInMember = sessionCookie(member.id);
+    const created = await request(server)
+      .post(`${tripUrl}/guests`)
+      .set('Cookie', owner)
+      .send({ name: 'Sam' })
+      .expect(201);
+    const guestId = created.body.member.id as number;
+
+    await request(server).get(`${tripUrl}/guest-identity-transfers/candidates`).expect(401);
+    const denied = await request(server).post(`${tripUrl}/new-member-identity-check`).set('Cookie', owner).expect(403);
+    expect(denied.body).toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' });
+    const check = await request(server)
+      .post(`${tripUrl}/new-member-identity-check`)
+      .set('Cookie', signedInMember)
+      .expect(201);
+    expect(check.body).toMatchObject({ required: true, candidates: [{ guest_user_id: guestId, name: 'Sam' }] });
+
+    const transfer = await request(server)
+      .post(`${tripUrl}/guests/${guestId}/identity-transfer`)
+      .set('Cookie', signedInMember)
+      .expect(201);
+    expect(transfer.body).toMatchObject({ success: true, transferred_guest_user_id: guestId });
+    expect(await findRow(orm, Users, { id: guestId })).toBeNull();
+    await request(server)
+      .post(`${tripUrl}/new-member-identity-check`)
+      .set('Cookie', signedInMember)
+      .expect(201, { required: false, candidates: [] });
   });
 
   it('DELETE guest: 409 while the guest paid an expense, then 200 with their share handed on (#2604)', async () => {

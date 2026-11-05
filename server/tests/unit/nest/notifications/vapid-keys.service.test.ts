@@ -428,7 +428,7 @@ describe('VapidKeysService subject', () => {
   });
 
   it('VKEY-010: then APP_URL, when it is public https', () => {
-    vi.stubEnv('APP_URL', ' https://trek.example.test/ ');
+    vi.stubEnv('APP_URL', ' https://account:placeholder@trek.example.test/private?invite=placeholder ');
     expect(svc.getSubject()).toBe('https://trek.example.test');
   });
 
