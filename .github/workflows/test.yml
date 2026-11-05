@@ -76,11 +76,9 @@ permissions:
 #     failing must stop the scan — a missing lcov file would make every line
 #     of that package report as uncovered, and the dashboard would show a
 #     collapse that did not happen.
-#   - Fork PRs and runs Dependabot triggers don't receive the repo's Actions
-#     secrets, so the two jobs that need them skip themselves: s3-contract
-#     (MINIO_LICENSE_KEY) and scan (SONAR_TOKEN). ci-ok counts a skip as
-#     passed. Everything else runs on those PRs so outside contributors and
-#     dependency bumps still get the full test signal.
+#   - Sonar runs only when SONAR_ENABLED is true. Fork PRs and Dependabot
+#     runs skip it because they do not get SONAR_TOKEN. The S3 contract
+#     uses pinned community MinIO and runs without secrets.
 #   - changes runs first and decides which of the jobs below a change needs
 #     (scripts/ci/changed-areas.mjs holds the rules). A docs-only push or PR
 #     runs nothing else. The filter lives in a job, not in `on.paths`, because
@@ -91,10 +89,8 @@ permissions:
 #     compose files. Both run beside the gates rather than after them.
 #   - ci-ok `needs:` every gate, test, image and chart job, and is the one
 #     check the branch ruleset requires. It fails when any of them failed or
-#     was cancelled and passes when they passed or were skipped (by changes,
-#     or on a fork PR without secrets). The scan is not in it: the quality
-#     gate reports on the PR by itself, and a SonarCloud outage should not
-#     block a merge.
+#     was cancelled and passes when they passed or were skipped by changes.
+#     The scan reports separately so a SonarCloud outage cannot block a merge.
 #
 # Automatic Analysis must stay disabled on sonarcloud.io — it is mutually
 # exclusive with CI-based analysis, and it cannot import the lcov coverage
@@ -659,15 +655,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: changes
-    # Fork PRs don't get repo secrets, so MINIO_LICENSE_KEY would be empty and
-    # the AIStor container would fail to boot. A run Dependabot triggers gets
-    # only Dependabot secrets, so its PRs (same repo, not a fork) hit the same
-    # wall. Pushes and manual dispatches by anyone else do have secrets, so
-    # only those two are filtered out.
-    if: >-
-      needs.changes.outputs.code == 'true' &&
-      github.actor != 'dependabot[bot]' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - uses: actions/checkout@v6
@@ -693,31 +681,41 @@ jobs:
       - name: Build shared
         run: npm run build --workspace=shared
 
-      - name: Write MinIO license
-        run: printf '%s' "${{ secrets.MINIO_LICENSE_KEY }}" > minio-licence.key
+      - name: Checkout pinned community MinIO
+        uses: actions/checkout@v6
+        with:
+          repository: minio/minio
+          ref: 0d7408fc9969caf07de6a8c3a84f9fbb10a6739e # RELEASE.2025-04-22T22-12-26Z
+          path: .ci-minio
+          persist-credentials: false
+
+      - name: Set up MinIO compiler
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.2'
+          cache-dependency-path: .ci-minio/go.sum
+
+      - name: Build pinned MinIO
+        working-directory: .ci-minio
+        run: go build -trimpath -o "$RUNNER_TEMP/minio" .
 
       - name: Start MinIO
-        # `services:` can't pass the `server /data --license ...` command to
-        # the AIStor image, so it starts via docker run. 127.0.0.1 endpoint is
-        # load-bearing: aws-lite picks path-style only for IP/localhost hosts,
-        # which is all stock MinIO/AIStor speaks.
+        # aws-lite uses path-style requests with a loopback endpoint.
+        env:
+          MINIO_ROOT_USER: trekci
+          MINIO_ROOT_PASSWORD: trekci-secret
         run: |
-          docker run -d --name minio -p 127.0.0.1:9000:9000 \
-            -v "$PWD/minio-licence.key:/minio.license:ro" \
-            -e MINIO_ROOT_USER=trekci -e MINIO_ROOT_PASSWORD=trekci-secret \
-            quay.io/minio/aistor/minio:RELEASE.2026-08-07T18-34-35Z server /data --license /minio.license
+          mkdir -p "$RUNNER_TEMP/minio-data"
+          "$RUNNER_TEMP/minio" server --address 127.0.0.1:9000 "$RUNNER_TEMP/minio-data" > "$RUNNER_TEMP/minio.log" 2>&1 &
 
       - name: Wait for MinIO
-        # curl was removed from the AIStor image — poll from the runner instead.
-        # 60 x 2s gives a wider margin on cold runners than the 30 x 1s the
-        # pre-6fbff835 job used.
         run: |
           for _ in $(seq 1 60); do
             curl -sf http://127.0.0.1:9000/minio/health/live && exit 0
             sleep 2
           done
           echo "MinIO never became healthy" >&2
-          docker logs minio >&2
+          cat "$RUNNER_TEMP/minio.log" >&2
           exit 1
 
       - name: Run the S3 driver contract suite
@@ -1048,9 +1046,9 @@ jobs:
     name: 'Repo: Sonar Scan'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    # Fork PRs and Dependabot runs don't receive SONAR_TOKEN, so skip the scan
-    # rather than fail it.
+    # The fork opts in with its own project and token.
     if: >-
+      vars.SONAR_ENABLED == 'true' &&
       github.actor != 'dependabot[bot]' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     # Coverage jobs failing must stop the scan: a missing lcov file would make
@@ -1102,22 +1100,17 @@ jobs:
       - name: Scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
-          # SonarQube Cloud is the scan action's default host, so no
-          # SONAR_HOST_URL — the token is a sonarcloud.io token for the
-          # liketrek org.
+          # Use the SonarQube Cloud token for the mnlauaa organization.
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           # New Code is configured as "previous version", so this string is what
           # draws that line — changing it re-bases every "new code" metric.
-          # Pinned rather than read from package.json on purpose: package.json is
-          # still on 3.4.1 while the project has been analysed as 4.0.0 all along,
-          # and taking the lower number would silently move the baseline. Bump it
-          # here as part of the release, together with the version bump.
+          # Keep the fork's existing baseline until it is changed deliberately.
           #
           # Everything else — sources, tests, exclusions, the documented
           # false-positive list — lives in sonar-project.properties so it stays
           # reviewable in a PR rather than buried in workflow YAML.
-          args: -Dsonar.projectVersion=4.0.0
+          args: -Dsonar.projectVersion=4.1.1
 
   # The image every release ships, built the way docker.yml builds it and
   # started the way docker-compose.yml starts it (read-only root, every

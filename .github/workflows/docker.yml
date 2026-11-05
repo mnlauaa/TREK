@@ -363,6 +363,7 @@ jobs:
           no-cache: true
           build-args: |
             APP_VERSION=${{ needs.version.outputs.version }}
+            SOURCE_CODE_URL=${{ github.server_url }}/${{ github.repository }}/tree/${{ steps.meta.outputs.revision }}
           labels: |
             org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
             org.opencontainers.image.created=${{ steps.meta.outputs.created }}

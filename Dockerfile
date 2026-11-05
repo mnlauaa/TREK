@@ -12,7 +12,7 @@ FROM node:24-alpine AS shared-builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
-RUN npm ci --workspace=shared
+RUN npm ci --workspace=shared --include=dev
 COPY shared/ ./shared/
 RUN npm run build --workspace=shared
 
@@ -22,7 +22,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY client/package.json ./client/
-RUN npm ci --workspace=client
+RUN npm ci --workspace=client --include=dev
 COPY --from=shared-builder /app/shared/dist ./shared/dist
 COPY client/ ./client/
 # A prerelease build does not bump client/package.json, so the bundle takes its
@@ -38,7 +38,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY server/package.json ./server/
-RUN npm ci --workspace=server --ignore-scripts
+RUN npm ci --workspace=server --include=dev --ignore-scripts
 COPY --from=shared-builder /app/shared/dist ./shared/dist
 COPY server/ ./server/
 # tsc needs more than the 2 GB heap Node picks on a host with about 12 GB of RAM;
@@ -127,6 +127,8 @@ RUN mkdir -p /app/data/logs /app/uploads/files /app/uploads/covers /app/uploads/
 ENV NODE_ENV=production
 ENV NODE_USE_ENV_PROXY=1
 ENV PORT=3000
+ARG SOURCE_CODE_URL=https://github.com/mnlauaa/TREK
+ENV SOURCE_CODE_URL=${SOURCE_CODE_URL}
 # The version goes into a file, not into ENV. A container keeps its environment
 # when it is recreated on a newer image (Portainer's recreate, a copied run
 # config), so an APP_VERSION env var would keep announcing the old release and

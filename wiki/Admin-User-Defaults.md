@@ -22,11 +22,14 @@ Once a default is set, a small **reset** link appears next to its name. It remov
 | **Time Format** | **24h (14:30)**, **12h (2:30 PM)** | 24h |
 | **Week starts on** | Monday, Sunday, Saturday (named in your language) | Monday |
 | **Display currency** | A searchable list of currencies | None (Costs shows each trip's own currency) |
+| **Common currencies** | Up to ten ordered shortcuts in currency menus | No shortcuts |
 | **Blur Booking Codes** | **On**, **Off** | Off |
 
 **Week starts on** decides which day opens each row of every date picker. Vacay keeps its own week start per plan.
 
 **Display currency**: amounts in Costs are shown converted to this currency for display only; the original amounts are unchanged. A user without a display currency of their own gets this one. See [Display-Settings](Display-Settings) and [Currencies](Currencies).
+
+**Common currencies** sets the list for users who have no personal list. Clearing a personal list keeps it empty. Resetting it restores this default.
 
 **Blur Booking Codes** blurs confirmation codes and reference numbers until the user hovers or taps them. See [Display-Settings](Display-Settings#blur-booking-codes).
 

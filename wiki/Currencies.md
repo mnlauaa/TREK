@@ -1,12 +1,13 @@
 # Currencies
 
-TREK has **three** currency settings, and they answer three different questions. Most confusion about the Costs tab comes from mixing them up, so this page is the one place they are defined together.
+Trip, expense, and display currencies each do a different job. The **Common currencies** list changes the order of choices in currency menus.
 
 | Setting | Where | Question it answers | Affects |
 |---|---|---|---|
 | **Trip currency** | My Trips → pencil on the trip card (**Edit Trip**) | *What is this trip's money?* | Stored data: the base every balance is calculated in |
 | **Expense currency** | Costs → expense modal | *What currency did I actually pay in?* | Stored data: that one expense |
 | **Display currency** | Settings → General → Language & region | *What currency do I want to read?* | Presentation only, never the stored data |
+| **Common currencies** | Settings → General → Language & region | *Which currencies should appear first in menus?* | Menu order only |
 
 The short version: **the trip currency is the accounting base, the expense currency is the receipt, and the display currency is your reading glasses.**
 
@@ -36,11 +37,11 @@ The numbers you typed are never rewritten. Each expense keeps its original amoun
 
 Each expense in the Costs tab carries **its own currency**, chosen in the expense modal. Enter what the receipt says: a $100 dinner on a rouble trip is entered as **100 USD**, not as its rouble equivalent.
 
-When an expense's currency differs from the trip currency, TREK looks up the live rate **once, at the moment you save it**, and freezes it on the expense. That frozen rate is what converts the expense into the trip currency forever after.
+When you save a foreign expense, TREK freezes the exchange rate used to convert it into the trip currency. If you enter a rate, TREK uses it. Otherwise, TREK uses the trip default or, if none is set, the global snapshot.
 
 > **Why freeze it?** Because a debt settled today shouldn't reopen tomorrow. If balances were recomputed at live rates, a settled-up trip would drift back into a few cents of debt every time the FX market moved. The rate you booked at is the rate you owe at.
 
-Rates come from [Frankfurter](https://frankfurter.dev) (European Central Bank data, no API key needed). **165 currencies** are supported. If the server cannot look the rate up (the instance is offline, or the upstream is down), your browser lends the rate it already holds when you save, and the server freezes that one. When no rate is known at all, the expense is stored without a frozen rate, and TREK never invents one: until a rate is pinned, the expense is **left out** of the balances, the settle-up suggestions, the final budgets and the totals instead of being counted 1:1 in the trip currency. As soon as someone who may edit costs opens the Costs tab, TREK pins the missing rates for those rows, and they count from then on.
+TREK keeps a global snapshot of rates from [Frankfurter](https://frankfurter.dev). If neither a trip default nor a global rate is available, enter a positive rate to save a new foreign expense or payment. Older rows with no usable rate are left out of balances, settle-up suggestions, final budgets, and totals.
 
 > **AI / MCP:** `get_settlement_summary` lists such rows under `unconverted`, and `freeze_budget_rates` pins the server's current rate on them. See [MCP-Tools-and-Resources](MCP-Tools-and-Resources).
 
@@ -51,6 +52,12 @@ A payment recorded in **Settle Up** also carries its own currency, for the same 
 ## Decimals and formats
 
 Every currency is shown with its own number of decimals. Most use two. The Japanese yen, Korean won, Vietnamese dong, Chilean peso, Icelandic krona and Hungarian forint have none, and the Bahraini, Iraqi, Jordanian, Kuwaiti, Libyan, Omani and Tunisian currencies have three. Amounts you type follow the same rule, and the suggested transfers in **Settle up** for won and yen are whole units, so the balances add up and settling clears them.
+
+## Trip exchange rates
+
+Open **Exchange rates** from the Costs header on desktop or the **More** menu on mobile. Every trip member can inspect the rates. Members with `budget_edit` can save or delete a trip default. Changing a default affects future transactions.
+
+To change the rates on existing expenses and payments, preview the changes, select the rows, and apply them. If the preview goes out of date, create a new one before applying it. You can also edit one transaction at a time.
 
 ## Display currency
 
@@ -76,6 +83,10 @@ An administrator can set an instance-wide default (Admin → User Defaults), and
 > Display conversion uses **live** rates, not the frozen ones: it is a view, and a view should reflect today. This is why a converted total can shift slightly day to day while the underlying balances stay rock steady.
 
 An expense you enter in your display currency reads back exactly as you typed it on the day you enter it, on its row, in the totals and in the final budget, and paying the amount settle-up offers for it leaves both balances at zero. When the rate has moved since, the row shows the value the totals count, with what was entered and the trip-currency amount it was booked at underneath (`$801.76 → 685,26 €`).
+
+## Common currencies
+
+Set up to ten shortcuts in **Settings → General → Language & region**. The selected currencies appear first in currency menus. **Clear** saves an empty personal list. **Reset** removes your list and returns to the administrator default.
 
 ## How they fit together
 
@@ -110,10 +121,10 @@ Changing the trip currency requires `trip_edit`. Adding or editing expenses (and
 Fixed in v3.4.0 (#1543). The settlement was reading the trip currency incorrectly and treating every trip as EUR, which inflated balances on any non-EUR trip that had a foreign-currency expense. Upgrade; no data was damaged and nothing needs fixing by hand.
 
 **"The totals move slightly from day to day."**
-Expected, if your display currency differs from the trip currency: the *display* conversion uses live rates. The underlying balances and debts do not move.
+Display conversion uses the current global snapshot. The underlying balances and debts do not move.
 
 **"A foreign expense does not count in the balances or the total."**
-No exchange rate was known for its currency when it was saved, so TREK leaves it out rather than guess. Open the Costs tab as a member who may edit costs while the instance can reach the rate service; the missing rate is pinned and the expense counts again.
+The expense has no usable exchange rate. If you can edit costs, enter a rate on the expense or use the trip exchange rate preview and apply the change. Opening Costs does not write a rate.
 
 **"An expense shows an odd converted value."**
 Its rate was frozen when it was entered, and the market has moved since. That is by design; see the note above.

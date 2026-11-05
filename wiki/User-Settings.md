@@ -38,6 +38,7 @@ The General tab controls the following preferences, all saved immediately on cha
 **Language & region**
 
 - **Display currency**: your display currency; **Trip currency** (the default) shows each trip in its own. See [Currencies](Currencies).
+- **Common currencies**: up to ten ordered shortcuts in currency menus. Clear the list to hide shortcuts or reset it to inherit the administrator default.
 - **Language**: displayed as a button grid on desktop and a dropdown on mobile.
 - **Place names**: the language place search, suggestions and addresses answer in. **Same as the app** follows the language above; picking another one keeps the interface as it is and asks for place names in that language. Where a place has no name in it, the local name is shown.
 - **Temperature unit**: Celsius (°C) or Fahrenheit (°F).

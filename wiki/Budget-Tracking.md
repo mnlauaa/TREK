@@ -33,7 +33,9 @@ Costs is **multi-currency** (#551). Three settings are involved, and they do dif
 - Each **expense** carries **its own currency**. Pick it in the expense dialog and enter what the receipt says (a $100 dinner on a rouble trip is `100 USD`). It is converted into the trip currency at a rate **frozen when you save it**, so a settled debt does not reopen when the market moves.
 - Your **display currency** (Settings → General → Language & region → **Display currency**) converts what you *read* (totals, balances, the ledger) into one currency. It changes nothing that is stored. Left on **Trip currency** (the default), each trip is shown in its own currency.
 
-165 currencies are supported, with rates from [Frankfurter](https://frankfurter.dev) (no API key needed). When an expense's currency differs from the one you read in, the dialog shows the original beside the converted amount (`$100.00 ≈ 7 668,71 ₽`, marked *live rate* until the expense is saved and its rate frozen), and the ledger row shows both (`$100.00 → 7 668,71 ₽`).
+For foreign expenses and payments, the editor shows the rate used to convert into the trip currency. The ledger shows both the original and converted amounts (`$100.00 → 7 668,71 ₽`).
+
+Use **Exchange rates** in the Costs header on desktop or the **More** menu on mobile to see rates. If you can edit costs, you can change the trip default for future transactions. To change existing transactions, preview the recalculation and apply it to the selected rows.
 
 > **Read [Currencies](Currencies) for the full picture:** how the three interact, what happens when you change a trip's currency, and which currency a public share link is shown in.
 
@@ -80,6 +82,7 @@ The filters work together: pick a day and a banner above the list names the day 
 | Category | One of the 14 fixed categories, as a pill in the head band. |
 | Total amount | What the receipt says. In **Ticket** mode it is summed from the items and cannot be typed. |
 | Currency | The expense's own currency. |
+| Exchange rate | The rate for converting a foreign expense into the trip currency. Save the suggested rate or enter your own. |
 | Day | The expense date the ledger groups it under. |
 | Who paid? | Who actually put the money down. See [Who paid](#who-paid). |
 | Split | How the total is shared out. See [Splitting costs](#splitting-costs). |
@@ -208,7 +211,7 @@ The table is a second way to read and plan the same expenses, close to the categ
 
 ## Permissions
 
-Every write (adding, editing and deleting expenses and payments, and an expense's currency) needs the `budget_edit` permission. Without it the tab is read-only: the bar keeps search, filter and export, and the edit buttons are gone. The **trip** currency lives on the trip itself, so changing it needs `trip_edit` instead.
+Adding, editing, or deleting expenses and payments, changing trip rate defaults, and applying rate changes to existing rows all need `budget_edit`. Without it the tab is read-only: the bar keeps search, filter and export, and the edit buttons are gone. The **trip** currency lives on the trip itself, so changing it needs `trip_edit` instead.
 
 ## See also
 
