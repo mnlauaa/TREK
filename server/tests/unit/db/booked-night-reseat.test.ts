@@ -322,4 +322,18 @@ describe('booked night reseat', () => {
 
     expect(order(db)).toEqual([902, 901]);
   });
+
+  it('RESEAT-017: an explicitly cleared visit no longer inherits the place hour', () => {
+    const db = freshDb();
+    const museum = place(db, 'Museum', '08:00');
+    const hotel = place(db, 'Hotel');
+    const visit = stop(db, museum, 0);
+    stop(db, hotel, 1, null, night(db, hotel, '10:00'));
+
+    expect(reseatBookedNights(db)).toBe(0);
+    db.prepare('UPDATE day_assignments SET times_explicit = 1 WHERE id = ?').run(visit);
+    expect(reseatBookedNights(db)).toBe(1);
+    expect(order(db)).toEqual([hotel, museum]);
+    expect(reseatBookedNights(db)).toBe(0);
+  });
 });

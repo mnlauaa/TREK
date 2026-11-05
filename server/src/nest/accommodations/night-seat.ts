@@ -50,9 +50,15 @@ interface PinnedVia {
  * and a pass that seats them both would never settle.
  */
 export function dayStops(db: SeatConnection, dayId: number): SeatRow[] {
+  // Numeric upstream migrations reseat existing nights before the fork timing
+  // migration runs. Read legacy inheritance until that column actually exists.
+  const hasExplicitTimes = db.prepare("SELECT 1 FROM pragma_table_info('day_assignments') WHERE name = 'times_explicit'").get();
+  const visitTime = hasExplicitTimes
+    ? 'CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END'
+    : 'COALESCE(da.assignment_time, p.place_time)';
   return db.prepare(`
     SELECT da.id, da.order_index,
-           CASE WHEN other.id IS NULL THEN CASE WHEN da.times_explicit = 1 THEN da.assignment_time ELSE COALESCE(da.assignment_time, p.place_time) END ELSE other.check_in END AS at,
+           CASE WHEN other.id IS NULL THEN ${visitTime} ELSE other.check_in END AS at,
            other.id AS night_id, (p.lat IS NOT NULL AND p.lng IS NOT NULL) AS located
     FROM day_assignments da JOIN places p ON p.id = da.place_id
     LEFT JOIN day_accommodations other ON other.id = da.accommodation_id
