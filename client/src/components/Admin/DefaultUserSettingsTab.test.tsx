@@ -70,7 +70,7 @@ function cartoInput(): HTMLInputElement {
 }
 
 /** Opens a CustomSelect by its trigger label and picks an option from the portal. */
-async function pickFromSelect(user: ReturnType<typeof userEvent.setup>, trigger: string, option: string) {
+async function pickFromSelect(user: ReturnType<typeof userEvent.setup>, trigger: string | RegExp, option: string | RegExp) {
   await user.click(screen.getByRole('button', { name: trigger }));
   const choices = await screen.findAllByRole('button', { name: option });
   await user.click(choices[choices.length - 1]);
@@ -182,9 +182,9 @@ describe('DefaultUserSettingsTab', () => {
     render(<DefaultUserSettingsTab />);
     await screen.findByText('Default User Settings');
 
-    await pickFromSelect(user, 'USD $', 'EUR €');
+    await pickFromSelect(user, /^USD/, /^EUR/);
     await waitFor(() => expect(puts).toEqual([{ default_currency: 'EUR' }]));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'EUR €' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^EUR/ })).toBeInTheDocument());
 
     await user.click(resetLink('Display currency'));
     await waitFor(() => expect(puts).toHaveLength(2));

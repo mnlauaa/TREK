@@ -1,4 +1,4 @@
-import { FRANKFURTER_CURRENCIES } from '@trek/shared';
+import { FRANKFURTER_CURRENCIES, FRANKFURTER_CURRENCY_SET } from '@trek/shared';
 
 export interface CurrencyOption {
   value: string;
@@ -28,7 +28,7 @@ export function currencyName(code: string, locale: string): string {
 
 export function currencyOption(code: string, locale: string): CurrencyOption {
   const normalized = code.toUpperCase();
-  const name = currencyName(normalized, locale);
+  const name = FRANKFURTER_CURRENCY_SET.has(normalized) ? currencyName(normalized, locale) : normalized;
   return {
     value: normalized,
     label: name === normalized ? normalized : `${normalized} — ${name}`,

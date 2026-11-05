@@ -29,6 +29,14 @@ export const SWITCH_ONLY_CHANNELS: ReadonlyArray<{ id: string; titleKey: string;
   },
 ]
 
+function canonicalChannel(id: string): string {
+  return id === 'push' ? WEB_PUSH_CHANNEL_ID : id
+}
+
+function canonicalChannels(ids: readonly string[]): string[] {
+  return [...new Set(ids.map(canonicalChannel))]
+}
+
 /**
  * The active ids, from `notification_channels` or, on installs that predate
  * it, the singular `notification_channel`. 'none' is the stored empty list.
@@ -36,22 +44,22 @@ export const SWITCH_ONLY_CHANNELS: ReadonlyArray<{ id: string; titleKey: string;
 export function parseChannelList(values: Record<string, string>): string[] {
   const raw = values.notification_channels ?? values.notification_channel ?? 'none'
   if (raw === 'none') return []
-  return raw
-    .split(',')
-    .map(id => id.trim())
-    .filter(Boolean)
+  return canonicalChannels(raw.split(',').map(id => id.trim()).filter(Boolean))
 }
 
 /** The stored form: built-ins in their fixed order, then every other id as it was, or 'none'. */
 export function serializeChannelList(active: readonly string[]): string {
-  const builtins = BUILTIN_CHANNEL_ORDER.filter(id => active.includes(id))
-  const others = active.filter(id => !BUILTIN_CHANNEL_ORDER.includes(id))
+  const canonical = canonicalChannels(active)
+  const builtins = BUILTIN_CHANNEL_ORDER.filter(id => canonical.includes(id))
+  const others = canonical.filter(id => !BUILTIN_CHANNEL_ORDER.includes(id))
   return [...builtins, ...others].join(',') || 'none'
 }
 
 /** The stored list with `id` switched the other way. */
 export function toggleChannelList(active: readonly string[], id: string): string {
-  return serializeChannelList(active.includes(id) ? active.filter(c => c !== id) : [...active, id])
+  const canonical = canonicalChannels(active)
+  const target = canonicalChannel(id)
+  return serializeChannelList(canonical.includes(target) ? canonical.filter(c => c !== target) : [...canonical, target])
 }
 
 interface ChannelSettingsHost {
@@ -84,5 +92,5 @@ export function useNotificationChannels(
     }
   }
 
-  return { isActive: id => active.includes(id), toggle }
+  return { isActive: id => active.includes(canonicalChannel(id)), toggle }
 }
