@@ -141,17 +141,22 @@ export class BudgetController {
     if (settlementIdNum === null) {
       throw new HttpException({ error: 'Settlement not found' }, 404);
     }
-    const settlement = await this.budget.updateSettlement(settlementIdNum, tripId, {
-      from_user_id: body.from_user_id,
-      to_user_id: body.to_user_id,
-      amount: body.amount,
-      currency: body.currency,
-      exchange_rate: body.exchange_rate,
-      exchange_rate_note: body.exchange_rate_note,
-      settled_at: body.settled_at,
-      note: body.note,
-      fallback_fx: body.fallback_fx,
-    }, user.id);
+    const settlement = await this.budget.updateSettlement(
+      settlementIdNum,
+      tripId,
+      {
+        from_user_id: body.from_user_id,
+        to_user_id: body.to_user_id,
+        amount: body.amount,
+        currency: body.currency,
+        exchange_rate: body.exchange_rate,
+        exchange_rate_note: body.exchange_rate_note,
+        settled_at: body.settled_at,
+        note: body.note,
+        fallback_fx: body.fallback_fx,
+      },
+      user.id,
+    );
     if (!settlement) {
       throw new HttpException({ error: 'Settlement not found' }, 404);
     }

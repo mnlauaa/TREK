@@ -1,11 +1,11 @@
-import { ExchangeRateBatchPreviews } from '../../src/db/entities/ExchangeRateBatchPreviews.entity';
-import { GlobalExchangeRateSnapshots } from '../../src/db/entities/GlobalExchangeRateSnapshots.entity';
-import { TripExchangeRates } from '../../src/db/entities/TripExchangeRates.entity';
-import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { BudgetCategoryOrder } from '../../src/db/entities/BudgetCategoryOrder.entity';
 import { BudgetItemMembers } from '../../src/db/entities/BudgetItemMembers.entity';
 import { BudgetItemPayers } from '../../src/db/entities/BudgetItemPayers.entity';
 import { BudgetSettlements } from '../../src/db/entities/BudgetSettlements.entity';
+import { ExchangeRateBatchPreviews } from '../../src/db/entities/ExchangeRateBatchPreviews.entity';
+import { GlobalExchangeRateSnapshots } from '../../src/db/entities/GlobalExchangeRateSnapshots.entity';
+import { TripExchangeRates } from '../../src/db/entities/TripExchangeRates.entity';
+import { Trips } from '../../src/db/entities/Trips.entity';
 import type { BudgetCategoryOrderRepository } from '../../src/db/repositories/BudgetCategoryOrder.repository';
 import type { BudgetItemMembersRepository } from '../../src/db/repositories/BudgetItemMembers.repository';
 import type { BudgetItemPayersRepository } from '../../src/db/repositories/BudgetItemPayers.repository';
@@ -15,6 +15,8 @@ import type { PlacesRepository } from '../../src/db/repositories/Places.reposito
 import type { ReservationsRepository } from '../../src/db/repositories/Reservations.repository';
 import type { TripMembersRepository } from '../../src/db/repositories/TripMembers.repository';
 import type { TripsRepository } from '../../src/db/repositories/Trips.repository';
+import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
+import { UnitOfWork } from '../../src/nest/database/unit-of-work';
 import { createTestBudgetItemsRepo } from './files-repos';
 import {
   sharedTestOrm,
@@ -24,6 +26,8 @@ import {
   createTestTripMembersRepo,
   createTestUnitOfWork,
 } from './test-uow';
+import { getRepositoryToken } from '@mikro-orm/nestjs';
+import { Test } from '@nestjs/testing';
 
 import type Database from 'better-sqlite3';
 
@@ -96,11 +100,15 @@ export async function budgetRepoArgs(
 
 export async function createTestExchangeRates(db: Database.Database): Promise<ExchangeRatesService> {
   const orm = await sharedTestOrm(db);
-  return new ExchangeRatesService(
-    orm.repo(GlobalExchangeRateSnapshots),
-    orm.repo(TripExchangeRates),
-    orm.repo(ExchangeRateBatchPreviews),
-    await createTestTripsRepo(db),
-    await createTestUnitOfWork(db),
-  );
+  const module = await Test.createTestingModule({
+    providers: [
+      ExchangeRatesService,
+      { provide: getRepositoryToken(GlobalExchangeRateSnapshots), useValue: orm.repo(GlobalExchangeRateSnapshots) },
+      { provide: getRepositoryToken(TripExchangeRates), useValue: orm.repo(TripExchangeRates) },
+      { provide: getRepositoryToken(ExchangeRateBatchPreviews), useValue: orm.repo(ExchangeRateBatchPreviews) },
+      { provide: getRepositoryToken(Trips), useValue: orm.repo(Trips) },
+      { provide: UnitOfWork, useValue: await createTestUnitOfWork(db) },
+    ],
+  }).compile();
+  return module.get(ExchangeRatesService);
 }

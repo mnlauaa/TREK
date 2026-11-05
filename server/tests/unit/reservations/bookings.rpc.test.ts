@@ -239,6 +239,7 @@ describe('ReservationsRpc', () => {
       '1',
       expect.objectContaining({ title: 'Hotel' }),
       undefined,
+      42,
     );
     expect(f.reservations.announceCost).toHaveBeenCalledWith(1, [], undefined);
     expect(f.reservations.notifyBookingChange).toHaveBeenCalledWith(1, 42, 'Hotel', 'lodging');

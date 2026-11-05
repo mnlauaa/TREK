@@ -439,23 +439,28 @@ export class BudgetMcp {
       if (refusal) return errorResult(refusal);
     }
     const before = reservation_id !== undefined ? await this.budget.getBudgetItem(itemId, tripId) : null;
-    const item = await this.budget.update(itemId, tripId, {
-      name,
-      category,
-      total_price,
-      currency,
-      exchange_rate,
-      exchange_rate_note,
-      member_ids,
-      members,
-      payers,
-      persons,
-      days,
-      expense_date,
-      note,
-      reservation_id,
-      place_id,
-    }, ctx.userId);
+    const item = await this.budget.update(
+      itemId,
+      tripId,
+      {
+        name,
+        category,
+        total_price,
+        currency,
+        exchange_rate,
+        exchange_rate_note,
+        member_ids,
+        members,
+        payers,
+        persons,
+        days,
+        expense_date,
+        note,
+        reservation_id,
+        place_id,
+      },
+      ctx.userId,
+    );
     if (!item) return errorResult('Budget item not found.');
     await this.budget.resyncLinkedPrices(tripId, before?.reservation_id, item, { total_price, reservation_id });
     this.guards.safeBroadcast(tripId, 'budget:updated', { item });
@@ -765,16 +770,21 @@ export class BudgetMcp {
   ) {
     if (!(await this.budget.verifyTripAccess(tripId, ctx.userId))) return noAccess();
     if (!(await this.guards.hasTripPermission('budget_edit', tripId, ctx.userId))) return permissionDenied();
-    const settlement = await this.budget.updateSettlement(settlementId, tripId, {
-      from_user_id,
-      to_user_id,
-      amount,
-      currency,
-      exchange_rate,
-      exchange_rate_note,
-      settled_at,
-      note,
-    }, ctx.userId);
+    const settlement = await this.budget.updateSettlement(
+      settlementId,
+      tripId,
+      {
+        from_user_id,
+        to_user_id,
+        amount,
+        currency,
+        exchange_rate,
+        exchange_rate_note,
+        settled_at,
+        note,
+      },
+      ctx.userId,
+    );
     if (!settlement) return errorResult('Settlement not found.');
     this.guards.safeBroadcast(tripId, 'budget:settlement-updated', { settlement });
     return ok({ settlement });

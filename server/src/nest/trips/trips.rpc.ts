@@ -8,6 +8,7 @@ import { PluginController, PluginMethod } from '../../nest-rpc/rpc-kit/decorator
 import type { PluginRpcContext } from '../../nest-rpc/rpc-kit/types';
 import { num, schemaMessage } from '../../nest-rpc/rpc-params';
 import { AccommodationsService } from '../accommodations/accommodations.service';
+import { DomainError } from '../common/domain-error';
 import { DaysService } from '../days/days.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { ReservationsService } from '../reservations/reservations.service';
@@ -164,7 +165,9 @@ export class TripsRpc {
       this.realtime.broadcast(tripId, 'trip:updated', { trip: result.updatedTrip });
       return result.updatedTrip;
     } catch (e) {
-      if (e instanceof ValidationError) throw new BadParams(e.message);
+      if (e instanceof ValidationError || (e instanceof DomainError && e.getStatus() === 400)) {
+        throw new BadParams(e.message);
+      }
       if (e instanceof NotFoundError) throw new ForbiddenResource(e.message);
       throw e;
     }

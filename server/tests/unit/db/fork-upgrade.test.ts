@@ -38,8 +38,8 @@ function catalog(db: Database.Database) {
   return sourceStatement(db, 'SELECT * FROM sqlite_master ORDER BY name').all();
 }
 
-async function openFixture(step: 180 | 199 | 202 | 244) {
-  const legacy = openLegacyFixture(`fork-v${step}`);
+async function openFixture(step: 180 | 199 | 202 | 244 | 258) {
+  const legacy = openLegacyFixture(step === 258 ? 'legacy-v258' : `fork-v${step}`);
   const file = legacy.name;
   legacy.close();
   const orm = await MikroORM.init({
@@ -229,6 +229,36 @@ describe('upgrading a populated legacy fork', () => {
       await boot();
       expect(protectedRows(db)).toEqual(originalValues);
       expect(db.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      await orm.close(true);
+    }
+  });
+
+  it('adopts the actual upstream 258 endpoint and preserves native Push rows for re-registration', async () => {
+    const { orm, db, boot } = await openFixture(258);
+    try {
+      const nativePush = sourceStatement(db, 'SELECT * FROM push_subscriptions').all();
+      expect(nativePush).toHaveLength(1);
+      await boot();
+      expect(sourceStatement(db, 'SELECT * FROM push_subscriptions').all()).toEqual(nativePush);
+      expect(sourceStatement(db, 'SELECT * FROM web_push_subscriptions').all()).toEqual([]);
+      expect(sourceStatement(db, 'SELECT version FROM schema_version').pluck().get()).toBe(258);
+      expect(db.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      await orm.close(true);
+    }
+  });
+
+  it('records a missing named receipt without replaying existing data backfills', async () => {
+    const { orm, db, boot } = await openFixture(244);
+    try {
+      sourceStatement(db, "DELETE FROM fork_schema_migrations WHERE id = 'fork/enhanced-fx-v1'").run();
+      const prior = protectedRows(db);
+      await boot();
+      expect(protectedRows(db)).toEqual(prior);
+      expect(sourceStatement(db, 'SELECT id FROM fork_schema_migrations ORDER BY id').pluck().all()).toEqual(
+        [...FORK_SCHEMA_MIGRATION_IDS].sort(),
+      );
     } finally {
       await orm.close(true);
     }

@@ -124,13 +124,9 @@ function settlementCount(tripId: number): Promise<number> {
 function stubRates(rates: Record<string, number>): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      ok: true,
-      text: async () =>
-        JSON.stringify(
-          Object.entries(rates).map(([quote, rate]) => ({ date: '2026-08-28', base: 'EUR', quote, rate })),
-        ),
-    })),
+    vi.fn(async () =>
+      Response.json(Object.entries(rates).map(([quote, rate]) => ({ date: '2026-08-28', quote, rate }))),
+    ),
   );
 }
 
@@ -1180,7 +1176,7 @@ describe('Tool: create_settlement (currency)', () => {
       });
       const data = parseToolResult(result) as any;
       const row = await settlementRow(data.settlement.id);
-      expect(row.currency).toBeNull();
+      expect(row.currency).toBe('EUR');
       expect(row.exchange_rate).toBe(1);
     });
   });
@@ -1256,7 +1252,7 @@ describe('Tool: update_settlement (currency)', () => {
         },
       });
       expect(result.isError).toBeFalsy();
-      expect((await settlementRow(created.settlement.id)).currency).toBeNull();
+      expect((await settlementRow(created.settlement.id)).currency).toBe('EUR');
     });
   });
 });
@@ -1517,7 +1513,7 @@ describe('Tool: freeze_budget_rates', () => {
         const result = await h.client.callTool({ name: 'freeze_budget_rates', arguments: { tripId: trip.id } });
         expect(result.isError).toBeFalsy();
         // No rate table travels with the MCP call: only the server's own rate is frozen.
-        expect(spy.mock.calls).toEqual([[trip.id]]);
+        expect(spy.mock.calls).toEqual([[trip.id, undefined, user.id]]);
         const data = parseToolResult(result) as {
           items: { id: number }[];
           settlements: { id: number }[];

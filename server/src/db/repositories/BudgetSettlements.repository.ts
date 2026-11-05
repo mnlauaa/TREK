@@ -69,7 +69,10 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
 
   async listRawForTrip(tripId: number | string): Promise<BudgetSettlementRow[]> {
     return this.kysely<BudgetSettlementsWriteKyselyDB>()
-      .selectFrom('budget_settlements').selectAll().where('trip_id', '=', Number(tripId)).execute();
+      .selectFrom('budget_settlements')
+      .selectAll()
+      .where('trip_id', '=', Number(tripId))
+      .execute();
   }
 
   /**
@@ -103,17 +106,19 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
    * created_by_user_id) VALUES (?×9)`. Named `insertSettlement`, not
    * `insert` — collides with `TrekRepository`'s own same-named method.
    */
-  async insertSettlement(row: {
-    trip_id: number | string;
-    from_user_id: number;
-    to_user_id: number;
-    amount: number;
-    currency: string | null;
-    exchange_rate: number;
-    settled_at: string | null;
-    note: string | null;
-    created_by_user_id: number | null;
-  } & Partial<BudgetRateColumns>): Promise<number> {
+  async insertSettlement(
+    row: {
+      trip_id: number | string;
+      from_user_id: number;
+      to_user_id: number;
+      amount: number;
+      currency: string | null;
+      exchange_rate: number;
+      settled_at: string | null;
+      note: string | null;
+      created_by_user_id: number | null;
+    } & Partial<BudgetRateColumns>,
+  ): Promise<number> {
     const inserted = await this.kysely<BudgetSettlementsWriteKyselyDB>()
       .insertInto('budget_settlements')
       .values({ ...row, trip_id: row.trip_id as number })

@@ -93,7 +93,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
     await insertRow(orm, Settings, { user: 1, key: 'theme', value: 'dark' });
     const res = await request(server).get('/api/settings').set('Cookie', sessionCookie(1));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ settings: { theme: 'dark' } });
+    expect(res.body).toEqual({ settings: { theme: 'dark', common_currencies: [] } });
   });
 
   it('PUT 400 without a key (pipe envelope via SettingUpsertDto)', async () => {

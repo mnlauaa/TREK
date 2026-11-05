@@ -1485,13 +1485,14 @@ describe('TripsService wrapper helpers', () => {
     }
   });
 
-  it('TRIP-SVC-093: updateTrip, the plugin host path, never rebases the budget', async () => {
+  it('TRIP-SVC-093: the transactional core refuses a new currency without a rebase plan', async () => {
     const { user } = createUser(testDb);
     const trip = createTrip(testDb, user.id);
     const prepareSpy = vi.spyOn(budgetSvc, 'prepareCurrencyRebase');
     const applySpy = vi.spyOn(budgetSvc, 'applyCurrencyRebase');
     try {
-      await svc.updateTrip(trip.id, user.id, { currency: 'USD' }, 'user');
+      await expect(svc.updateTrip(trip.id, user.id, { currency: 'USD' }, 'user')).rejects.toThrow(/Trip currency changed/);
+      expect(await storedFields(Trips, { id: trip.id }, ['currency'])).toEqual({ currency: 'EUR' });
       expect(prepareSpy).not.toHaveBeenCalled();
       expect(applySpy).not.toHaveBeenCalled();
     } finally {

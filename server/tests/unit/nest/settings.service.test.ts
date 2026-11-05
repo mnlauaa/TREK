@@ -88,9 +88,9 @@ afterAll(async () => {
 // ── getUserSettings ───────────────────────────────────────────────────────────
 
 describe('getUserSettings', () => {
-  it('SET-SVC-001 — returns empty object when user has no settings', async () => {
+  it('SET-SVC-001 — returns inherited common currencies when user has no settings', async () => {
     const { user } = createUser(testDb);
-    expect(await svc.getUserSettings(user.id)).toEqual({});
+    expect(await svc.getUserSettings(user.id)).toEqual({ common_currencies: [] });
   });
 
   it('SET-SVC-002 — returns stored plain string values', async () => {

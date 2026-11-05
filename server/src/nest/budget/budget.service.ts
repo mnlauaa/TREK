@@ -1066,7 +1066,7 @@ export class BudgetService {
     // (currency = NULL) have no frozen rate, so fall back to the old behaviour: assume
     // they were entered in the current display base and convert with live rates.
     const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string) =>
-      sCurrency || source === 'identity'
+      sCurrency
         ? tripConverter(sCurrency, sRate, tripCurrency, source)
         // The inverse of the display factor, so such a transfer reads back as entered.
         : (amount: number) => amount / displayFactor;
@@ -1457,7 +1457,7 @@ export class BudgetService {
     return this.uow.transactional(async () => {
       if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
       const rate = await this.rateForCommit(tripId, prepared);
-      return this.insertSettlement(tripId, data, userId, rate);
+      return this.insertSettlement(tripId, { ...data, currency: normalizeCurrency(data.currency, prepared.base) }, userId, rate);
     });
   }
 
@@ -1476,7 +1476,8 @@ export class BudgetService {
       const current = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
       if (!current) return null;
       const rate = await this.rateForCommit(tripId, prepared, current);
-      return this.applySettlementUpdate(id, tripId, data, rate);
+      const currency = data.currency === undefined ? undefined : normalizeCurrency(data.currency, prepared.base);
+      return this.applySettlementUpdate(id, tripId, { ...data, currency }, rate);
     });
   }
 

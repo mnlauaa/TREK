@@ -164,7 +164,12 @@ describe('BudgetController (parity with the legacy /api/trips/:tripId/budget rou
         user.id,
       );
       await new BudgetController(svc).updateSettlement(user, '5', '3', body);
-      expect(updateSettlement).toHaveBeenCalledWith(3, '5', expect.objectContaining({ currency: 'EUR', fallback_fx }));
+      expect(updateSettlement).toHaveBeenCalledWith(
+        3,
+        '5',
+        expect.objectContaining({ currency: 'EUR', fallback_fx }),
+        user.id,
+      );
     });
 
     it('POST and PUT /settlements forward the note, as the MCP tools do (#2340)', async () => {
@@ -175,7 +180,7 @@ describe('BudgetController (parity with the legacy /api/trips/:tripId/budget rou
       await new BudgetController(svc).createSettlement(user, '5', body);
       expect(createSettlement).toHaveBeenCalledWith('5', expect.objectContaining({ note: 'Cash' }), user.id);
       await new BudgetController(svc).updateSettlement(user, '5', '3', body);
-      expect(updateSettlement).toHaveBeenCalledWith(3, '5', expect.objectContaining({ note: 'Cash' }));
+      expect(updateSettlement).toHaveBeenCalledWith(3, '5', expect.objectContaining({ note: 'Cash' }), user.id);
     });
 
     it('DELETE /settlements/:id 404 when missing', async () => {
@@ -243,13 +248,20 @@ describe('BudgetController (parity with the legacy /api/trips/:tripId/budget rou
       );
       expect(res).toEqual({ settlement: { id: 7, from_user_id: 2, to_user_id: 1, amount: 15 } });
       // Plan 4 Task 8b (U6) — :settlementId is now parsed ONCE at the controller gate (toRowId).
-      expect(updateSettlement).toHaveBeenCalledWith(7, '5', {
-        from_user_id: 2,
-        to_user_id: 1,
-        amount: 15,
-        currency: 'USD',
-        settled_at: '2026-01-06',
-      });
+      expect(updateSettlement).toHaveBeenCalledWith(
+        7,
+        '5',
+        {
+          from_user_id: 2,
+          to_user_id: 1,
+          amount: 15,
+          currency: 'USD',
+          exchange_rate: undefined,
+          exchange_rate_note: undefined,
+          settled_at: '2026-01-06',
+        },
+        user.id,
+      );
       expect(broadcast).toHaveBeenCalledWith(
         '5',
         'budget:settlement-updated',
@@ -275,7 +287,7 @@ describe('BudgetController (parity with the legacy /api/trips/:tripId/budget rou
       const broadcast = vi.fn();
       const svc = makeService({ freezeMissingRates, broadcast } as Partial<BudgetService>);
       expect(await new BudgetController(svc).freezeRates(user, '5', { fallback_fx }, 'sock')).toEqual(healed);
-      expect(freezeMissingRates).toHaveBeenCalledWith('5', fallback_fx);
+      expect(freezeMissingRates).toHaveBeenCalledWith('5', fallback_fx, user.id);
       expect(broadcast.mock.calls).toEqual([
         ['5', 'budget:updated', { item: healed.items[0] }, 'sock'],
         ['5', 'budget:updated', { item: healed.items[1] }, 'sock'],

@@ -240,7 +240,7 @@ describe('list_budget_items', () => {
     const { user } = await makeUser(orm);
     const trip = await makeTrip(orm, user.id, { currency: 'EUR' });
     await makeBudgetItem(orm, trip.id, { name: 'Hotel', category: 'accommodation', total_price: 200, sort_order: 1 });
-    // Rate 1 on a foreign row: never frozen, and the server has no quote today.
+    getRates.mockResolvedValue({ VND: 0.00004 });
     const pho = await makeBudgetItem(orm, trip.id, {
       name: 'Pho',
       category: 'food',
@@ -252,8 +252,7 @@ describe('list_budget_items', () => {
 
     const answer = read(await mcp.listBudgetItems({ tripId: trip.id }, ctx(user.id)));
     expect(answer).toMatchObject({ total: 200, by_category: { accommodation: 200 }, unconverted_item_ids: [pho.id] });
-    expect(getRates).toHaveBeenCalledWith('EUR');
-    // Nothing converts it, so it names no amount in the trip currency either.
+    expect(getRates).not.toHaveBeenCalled();
     expect(answer.items.find((item: { id: number }) => item.id === pho.id)).toMatchObject({ trip_amount: null });
   });
 

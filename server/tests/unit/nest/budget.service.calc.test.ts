@@ -1437,12 +1437,17 @@ describe('calculateSettlement: currencies shown in whole units (#2604)', () => {
 describe('prepareRate', () => {
   it('freezes an available global quote', async () => {
     const snapshot = vi.spyOn(rates, 'getGlobalRateSnapshot').mockResolvedValueOnce({
-      base_currency: 'EUR', rates: { EUR: 1, USD: 1.25 }, source_version: 'test',
-      effective_date: null, fetched_at: new Date().toISOString(), stale: false,
+      base_currency: 'EUR',
+      rates: { EUR: 1, USD: 1.25 },
+      source_version: 'test',
+      effective_date: null,
+      fetched_at: new Date().toISOString(),
+      stale: false,
     });
     try {
       await expect(budget.prepareRate(1, { currency: 'usd' })).resolves.toMatchObject({
-        kind: 'freeze', rate: { exchange_rate: 1.25, exchange_rate_source: 'global' },
+        kind: 'freeze',
+        rate: { exchange_rate: 1.25, exchange_rate_source: 'global' },
       });
       expect(snapshot).toHaveBeenCalledWith('EUR');
     } finally {
@@ -1452,16 +1457,20 @@ describe('prepareRate', () => {
 
   it('preserves a booked currency on an unrelated edit', async () => {
     await expect(budget.prepareRate(1, {}, undefined, { currency: 'USD' })).resolves.toEqual({
-      kind: 'preserve', base: 'EUR', previousCurrency: 'USD',
+      kind: 'preserve',
+      base: 'EUR',
+      previousCurrency: 'USD',
     });
   });
 
   it('records identity and accepts an explicit foreign rate of exactly one', async () => {
     await expect(budget.prepareRate(1, { currency: 'EUR' })).resolves.toMatchObject({
-      kind: 'freeze', rate: { exchange_rate: 1, exchange_rate_source: 'identity' },
+      kind: 'freeze',
+      rate: { exchange_rate: 1, exchange_rate_source: 'identity' },
     });
     await expect(budget.prepareRate(1, { currency: 'USD', exchange_rate: 1 }, 2)).resolves.toMatchObject({
-      kind: 'freeze', rate: { exchange_rate: 1, exchange_rate_source: 'explicit', exchange_rate_set_by_user_id: 2 },
+      kind: 'freeze',
+      rate: { exchange_rate: 1, exchange_rate_source: 'explicit', exchange_rate_set_by_user_id: 2 },
     });
   });
 

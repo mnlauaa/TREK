@@ -120,8 +120,14 @@ export function positiveRate(rate: unknown): rate is number {
 }
 
 export function isFrozenRate(rate: unknown, source?: string | null): rate is number {
-  return positiveRate(rate) &&
-    (rate !== NOT_FROZEN_RATE || source === 'explicit' || source === 'trip' || source === 'global' || source === 'identity');
+  return (
+    positiveRate(rate) &&
+    (rate !== NOT_FROZEN_RATE ||
+      source === 'explicit' ||
+      source === 'trip' ||
+      source === 'global' ||
+      source === 'identity')
+  );
 }
 
 export function tripConverter(

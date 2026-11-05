@@ -132,7 +132,11 @@ describe('ExchangeRatesService.getRates', () => {
   });
 
   it('FX-SVC-022: treats an oversized response body as failure (quirk fix)', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, headers: new Headers(), text: async () => 'x'.repeat(1024 * 1024 + 1) });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      text: async () => 'x'.repeat(1024 * 1024 + 1),
+    });
     expect(await svc.getRates('BRL')).toBeNull();
   });
 });

@@ -16,7 +16,6 @@ import { Trips } from '../../src/db/entities/Trips.entity';
 import type { McpContext } from '../../src/nest-mcp';
 import { BudgetItemsMcp } from '../../src/nest/budget/budget-items.mcp';
 import { BudgetModule } from '../../src/nest/budget/budget.module';
-import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { ZodValidationPipe } from '../../src/nest/common/zod-validation.pipe';
 import { withRequestContext } from '../../src/nest/database/request-context';
@@ -24,6 +23,7 @@ import { NotificationsService } from '../../src/nest/notifications/notifications
 import { PermissionsService } from '../../src/nest/permissions/permissions.service';
 import { RealtimeModule } from '../../src/nest/realtime/realtime.module';
 import { ReservationsModule } from '../../src/nest/reservations/reservations.module';
+import { addBudgetItemMember, addBudgetItemPayer, makeBudgetItem } from '../helpers/factories/budget';
 import { makePlace } from '../helpers/factories/places';
 import { makeReservation } from '../helpers/factories/reservations';
 import { countRows, deleteRows, findRow, insertRow } from '../helpers/factories/rows';
@@ -82,10 +82,6 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         ReservationsModule,
       ],
     })
-      // The settlement read awaits live FX rates; the trip here is all-EUR, so a
-      // null result is the identity — and the test never touches the network.
-      .overrideProvider(ExchangeRatesService)
-      .useValue({ getRates: async () => null })
       // A booking delete notifies the trip; nothing here is listening.
       .overrideProvider(NotificationsService)
       .useValue({ send: vi.fn().mockResolvedValue(undefined) })
@@ -120,9 +116,14 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     // property is never imported by production code; this line used to be a
     // no-op that read as if it still controlled access.
     checkPermission.mockReturnValue(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
   });
 
   afterAll(async () => {
+    vi.unstubAllGlobals();
     await app.close();
     await orm.close();
   });
@@ -584,7 +585,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       // In the trip currency, so the price carries no currency of its own.
       expect(await metadataOf(trainId)).toEqual({ price: '60' });
 
-      const chf = await put(ticket.body.item.id, { currency: 'CHF' });
+      const chf = await put(ticket.body.item.id, { currency: 'CHF', exchange_rate: 1.1 });
       expect(chf.status).toBe(200);
       expect(chf.body.item).toMatchObject({ currency: 'CHF', total_price: 60 });
       expect(await metadataOf(trainId)).toEqual({ price: '60', priceCurrency: 'CHF' });
@@ -622,9 +623,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
     });
   });
 
-  // The VND/AUD report. The rates override above answers null for every base, which is
-  // exactly that server: it never reached the rates provider, so the only rates there
-  // are the ones the browser lends.
+  // The VND/AUD report exercises an offline provider and a quote supplied by the browser.
   describe('rows no rate can convert', () => {
     /** A fresh AUD trip the owner shares with user 2, so these cases never meet the ledger above. */
     async function audTrip(): Promise<number> {
@@ -637,19 +636,17 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
 
     it('VND/AUD regression: unfrozen VND bill is listed as unconverted, freeze-rates heals it from the browser quote, settlement nets 489.00, second freeze heals nothing', async () => {
       const trip = await audTrip();
-      const bill = await request(server)
-        .post(`/api/trips/${trip}/budget`)
-        .set('Cookie', sessionCookie(1))
-        .send({ name: 'Pho', currency: 'VND', payers: [{ user_id: 1, amount: 8920000 }], member_ids: [1, 2] });
-      expect(bill.status).toBe(201);
-      expect(bill.body.item.exchange_rate).toBe(1);
+      const bill = await makeBudgetItem(orm, trip, { name: 'Pho', currency: 'VND', total_price: 8920000 });
+      await addBudgetItemPayer(orm, bill.id, 1, 8920000);
+      await addBudgetItemMember(orm, bill.id, 1);
+      await addBudgetItemMember(orm, bill.id, 2);
 
       // Left out whole before anything is written: no balance in VND's order of magnitude.
       const before = await request(server).get(`/api/trips/${trip}/budget/settlement`).set('Cookie', sessionCookie(1));
       expect(before.status).toBe(200);
       expect(before.body.currency).toBe('AUD');
       expect(before.body.unconverted).toEqual({
-        item_ids: [bill.body.item.id],
+        item_ids: [bill.id],
         settlement_ids: [],
         currencies: ['VND'],
       });
@@ -662,7 +659,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .send({ fallback_fx });
       expect(healed.status).toBe(200);
       expect(healed.body.items.map((i: { id: number; exchange_rate: number }) => [i.id, i.exchange_rate])).toEqual([
-        [bill.body.item.id, 18241.3],
+        [bill.id, 18241.3],
       ]);
       expect(healed.body).toMatchObject({ settlements: [], unresolved: [] });
 
@@ -679,7 +676,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .send({ fallback_fx: { base: 'AUD', rates: { VND: 25000 } } });
       expect(again.status).toBe(200);
       expect(again.body).toEqual({ items: [], settlements: [], unresolved: [] });
-      expect((await budgetRow(bill.body.item.id)).exchange_rate).toBe(18241.3);
+      expect((await budgetRow(bill.id)).exchange_rate).toBe(18241.3);
     });
 
     it('POST with fallback_fx freezes at entry', async () => {
@@ -747,7 +744,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       expect(balanceOf(quoted.body, 2)).toBe(-30.5);
     });
 
-    it('PUT currency change to VND without a rate stores 1 instead of the USD rate', async () => {
+    it('PUT currency change without a rate preserves the prior booking', async () => {
       const trip = await audTrip();
       const created = await request(server)
         .post(`/api/trips/${trip}/budget`)
@@ -759,22 +756,18 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
         .put(`/api/trips/${trip}/budget/${created.body.item.id}`)
         .set('Cookie', sessionCookie(1))
         .send({ currency: 'VND' });
-      expect(res.status).toBe(200);
-      expect(res.body.item).toMatchObject({ currency: 'VND', exchange_rate: 1 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/enter a manual exchange rate/);
       const stored = await budgetRow(created.body.item.id);
       expect({ currency: stored.currency, exchange_rate: stored.exchange_rate }).toEqual({
-        currency: 'VND',
-        exchange_rate: 1,
+        currency: 'USD',
+        exchange_rate: 0.65,
       });
     });
 
     it('freeze-rates 403 without budget_edit, 400 on malformed fallback_fx, other base heals nothing (unresolved VND)', async () => {
       const trip = await audTrip();
-      const bill = await request(server)
-        .post(`/api/trips/${trip}/budget`)
-        .set('Cookie', sessionCookie(1))
-        .send({ name: 'Pho', currency: 'VND', total_price: 100000 });
-      expect(bill.status).toBe(201);
+      const bill = await makeBudgetItem(orm, trip, { name: 'Pho', currency: 'VND', total_price: 100000 });
       const freeze = (body: object) =>
         request(server).post(`/api/trips/${trip}/budget/freeze-rates`).set('Cookie', sessionCookie(1)).send(body);
 
@@ -798,7 +791,7 @@ describe('Budget e2e (real auth guard + temp SQLite, real budget SQL)', () => {
       const otherBase = await freeze({ fallback_fx: { base: 'EUR', rates: { VND: 27000 } } });
       expect(otherBase.status).toBe(200);
       expect(otherBase.body).toEqual({ items: [], settlements: [], unresolved: ['VND'] });
-      expect((await budgetRow(bill.body.item.id)).exchange_rate).toBe(1);
+      expect((await budgetRow(bill.id)).exchange_rate).toBe(1);
     });
 
     it('400 on base_rate=abc', async () => {

@@ -193,22 +193,24 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
    * `TrekRepository`/`EntityRepository`'s own same-named methods (a
    * different signature: an unpersisted-entity builder, not an INSERT).
    */
-  async insertItem(row: {
-    trip_id: number | string;
-    category: string;
-    name: string;
-    total_price: number;
-    currency: string | null;
-    exchange_rate: number;
-    persons: number | null;
-    days: number | null;
-    note: string | null;
-    ticket_json: string | null;
-    sort_order: number;
-    expense_date: string | null;
-    reservation_id: number | null;
-    place_id: number | null;
-  } & Partial<BudgetRateColumns>): Promise<number> {
+  async insertItem(
+    row: {
+      trip_id: number | string;
+      category: string;
+      name: string;
+      total_price: number;
+      currency: string | null;
+      exchange_rate: number;
+      persons: number | null;
+      days: number | null;
+      note: string | null;
+      ticket_json: string | null;
+      sort_order: number;
+      expense_date: string | null;
+      reservation_id: number | null;
+      place_id: number | null;
+    } & Partial<BudgetRateColumns>,
+  ): Promise<number> {
     const inserted = await this.kysely<BudgetItemsInsertKyselyDB>()
       .insertInto('budget_items')
       .values({ ...row, trip_id: row.trip_id as number })
@@ -225,22 +227,24 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
    * {@link create}'s — carries `paid_by_user_id` verbatim (§17, the "dead"
    * column survives a copy unexamined, matching legacy exactly).
    */
-  async insertCopy(row: {
-    trip_id: number | string;
-    category: string;
-    name: string;
-    total_price: number;
-    persons: number | null;
-    days: number | null;
-    note: string | null;
-    sort_order: number | null;
-    reservation_id: number | null;
-    currency: string | null;
-    exchange_rate: number;
-    expense_date: string | null;
-    ticket_json: string | null;
-    paid_by_user_id: number | null;
-  } & Partial<BudgetRateColumns>): Promise<number> {
+  async insertCopy(
+    row: {
+      trip_id: number | string;
+      category: string;
+      name: string;
+      total_price: number;
+      persons: number | null;
+      days: number | null;
+      note: string | null;
+      sort_order: number | null;
+      reservation_id: number | null;
+      currency: string | null;
+      exchange_rate: number;
+      expense_date: string | null;
+      ticket_json: string | null;
+      paid_by_user_id: number | null;
+    } & Partial<BudgetRateColumns>,
+  ): Promise<number> {
     const inserted = await this.kysely<BudgetItemsCopyInsertKyselyDB>()
       .insertInto('budget_items')
       .values({ ...row, trip_id: row.trip_id as number })
@@ -295,7 +299,11 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       place_id: number | null;
     }>(write);
     if (!rate && Object.keys(data).length === 0) return;
-    await this.kysely<BudgetKyselyDB>().updateTable('budget_items').set({ ...data, ...rate }).where('id', '=', id).execute();
+    await this.kysely<BudgetKyselyDB>()
+      .updateTable('budget_items')
+      .set({ ...data, ...rate })
+      .where('id', '=', id)
+      .execute();
   }
 
   /** BG6/BG34 — `UPDATE budget_items SET total_price = ? WHERE id = ?`. */

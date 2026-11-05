@@ -20,7 +20,6 @@ import { Users } from '../../src/db/entities/Users.entity';
 // Accommodations left reservations/ for a domain of their own; this container has
 // to assemble both or the /accommodations cases below 404 while production serves them.
 import { AccommodationsModule } from '../../src/nest/accommodations/accommodations.module';
-import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { legacyBoundIntegerText } from '../../src/nest/common/row-id';
 import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { ZodValidationPipe } from '../../src/nest/common/zod-validation.pipe';
@@ -113,10 +112,6 @@ describe('Reservations + accommodations e2e (real auth guard + temp SQLite, real
     })
       .overrideProvider(NotificationsService)
       .useValue({ send: notificationSend })
-      // A price quoted in a foreign currency freezes the rate of the day; this is that
-      // day's table, so no case ever reaches the network.
-      .overrideProvider(ExchangeRatesService)
-      .useValue({ getRates: async (base: string) => (base.toUpperCase() === 'EUR' ? { EUR: 1, USD: 1.17 } : null) })
       .compile();
     const nest = moduleRef.createNestApplication();
     nest.use(cookieParser());
@@ -138,11 +133,16 @@ describe('Reservations + accommodations e2e (real auth guard + temp SQLite, real
   });
 
   beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json([{ quote: 'USD', rate: 1.17 }])),
+    );
     checkPermission.mockReturnValue(true);
     notificationSend.mockClear();
   });
 
   afterAll(async () => {
+    vi.unstubAllGlobals();
     await app.close();
     await orm.close();
   });

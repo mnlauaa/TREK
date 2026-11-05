@@ -259,7 +259,7 @@ describe('service errors are translated into the RPC taxonomy', () => {
     const { guards, em } = guardsFor();
     const trips = {
       list: vi.fn(() => []),
-      updateTrip: vi.fn(() => {
+      update: vi.fn(() => {
         if (updateThrows) throw updateThrows;
         return { updatedTrip: { id: 1 } };
       }),

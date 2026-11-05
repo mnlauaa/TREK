@@ -80,7 +80,7 @@ describe('ReservationsController (parity with the legacy /api/trips/:tripId/rese
       expect(await controllerOver(svc).create(user, '5', body, 'sock')).toEqual({
         reservation: { id: 9 },
       });
-      expect(createWithCost).toHaveBeenCalledWith('5', body, { total_price: 200 });
+      expect(createWithCost).toHaveBeenCalledWith('5', body, { total_price: 200 }, user.id);
       // Every event skips the socket that sent the request, the cost between the stay and the booking.
       expect(broadcast.mock.calls).toEqual([
         ['5', 'accommodation:created', {}, 'sock'],
@@ -132,29 +132,18 @@ describe('ReservationsController (parity with the legacy /api/trips/:tripId/rese
       });
     });
 
-    // #2525: an imported booking quoted in dollars. The price has to reach the linked
-    // cost in dollars, at a rate frozen before anything is written.
-    it('hands the write the entry with its currency and frozen rate', async () => {
+    it('forwards an imported booking price and actor to the cost writer', async () => {
       const createWithCost = vi
         .fn()
         .mockReturnValue({ reservation: { id: 9 }, accommodationCreated: false, costEvents: [] });
-      const withFrozenRate = vi.fn(async () => {
-        expect(createWithCost).not.toHaveBeenCalled();
-        return { total_price: 801.76, currency: 'USD', exchange_rate: 1.17 };
-      });
-      const svc = makeService({ createWithCost, withFrozenRate } as Partial<ReservationsService>);
+      const svc = makeService({ createWithCost } as Partial<ReservationsService>);
       const body = {
         title: 'Aparthotel Silver',
         type: 'hotel',
         create_budget_entry: { total_price: 801.76, currency: 'usd' },
       };
       await controllerOver(svc).create(user, '5', body, 'sock');
-      expect(withFrozenRate).toHaveBeenCalledWith('5', { total_price: 801.76, currency: 'usd' });
-      expect(createWithCost).toHaveBeenCalledWith('5', body, {
-        total_price: 801.76,
-        currency: 'USD',
-        exchange_rate: 1.17,
-      });
+      expect(createWithCost).toHaveBeenCalledWith('5', body, body.create_budget_entry, user.id);
     });
   });
 
@@ -204,7 +193,7 @@ describe('ReservationsController (parity with the legacy /api/trips/:tripId/rese
       } as Partial<ReservationsService>);
       const body = { create_budget_entry: { total_price: 50 } };
       expect(await controllerOver(svc).update(user, '5', '9', body, 'sock')).toEqual({ reservation: { id: 9 } });
-      expect(updateWithCost).toHaveBeenCalledWith('9', '5', body, current, { total_price: 50 });
+      expect(updateWithCost).toHaveBeenCalledWith('9', '5', body, current, { total_price: 50 }, user.id);
       expect(broadcast.mock.calls).toEqual([
         ['5', 'accommodation:updated', {}, 'sock'],
         ['5', 'budget:updated', { item: { id: 3 } }, 'sock'],

@@ -49,7 +49,7 @@ const ALL_TRIP_GRANTS = ['db:read:trips', 'db:write:trips', 'db:create:trips', '
 export function build(opts: { allow?: (action: string) => boolean; updateThrows?: Error; createThrows?: Error } = {}) {
   const trips = {
     list: vi.fn(() => [{ id: 1, title: 'Japan' }]),
-    updateTrip: vi.fn(() => {
+    update: vi.fn(() => {
       if (opts.updateThrows) throw opts.updateThrows;
       return { updatedTrip: { id: 1, title: 'Japan' } };
     }),
@@ -260,7 +260,7 @@ describe('TripsRpc writes', () => {
       .host()
       .dispatch(req('trips.update', { tripId: 1, input: { is_archived: true } }), 42)) as RpcError;
     expect(res.error.message).toBe('no permission to archive trip 1');
-    expect(f.trips.updateTrip).not.toHaveBeenCalled();
+    expect(f.trips.update).not.toHaveBeenCalled();
   });
 
   it('TRIPS-RPC-007 changing the cover needs trip_cover_upload on top of trip_edit', async () => {
