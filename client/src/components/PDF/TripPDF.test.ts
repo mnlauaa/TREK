@@ -1434,7 +1434,7 @@ it('prints shared stay predictions and keeps unknown travel visibly unknown', as
       { id: 2, day_id: 1, place_id: 2, order_index: 1, stay_minutes: 60, place: { id: 2, name: 'Second' } },
     ] },
   });
-  const html = getIframe()!.srcdoc;
+  const html = getIframe()?.srcdoc;
   expect(html).toContain('19:15');
   expect(html).toContain('timing.unknown');
 });

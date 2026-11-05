@@ -1,4 +1,4 @@
-import { assignmentSchema, daySchema } from '@trek/shared';
+import { assignmentSchema, daySchema, dayTimingRequestSchema } from '@trek/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '../../../../tests/helpers/render';
 import { resetAllStores } from '../../../../tests/helpers/store';
@@ -36,7 +36,7 @@ const open = (assignment = visit) =>
       plan={buildItineraryTiming({
         items: [{ type: 'place', data: assignment, sortKey: 0 }],
         dayId: 1,
-        timing: day.timing!,
+        timing: dayTimingRequestSchema.parse(day.timing),
         segments: [],
         profile: 'walking',
       })}

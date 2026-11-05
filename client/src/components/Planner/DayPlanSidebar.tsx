@@ -1,5 +1,5 @@
 import { DayTimingControls, VisitTiming, TravelTimingControl } from './timing/ItineraryTiming'
-import { buildItineraryTiming, itineraryInitialTravel } from './timing/itineraryTimingModel'
+import { dayTimingPlan } from './timing/itineraryTimingModel'
 import { useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { isServiceStopType } from '../Roadtrip/roadtripModel'
 
@@ -275,9 +275,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     const el = dayRefs.current.get(dayId)
     const container = scrollContainerRef.current
     if (!el || !container) return
-    // Positioned against the container, not scrollIntoView: the sidebar sits in
-    // a page that also scrolls, and scrollIntoView would drag the whole layout
-    // around to satisfy a scroll inside one column.
+    // scrollIntoView would scroll the whole page instead of only this column.
     container.scrollTo({ top: el.offsetTop - container.offsetTop - 8, behavior: 'smooth' })
   }, [])
 
@@ -289,9 +287,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     requestAnimationFrame(() => scrollToDay(todayDayId))
   }, [todayDayId, onSelectDay, scrollToDay])
 
-  // On opening a trip that is running, land on today rather than on day 1 (#1567).
-  // Once per mount, and only while nothing is selected yet: a deep link into a
-  // specific day, or a day the user picked before switching tabs, must win.
+  // Initially select today, unless a deep link or user selection takes precedence (#1567).
   const autoJumpedRef = useRef(false)
   useEffect(() => {
     if (autoJumpedRef.current || todayDayId == null || selectedDayId != null || days.length === 0) return
@@ -305,9 +301,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     }
   }, [])
   const initedTransportIds = useRef(new Set<number>()) // Speichert Drag-Daten als Backup (dataTransfer geht bei Re-Render verloren)
-  // Remember which assignment we last auto-scrolled into view so we don't
-  // keep yanking the user back whenever they scroll away while the same
-  // place stays selected.
+  // Scroll to an assignment once so manual scrolling remains possible.
   const lastAutoScrolledIdRef = useRef<string | number | null>(null)
   useEffect(() => {
     // Reset the scroll-lock whenever selection moves, so the next selected
@@ -318,9 +312,7 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   }, [selectedAssignmentId, selectedPlaceId])
 
   const currency = trip?.currency || 'EUR'
-  // Cost totals render in the user's display currency (falling back to the
-  // trip's), converting foreign-currency place prices via live FX rates —
-  // same base resolution as BookingCostsSection / the Costs panel (#1561).
+  // Match the display currency used by Costs and booking costs (#1561).
   const displayCurrency = useSettingsStore(s => s.settings.default_currency)
   const costBase = (displayCurrency || currency).toUpperCase()
   const { rates: fxRates } = useExchangeRates(costBase)
@@ -1490,7 +1482,9 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
           // A hotel makes one located stop routable (#1330). Weather uses the hotel even when routing does not.
           const dayBookends = getDayBookendHotels(day, days, accommodations)
           const routeBookends = optimizeFromAccommodation !== false ? dayBookends : null
-          const timingPlan = day.timing?.enabled ? buildItineraryTiming({ items: mergedItemsMap[day.id] || [], dayId: day.id, timing: day.timing, segments: Object.values(routeLegs[day.id] || {}), profile: day.default_transport_mode ?? routeProfile, initialSeconds: itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations, optimizeFromAccommodation }, Object.values(routeLegs[day.id] || {}).concat(hotelLegs[day.id]?.top?.seg ? [hotelLegs[day.id]!.top!.seg] : []), routeProfile) }) : undefined
+          const timingPlan = dayTimingPlan(day, mergedItemsMap[day.id] || [],
+            { days, assignments, reservations, accommodations, optimizeFromAccommodation, toursEnabled, places, tourStageStops: props.tourStageStops },
+            { segments: routeLegs[day.id] || {}, hotel: hotelLegs[day.id]?.top?.seg, profile: routeProfile })
           const hasRouteBookend = !!(
             (routeBookends?.morning?.place_lat != null && routeBookends?.morning?.place_lng != null) ||
             (routeBookends?.evening?.place_lat != null && routeBookends?.evening?.place_lng != null)
@@ -1749,10 +1743,10 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                     <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
                   {hotelLegs[day.id]?.top && (() => {
                     const targetId = hotelLegs[day.id]?.top?.targetId
-                    const connector = <HotelRouteConnector seg={hotelLegs[day.id]!.top!.seg} name={hotelLegs[day.id]!.top!.name} profile={routeProfile} placement="top" />
+                    const connector = <HotelRouteConnector seg={hotelLegs[day.id]?.top?.seg} name={hotelLegs[day.id]!.top!.name} profile={routeProfile} placement="top" />
                     return canEditDays && targetId != null ? (
                       <Tooltip label={t('dayplan.transportMode.change')} placement="top">
-                        <div role="button" tabIndex={0}  onClick={e => openIncomingLegModeMenu(e, targetId, day.id, hotelLegs[day.id]!.top!.seg)} onKeyDown={e => openLegMenuByKey(e, m => openIncomingLegModeMenu(m, targetId, day.id, hotelLegs[day.id]!.top!.seg))} style={{ cursor: 'pointer' }} aria-label={t('dayplan.transportMode.change')}>
+                        <div role="button" tabIndex={0}  onClick={e => openIncomingLegModeMenu(e, targetId, day.id, hotelLegs[day.id]?.top?.seg)} onKeyDown={e => openLegMenuByKey(e, m => openIncomingLegModeMenu(m, targetId, day.id, hotelLegs[day.id]?.top?.seg))} style={{ cursor: 'pointer' }} aria-label={t('dayplan.transportMode.change')}>
                           {connector}
                         </div>
                       </Tooltip>

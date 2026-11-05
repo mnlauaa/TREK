@@ -28,11 +28,7 @@ import { createPdfMarkdown, PDF_MARKDOWN_CSS } from './pdfMarkdown'
 /** The saved print preference for starting each day on a new page. */
 const PAGE_BREAK_KEY = 'trek_pdf_page_break_per_day'
 
-/**
- * The notes of a flight, train or rental (#1571): printed by default, like the
- * notes of a place, and a switch in the preview leaves them out for a reader who
- * wants the plan without the fine print.
- */
+/** Whether the print preview includes transport notes (#1571). */
 const TRANSPORT_NOTES_KEY = 'trek_pdf_transport_notes'
 
 /* The overlay is imperative DOM, so the switch from Settings/ToggleSwitch is

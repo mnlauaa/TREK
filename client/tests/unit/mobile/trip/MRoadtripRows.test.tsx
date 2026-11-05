@@ -112,16 +112,16 @@ describe('RtStopRow', () => {
     render(<RtStopRow row={stopRow({ pinned: true })} chrome={chrome} onOpen={vi.fn()} />)
 
     expect(screen.getByLabelText('roadtrip.stop.pinned')).toBeInTheDocument()
-    expect(screen.getByText('12:40').closest('[dir="ltr"]')!.className).toContain('text-m-ink')
+    expect(screen.getByText('12:40').closest('[dir="ltr"]')?.className).toContain('text-m-ink')
   })
 
   it('FE-MOB-RTROW-006: leaves a computed time unpinned and muted', () => {
     render(<RtStopRow row={stopRow()} chrome={chrome} onOpen={vi.fn()} />)
 
     expect(screen.queryByLabelText('roadtrip.stop.pinned')).toBeNull()
-    const time = screen.getByText('12:40').closest('[dir="ltr"]')!
-    expect(time.className).toContain('text-m-faint')
-    expect(time.className).not.toContain('text-m-ink')
+    const time = screen.getByText('12:40').closest('[dir="ltr"]')
+    expect(time?.className).toContain('text-m-faint')
+    expect(time?.className).not.toContain('text-m-ink')
   })
 
   it('FE-MOB-RTROW-007: prints no clock for a stop the schedule could not time', () => {

@@ -119,7 +119,8 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
         const dayKey = Object.keys(assignments).find(key => assignments[key].some(a => a.id === editingAssignmentId))
         if (dayKey) {
           if (place_time !== undefined || end_time !== undefined) {
-            const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)!
+            const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)
+            if (!visit) throw new Error(t('common.unknownError'))
             const current = visitTimes(visit)
             await tripActions.setAssignmentTimes(tripId, Number(dayKey), editingAssignmentId, {
               place_time: place_time === undefined ? current.start : place_time || null,

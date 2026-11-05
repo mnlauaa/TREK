@@ -78,7 +78,8 @@ for (const mobile of [false, true]) {
         assignment_end_time: null,
       });
       await page.getByRole('button', { name: 'View booking', exact: true }).first().click();
-      await expect(page.getByRole('button', { name: 'Set fixed times', exact: true })).toHaveCount(0);
+      if (mobile) await expect(page.getByRole('button', { name: 'Set fixed times', exact: true })).toHaveCount(0);
+      else await expect(page.getByRole('dialog').filter({ hasText: 'Dinner booking' })).toBeVisible();
       await expect(page.getByText('Dinner booking', { exact: true }).first()).toBeVisible();
     });
   });

@@ -1,8 +1,9 @@
 import { manualTravelMinutes, visitStay, visitTimes, type DayTiming } from '@trek/shared';
 import { computeSchedule, parseClock, type ScheduleStop } from '@trek/shared/roadtrip';
-import type { Assignment, Reservation, RouteSegment } from '../../../types';
+import type { Assignment, Day, Reservation, RouteSegment } from '../../../types';
 import { getSpanPhase, getTransportRouteEndpoints, type MergedItem } from '../../../utils/dayMerge';
 import { buildDayRouteRuns, type DayRouteInputs } from '../../Map/dayRoutePlan';
+import { projectedById, type DayItineraryItem } from '../../Map/dayTourProjection';
 import { resolveLegMode } from '../legMode';
 
 interface TimingLeg {
@@ -37,6 +38,7 @@ export function buildItineraryTiming({
   segments,
   profile,
   initialSeconds,
+  routeContext,
 }: {
   items: MergedItem[];
   dayId: number;
@@ -44,10 +46,18 @@ export function buildItineraryTiming({
   segments: RouteSegment[];
   profile: string;
   initialSeconds?: number | null | TimingLeg;
+  routeContext?: Pick<DayRouteInputs, 'places' | 'toursEnabled' | 'tourStageStops'>;
 }) {
   const nodes: TimingNode[] = [];
+  const visits = items.filter((item) => item.type === 'place').map((item) => item.data as Assignment);
+  const projected = projectedById(
+    visits,
+    routeContext?.toursEnabled ?? true,
+    routeContext?.places,
+    routeContext?.tourStageStops
+  );
   for (const item of items) {
-    const node = itineraryNode(item, dayId);
+    const node = itineraryNode(item, dayId, item.type === 'place' ? projected.get(item.data.id) : undefined);
     if (node) nodes.push(node);
   }
   const legs = nodes.slice(0, -1).map((node, i) => {
@@ -109,10 +119,11 @@ export function itineraryInitialTravel(
 
 export const defaultDayTiming = (): DayTiming => ({ enabled: false, start: '09:00', travel: [] });
 
-function itineraryNode(item: MergedItem, dayId: number): TimingNode | null {
+function itineraryNode(item: MergedItem, dayId: number, projection?: DayItineraryItem): TimingNode | null {
   if (item.type === 'note') return null;
   if (item.type === 'place') {
     const assignment = item.data as Assignment;
+    if (assignment.route_excluded) return null;
     if (!assignment.place) {
       // Keep a broken/orphaned visit as an unknown route gap, without crashing the day.
       return {
@@ -128,8 +139,8 @@ function itineraryNode(item: MergedItem, dayId: number): TimingNode | null {
     return {
       key: `assignment:${assignment.id}`,
       assignment,
-      from: point(assignment.place),
-      to: point(assignment.place),
+      from: projection?.kind === 'tour' ? projection.start : point(assignment.place),
+      to: projection?.kind === 'tour' ? projection.end : point(assignment.place),
       stop: {
         anchor: times.start,
         dwellMinutes: visitStay(assignment),
@@ -171,4 +182,28 @@ function itineraryNode(item: MergedItem, dayId: number): TimingNode | null {
       };
     }
   }
+}
+
+export function dayTimingPlan(
+  day: Day,
+  items: MergedItem[],
+  input: DayRouteInputs,
+  routes: {
+    segments: Record<number, RouteSegment>;
+    hotel?: RouteSegment;
+    profile: string;
+  }
+) {
+  if (!day.timing?.enabled) return undefined;
+  const segments = Object.values(routes.segments);
+  const initialSegments = routes.hotel ? [...segments, routes.hotel] : segments;
+  return buildItineraryTiming({
+    items,
+    dayId: day.id,
+    timing: day.timing,
+    segments,
+    profile: day.default_transport_mode ?? routes.profile,
+    routeContext: input,
+    initialSeconds: itineraryInitialTravel(day.id, input, initialSegments, routes.profile),
+  });
 }

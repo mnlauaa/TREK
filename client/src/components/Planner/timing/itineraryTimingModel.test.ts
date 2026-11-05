@@ -1,4 +1,4 @@
-import { assignmentSchema } from '@trek/shared';
+import { assignmentSchema, dayTimingRequestSchema } from '@trek/shared';
 import { describe, expect, it } from 'vitest';
 import type { MergedItem } from '../../../utils/dayMerge';
 import { buildItineraryTiming } from './itineraryTimingModel';
@@ -131,7 +131,7 @@ it('resolves a manual hotel departure leg through the same route gates as the ma
     buildItineraryTiming({
       items: [{ type: 'place', sortKey: 0, data: stop }],
       dayId: 2,
-      timing: input.days[1].timing!,
+      timing: dayTimingRequestSchema.parse(input.days[1]?.timing),
       segments: [],
       profile: 'walking',
       initialSeconds: leg,
@@ -231,4 +231,23 @@ it('keeps an orphaned visit as an unknown gap without crashing timing', () => {
   });
   expect(plan.nodes.map((n) => n.key)).toEqual(['assignment:1', 'assignment:3', 'assignment:2']);
   expect(plan.schedule.entries.map((e) => e.arrival)).toEqual(['09:00', null, null]);
+});
+
+it('leaves route-excluded visits out of the predicted chain', () => {
+  const excluded = assignmentSchema.parse({
+    id: 1,
+    day_id: 1,
+    place_id: 1,
+    order_index: 0,
+    route_excluded: true,
+    place: { id: 1, name: 'Optional' },
+  });
+  const plan = buildItineraryTiming({
+    items: [{ type: 'place', data: excluded, sortKey: 0 }],
+    dayId: 1,
+    timing: { enabled: true, start: '09:00', travel: [] },
+    segments: [],
+    profile: 'walking',
+  });
+  expect(plan.nodes).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Minus, Plus } from 'lucide-react'
 import MSheet from '../../../components/MSheet'
 import MChip from '../../../components/MChip'
@@ -55,9 +55,10 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
 
   // Hold the last payload so the name and the number survive the exit animation
   // instead of blinking out while the sheet slides away.
-  const heldRef = useRef<RtStaySheetPayload | null>(null)
-  if (open && typeof payload.placeId === 'number') heldRef.current = payload
-  const stop = open && typeof payload.placeId === 'number' ? payload : heldRef.current
+  const [held, setHeld] = useState<RtStaySheetPayload | null>(null)
+  const active = open && typeof payload.placeId === 'number'
+  if (active && held !== payload) setHeld(payload)
+  const stop = active ? payload : held
 
   /** What the place carries now: the value the draft starts from and falls back to. */
   const stored = clampMinutes(stop?.minutes ?? 0)
