@@ -33,6 +33,8 @@
       "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs", "tests/**/*.{ts,tsx}", "e2e/**/*.{ts,mjs}"]
     },
     "server": {
+      // The release-fixture builder uses the system SQLite CLI to dump its historical database.
+      "ignoreBinaries": ["sqlite3"],
       "entry": [
         "src/index.ts",
         "src/bootstrap.ts",

@@ -167,7 +167,7 @@ export interface CalendarStopRow extends DayAssignmentRow {
   place_address: string | null;
   place_lat: number | null;
   place_lng: number | null;
-  place_duration_minutes: number | null;
+  effective_duration_minutes: number | null;
   effective_time: string | null;
   effective_end_time: string | null;
 }
@@ -920,7 +920,7 @@ export class ReservationsRepository extends TrekRepository<Reservations> {
         'p.address as place_address',
         'p.lat as place_lat',
         'p.lng as place_lng',
-        'p.duration_minutes as place_duration_minutes',
+        eb.fn.coalesce('da.stay_minutes', 'p.duration_minutes').as('effective_duration_minutes'),
         eb.case().when('da.times_explicit', '=', 1).then(eb.ref('da.assignment_time')).else(eb.fn.coalesce('da.assignment_time', 'p.place_time')).end().as('effective_time'),
         eb.case().when('da.times_explicit', '=', 1).then(eb.ref('da.assignment_end_time')).else(eb.fn.coalesce('da.assignment_end_time', 'p.end_time')).end().as('effective_end_time'),
       ])

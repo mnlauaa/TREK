@@ -407,6 +407,20 @@ describe('exportICS', () => {
       expect(ics).toContain('DTSTART;TZID=Europe/Berlin:20250602T180000\r\nDTEND;TZID=Europe/Berlin:20250602T182000\r\n');
     });
 
+    it.each([
+      { stay: 15, end: '181500' },
+      { stay: 0, end: null },
+      { stay: null, end: '190000' },
+    ])('uses visit stay $stay before the place duration', async ({ stay, end }) => {
+      const ics = await timedStop(
+        { place_time: '18:00', end_time: null, duration_minutes: 60 },
+        { stay_minutes: stay },
+      );
+      expect(ics).toContain('DTSTART;TZID=Europe/Berlin:20250602T180000');
+      if (end === null) expect(ics).not.toContain('DTEND;TZID=Europe/Berlin:');
+      else expect(ics).toContain(`DTEND;TZID=Europe/Berlin:20250602T${end}`);
+    });
+
     it('CAL-2641b: a place on the default duration gets an explicit hour', async () => {
       const ics = await timedStop({ place_time: '09:30', end_time: null, duration_minutes: 60 });
 
@@ -421,7 +435,7 @@ describe('exportICS', () => {
     });
 
     it('CAL-2641d: an assignment start and end under an hour stay as set', async () => {
-      const ics = await timedStop({ duration_minutes: 90 }, { assignment_time: '16:00', assignment_end_time: '16:20' });
+      const ics = await timedStop({ duration_minutes: 90 }, { assignment_time: '16:00', assignment_end_time: '16:20', stay_minutes: 15 });
 
       expect(ics).toContain('DTSTART;TZID=Europe/Berlin:20250602T160000\r\nDTEND;TZID=Europe/Berlin:20250602T162000\r\n');
     });

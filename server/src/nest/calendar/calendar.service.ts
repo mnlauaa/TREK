@@ -343,13 +343,11 @@ export class CalendarService {
         ev += dtLine('DTSTART', a.effective_time, zone, day.date + 'T00:00');
         if (a.effective_end_time) {
           ev += dtLine('DTEND', a.effective_end_time, zone, day.date + 'T00:00');
-        } else if (a.place_duration_minutes && a.place_duration_minutes > 0) {
-          // Without an end the event would have no length, and clients put their
-          // own default (mostly an hour) in its place, so a 20 minute stop came out
-          // as an hour (#2641). The place's duration says how long it lasts.
+        } else if (a.effective_duration_minutes && a.effective_duration_minutes > 0) {
+          // Without an end, calendar clients substitute their own duration (#2641).
           const start = a.effective_time ?? '';
           if (/^\d{2}:\d{2}/.test(start)) {
-            const stop = plusMinutes(day.date, start, a.place_duration_minutes);
+            const stop = plusMinutes(day.date, start, a.effective_duration_minutes);
             ev += dtLine('DTEND', stop.time, zone, stop.date + 'T00:00');
           }
         }
