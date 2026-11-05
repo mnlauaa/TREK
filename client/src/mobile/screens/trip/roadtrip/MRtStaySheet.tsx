@@ -170,7 +170,6 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
           />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-1">
-            {/* Only an unassigned place edits the shared default; a visit owns its stay. */}
             {stop.name && (
               <div className="truncate text-[0.875rem] font-semibold text-m-ink">{stop.name}</div>
             )}

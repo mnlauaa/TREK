@@ -122,32 +122,7 @@ export const defaultDayTiming = (): DayTiming => ({ enabled: false, start: '09:0
 function itineraryNode(item: MergedItem, dayId: number, projection?: DayItineraryItem): TimingNode | null {
   if (item.type === 'note') return null;
   if (item.type === 'place') {
-    const assignment = item.data as Assignment;
-    if (assignment.route_excluded) return null;
-    if (!assignment.place) {
-      // Keep a broken/orphaned visit as an unknown route gap, without crashing the day.
-      return {
-        key: `assignment:${assignment.id}`,
-        assignment,
-        from: null,
-        to: null,
-        stop: { anchor: null, dwellMinutes: 0 },
-      };
-    }
-    const times = visitTimes(assignment);
-    const end = parseClock(times.end);
-    return {
-      key: `assignment:${assignment.id}`,
-      assignment,
-      from: projection?.kind === 'tour' ? projection.start : point(assignment.place),
-      to: projection?.kind === 'tour' ? projection.end : point(assignment.place),
-      stop: {
-        anchor: times.start,
-        dwellMinutes: visitStay(assignment),
-        dated: true,
-        ...(end === null ? {} : { departureAt: end }),
-      },
-    };
+    return assignmentNode(item.data as Assignment, projection);
   } else {
     const reservation = item.data as Reservation & { __leg?: { index: number } };
     if (reservation.status === 'cancelled' || (!rideTypes.has(reservation.type) && !vehicleTypes.has(reservation.type)))
@@ -157,13 +132,9 @@ function itineraryNode(item: MergedItem, dayId: number, projection?: DayItinerar
     const endpoints = getTransportRouteEndpoints(reservation, dayId);
     const start = clock(phase === 'end' ? reservation.reservation_end_time : reservation.reservation_time);
     const end = parseClock(clock(reservation.reservation_end_time));
-    // Date-only/ambiguous bookings remain context, not clock anchors or route breaks.
     if (parseClock(start) === null && end === null) return null;
     const key = `reservation:${reservation.id}:${phase}:${reservation.__leg?.index ?? 0}`;
     if (vehicleTypes.has(reservation.type)) {
-      // A rental or parking interval is possession of a vehicle, not time spent
-      // riding it. This row is the handover at its displayed start/end endpoint.
-      // A same-day return stays a booking detail rather than consuming the day.
       const handover = phase === 'end' ? endpoints.to : endpoints.from;
       if (parseClock(start) === null || handover === null) return null;
       return { key, from: handover, to: handover, stop: { anchor: start, dwellMinutes: 0, dated: true } };
@@ -206,4 +177,31 @@ export function dayTimingPlan(
     routeContext: input,
     initialSeconds: itineraryInitialTravel(day.id, input, initialSegments, routes.profile),
   });
+}
+
+function assignmentNode(assignment: Assignment, projection?: DayItineraryItem): TimingNode | null {
+  if (assignment.route_excluded) return null;
+  if (!assignment.place) {
+    return {
+      key: `assignment:${assignment.id}`,
+      assignment,
+      from: null,
+      to: null,
+      stop: { anchor: null, dwellMinutes: 0 },
+    };
+  }
+  const times = visitTimes(assignment);
+  const end = parseClock(times.end);
+  return {
+    key: `assignment:${assignment.id}`,
+    assignment,
+    from: projection?.kind === 'tour' ? projection.start : point(assignment.place),
+    to: projection?.kind === 'tour' ? projection.end : point(assignment.place),
+    stop: {
+      anchor: times.start,
+      dwellMinutes: visitStay(assignment),
+      dated: true,
+      ...(end === null ? {} : { departureAt: end }),
+    },
+  };
 }

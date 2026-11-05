@@ -232,11 +232,8 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     return new Set<number>(days.map(d => d.id))
   })
   useEffect(() => { onExpandedDaysChange?.(expandedDays) }, [expandedDays])
-  // Assignment and reservation IDs can collide across days, so route legs are grouped by day (#1374).
   const [routeLegs, setRouteLegs] = useState<Record<number, Record<number, RouteSegment>>>({})
-  // Hotel legs are grouped by day for independently expanded mobile days (#1374).
   const [hotelLegs, setHotelLegs] = useState<Record<number, { top?: { seg: RouteSegment; name: string; targetId?: number }; bottom?: { seg: RouteSegment; name: string; targetId?: number } }>>({})
-  // Mobile route toggles do not select a day or close its sheet (#1374).
   const [expandedRouteDayIds, setExpandedRouteDayIds] = useState<Set<number>>(new Set())
   const optimizeFromAccommodation = useSettingsStore(s => s.settings.optimize_from_accommodation)
   // Recompute the hotel/route legs when the user flips km↔mi so the connector
@@ -287,7 +284,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     requestAnimationFrame(() => scrollToDay(todayDayId))
   }, [todayDayId, onSelectDay, scrollToDay])
 
-  // Initially select today, unless a deep link or user selection takes precedence (#1567).
   const autoJumpedRef = useRef(false)
   useEffect(() => {
     if (autoJumpedRef.current || todayDayId == null || selectedDayId != null || days.length === 0) return
@@ -301,7 +297,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
     }
   }, [])
   const initedTransportIds = useRef(new Set<number>()) // Speichert Drag-Daten als Backup (dataTransfer geht bei Re-Render verloren)
-  // Scroll to an assignment once so manual scrolling remains possible.
   const lastAutoScrolledIdRef = useRef<string | number | null>(null)
   useEffect(() => {
     // Reset the scroll-lock whenever selection moves, so the next selected
@@ -312,7 +307,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   }, [selectedAssignmentId, selectedPlaceId])
 
   const currency = trip?.currency || 'EUR'
-  // Match the display currency used by Costs and booking costs (#1561).
   const displayCurrency = useSettingsStore(s => s.settings.default_currency)
   const costBase = (displayCurrency || currency).toUpperCase()
   const { rates: fxRates } = useExchangeRates(costBase)
@@ -568,7 +562,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, assignments, dayNotes, reservations, transportPosVersion, mirrorServiceStops])
 
-  // Timing needs estimates even when the route is hidden. Mobile selection closes its sheet (#1374).
   const routeDayIds = useMemo<number[]>(() => Array.from(new Set([
     ...days.filter(d => d.timing?.enabled && expandedDays.has(d.id)).map(d => d.id),
     ...(
@@ -578,7 +571,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   )])), [showRouteToolsWhenExpanded, expandedRouteDayIds, expandedDays, days, routeShown, selectedDayId])
   const routeDayKey = routeDayIds.join(',')
 
-  // Route estimates share the map cache and run independently for each visible day (#1374).
   useEffect(() => {
     if (legsAbortRef.current) legsAbortRef.current.abort()
     if (routeDayIds.length === 0) { setRouteLegs({}); setHotelLegs({}); return }
@@ -1469,7 +1461,6 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
       <div className={`scroll-container flex flex-col gap-2 p-2${draggingId ? '' : ' trek-stagger'}`} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }} ref={scrollContainerRef} onScroll={(e) => onScrollTopChange?.((e.currentTarget as HTMLElement).scrollTop)}>
         {days.map((day, index) => {
           const isSelected = selectedDayId === day.id
-          // Click and Enter both toggle selection, independently of expansion.
           const toggleDaySelection = () => {
             if (isSelected) { onSelectDay(null); if (onDayDetail) onDayDetail(null) }
             else { onSelectDay(day.id); if (onDayDetail) onDayDetail(day) }
@@ -1479,12 +1470,11 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
           const formattedDate = formatDate(day.date, locale)
           const heading = dayHeadingParts(day.title || t('dayplan.dayN', { n: index + 1 }), formattedDate, dateFirst)
           const loc = da.find(a => a.place?.lat && a.place?.lng)
-          // A hotel makes one located stop routable (#1330). Weather uses the hotel even when routing does not.
           const dayBookends = getDayBookendHotels(day, days, accommodations)
           const routeBookends = optimizeFromAccommodation !== false ? dayBookends : null
           const timingPlan = dayTimingPlan(day, mergedItemsMap[day.id] || [],
             { days, assignments, reservations, accommodations, optimizeFromAccommodation, toursEnabled, places, tourStageStops: props.tourStageStops },
-            { segments: routeLegs[day.id] || {}, hotel: hotelLegs[day.id]?.top?.seg, profile: routeProfile })
+            { segments: routeLegs[day.id] || {}, hotel: hotelLegs[day.id]?.top?.seg, profile: routeProfile ?? 'driving' })
           const hasRouteBookend = !!(
             (routeBookends?.morning?.place_lat != null && routeBookends?.morning?.place_lng != null) ||
             (routeBookends?.evening?.place_lat != null && routeBookends?.evening?.place_lng != null)
@@ -1634,7 +1624,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                   <div className={`grid w-full place-items-center ${hasWeather ? 'h-6' : 'h-8'}`} style={{ ...fs(12), lineHeight: 1 }}>
                     {index + 1}
                   </div>
-                  {hasWeather && (
+                  {hasWeather && day.date && (
                     <>
                       <div className="h-px w-[60%] flex-none bg-current opacity-25" />
                       {/* The same height and type as the number: two equal halves. */}

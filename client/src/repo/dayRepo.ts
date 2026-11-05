@@ -10,7 +10,22 @@ import type { DayUpdateRequest } from '@trek/shared'
 
 /** A cache write after the server already answered: its failure is logged, not the caller's. */
 export function cacheAfterWrite(write: Promise<unknown>, what: string): void {
-  write.catch((err: unknown) => console.warn(`Offline cache not updated after ${what}:`, err))
+  void settleCacheWrite(write, what)
+}
+
+async function settleCacheWrite(write: Promise<unknown>, what: string): Promise<void> {
+  await write.catch((err: unknown) => console.warn(`Offline cache not updated after ${what}:`, err))
+}
+
+const timingWrites = new Map<string, Promise<Day>>()
+
+function serializeTiming(key: string, write: () => Promise<Day>): Promise<Day> {
+  const previous = timingWrites.get(key)
+  const next = previous ? previous.then(write, write) : write()
+  timingWrites.set(key, next)
+  const clear = () => { if (timingWrites.get(key) === next) timingWrites.delete(key) }
+  void next.then(clear, clear)
+  return next
 }
 
 /**
@@ -34,13 +49,15 @@ async function enqueueDayWrite(tripId: number | string, dayId: number, url: stri
 
 export const dayRepo = {
   async setTiming(tripId: number | string, day: Day, timing: DayTiming): Promise<Day> {
+    return serializeTiming(`${tripId}:${day.id}`, async () => {
     if (!(await mutationQueue.mustQueue('days', day.id))) {
       const saved = await saveDayTiming(tripId, day.id, timing)
-      cacheAfterWrite(cacheDayFields(day.id, saved), 'saving day timing')
-      return { ...day, ...saved }
+      await settleCacheWrite(cacheDayFields(day.id, { timing: saved.timing }), 'saving day timing')
+      return { ...day, timing: saved.timing }
     }
     await enqueueDayWrite(tripId, day.id, `/trips/${tripId}/days/${day.id}/timing`, timing, { timing })
     return { ...day, timing }
+    })
   },
   async list(tripId: number | string): Promise<{ days: Day[] }> {
     return onlineThenCache(

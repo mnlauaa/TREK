@@ -9,7 +9,7 @@ import { translateApiError } from '../../i18n'
 import { useAuthStore } from '../../store/authStore'
 import { useTripStore, type TripStoreState } from '../../store/tripStore'
 import { isEffectivelyOffline } from '../../sync/networkMode'
-import type { Accommodation, Place } from '../../types'
+import type { Accommodation, Assignment, Place } from '../../types'
 import { savePendingImage, takePendingImage } from './placeImageSave'
 import { capturePlaceVisits, deleteLosesDependents, restorePlace } from './placeUndo'
 import type { PlannerBase, PlannerHistory } from './plannerTypes'
@@ -120,8 +120,7 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
         if (dayKey) {
           if (place_time !== undefined || end_time !== undefined) {
             const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)
-            if (!visit) throw new Error(t('common.unknownError'))
-            const current = visitTimes(visit)
+            const current = requiredVisitTimes(visit)
             await tripActions.setAssignmentTimes(tripId, Number(dayKey), editingAssignmentId, {
               place_time: place_time === undefined ? current.start : place_time || null,
               end_time: end_time === undefined ? current.end : end_time || null,
@@ -344,3 +343,8 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
 }
 
 export type PlaceEdits = ReturnType<typeof usePlaceEdits>
+
+function requiredVisitTimes(visit: Assignment | undefined) {
+  if (!visit) throw new Error('Assignment not found')
+  return visitTimes(visit)
+}

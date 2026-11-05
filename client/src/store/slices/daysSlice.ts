@@ -43,14 +43,28 @@ export function withoutDay(state: DayState, dayId: number): DayState {
   return { days, assignments, dayNotes, selectedDayId: state.selectedDayId === dayId ? null : state.selectedDayId }
 }
 
-export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
+export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => {
+  const timingWrites = new Map<number, { latest: symbol; confirmed: Day['timing'] }>()
+  return ({
   setDayTiming: async (tripId, dayId, timing) => {
     const day = get().days.find(d => d.id === dayId)
     if (!day) throw new Error('Day not found')
+    const token = Symbol()
+    const pending = timingWrites.get(dayId) ?? { latest: token, confirmed: day.timing }
+    pending.latest = token
+    timingWrites.set(dayId, pending)
     const replace = (next: Day) => set(state => ({ days: state.days.map(d => d.id === dayId ? { ...d, timing: next.timing } : d) }))
     replace({ ...day, timing })
-    try { replace(await dayRepo.setTiming(tripId, day, timing)) }
-    catch (err) { replace(day); throw err }
+    try {
+      const saved = await dayRepo.setTiming(tripId, day, timing)
+      pending.confirmed = saved.timing
+      if (pending.latest === token) replace(saved)
+    } catch (err) {
+      if (pending.latest === token) replace({ ...day, timing: pending.confirmed })
+      throw err
+    } finally {
+      if (pending.latest === token) timingWrites.delete(dayId)
+    }
   },
   // Move whole days. Day rows stay stable (assignments/notes/bookings ride along
   // by id); only positions change and, on a dated trip, dates stay pinned to
@@ -148,3 +162,4 @@ export const createDaysSlice = (set: SetState, get: GetState): DaysSlice => ({
     }
   },
 })
+}
