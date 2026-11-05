@@ -1,5 +1,5 @@
-import forkFallback from '../../fork-i18n/en';
 import fork from '../../fork-i18n/de';
+import forkFallback from '../../fork-i18n/en';
 import admin from './admin';
 import airport from './airport';
 import assistant from './assistant';
