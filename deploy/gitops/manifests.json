@@ -12,7 +12,7 @@
         "name": "trek",
         "namespace": "trek",
         "annotations": {
-          "trek.deploy/revision": "0f10bc6b1a641100497912420acfb482c62c89dc"
+          "trek.deploy/revision": "64de51db7a35049a6a1ff225dbbdbc523c5e4c88"
         }
       },
       "spec": {
@@ -119,7 +119,7 @@
                     }
                   }
                 ],
-                "image": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345",
+                "image": "ghcr.io/mnlauaa/trek@sha256:0d4256bb6f75e41175f823191a37be36130b735173d70a42195bb1d351b842f8",
                 "imagePullPolicy": "IfNotPresent",
                 "livenessProbe": {
                   "failureThreshold": 3,
@@ -280,6 +280,114 @@
       }
     },
     {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "trek-application",
+        "namespace": "trek"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app": "trek"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app": "cloudflared"
+                  }
+                }
+              },
+              {
+                "podSelector": {
+                  "matchExpressions": [
+                    {
+                      "key": "batch.kubernetes.io/job-name",
+                      "operator": "In",
+                      "values": [
+                        "trek-backup-pre",
+                        "trek-backup-post",
+                        "trek-backup-fail"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 3000
+              }
+            ]
+          }
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                },
+                "podSelector": {
+                  "matchLabels": {
+                    "k8s-app": "kube-dns"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "0.0.0.0/0",
+                  "except": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "127.0.0.0/8",
+                    "100.64.0.0/10"
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 80
+              },
+              {
+                "protocol": "TCP",
+                "port": 443
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "apiVersion": "batch/v1",
       "kind": "Job",
       "metadata": {
@@ -312,11 +420,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:0d4256bb6f75e41175f823191a37be36130b735173d70a42195bb1d351b842f8"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
+                    "value": "64de51db7a35049a6a1ff225dbbdbc523c5e4c88"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
@@ -412,7 +520,7 @@
             "initContainers": [
               {
                 "name": "ensure-image-pulled",
-                "image": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345",
+                "image": "ghcr.io/mnlauaa/trek@sha256:0d4256bb6f75e41175f823191a37be36130b735173d70a42195bb1d351b842f8",
                 "command": [
                   "/usr/bin/true"
                 ],
@@ -465,11 +573,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:0d4256bb6f75e41175f823191a37be36130b735173d70a42195bb1d351b842f8"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
+                    "value": "64de51db7a35049a6a1ff225dbbdbc523c5e4c88"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
@@ -599,11 +707,11 @@
                 "env": [
                   {
                     "name": "CANDIDATE_IMAGE",
-                    "value": "ghcr.io/mnlauaa/trek@sha256:ff9311215af813eabba726d14ce9c95a6463290e93a7344ff6c584a91547a345"
+                    "value": "ghcr.io/mnlauaa/trek@sha256:0d4256bb6f75e41175f823191a37be36130b735173d70a42195bb1d351b842f8"
                   },
                   {
                     "name": "SOURCE_SHA",
-                    "value": "0f10bc6b1a641100497912420acfb482c62c89dc"
+                    "value": "64de51db7a35049a6a1ff225dbbdbc523c5e4c88"
                   },
                   {
                     "name": "PYTHONDONTWRITEBYTECODE",
@@ -698,114 +806,6 @@
             ]
           }
         }
-      }
-    },
-    {
-      "apiVersion": "networking.k8s.io/v1",
-      "kind": "NetworkPolicy",
-      "metadata": {
-        "name": "trek-application",
-        "namespace": "trek"
-      },
-      "spec": {
-        "podSelector": {
-          "matchLabels": {
-            "app": "trek"
-          }
-        },
-        "policyTypes": [
-          "Ingress",
-          "Egress"
-        ],
-        "ingress": [
-          {
-            "from": [
-              {
-                "podSelector": {
-                  "matchLabels": {
-                    "app": "cloudflared"
-                  }
-                }
-              },
-              {
-                "podSelector": {
-                  "matchExpressions": [
-                    {
-                      "key": "batch.kubernetes.io/job-name",
-                      "operator": "In",
-                      "values": [
-                        "trek-backup-pre",
-                        "trek-backup-post",
-                        "trek-backup-fail"
-                      ]
-                    }
-                  ]
-                }
-              }
-            ],
-            "ports": [
-              {
-                "protocol": "TCP",
-                "port": 3000
-              }
-            ]
-          }
-        ],
-        "egress": [
-          {
-            "to": [
-              {
-                "namespaceSelector": {
-                  "matchLabels": {
-                    "kubernetes.io/metadata.name": "kube-system"
-                  }
-                },
-                "podSelector": {
-                  "matchLabels": {
-                    "k8s-app": "kube-dns"
-                  }
-                }
-              }
-            ],
-            "ports": [
-              {
-                "protocol": "UDP",
-                "port": 53
-              },
-              {
-                "protocol": "TCP",
-                "port": 53
-              }
-            ]
-          },
-          {
-            "to": [
-              {
-                "ipBlock": {
-                  "cidr": "0.0.0.0/0",
-                  "except": [
-                    "10.0.0.0/8",
-                    "172.16.0.0/12",
-                    "192.168.0.0/16",
-                    "169.254.0.0/16",
-                    "127.0.0.0/8",
-                    "100.64.0.0/10"
-                  ]
-                }
-              }
-            ],
-            "ports": [
-              {
-                "protocol": "TCP",
-                "port": 80
-              },
-              {
-                "protocol": "TCP",
-                "port": 443
-              }
-            ]
-          }
-        ]
       }
     }
   ]
