@@ -23,6 +23,8 @@ function makeRow(overrides: Partial<AssignmentWithPlaceRow> = {}): AssignmentWit
     reservation_datetime: null,
     assignment_time: null,
     assignment_end_time: null,
+    stay_minutes: null,
+    times_explicit: 0,
     end_day: 0,
     leg_transport_mode: null,
     incoming_leg_transport_mode: null,

@@ -436,6 +436,13 @@ export class AssignmentsService {
     return await this.assignmentParticipantsRepo.listWithDisplayName(toRowId(assignmentId)!);
   }
 
+  async setStay(id: string | number, minutes: number | null) {
+    const assignmentId = toRowId(id);
+    if (assignmentId === null) throw new Error('Assignment not found');
+    await this.dayAssignmentsRepo.setStay(assignmentId, minutes);
+    return await this.getAssignmentWithPlace(assignmentId);
+  }
+
   /**
    * Saves a visit's own start and end, and puts the day back in time order when the
    * start changed. The rule is the planner's (`chronoOrder`): an untimed stop stays
@@ -449,13 +456,6 @@ export class AssignmentsService {
    * such a day the order stored and the order drawn can differ. The old sort did the
    * same.
    */
-  async setStay(id: string | number, minutes: number | null) {
-    const assignmentId = toRowId(id);
-    if (assignmentId === null) throw new Error('Assignment not found');
-    await this.dayAssignmentsRepo.setStay(assignmentId, minutes);
-    return await this.getAssignmentWithPlace(assignmentId);
-  }
-
   async updateTime(id: string | number, placeTime: unknown, endTime: unknown): Promise<AssignmentTimeUpdate> {
     const idNum = toRowId(id)!;
     const sorted = await this.uow.transactional(async () => {

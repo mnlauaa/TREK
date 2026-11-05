@@ -1,11 +1,13 @@
 import type { User } from '../../types';
 import { CurrentUser } from '../auth-core/current-user.decorator';
 import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
+import { ResponseContract } from '../common/response-contract';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
 import { DayRemovalService, DayDeleteError, type DayRemoval } from './day-removal.service';
 import { DayTimingDto, DayCreateDto, DayReorderDto, DayTransportDto, DayUpdateDto } from './days.dto';
 import { DaysService, DayReorderError, DayAppendError, type DatedDayAppend } from './days.service';
 import { Body, Controller, Delete, Get, Headers, HttpException, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { dayResponseSchema } from '@trek/shared';
 
 /**
  * /api/trips/:tripId/days — trip itinerary days.
@@ -126,6 +128,7 @@ export class DaysController {
 
   @RequirePermission('day_edit')
   @Put(':id/timing')
+  @ResponseContract(dayResponseSchema)
   async timing(
     @Param('tripId') tripId: string,
     @Param('id') id: string,

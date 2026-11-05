@@ -147,3 +147,5 @@ export const assignmentStayRequestSchema = z.object({
   stay_minutes: z.number().int().min(0).max(1440).nullable(),
 });
 export type AssignmentStayRequest = z.infer<typeof assignmentStayRequestSchema>;
+
+export const assignmentResponseSchema = z.object({ assignment: assignmentSchema });

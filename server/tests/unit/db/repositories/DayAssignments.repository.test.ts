@@ -6,6 +6,7 @@
 import { DayAccommodations } from '../../../../src/db/entities/DayAccommodations.entity';
 import { DayAssignments } from '../../../../src/db/entities/DayAssignments.entity';
 import { Places } from '../../../../src/db/entities/Places.entity';
+import { Reservations } from '../../../../src/db/entities/Reservations.entity';
 import type { DayAssignmentsRepository } from '../../../../src/db/repositories/DayAssignments.repository';
 import { withRequestContext } from '../../../../src/nest/database/request-context';
 import { UnitOfWork } from '../../../../src/nest/database/unit-of-work';
@@ -1382,4 +1383,26 @@ describe('DayAssignmentsRepository tour stages (MDT-02)', () => {
     expect(await stageOf(stage)).toBe('stage-one');
     expect(await stageOf(whole)).toBeNull();
   });
+});
+
+it('keeps a deliberately cleared visit untimed in public, roadtrip, calendar and seating projections', async () => {
+  const { user } = createUser(testDb);
+  const trip = createTrip(testDb, user.id);
+  const day = createDay(testDb, trip.id);
+  const place = createPlace(testDb, trip.id);
+  await updateRows(t, Places, { id: place.id }, { place_time: '09:00', end_time: '10:00', duration_minutes: 60 });
+  const visit = createDayAssignment(testDb, day.id, place.id);
+  await assignments.setTimes(visit.id, null, null);
+  await assignments.setStay(visit.id, 0);
+  expect(await assignments.listPublicForShare([day.id])).toEqual([
+    expect.objectContaining({ place_time: null, end_time: null, stay_minutes: 0, times_explicit: 1 }),
+  ]);
+  expect(await assignments.listRoadtripVisits(trip.id)).toEqual([
+    expect.objectContaining({ time: null, end_time: null, duration_minutes: 0 }),
+  ]);
+  expect(await assignments.listForTimeSort(day.id)).toEqual([expect.objectContaining({ effective_time: null })]);
+  expect(await assignments.listSeatRows(day.id)).toEqual([expect.objectContaining({ at: null })]);
+  expect(await t.repo(Reservations).listCalendarStopsForDays([day.id])).toEqual([
+    expect.objectContaining({ effective_time: null, effective_end_time: null }),
+  ]);
 });

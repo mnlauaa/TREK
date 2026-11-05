@@ -1,6 +1,7 @@
 import type { User } from '../../types';
 import { CurrentUser } from '../auth-core/current-user.decorator';
 import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
+import { ResponseContract } from '../common/response-contract';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
 import {
   AssignmentCreateDto,
@@ -16,6 +17,7 @@ import {
 } from './assignments.dto';
 import { AssignmentsService } from './assignments.service';
 import { Body, Controller, Delete, Get, Headers, HttpException, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { assignmentResponseSchema } from '@trek/shared';
 
 /**
  * /api/trips/:tripId/days/:dayId/assignments — the day's ordered itinerary items.
@@ -181,6 +183,7 @@ export class AssignmentOpsController {
 
   @RequirePermission('day_edit')
   @Put(':id/stay')
+  @ResponseContract(assignmentResponseSchema)
   async stay(
     @Param('tripId') tripId: string,
     @Param('id') id: string,

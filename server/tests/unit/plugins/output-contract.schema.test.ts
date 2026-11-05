@@ -14,6 +14,8 @@
  *   are the withheld credentials. A new key a read model starts carrying fails here
  *   the same way a new column does.
  */
+import { DayAssignments } from '../../../src/db/entities/DayAssignments.entity';
+import { Days } from '../../../src/db/entities/Days.entity';
 import { Trips } from '../../../src/db/entities/Trips.entity';
 import { createTestPluginRegistry } from '../../../src/nest-rpc/rpc-kit/testing';
 import type { PluginRpcContext } from '../../../src/nest-rpc/rpc-kit/types';
@@ -151,7 +153,16 @@ describe('the output contract drops only the withheld fields', () => {
     placeId = createPlace(testDb, trip.id).id;
     const tag = createTag(testDb, owner.id);
     await tagPlace(orm, placeId, [tag.id]);
-    createDayAssignment(testDb, dayIds[0], placeId);
+    const visit = createDayAssignment(testDb, dayIds[0], placeId);
+    await updateRows(orm, DayAssignments, { id: visit.id }, { stay_minutes: 0, times_explicit: 1 });
+    await updateRows(
+      orm,
+      Days,
+      { id: dayIds[0] },
+      {
+        timing_json: JSON.stringify({ enabled: true, start: '10:30', travel: [] }),
+      },
+    );
     createDayNote(testDb, dayIds[0], trip.id);
     createBudgetItem(testDb, trip.id);
     createPackingItem(testDb, trip.id);

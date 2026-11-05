@@ -126,9 +126,10 @@ export const PLUGIN_ENTITY_CONTRACT = {
   day: {
     table: 'days',
     columns: ['id', 'trip_id', 'day_number', 'date', 'notes', 'title', 'default_transport_mode'],
-    withheld: [],
+    // The service publishes the validated timing object instead of its JSON storage.
+    withheld: ['timing_json'],
     wholeRow: true,
-    derived: ['assignments', 'notes_items'],
+    derived: ['assignments', 'notes_items', 'timing'],
   },
   reservation: {
     table: 'reservations',
@@ -313,6 +314,8 @@ export const PLUGIN_ENTITY_CONTRACT = {
       'notes',
       'assignment_time',
       'assignment_end_time',
+      'stay_minutes',
+      'times_explicit',
       'end_day',
       'leg_transport_mode',
       'incoming_leg_transport_mode',

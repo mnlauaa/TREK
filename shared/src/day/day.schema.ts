@@ -135,3 +135,5 @@ export const dayNoteUpdateRequestSchema = z.object({
   sort_order: z.number().optional(),
 });
 export type DayNoteUpdateRequest = z.infer<typeof dayNoteUpdateRequestSchema>;
+
+export const dayResponseSchema = z.object({ day: daySchema });

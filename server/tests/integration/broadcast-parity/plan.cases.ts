@@ -97,6 +97,23 @@ export const plan: CaseGroup = {
   prefix: 'BCP-PLAN',
   cases: [
     {
+      tool: 'set_assignment_stay',
+      needs: ['assignment'],
+      args: (s) => ({ ...onAssignment(s), stay_minutes: 0 }),
+      rest: { method: 'put', path: (s) => `${assignmentPath(s)}/stay`, body: () => ({ stay_minutes: 0 }) },
+      expect: ['assignment:updated'],
+    },
+    {
+      tool: 'set_day_timing',
+      args: (s) => ({ tripId: s.trip.id, dayId: s.days[0].id, enabled: true, start: '10:30', travel: [] }),
+      rest: {
+        method: 'put',
+        path: (s) => `${daysPath(s)}/${s.days[0].id}/timing`,
+        body: () => ({ enabled: true, start: '10:30', travel: [] }),
+      },
+      expect: ['day:updated'],
+    },
+    {
       tool: 'create_place',
       args: (s) => ({ tripId: s.trip.id, name: 'Sacré-Cœur', lat: 48.8867, lng: 2.3431 }),
       rest: {
