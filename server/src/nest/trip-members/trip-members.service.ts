@@ -1,8 +1,7 @@
 import { TripMembers } from '../../db/entities/TripMembers.entity';
 import { Trips } from '../../db/entities/Trips.entity';
 import { Users } from '../../db/entities/Users.entity';
-import type { GuestTransferScope } from '../../db/repositories/GuestIdentityTransfer.repository';
-import type { TripMembersRepository } from '../../db/repositories/TripMembers.repository';
+import type { GuestTransferScope, TripMembersRepository } from '../../db/repositories/TripMembers.repository';
 import type { TripsRepository } from '../../db/repositories/Trips.repository';
 import type { UsersRepository } from '../../db/repositories/Users.repository';
 import { emitUserDeleted } from '../../plugin-user-lifecycle';

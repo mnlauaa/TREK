@@ -1,8 +1,8 @@
 import type {
-  GuestIdentityTransferRepository,
+  TripMembersRepository,
   GuestTicketWrite,
   GuestTransferScope,
-} from '../../db/repositories/GuestIdentityTransfer.repository';
+} from '../../db/repositories/TripMembers.repository';
 import { TICKET_NOTE_PREFIX, ticketPayloadSchema, type GuestIdentityTransferConflict } from '@trek/shared';
 
 export class GuestIdentityTransferError extends Error {
@@ -17,7 +17,7 @@ export class GuestIdentityTransferError extends Error {
   }
 }
 
-type GuestFinancialRows = Awaited<ReturnType<GuestIdentityTransferRepository['guestTransferFinancials']>>;
+type GuestFinancialRows = Awaited<ReturnType<TripMembersRepository['guestTransferFinancials']>>;
 
 function readTicket(raw: string) {
   try {
