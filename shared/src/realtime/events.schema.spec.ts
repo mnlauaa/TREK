@@ -64,6 +64,8 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'budget:settlement-created': { settlement: { id: 2 } },
   'budget:settlement-updated': { settlement: { id: 2 } },
   'budget:settlement-deleted': { settlementId: 2 },
+  'budget:exchange-rates-updated': { rate: { currency: 'USD', rate: 1.08 } },
+  'budget:exchange-rates-applied': { rate: { currency: 'USD', rate: 1.08 }, updated: [] },
   'reservation:created': { reservation: { id: 6 } },
   'reservation:updated': { reservation: { id: 6 } },
   'reservation:deleted': { reservationId: 6 },
@@ -76,6 +78,7 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'trip:deleted': { id: 1 },
   'member:added': { member: { user_id: 2 } },
   'member:removed': { userId: 2 },
+  'guest:identity-transferred': { guestUserId: 2, transferredByUserId: 1 },
   'member:updated': { member: { id: 2, username: 'Guest Ana' } },
   'trip:journal:changed': {},
   'docsync:changed': { linkId: 4, pulled: 2, pushed: 1 },
@@ -159,7 +162,7 @@ const DRIFT_VARIANTS: Partial<Record<TrekWsEventName, Record<string, unknown>[]>
 };
 
 describe('@trek/shared realtime event registry', () => {
-  it('WSEVT-REG-001: pins the authoritative inventory counts (79 trip + 41 user = 120)', () => {
+  it('WSEVT-REG-001: pins the authoritative inventory counts (82 trip + 41 user = 123)', () => {
     // 67th to 69th trip event: the three collab:link:* a shared link emits.
     // 70th and 71st: the road trip's vias and tracks, which used to be written silently.
     // 74th: docsync:changed, so a sync run that moved documents refreshes the
@@ -177,9 +180,9 @@ describe('@trek/shared realtime event registry', () => {
     // notification:read-all, trips:changed, settings:updated, tags:changed,
     // atlas:changed, journey:updated, journey:deleted). Registered first, the
     // writes that send them follow.
-    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(79);
+    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(82);
     expect(TREK_WS_USER_EVENT_NAMES).toHaveLength(41);
-    expect(TREK_WS_EVENT_NAMES).toHaveLength(120);
+    expect(TREK_WS_EVENT_NAMES).toHaveLength(123);
   });
 
   it('WSEVT-REG-002: every name is domain:action shaped and outside the reserved plugin: namespace', () => {

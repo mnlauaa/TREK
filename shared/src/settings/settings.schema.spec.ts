@@ -1,4 +1,8 @@
 import {
+  COMMON_CURRENCIES_MAX,
+  commonCurrencyListSchema,
+  settingResetKeySchema,
+  settingResetResponseSchema,
   settingUpsertRequestSchema,
   settingsBulkRequestSchema,
   MASKED_SETTING_VALUE,
@@ -60,6 +64,34 @@ describe('compactPlannerTripViews', () => {
       compactPlannerTripViews({ '1': { roadtrip: true, dawarich: false }, '2': { overview: false }, '3': {} }),
     ).toEqual({
       '1': { roadtrip: true },
+    });
+  });
+});
+
+describe('commonCurrencyListSchema', () => {
+  it('normalizes supported codes while preserving order', () => {
+    expect(commonCurrencyListSchema.parse([' usd ', 'jpy'])).toEqual(['USD', 'JPY']);
+  });
+
+  it('rejects unsupported, duplicate, and oversized lists', () => {
+    expect(commonCurrencyListSchema.safeParse(['ZZZ']).success).toBe(false);
+    expect(commonCurrencyListSchema.safeParse(['usd', 'USD']).success).toBe(false);
+    expect(
+      commonCurrencyListSchema.safeParse(['USD', 'EUR', 'JPY', 'GBP', 'CHF', 'CNY', 'HKD', 'AUD', 'CAD', 'NZD', 'SEK'])
+        .success,
+    ).toBe(false);
+    expect(COMMON_CURRENCIES_MAX).toBe(10);
+  });
+});
+
+describe('common currency reset contract', () => {
+  it('accepts only the resettable setting and a normalized response', () => {
+    expect(settingResetKeySchema.parse('common_currencies')).toBe('common_currencies');
+    expect(settingResetKeySchema.safeParse('theme').success).toBe(false);
+    expect(settingResetResponseSchema.parse({ success: true, key: 'common_currencies', value: [' usd '] })).toEqual({
+      success: true,
+      key: 'common_currencies',
+      value: ['USD'],
     });
   });
 });

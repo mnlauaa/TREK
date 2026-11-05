@@ -1,4 +1,5 @@
 import { idSchema } from '../common/primitives.schema';
+import { exchangeRateSourceSchema } from '../exchange-rate/exchange-rate.schema';
 
 import { z } from 'zod';
 
@@ -115,9 +116,9 @@ export type BudgetItemReceipt = z.infer<typeof budgetItemReceiptSchema>;
  * plus the embedded `members` (equal-split participants), `payers` and `receipts` arrays.
  * total_price is the sum of payer amounts in `currency`; `exchange_rate` converts
  * that to the trip base currency (NULL currency + rate 1 = base currency).
- * On a row in another currency, rate 1 means the rate was never frozen: the
- * server converts it with today's rate, and without one leaves it out of every
- * figure and lists it under the settlement's `unconverted`.
+ * On a foreign row, rate 1 without recognized provenance is the legacy unfrozen
+ * default. Explicit/trip/global/identity provenance makes 1 an intentional freeze.
+ * Unfrozen rows appear under `unconverted` until a rate is applied.
  */
 export const budgetItemSchema = z.object({
   id: z.number(),
@@ -127,6 +128,13 @@ export const budgetItemSchema = z.object({
   total_price: z.number(),
   currency: z.string().nullable().optional(),
   exchange_rate: z.number().optional(),
+  exchange_rate_source: exchangeRateSourceSchema.optional(),
+  exchange_rate_source_version: z.string().nullable().optional(),
+  exchange_rate_effective_date: z.string().nullable().optional(),
+  exchange_rate_set_at: z.string().nullable().optional(),
+  exchange_rate_set_by_user_id: z.number().nullable().optional(),
+  exchange_rate_note: z.string().nullable().optional(),
+  exchange_rate_reset_at: z.string().nullable().optional(),
   persons: z.number().nullable().optional(),
   days: z.number().nullable().optional(),
   note: z.string().nullable().optional(),
@@ -185,6 +193,7 @@ export const budgetCreateItemRequestSchema = z.object({
   total_price: z.number().optional(),
   currency: z.string().nullable().optional(),
   exchange_rate: z.number().optional(),
+  exchange_rate_note: z.string().max(500).nullable().optional(),
   // Multi-payer: who paid how much (in the expense currency). When omitted, the
   // server falls back to total_price with no explicit payer.
   payers: z.array(payerInputSchema).optional(),
@@ -216,6 +225,7 @@ export const budgetUpdateItemRequestSchema = z.object({
   total_price: z.number().optional(),
   currency: z.string().nullable().optional(),
   exchange_rate: z.number().optional(),
+  exchange_rate_note: z.string().max(500).nullable().optional(),
   payers: z.array(payerInputSchema).optional(),
   member_ids: z.array(z.number()).optional(),
   members: z.array(memberInputSchema).optional(),
@@ -245,8 +255,9 @@ export type BudgetUpdatePayersRequest = z.infer<typeof budgetUpdatePayersRequest
  * live rate frozen at settle time (units of that currency per 1 trip currency), so
  * a settled position stays balanced when live rates drift (#1445). Legacy rows
  * have currency = null / exchange_rate = 1 and convert with live rates. A row in
- * another currency with rate 1 was never frozen: without a live rate it is left
- * out of the balances and listed under the settlement's `unconverted`. Creating
+ * another currency with rate 1 and legacy/missing provenance was never frozen:
+ * it is excluded and listed under `unconverted` until a rate is applied. Intentional
+ * parity is recognized by provenance. New foreign writes require a rate. Creating
  * one marks a suggested flow as paid; deleting it (undo) brings the flow back.
  */
 export const budgetSettlementSchema = z.object({
@@ -257,6 +268,13 @@ export const budgetSettlementSchema = z.object({
   amount: z.number(),
   currency: z.string().nullable().optional(),
   exchange_rate: z.number().optional(),
+  exchange_rate_source: exchangeRateSourceSchema.optional(),
+  exchange_rate_source_version: z.string().nullable().optional(),
+  exchange_rate_effective_date: z.string().nullable().optional(),
+  exchange_rate_set_at: z.string().nullable().optional(),
+  exchange_rate_set_by_user_id: z.number().nullable().optional(),
+  exchange_rate_note: z.string().nullable().optional(),
+  exchange_rate_reset_at: z.string().nullable().optional(),
   created_at: z.string().optional(),
   // The calendar day the transfer actually happened (YYYY-MM-DD), independent of
   // `created_at` (when it was recorded) — same split as budget_items' expense_date
@@ -279,6 +297,8 @@ export const budgetCreateSettlementRequestSchema = z.object({
   amount: z.number(),
   // The display currency the amount was entered in; the server freezes its FX rate.
   currency: z.string().nullable().optional(),
+  exchange_rate: z.number().positive().finite().optional(),
+  exchange_rate_note: z.string().max(500).nullable().optional(),
   // The day the transfer happened. Null when the caller sets none; the ledger then
   // uses the day it was recorded, which is where every older payment already sits.
   settled_at: z.string().nullable().optional(),
@@ -295,6 +315,8 @@ export const budgetUpdateSettlementRequestSchema = z.object({
   to_user_id: z.number(),
   amount: z.number(),
   currency: z.string().nullable().optional(),
+  exchange_rate: z.number().positive().finite().optional(),
+  exchange_rate_note: z.string().max(500).nullable().optional(),
   settled_at: z.string().nullable().optional(),
   // Omitted leaves the note as it is; null or blank clears it (#2340).
   note: z.string().max(500).nullable().optional(),
