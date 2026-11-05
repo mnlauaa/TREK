@@ -94,7 +94,7 @@ const CURRENCY_CODE = /^[A-Z]{3}$/
  * 1e-9 to 1e9, for a lent `fallback_fx` rate as for the settlement's `base_rate`. Anything
  * else fails the whole request with a 400, so the client leaves it out instead.
  */
-export function isSendableRate(rate: number | null | undefined): rate is number {
+function isSendableRate(rate: number | null | undefined): rate is number {
   return rate != null && Number.isFinite(rate) && rate >= 1e-9 && rate <= 1e9
 }
 
@@ -118,6 +118,12 @@ export function withFallbackFx<T extends { currency?: string | null; exchange_ra
   return { ...data, fallback_fx: { base: trip, rates: { [cur]: rate } } }
 }
 
+type BookedRateRow = {
+  currency?: string | null;
+  exchange_rate?: number | null;
+  exchange_rate_source?: string | null;
+}
+
 /**
  * Convert a booked amount the way the server's settlement does (#1335, #1445): the FX
  * rate frozen when the expense or transfer was entered wins over today's rate, so a cost
@@ -137,16 +143,14 @@ export function withFallbackFx<T extends { currency?: string | null; exchange_ra
  */
 export function convertBooked(
   amount: number,
-  rowCurrency: string | null | undefined,
-  frozenRate: number | null | undefined,
+  row: BookedRateRow,
   tripCurrency: string,
-  convertLive: (amount: number, from: string | null | undefined) => number,
-  source?: string | null
+  convertLive: (amount: number, from: string | null | undefined) => number
 ): number {
   const trip = (tripCurrency || 'EUR').toUpperCase()
-  const inTrip = bookedInTrip(amount, rowCurrency, frozenRate, trip, source)
+  const inTrip = bookedInTrip(amount, row.currency, row.exchange_rate, trip, row.exchange_rate_source)
   if (inTrip != null) return convertLive(inTrip, trip)
-  return !rowCurrency || rowCurrency.toUpperCase() === trip ? convertLive(amount, trip) : Number.NaN
+  return !row.currency || row.currency.toUpperCase() === trip ? convertLive(amount, trip) : Number.NaN
 }
 
 /**
@@ -188,7 +192,6 @@ export function tripAmountOf(
   rowCurrency: string | null | undefined,
   frozenRate: number | null | undefined,
   tripCurrency: string,
-  _convertLive: (amount: number, from: string | null | undefined) => number,
   source?: string | null
 ): number {
   const trip = (tripCurrency || 'EUR').toUpperCase()
@@ -218,18 +221,18 @@ export interface MoneyPart {
  */
 export function convertedLine(
   amount: number,
-  rowCurrency: string | null | undefined,
-  frozenRate: number | null | undefined,
+  row: BookedRateRow,
   tripCurrency: string,
   displayCurrency: string,
-  shown: number,
-  source?: string | null
+  shown: number
 ): { entered: MoneyPart; into: MoneyPart } | null {
   const trip = (tripCurrency || 'EUR').toUpperCase()
   const display = (displayCurrency || trip).toUpperCase()
-  const cur = (rowCurrency || trip).toUpperCase()
+  const cur = (row.currency || trip).toUpperCase()
   const entered = { amount, currency: cur }
-  const inTrip = display !== trip && amount !== 0 ? bookedInTrip(amount, cur, frozenRate, trip, source) : null
+  const inTrip = display !== trip && amount !== 0
+    ? bookedInTrip(amount, cur, row.exchange_rate, trip, row.exchange_rate_source)
+    : null
   if (inTrip != null) {
     const unit = 10 ** currencyDecimals(display)
     if (cur === display && Math.round(shown * unit) === Math.round(amount * unit)) return null

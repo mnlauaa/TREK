@@ -155,7 +155,7 @@ export default function MCostPaymentSheet({
       <FormSheetFooter
         onCancel={onClose}
         cancelLabel={t('common.cancel')}
-        onSubmit={save}
+        onSubmit={() => void save()}
         submitLabel={editing ? t('common.save') : t('costs.addPayment')}
         submitDisabled={!valid || saving}
       />

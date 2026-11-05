@@ -5,7 +5,7 @@ import ItemExchangeRateFields from './ItemExchangeRateFields'
 import CurrencySelect from '../shared/CurrencySelect'
 import { awaitingConversion } from './costsModel'
 import { Fragment, useState, useMemo, useCallback, useId, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, BarChart3, Plus, Search, ArrowRight, ArrowLeftRight, Check, RotateCcw, Pencil, Trash2, AlertCircle, Download, StickyNote, ChevronDown, Receipt, Paperclip, ScanLine, Users } from 'lucide-react'
+import { ArrowDown, ArrowUp, BarChart3, Plus, Search, ArrowRight, ArrowLeftRight, Check, RotateCcw, Pencil, Trash2, AlertCircle, Download, ChevronDown, Receipt, Paperclip, ScanLine, Users } from 'lucide-react'
 import { useTripStore } from '../../store/tripStore'
 import { useCanDo } from '../../store/permissionsStore'
 import { useToast } from '../shared/Toast'
@@ -13,12 +13,11 @@ import { useTranslation } from '../../i18n'
 import { splitShareLabel } from './expenseFx'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { formatMoney, amountToInputString, currencyDecimals, currencyLocale, localizeAmountInput, zeroAmountInput } from '../../utils/formatters'
-import { openFile } from '../../utils/fileDownload'
 import CustomSelect from '../shared/CustomSelect'
 import { CustomDatePicker } from '../shared/CustomDateTimePicker'
 import { useReceiptScan } from './useReceiptScan'
 import { ReceiptScanModal } from './ReceiptScanModal'
-import { SYMBOLS, SPLIT_COLORS } from './BudgetPanel.constants'
+import { SPLIT_COLORS } from './BudgetPanel.constants'
 import { finalBudgetFor, finalBudgetSources, formerParticipantRows, NOTE_MAX, paidByUser, readUserNote, settlementDate } from './CostsPanel.helpers'
 import { COST_CAT_META, COST_CATEGORY_LIST, catMeta } from './costsCategories'
 import {
@@ -41,7 +40,7 @@ import { NumericInput } from '../shared/NumericInput'
 import EmptyState from '../shared/EmptyState'
 import { Tooltip } from '../shared/Tooltip'
 import { DialogButton, DialogFooter, DialogHeader, DialogSection, DialogShell, DialogTile, FooterSpacer, NEUTRAL_TINT, fs } from '../shared/DialogShell'
-import { AddRowButton, EditorField, GRID_2, INPUT, PillSelect, Segmented, TEXTAREA } from '../shared/dialogParts'
+import { AddRowButton, EditorField, INPUT, PillSelect, Segmented, TEXTAREA } from '../shared/dialogParts'
 import { CountPill, EYEBROW } from '../Planner/bookings/bookingParts'
 import CostsToolbar, { type CostsView } from './CostsToolbar'
 import CostsTable, { CostsTableSummary } from './CostsTable'
@@ -82,7 +81,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
     totals, filtered, filteredSettlements, catBreakdown, exportCsv: handleExportCsv,
     deleteExpense: handleDelete, undoSettlement, settleFlow, settleAll,
   } = useCostsLedger({
-    tripId, trip, budgetItems, actions: { loadBudgetItems, deleteBudgetItem }, canEdit, t, toast,
+    tripId, trip, budgetItems, actions: { loadBudgetItems, deleteBudgetItem }, t, toast,
     settlementOnTripChange: true, skipUnfinishedShares: true, csvCurrencyAsStored: true,
   })
   const curOf = useCallback((e: BudgetItem) => (e.currency || tripCurrency), [tripCurrency])
@@ -263,7 +262,7 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
            tint={NEUTRAL_TINT} title={t('costs.exchangeRates.title')} tile={<DialogTile><RateIcon size={20} /></DialogTile>} />}>
          <ExchangeRateManager tripId={tripId} tripCurrency={tripCurrency}
            usedCurrencies={[...budgetItems, ...settlement?.settlements ?? []].flatMap(item => item.currency ? [item.currency] : [])}
-           canEdit={canEdit} onChanged={() => { void loadBudgetItems(tripId); loadSettlement() }} />
+           canEdit={canEdit} />
        </DialogShell>
      )}
      {isMobile ? MobileBody() : (

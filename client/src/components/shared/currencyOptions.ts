@@ -18,7 +18,7 @@ interface BuildCurrencyOptionsArgs {
   specialOptions?: readonly CurrencyOption[];
 }
 
-export function currencyName(code: string, locale: string): string {
+function currencyName(code: string, locale: string): string {
   try {
     return new Intl.DisplayNames([locale], { type: 'currency' }).of(code) || code;
   } catch {

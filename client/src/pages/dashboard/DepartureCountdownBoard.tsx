@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useTranslation } from '../../i18n';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -15,19 +15,13 @@ export default function DepartureCountdownBoard({
   const { t, locale } = useTranslation();
   const timeFormat = useSettingsStore((state) => state.settings.time_format);
   const [now, setNow] = useState(() => Date.now());
-  const completedTarget = useRef<number | null>(null);
 
   useEffect(() => {
-    completedTarget.current = null;
-    setNow(Date.now());
     let intervalId: number | undefined;
     const tick = () => {
       const next = Date.now();
       setNow(next);
-      if (next >= departure.departureAt && completedTarget.current !== departure.departureAt) {
-        completedTarget.current = departure.departureAt;
-        if (intervalId !== undefined) window.clearInterval(intervalId);
-      }
+      if (next >= departure.departureAt && intervalId !== undefined) window.clearInterval(intervalId);
     };
     const nowMs = Date.now();
     const timeoutId = window.setTimeout(

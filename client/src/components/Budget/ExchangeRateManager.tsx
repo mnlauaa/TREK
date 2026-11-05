@@ -5,11 +5,12 @@ import {
   type TripExchangeRate,
 } from '@trek/shared';
 import { AlertTriangle, Trash2 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { useTranslation } from '../../i18n';
 import { exchangeRateRepo } from '../../repo/budgetRepo';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useTripStore } from '../../store/tripStore';
 import CurrencySelect from '../shared/CurrencySelect';
 import { NumericInput } from '../shared/NumericInput';
 import { useToast } from '../shared/Toast';
@@ -21,124 +22,67 @@ const sourceLabel = (t: (key: string, params?: Record<string, string | number>) 
   return t(`costs.exchangeRates.source.${known}`);
 };
 
+const NO_RATES: TripExchangeRate[] = [];
+const NO_CURRENCIES: readonly string[] = [];
+
 export default function ExchangeRateManager({
   tripId,
   tripCurrency,
-  usedCurrencies = [],
+  usedCurrencies = NO_CURRENCIES,
   canEdit,
-  onChanged,
 }: {
   tripId: number | string;
   tripCurrency: string;
   usedCurrencies?: readonly string[];
   canEdit: boolean;
-  onChanged?: () => void;
 }): React.ReactElement {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const toast = useToast();
   const commonCurrencies = useSettingsStore((state) => state.settings.common_currencies);
+  const remoteRevision = useTripStore((state) =>
+    String(state.trip?.id) === String(tripId) ? state.exchangeRatesRevision : 0
+  );
+  const [localRevision, setLocalRevision] = useState(0);
+  const [snapshot, setSnapshot] = useState<{ tripId: number | string; rates: TripExchangeRate[] } | null>(null);
+  const [selection, setSelection] = useState<{ tripId: number | string; currency: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const normalizedTripCurrency = tripCurrency.toUpperCase();
-  const fallbackCurrency = normalizedTripCurrency === 'USD' ? 'EUR' : 'USD';
+  const rates = snapshot?.tripId === tripId ? snapshot.rates : NO_RATES;
   const availableCurrencies = useMemo(
     () => FRANKFURTER_CURRENCIES.filter((code) => code !== normalizedTripCurrency),
     [normalizedTripCurrency]
   );
-  const [rates, setRates] = useState<TripExchangeRate[]>([]);
-  const [currency, setCurrency] = useState(fallbackCurrency);
-  const [value, setValue] = useState('');
-  const [note, setNote] = useState('');
-  const [resolution, setResolution] = useState<ExchangeRateResolution | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [preview, setPreview] = useState<ExchangeRateBatchPreview | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [refreshVersion, setRefreshVersion] = useState(0);
-  const userSelectedCurrency = useRef(false);
-  const resolveRevision = useRef(0);
 
-  const load = useCallback(async () => {
-    try {
-      const result = await exchangeRateRepo.list(tripId);
-      const nextRates = result.rates || [];
-      setRates(nextRates);
-      if (!userSelectedCurrency.current) {
-        setCurrency(
-          chooseInitialRateCurrency({
-            tripCurrency: normalizedTripCurrency,
-            commonCurrencies,
-            usedCurrencies,
-            savedCurrencies: nextRates.map((rate) => rate.currency),
-          })
-        );
+  useEffect(() => {
+    let active = true;
+    void exchangeRateRepo.list(tripId).then(
+      (result) => {
+        if (active) setSnapshot({ tripId, rates: result.rates || [] });
+      },
+      () => {
+        if (active) setSnapshot({ tripId, rates: NO_RATES });
       }
-    } catch {
-      setRates([]);
-    }
-  }, [commonCurrencies, normalizedTripCurrency, tripId, usedCurrencies]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-  useEffect(() => {
-    const reload = () => {
-      void load();
-      setRefreshVersion((version) => version + 1);
-    };
-    window.addEventListener('budget:exchange-rates-remote', reload);
-    return () => window.removeEventListener('budget:exchange-rates-remote', reload);
-  }, [load]);
-
-  useEffect(() => {
-    const revision = ++resolveRevision.current;
-    setPreview(null);
-    setResolution(null);
-    setUnavailable(false);
-    setValue('');
-    const saved = rates.find((rate) => rate.currency === currency);
-    setNote(saved?.note || '');
-    exchangeRateRepo
-      .resolve(tripId, currency)
-      .then((next) => {
-        if (resolveRevision.current !== revision) return;
-        setResolution(next);
-        setValue(formatDisplayRate(next.exchange_rate));
-      })
-      .catch(() => {
-        if (resolveRevision.current !== revision) return;
-        setUnavailable(true);
-      });
+    );
     return () => {
-      if (resolveRevision.current === revision) resolveRevision.current += 1;
+      active = false;
     };
-  }, [currency, rates, refreshVersion, tripId]);
+  }, [localRevision, remoteRevision, tripId]);
 
+  const currency =
+    selection?.tripId === tripId
+      ? selection.currency
+      : chooseInitialRateCurrency({
+          tripCurrency: normalizedTripCurrency,
+          commonCurrencies,
+          usedCurrencies,
+          savedCurrencies: rates.map((rate) => rate.currency),
+        });
   const selectedSavedRate = rates.find((rate) => rate.currency === currency);
-  const storedRate = displayRateToStored(Number(value));
-  const validRate = storedRate !== null && currency !== normalizedTripCurrency;
-  const inverse = Number(value) > 0 ? Number((1 / Number(value)).toPrecision(12)).toString() : null;
-  const date = (valueToFormat?: string | null) => {
-    if (!valueToFormat) return null;
-    const parsed = new Date(valueToFormat);
-    return Number.isNaN(parsed.getTime()) ? valueToFormat : parsed.toLocaleString(locale);
-  };
+  const selectCurrency = (currency: string) => setSelection({ tripId, currency });
   const refresh = () => {
-    void load();
-    setRefreshVersion((version) => version + 1);
-    onChanged?.();
-  };
-
-  const save = async () => {
-    if (!canEdit || !validRate) return;
-    setBusy(true);
-    try {
-      await exchangeRateRepo.saveDefault(tripId, currency, storedRate!, note.trim() || null);
-      toast.success(t('budget.exchangeRates.saved'));
-      refresh();
-    } catch {
-      toast.error(t('costs.exchangeRates.toast.saveError'));
-    } finally {
-      setBusy(false);
-    }
+    const state = useTripStore.getState();
+    state.refreshExchangeRates(tripId, true);
+    if (String(state.trip?.id) !== String(tripId)) setLocalRevision((version) => version + 1);
   };
 
   const remove = async (rate: TripExchangeRate) => {
@@ -154,11 +98,153 @@ export default function ExchangeRateManager({
     }
   };
 
-  const makePreview = async () => {
-    if (!canEdit || !validRate) return;
+  return (
+    <div className="space-y-4">
+      <p className="m-0 text-body text-content-muted">{t('costs.exchangeRates.description')}</p>
+      <RateEditor
+        rateContext={JSON.stringify([
+          tripId,
+          normalizedTripCurrency,
+          currency,
+          localRevision,
+          remoteRevision,
+          selectedSavedRate?.source_version,
+          selectedSavedRate?.note,
+        ])}
+        tripId={tripId}
+        tripCurrency={normalizedTripCurrency}
+        currency={currency}
+        onCurrencyChange={selectCurrency}
+        availableCurrencies={availableCurrencies}
+        selectedSavedRate={selectedSavedRate}
+        canEdit={canEdit}
+        busy={busy}
+        setBusy={setBusy}
+        refresh={refresh}
+      />
+      <div>
+        <h4 className="m-0 text-body font-semibold text-content">{t('costs.exchangeRates.savedDefaults')}</h4>
+        {rates.length === 0 ? (
+          <p className="mt-2 text-caption text-content-faint">{t('costs.exchangeRates.noTripRates')}</p>
+        ) : (
+          <div className="mt-2 divide-y divide-edge">
+            {rates.map((rate) => (
+              <div key={rate.currency} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectCurrency(rate.currency)}
+                  className="flex min-w-0 flex-1 items-center gap-3 py-2 text-start text-caption"
+                >
+                  <strong className="w-10 text-content">{rate.currency}</strong>
+                  <span className="min-w-0 flex-1 text-content-muted">
+                    1 {rate.currency} = {formatDisplayRate(rate.exchange_rate)} {normalizedTripCurrency}
+                    {rate.note ? ` · ${rate.note}` : ''}
+                  </span>
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={t('common.delete')}
+                    onClick={() => void remove(rate)}
+                    className="rounded-md p-1 text-danger disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RateEditor({
+  rateContext,
+  tripId,
+  tripCurrency,
+  currency,
+  onCurrencyChange,
+  availableCurrencies,
+  selectedSavedRate,
+  canEdit,
+  busy,
+  setBusy,
+  refresh,
+}: {
+  rateContext: string;
+  tripId: number | string;
+  tripCurrency: string;
+  currency: string;
+  onCurrencyChange: (currency: string) => void;
+  availableCurrencies: readonly string[];
+  selectedSavedRate: TripExchangeRate | undefined;
+  canEdit: boolean;
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+  refresh: () => void;
+}): React.ReactElement {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const savedNote = selectedSavedRate?.note ?? '';
+  const [previousContext, setPreviousContext] = useState(rateContext);
+  const [value, setValue] = useState<string | null>(null);
+  const [note, setNote] = useState(savedNote);
+  const [quote, setQuote] = useState<{ resolution: ExchangeRateResolution | null } | null>(null);
+  const [preview, setPreview] = useState<ExchangeRateBatchPreview | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  if (previousContext !== rateContext) {
+    setPreviousContext(rateContext);
+    setValue(null);
+    setNote(savedNote);
+    setQuote(null);
+    setPreview(null);
+    setSelected(new Set());
+  }
+
+  useEffect(() => {
+    let active = true;
+    void exchangeRateRepo.resolve(tripId, currency).then(
+      (resolution) => {
+        if (active) setQuote({ resolution });
+      },
+      () => {
+        if (active) setQuote({ resolution: null });
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [currency, rateContext, tripId]);
+
+  const resolution = quote?.resolution;
+  const unavailable = resolution === null;
+  const shown = value ?? (resolution ? formatDisplayRate(resolution.exchange_rate) : '');
+  const storedRate = displayRateToStored(Number(shown));
+  const validRate = storedRate !== null && currency !== tripCurrency;
+  const inverse = Number(shown) > 0 ? Number((1 / Number(shown)).toPrecision(12)).toString() : null;
+
+  const save = async () => {
+    if (!canEdit || storedRate === null || currency === tripCurrency) return;
     setBusy(true);
     try {
-      const result = await exchangeRateRepo.preview(tripId, currency, storedRate!, note.trim() || null);
+      await exchangeRateRepo.saveDefault(tripId, currency, storedRate, note.trim() || null);
+      toast.success(t('budget.exchangeRates.saved'));
+      refresh();
+    } catch {
+      toast.error(t('costs.exchangeRates.toast.saveError'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const makePreview = async () => {
+    if (!canEdit || storedRate === null || currency === tripCurrency) return;
+    setBusy(true);
+    try {
+      const result = await exchangeRateRepo.preview(tripId, currency, storedRate, note.trim() || null);
       setPreview(result);
       setSelected(new Set(result.rows.filter((row) => row.selected).map((row) => `${row.type}:${row.id}`)));
     } catch {
@@ -194,16 +280,11 @@ export default function ExchangeRateManager({
   };
 
   return (
-    <div className="space-y-4">
-      <p className="m-0 text-body text-content-muted">{t('costs.exchangeRates.description')}</p>
-
+    <>
       <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
         <CurrencySelect
           value={currency}
-          onChange={(next) => {
-            userSelectedCurrency.current = true;
-            setCurrency(next);
-          }}
+          onChange={onCurrencyChange}
           availableCurrencies={availableCurrencies}
           currentCurrency={currency}
           size="md"
@@ -214,7 +295,7 @@ export default function ExchangeRateManager({
             <span className="whitespace-nowrap text-content-muted">1 {currency} =</span>
             <NumericInput
               mode="decimal"
-              value={value}
+              value={shown}
               onValueChange={(next) => {
                 setValue(next.replace(',', '.'));
                 setPreview(null);
@@ -223,12 +304,12 @@ export default function ExchangeRateManager({
               placeholder={unavailable ? t('costs.exchangeRates.required') : '0'}
               className="min-w-0 flex-1 border-0 bg-transparent font-semibold text-content outline-none"
             />
-            <span className="whitespace-nowrap text-content-muted">{normalizedTripCurrency}</span>
+            <span className="whitespace-nowrap text-content-muted">{tripCurrency}</span>
           </div>
           {inverse && (
             <p className="m-0 mt-1 text-caption text-content-faint">
               {t('costs.exchangeRates.inverse', {
-                tripCurrency: normalizedTripCurrency,
+                tripCurrency: tripCurrency,
                 rate: inverse,
                 currency,
               })}
@@ -237,36 +318,7 @@ export default function ExchangeRateManager({
         </div>
       </div>
 
-      <div className="rounded-xl border border-edge bg-surface-secondary p-3 text-caption text-content-muted">
-        {resolution ? (
-          <div className="flex flex-wrap gap-x-2 gap-y-1">
-            <strong className="text-content">
-              {t('costs.exchangeRates.sourceLabel', { source: sourceLabel(t, resolution.source) })}
-            </strong>
-            {resolution.effective_date && <span>· {resolution.effective_date}</span>}
-            {resolution.fetched_at && (
-              <span>· {t('costs.exchangeRates.fetchedAt', { date: date(resolution.fetched_at) || '' })}</span>
-            )}
-            {resolution.stale && (
-              <span className="inline-flex items-center gap-1 text-warning">
-                · <AlertTriangle size={12} /> {t('costs.exchangeRates.staleSnapshot')}
-              </span>
-            )}
-          </div>
-        ) : (
-          <strong className={unavailable ? 'text-danger' : 'text-content-muted'}>
-            {unavailable ? t('costs.exchangeRates.manualRequired') : t('common.loading')}
-          </strong>
-        )}
-        {selectedSavedRate && (
-          <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
-            <span>{t('costs.exchangeRates.savedDefaults')}</span>
-            <span>· {date(selectedSavedRate.set_at)}</span>
-            {selectedSavedRate.note && <span>· {selectedSavedRate.note}</span>}
-          </div>
-        )}
-        <p className="m-0 mt-2 text-content-faint">{t('costs.exchangeRates.frozenHint')}</p>
-      </div>
+      <RateQuoteDetails resolution={resolution} selectedSavedRate={selectedSavedRate} />
 
       {canEdit && (
         <>
@@ -281,7 +333,7 @@ export default function ExchangeRateManager({
             <button
               type="button"
               disabled={!validRate || busy}
-              onClick={save}
+              onClick={() => void save()}
               className="rounded-lg border border-edge px-3 py-2 text-caption font-semibold text-content disabled:opacity-40"
             >
               {t('costs.exchangeRates.saveDefault')}
@@ -289,7 +341,7 @@ export default function ExchangeRateManager({
             <button
               type="button"
               disabled={!validRate || busy}
-              onClick={makePreview}
+              onClick={() => void makePreview()}
               className="rounded-lg bg-content px-3 py-2 text-caption font-semibold text-surface disabled:opacity-40"
             >
               {t('costs.exchangeRates.previewChanges')}
@@ -341,7 +393,7 @@ export default function ExchangeRateManager({
             <button
               type="button"
               disabled={busy || selected.size === 0}
-              onClick={apply}
+              onClick={() => void apply()}
               className="mt-3 rounded-lg bg-content px-3 py-2 text-caption font-semibold text-surface disabled:opacity-40"
             >
               {t('costs.exchangeRates.applyItems', { count: selected.size })}
@@ -349,45 +401,55 @@ export default function ExchangeRateManager({
           )}
         </div>
       )}
+    </>
+  );
+}
 
-      <div>
-        <h4 className="m-0 text-body font-semibold text-content">{t('costs.exchangeRates.savedDefaults')}</h4>
-        {rates.length === 0 ? (
-          <p className="mt-2 text-caption text-content-faint">{t('costs.exchangeRates.noTripRates')}</p>
-        ) : (
-          <div className="mt-2 divide-y divide-edge">
-            {rates.map((rate) => (
-              <div key={rate.currency} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    userSelectedCurrency.current = true;
-                    setCurrency(rate.currency);
-                  }}
-                  className="flex min-w-0 flex-1 items-center gap-3 py-2 text-start text-caption"
-                >
-                  <strong className="w-10 text-content">{rate.currency}</strong>
-                  <span className="min-w-0 flex-1 text-content-muted">
-                    1 {rate.currency} = {formatDisplayRate(rate.exchange_rate)} {normalizedTripCurrency}
-                    {rate.note ? ` · ${rate.note}` : ''}
-                  </span>
-                </button>
-                {canEdit && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-label={t('common.delete')}
-                    onClick={() => void remove(rate)}
-                    className="rounded-md p-1 text-danger disabled:opacity-40"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+function RateQuoteDetails({
+  resolution,
+  selectedSavedRate,
+}: {
+  resolution?: ExchangeRateResolution | null;
+  selectedSavedRate?: TripExchangeRate;
+}) {
+  const { t, locale } = useTranslation();
+  const unavailable = resolution === null;
+  const date = (valueToFormat?: string | null) => {
+    if (!valueToFormat) return null;
+    const parsed = new Date(valueToFormat);
+    return Number.isNaN(parsed.getTime()) ? valueToFormat : parsed.toLocaleString(locale);
+  };
+
+  return (
+    <div className="rounded-xl border border-edge bg-surface-secondary p-3 text-caption text-content-muted">
+      {resolution ? (
+        <div className="flex flex-wrap gap-x-2 gap-y-1">
+          <strong className="text-content">
+            {t('costs.exchangeRates.sourceLabel', { source: sourceLabel(t, resolution.source) })}
+          </strong>
+          {resolution.effective_date && <span>· {resolution.effective_date}</span>}
+          {resolution.fetched_at && (
+            <span>· {t('costs.exchangeRates.fetchedAt', { date: date(resolution.fetched_at) || '' })}</span>
+          )}
+          {resolution.stale && (
+            <span className="inline-flex items-center gap-1 text-warning">
+              · <AlertTriangle size={12} /> {t('costs.exchangeRates.staleSnapshot')}
+            </span>
+          )}
+        </div>
+      ) : (
+        <strong className={unavailable ? 'text-danger' : 'text-content-muted'}>
+          {unavailable ? t('costs.exchangeRates.manualRequired') : t('common.loading')}
+        </strong>
+      )}
+      {selectedSavedRate && (
+        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
+          <span>{t('costs.exchangeRates.savedDefaults')}</span>
+          <span>· {date(selectedSavedRate.set_at)}</span>
+          {selectedSavedRate.note && <span>· {selectedSavedRate.note}</span>}
+        </div>
+      )}
+      <p className="m-0 mt-2 text-content-faint">{t('costs.exchangeRates.frozenHint')}</p>
     </div>
   );
 }

@@ -97,7 +97,7 @@ describe('dashboardModel — departure transport countdown', () => {
     const now = Date.parse('2026-09-30T00:00:00Z')
     const result = getDepartureTransport([booking({})], [], now)
     expect(result).toMatchObject({ reservationId: 1, localTime: '09:30', timeZone: 'Asia/Hong_Kong' })
-    expect(result!.departureAt).toBe(Date.parse('2026-10-01T01:30:00Z'))
+    expect(result?.departureAt).toBe(Date.parse('2026-10-01T01:30:00Z'))
   })
 
   it('does not silently replace an incomplete first transport with a later one', () => {

@@ -10,39 +10,42 @@ export default function WebPushInvitation(): React.ReactElement | null {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const [config, setConfig] = useState<WebPushConfigResult | null>(null);
+  const [invitation, setInvitation] = useState<{ key: string; config: WebPushConfigResult } | null>(null);
   const [busy, setBusy] = useState(false);
   const capability = detectWebPushCapability();
   const installationId = useMemo(() => getWebPushInstallationId(), []);
   const dismissKey = user ? `trek_web_push_invitation_dismissed:${user.id}:${installationId}` : '';
 
+  const canInvite = isAuthenticated && !!user && capability !== 'unsupported' && capability !== 'denied';
+
   useEffect(() => {
-    if (!isAuthenticated || !user || !dismissKey || localStorage.getItem(dismissKey) === '1') {
-      setConfig(null);
-      return;
-    }
-    if (capability === 'unsupported' || capability === 'denied') return;
+    if (!canInvite || localStorage.getItem(dismissKey) === '1') return;
     let cancelled = false;
     void Promise.all([webPushRepo.config(), webPushRepo.devices()])
       .then(([config, result]) => {
         const current = result.devices.some((device) => device.installationId === installationId);
-        if (!cancelled) setConfig(config.enabled && config.available && !current ? config : null);
+        if (!cancelled) {
+          setInvitation(config.enabled && config.available && !current ? { key: dismissKey, config } : null);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setInvitation(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [capability, dismissKey, installationId, isAuthenticated, user]);
-  if (!config || !isAuthenticated || !user) return null;
+  }, [canInvite, capability, dismissKey, installationId, user]);
+  if (!canInvite || invitation?.key !== dismissKey) return null;
+  const { config } = invitation;
 
   const dismiss = () => {
     localStorage.setItem(dismissKey, '1');
-    setConfig(null);
+    setInvitation(null);
   };
   const enable = async () => {
     setBusy(true);
     try {
-      if ((await enableWebPush(config)).state === 'active') setConfig(null);
+      if ((await enableWebPush(config)).state === 'active') setInvitation(null);
     } catch {
       /* detailed state is available in Settings */
     } finally {
@@ -59,7 +62,7 @@ export default function WebPushInvitation(): React.ReactElement | null {
         {capability === 'supported' && (
           <button
             type="button"
-            onClick={enable}
+            onClick={() => void enable()}
             disabled={busy}
             className="rounded-md bg-content px-3 py-2 text-caption font-medium text-surface disabled:opacity-50"
           >

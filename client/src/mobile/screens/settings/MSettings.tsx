@@ -5,8 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   CloudOff,
-  Info,
-  Map,
+    Map,
   Palette,
   Plug,
   Puzzle,
@@ -65,7 +64,7 @@ export default function MSettings() {
         <button
           type="button"
           aria-label={t('common.back')}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => void navigate('/dashboard')}
           className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-full border border-[color:var(--m-gbr)] bg-[color:var(--m-sheet)] text-m-ink shadow-[0_5px_12px_-8px_rgba(0,0,0,.18)]"
         >
           <ChevronLeft size={18} strokeWidth={2.2} />
@@ -114,7 +113,7 @@ export default function MSettings() {
       {active.id === 'offline' && <MSettingsOffline />}
       {active.id === 'account' && <MSettingsAccount />}
       <p className="mt-8 text-center text-caption text-m-muted">
-        <button type="button" onClick={() => navigate('/legal')} className="underline">
+        <button type="button" onClick={() => void navigate('/legal')} className="underline">
           {t('legal.title')}{appVersion && ` · v${appVersion}`}
         </button>
       </p>

@@ -11,6 +11,8 @@ import {
 } from '../../services/webPush';
 import { useToast } from '../shared/Toast';
 
+const loadDevices = () => Promise.all([webPushRepo.config(), webPushRepo.devices()]);
+
 export default function WebPushDevices(): React.ReactElement {
   const { t, locale } = useTranslation();
   const toast = useToast();
@@ -22,13 +24,26 @@ export default function WebPushDevices(): React.ReactElement {
   const capability = detectWebPushCapability();
 
   const load = useCallback(async () => {
-    const [nextConfig, result] = await Promise.all([webPushRepo.config(), webPushRepo.devices()]);
+    const [nextConfig, result] = await loadDevices();
     setConfig(nextConfig);
     setDevices(result.devices);
   }, []);
   useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
+    let active = true;
+    void loadDevices().then(
+      ([nextConfig, result]) => {
+        if (!active) return;
+        setConfig(nextConfig);
+        setDevices(result.devices);
+      },
+      () => {
+        if (active) setConfig(null);
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const current = devices.find((device) => device.installationId === installationId);
   const enable = async () => {
@@ -108,7 +123,7 @@ export default function WebPushDevices(): React.ReactElement {
       {!current && !guidance && (
         <button
           type="button"
-          onClick={enable}
+          onClick={() => void enable()}
           disabled={busy === 'enable'}
           className="mt-3 rounded-md bg-content px-3 py-2 text-caption font-medium text-surface disabled:opacity-50"
         >
@@ -139,7 +154,7 @@ export default function WebPushDevices(): React.ReactElement {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => test(device)}
+                    onClick={() => void test(device)}
                     disabled={busy != null}
                     className="text-caption underline"
                   >
@@ -155,7 +170,7 @@ export default function WebPushDevices(): React.ReactElement {
                   </button>
                   <button
                     type="button"
-                    onClick={() => revoke(device)}
+                    onClick={() => void revoke(device)}
                     disabled={busy != null}
                     className="text-caption text-danger underline"
                   >

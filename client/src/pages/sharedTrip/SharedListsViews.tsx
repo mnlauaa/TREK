@@ -92,14 +92,14 @@ export function SharedCostsView({ items, base, tripCurrency, convert }: CostsPro
   const { t, locale } = useTranslation()
   if (items.length === 0) return <EmptySection icon={<Wallet size={22} />} text={t('shared.emptyCosts')} />
   const amountOf = (i: Expense) => Number.parseFloat(String(i.total_price ?? '')) || 0
-  const valueOf = (i: Expense) => convertBooked(amountOf(i), i.currency, i.exchange_rate, tripCurrency, convert, i.exchange_rate_source)
+  const valueOf = (i: Expense) => convertBooked(amountOf(i), i, tripCurrency, convert)
   // In the reader's own number format with the currency's code: a public page has
   // no idea where its reader is, and "$" alone does not say which dollar.
   // Whole cents: a converted amount otherwise printed a third decimal.
   const money = (v: number) => Number.isFinite(v) ? `${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${base}` : t('costs.exchangeRates.awaitingConversion')
   // What was entered, beside a row shown converted, as the Costs list prints it.
   const enteredOf = (i: Expense): string | null => {
-    const entered = convertedLine(amountOf(i), i.currency, i.exchange_rate, tripCurrency, base, valueOf(i), i.exchange_rate_source)?.entered
+    const entered = convertedLine(amountOf(i), i, tripCurrency, base, valueOf(i))?.entered
     if (!entered) return null
     const d = currencyDecimals(entered.currency)
     return `${entered.amount.toLocaleString(locale, { minimumFractionDigits: d, maximumFractionDigits: d })} ${entered.currency}`

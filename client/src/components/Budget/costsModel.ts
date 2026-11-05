@@ -43,9 +43,7 @@ export function awaitingConversion(
 }
 
 export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
-  return awaitingConversion(e, ctx.tripCurrency)
-    ? 0
-    : convertBooked(amount, e.currency, e.exchange_rate, ctx.tripCurrency, ctx.convert, e.exchange_rate_source);
+  return awaitingConversion(e, ctx.tripCurrency) ? 0 : convertBooked(amount, e, ctx.tripCurrency, ctx.convert);
 }
 
 /**
@@ -55,15 +53,7 @@ export function booked(amount: number, e: BudgetItem, ctx: CostsCtx): number {
  */
 export function lineOf(amount: number, e: BudgetItem, ctx: CostsCtx, shown: number) {
   if (awaitingConversion(e, ctx.tripCurrency)) return null;
-  return convertedLine(
-    amount,
-    e.currency,
-    e.exchange_rate,
-    ctx.tripCurrency,
-    ctx.displayCurrency,
-    shown,
-    e.exchange_rate_source
-  );
+  return convertedLine(amount, e, ctx.tripCurrency, ctx.displayCurrency, shown);
 }
 
 /** Expense total converted to the display/base currency, at its booked rate. */
@@ -131,32 +121,19 @@ export interface CostsBalance {
 /** A recorded settle-up transfer ("Ajouter un paiement") — history, not a suggestion like {@link CostsSettlementFlow}. */
 export type CostsSettlement = Omit<BudgetSettlement, 'trip_id'> & Partial<Pick<BudgetSettlement, 'trip_id'>>;
 
-/** The currency a recorded payment was entered in: legacy rows without one were in the display currency. */
-function paymentCurrency(s: CostsSettlement, ctx: CostsCtx): string {
-  return (s.currency || ctx.displayCurrency).toUpperCase();
-}
-
 /** A recorded payment in the display currency, at the rate frozen when it was settled (#1445). */
 export function paymentAmount(s: CostsSettlement, ctx: CostsCtx): number {
   return !s.currency
     ? s.amount
     : awaitingConversion(s, ctx.tripCurrency)
       ? 0
-      : convertBooked(s.amount, s.currency, s.exchange_rate, ctx.tripCurrency, ctx.convert, s.exchange_rate_source);
+      : convertBooked(s.amount, s, ctx.tripCurrency, ctx.convert);
 }
 
 /** The line under a payment shown converted, explained the way an expense's is (#2525). */
 export function paymentLineOf(s: CostsSettlement, ctx: CostsCtx, shown: number) {
   if (!s.currency || awaitingConversion(s, ctx.tripCurrency)) return null;
-  return convertedLine(
-    s.amount,
-    paymentCurrency(s, ctx),
-    s.exchange_rate,
-    ctx.tripCurrency,
-    ctx.displayCurrency,
-    shown,
-    s.exchange_rate_source
-  );
+  return convertedLine(s.amount, s, ctx.tripCurrency, ctx.displayCurrency, shown);
 }
 
 export interface CostsSettlementResponse {
@@ -411,14 +388,7 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
   for (const e of sorted) {
     const cur = opts.currencyOf ? opts.currencyOf(e) : currencyOf(e, opts.ctx);
     const note = readUserNote(e);
-    const inTrip = tripAmountOf(
-      e.total_price || 0,
-      e.currency,
-      e.exchange_rate,
-      trip,
-      opts.ctx.convert,
-      e.exchange_rate_source
-    );
+    const inTrip = tripAmountOf(e.total_price || 0, e.currency, e.exchange_rate, trip, e.exchange_rate_source);
     rows.push(
       [
         esc(fmtDate(e.expense_date || '')),

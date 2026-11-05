@@ -5,6 +5,7 @@ import { server } from '../../../tests/helpers/msw/server';
 import { fireEvent, render, screen, waitFor } from '../../../tests/helpers/render';
 import { resetAllStores } from '../../../tests/helpers/store';
 import { budgetApi } from '../../api/client';
+import { useTripStore } from '../../store/tripStore';
 import ExchangeRateManager from './ExchangeRateManager';
 
 const resolution = {
@@ -121,7 +122,7 @@ describe('ExchangeRateManager', () => {
       ],
     });
     const deleteSpy = vi.spyOn(budgetApi, 'deleteExchangeRate').mockResolvedValue({ success: true });
-    const onChanged = vi.fn();
+    const refresh = vi.spyOn(useTripStore.getState(), 'refreshExchangeRates');
     server.use(
       http.get('/api/trips/1/exchange-rates', () => HttpResponse.json({ rates: [saved] })),
       http.get('/api/trips/1/exchange-rates/resolve', () =>
@@ -133,9 +134,7 @@ describe('ExchangeRateManager', () => {
         })
       )
     );
-    render(
-      <ExchangeRateManager tripId={1} tripCurrency="EUR" usedCurrencies={['USD']} canEdit onChanged={onChanged} />
-    );
+    render(<ExchangeRateManager tripId={1} tripCurrency="EUR" usedCurrencies={['USD']} canEdit />);
 
     expect((await screen.findAllByText(/card rate/)).length).toBeGreaterThanOrEqual(2);
     await user.click(screen.getByRole('button', { name: 'Preview changes' }));
@@ -156,7 +155,7 @@ describe('ExchangeRateManager', () => {
     );
     await user.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1, 'USD'));
-    expect(onChanged).toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledWith(1, true);
   });
 
   it('shows stale and unavailable resolution states', async () => {

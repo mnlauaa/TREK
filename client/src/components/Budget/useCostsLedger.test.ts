@@ -8,6 +8,7 @@ import { addListener } from '../../api/websocket';
 import { clearAll, offlineDb } from '../../db/offlineDb';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useTripStore } from '../../store/tripStore';
 import { setForcedOffline } from '../../sync/networkMode';
 import type { BudgetItem, Trip } from '../../types';
 import { downloadBlob } from '../../utils/fileDownload';
@@ -96,7 +97,6 @@ function setup(options: Options = {}) {
         trip: options.trip ?? buildTrip({ id: 7, currency: 'EUR', title: 'Rome' }),
         budgetItems: items,
         actions: { loadBudgetItems, deleteBudgetItem },
-        canEdit: true,
         t: (key: string) => key,
         toast: { error: toastError, info: toastInfo },
         settlementOnTripChange: options.settlementOnTripChange,
@@ -355,11 +355,35 @@ describe('useCostsLedger: changes written elsewhere', () => {
         listener({ type: 'budget:settlement-created', settlement: { id: 31 } });
         listener({ type: 'budget:member-paid-updated', itemId: 4, userId: 2, paid: 1 });
         listener({ type: 'member:updated', member: { id: 2, username: 'Bo' } });
+        listener({ type: 'guest:identity-transferred', tripId: 7 });
+        listener({ type: 'budget:exchange-rates-applied', tripId: 7 });
         listener({ type: 'budget:created', item: { id: 99 } });
       }
     });
     await waitFor(() => expect(settlementMock()).toHaveBeenCalledTimes(before + 1));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(settlementMock()).toHaveBeenCalledTimes(before + 1);
+  });
+
+  it('keeps the latest settlement when local refresh responses arrive out of order', async () => {
+    useTripStore.setState({
+      trip: buildTrip({ id: 7 }),
+      loadBudgetItems,
+      hydrateActiveTrip: vi.fn().mockResolvedValue(undefined),
+    });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.settlement).toEqual(SETTLEMENT));
+
+    const earlier = Promise.withResolvers<CostsSettlementResponse>();
+    const latest = { ...SETTLEMENT, flows: [flow(1, 2, 35)] };
+    settlementMock().mockReturnValueOnce(earlier.promise).mockResolvedValueOnce(latest);
+
+    act(() => useTripStore.getState().refreshExchangeRates(7, true));
+    await waitFor(() => expect(settlementMock()).toHaveBeenCalledTimes(2));
+    act(() => useTripStore.getState().refreshTransferredGuest(7));
+    await waitFor(() => expect(result.current.settlement).toEqual(latest));
+
+    await act(async () => earlier.resolve({ ...SETTLEMENT, flows: [flow(1, 2, 20)] }));
+    expect(result.current.settlement).toEqual(latest);
   });
 });

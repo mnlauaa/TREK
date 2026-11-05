@@ -1,8 +1,6 @@
 import MCostMemberAvatar from '../../../components/MCostMemberAvatar'
 import MCostPaymentSheet from '../sheets/MCostPaymentSheet'
 import { awaitingConversion } from '../../../../components/Budget/costsModel'
-import ItemExchangeRateFields from '../../../../components/Budget/ItemExchangeRateFields'
-import CurrencySelect from '../../../../components/shared/CurrencySelect'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   AlertCircle, ArrowDown, ArrowLeftRight, ArrowRight, ArrowUp, Check, ChevronDown, ChevronUp,
@@ -10,29 +8,22 @@ import {
 } from 'lucide-react'
 import MDancingTrek from '../../../components/MDancingTrek'
 import { useTranslation } from '../../../../i18n'
-import { formatMoney, localizeAmountInput, zeroAmountInput } from '../../../../utils/formatters'
-import { openFile } from '../../../../utils/fileDownload'
+import { formatMoney } from '../../../../utils/formatters'
 import MCostSheet from '../sheets/MCostSheet'
 import { ReceiptPreviewModal } from '../../../../components/Budget/ReceiptPreviewModal'
 import { useCostsLedger } from '../../../../components/Budget/useCostsLedger'
 import { useExpenseLinks } from '../../../../components/Budget/useExpenseLinks'
-import { useSettlementForm } from '../../../../components/Budget/useSettlementForm'
-import { finalBudgetFor, finalBudgetSources, formerParticipantRows, NOTE_MAX, paidByUser, readUserNote } from '../../../../components/Budget/CostsPanel.helpers'
+import { finalBudgetFor, finalBudgetSources, formerParticipantRows, paidByUser, readUserNote } from '../../../../components/Budget/CostsPanel.helpers'
 import { catMeta, COST_CAT_META } from '../../../../components/Budget/costsCategories'
-import CustomSelect from '../../../../components/shared/CustomSelect'
-import { CustomDatePicker } from '../../../../components/shared/CustomDateTimePicker'
 import MConfirmSheet from '../../settings/MConfirmSheet'
-import MSheet from '../../../components/MSheet'
-import MChip from '../../../components/MChip'
-import { Eyebrow, FIELD_AREA_CLS, FIELD_CLS, FormSheetFooter, FormSheetHeader } from '../sheets/PlSheetChrome'
 import { CountPill, TabScroller } from './tabChrome'
 import { STATUS_COLOR, type MTabScreenProps } from './tabModel'
 import {
-  baseTotal, categoryFilterKeys, currencyOptions, dayFilterKeys, groupLedgerByDay, isUnfinished, lineOf, memberShareOf,
+  baseTotal, categoryFilterKeys, dayFilterKeys, groupLedgerByDay, isUnfinished, lineOf, memberShareOf,
   paymentAmount, paymentLineOf, tint, type CostsCtx, type CostsSettlement,
 } from '../../../../components/Budget/costsModel'
 import type { BudgetParticipantFinal } from '@trek/shared'
-import type { BudgetItem, BudgetItemReceipt, TripMember } from '../../../../types'
+import type { BudgetItem, BudgetItemReceipt } from '../../../../types'
 
 type TFn = (key: string, params?: Record<string, string | number>) => string
 
@@ -58,7 +49,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
     search, setSearch, segment, setSegment, catFilter, setCatFilter, dayFilter, setDayFilter,
     totals, filtered, filteredSettlements, catBreakdown, exportCsv: handleExportCsv,
     deleteExpense, undoSettlement: handleUndoSettlement,
-  } = useCostsLedger({ tripId, trip, budgetItems, actions: planner.tripActions, canEdit, t, toast })
+  } = useCostsLedger({ tripId, trip, budgetItems, actions: planner.tripActions, t, toast })
 
   const [catOpen, setCatOpen] = useState(false)
   const [dayOpen, setDayOpen] = useState(false)

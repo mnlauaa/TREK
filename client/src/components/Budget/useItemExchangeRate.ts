@@ -23,6 +23,97 @@ export const formatDisplayRate = (storedRate: number): string => {
   return displayed === null ? '' : Number(displayed.toPrecision(12)).toString();
 };
 
+function initialRate(
+  tripId: number,
+  tripCurrency: string,
+  itemCurrency: string,
+  existing: ExistingFrozenRate | null
+): ExchangeRateResolution | null | undefined {
+  const rate = existing?.exchange_rate;
+  const source = existing?.exchange_rate_source;
+  if (
+    existing &&
+    rate != null &&
+    Number.isFinite(rate) &&
+    rate > 0 &&
+    (rate !== 1 || (source != null && source !== 'legacy'))
+  ) {
+    return {
+      trip_id: tripId,
+      trip_currency: tripCurrency,
+      item_currency: itemCurrency,
+      exchange_rate: rate,
+      source: source || 'legacy',
+      source_version: existing.exchange_rate_source_version || 'legacy',
+      effective_date: existing.exchange_rate_effective_date || null,
+      fetched_at: existing.exchange_rate_set_at || null,
+      stale: false,
+    };
+  }
+  if (itemCurrency !== tripCurrency) return existing ? null : undefined;
+  return {
+    trip_id: tripId,
+    trip_currency: tripCurrency,
+    item_currency: itemCurrency,
+    exchange_rate: 1,
+    source: 'identity',
+    source_version: `identity:${tripCurrency}`,
+    effective_date: null,
+    fetched_at: null,
+    stale: false,
+  };
+}
+
+function itemRateKey(
+  tripId: number,
+  tripCurrency: string,
+  currency: string,
+  existing: ExistingFrozenRate | null,
+  enabled: boolean
+): string {
+  return JSON.stringify([
+    tripId,
+    tripCurrency,
+    currency,
+    enabled,
+    Boolean(existing),
+    existing?.exchange_rate,
+    existing?.exchange_rate_source,
+    existing?.exchange_rate_source_version,
+    existing?.exchange_rate_effective_date,
+    existing?.exchange_rate_set_at,
+    existing?.exchange_rate_note,
+  ]);
+}
+
+type RateDraft = { value?: string; note?: string };
+
+function itemRateView(
+  draft: RateDraft,
+  suggestion: ExchangeRateResolution | null,
+  matching: ExistingFrozenRate | null,
+  sameCurrency: boolean
+) {
+  const value = draft.value ?? (suggestion ? formatDisplayRate(suggestion.exchange_rate) : '');
+  const note = draft.note ?? matching?.exchange_rate_note ?? '';
+  const manual = draft.value !== undefined;
+  const numeric = Number(value);
+  const storedRate = manual ? displayRateToStored(numeric) : (suggestion?.exchange_rate ?? null);
+
+  return {
+    value,
+    note,
+    manual,
+    valid: sameCurrency || (manual ? storedRate !== null : matching !== null || suggestion !== null),
+    storedRate,
+    displayRate: Number.isFinite(numeric) && numeric > 0 ? numeric : null,
+    write:
+      manual && !sameCurrency && storedRate !== null
+        ? { exchange_rate: storedRate, exchange_rate_note: note.trim() || null }
+        : {},
+  };
+}
+
 export function useItemExchangeRate(
   tripId: number,
   currency: string,
@@ -32,171 +123,56 @@ export function useItemExchangeRate(
 ) {
   const currentCurrency = currency.toUpperCase();
   const accountingCurrency = tripCurrency.toUpperCase();
-  const existingCurrency = existing?.currency;
-  const existingRate = existing?.exchange_rate;
-  const existingSource = existing?.exchange_rate_source;
-  const existingSourceVersion = existing?.exchange_rate_source_version;
-  const existingEffectiveDate = existing?.exchange_rate_effective_date;
-  const existingSetAt = existing?.exchange_rate_set_at;
-  const existingNote = existing?.exchange_rate_note;
-  const hasExisting = existing !== null && existing !== undefined;
-  const sameExistingCurrency = Boolean(
-    hasExisting && (existingCurrency || accountingCurrency).toUpperCase() === currentCurrency
-  );
-  const hasFrozenRate =
-    existingRate != null &&
-    Number.isFinite(existingRate) &&
-    existingRate > 0 &&
-    (existingRate !== 1 || (existingSource != null && existingSource !== 'legacy'));
-  const existingResolution: ExchangeRateResolution | null =
-    sameExistingCurrency && hasFrozenRate
-      ? {
-          trip_id: tripId,
-          trip_currency: accountingCurrency,
-          item_currency: currentCurrency,
-          exchange_rate: existingRate,
-          source: existingSource || 'legacy',
-          source_version: existingSourceVersion || 'legacy',
-          effective_date: existingEffectiveDate || null,
-          fetched_at: existingSetAt || null,
-          stale: false,
-        }
-      : null;
-  const [suggestion, setSuggestion] = useState<ExchangeRateResolution | null>(existingResolution);
-  const [value, setValue] = useState(() =>
-    existingResolution ? formatDisplayRate(existingResolution.exchange_rate) : ''
-  );
-  const [note, setNote] = useState(existingNote || '');
-  const rateKey = `${tripId}:${accountingCurrency}:${currentCurrency}`;
-  const [manualKey, setManualKey] = useState<string | null>(null);
-  const manual = manualKey === rateKey;
-  const [loading, setLoading] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
-  const requestRevision = useRef(0);
+  const sameCurrency = currentCurrency === accountingCurrency;
+  const matching =
+    existing && (existing.currency || accountingCurrency).toUpperCase() === currentCurrency ? existing : null;
+  const rateKey = itemRateKey(tripId, accountingCurrency, currentCurrency, matching, enabled);
+  const [previousKey, setPreviousKey] = useState(rateKey);
+  const [draft, setDraft] = useState<RateDraft>({});
+  const [remote, setRemote] = useState<{ quote: ExchangeRateResolution | null } | null>(null);
   const manualRevision = useRef(0);
+  if (rateKey !== previousKey) {
+    setPreviousKey(rateKey);
+    setDraft({});
+    setRemote(null);
+  }
 
+  const initial = initialRate(tripId, accountingCurrency, currentCurrency, matching);
+  const shouldResolve = enabled && initial === undefined;
   useEffect(() => {
-    if (!enabled) return;
-    const revision = ++requestRevision.current;
-    const startedManualRevision = manualRevision.current;
-    const current = () => requestRevision.current === revision && manualRevision.current === startedManualRevision;
-    const unchanged = hasExisting && (existingCurrency || accountingCurrency).toUpperCase() === currentCurrency;
-    setManualKey(null);
-    setUnavailable(false);
-    setLoading(false);
-    setNote(unchanged ? existingNote || '' : '');
-    if (unchanged && hasFrozenRate) {
-      const next: ExchangeRateResolution = {
-        trip_id: tripId,
-        trip_currency: accountingCurrency,
-        item_currency: currentCurrency,
-        exchange_rate: existingRate,
-        source: existingSource || 'legacy',
-        source_version: existingSourceVersion || 'legacy',
-        effective_date: existingEffectiveDate || null,
-        fetched_at: existingSetAt || null,
-        stale: false,
-      };
-      setSuggestion(next);
-      setValue(formatDisplayRate(next.exchange_rate));
-      return;
-    }
-    if (unchanged && currentCurrency !== accountingCurrency) {
-      setSuggestion(null);
-      setValue('');
-      setUnavailable(true);
-      return;
-    }
-    if (currentCurrency === accountingCurrency) {
-      setSuggestion({
-        trip_id: tripId,
-        trip_currency: accountingCurrency,
-        item_currency: currentCurrency,
-        exchange_rate: 1,
-        source: 'identity',
-        source_version: `identity:${accountingCurrency}`,
-        effective_date: null,
-        fetched_at: null,
-        stale: false,
-      });
-      setValue('1');
-      return;
-    }
-    setSuggestion(null);
-    setValue('');
-    setLoading(true);
-    exchangeRateRepo
-      .resolve(tripId, currentCurrency)
-      .then((resolved) => {
-        if (!current()) return;
-        setSuggestion(resolved);
-        setValue(formatDisplayRate(resolved.exchange_rate));
-      })
-      .catch(() => {
-        if (!current()) return;
-        setSuggestion(null);
-        setValue('');
-        setUnavailable(true);
-      })
-      .finally(() => {
-        if (current()) setLoading(false);
-      });
+    if (!shouldResolve) return;
+    let active = true;
+    const revision = manualRevision.current;
+    void exchangeRateRepo.resolve(tripId, currentCurrency).then(
+      (quote) => {
+        if (active && revision === manualRevision.current) setRemote({ quote });
+      },
+      () => {
+        if (active && revision === manualRevision.current) setRemote({ quote: null });
+      }
+    );
     return () => {
-      if (requestRevision.current === revision) requestRevision.current += 1;
+      active = false;
     };
-  }, [
-    enabled,
-    tripId,
-    currentCurrency,
-    accountingCurrency,
-    hasExisting,
-    existingCurrency,
-    existingRate,
-    hasFrozenRate,
-    existingSource,
-    existingSourceVersion,
-    existingEffectiveDate,
-    existingSetAt,
-    existingNote,
-  ]);
+  }, [currentCurrency, rateKey, shouldResolve, tripId]);
 
   const setManualValue = (next: string) => {
     manualRevision.current += 1;
-    requestRevision.current += 1;
-    setManualKey(rateKey);
-    setLoading(false);
-    setUnavailable(false);
-    setValue(next.replace(',', '.'));
+    setDraft((current) => ({ ...current, value: next.replace(',', '.') }));
   };
-  const numeric = Number(value);
-  const sameCurrency = currentCurrency === accountingCurrency;
-  const applicableSuggestion =
-    suggestion?.trip_id === tripId &&
-    suggestion.trip_currency === accountingCurrency &&
-    suggestion.item_currency === currentCurrency
-      ? suggestion
+  const setNote = (note: string) => setDraft((current) => ({ ...current, note }));
+  const quote = initial === undefined ? remote?.quote : initial;
+  const suggestion =
+    quote?.trip_id === tripId && quote.trip_currency === accountingCurrency && quote.item_currency === currentCurrency
+      ? quote
       : null;
-  const valid =
-    sameCurrency ||
-    (manual ? Number.isFinite(numeric) && numeric > 0 : sameExistingCurrency || applicableSuggestion !== null);
-  const storedRate = manual ? displayRateToStored(numeric) : (applicableSuggestion?.exchange_rate ?? null);
-  const write =
-    manual && !sameCurrency && storedRate !== null
-      ? { exchange_rate: storedRate, exchange_rate_note: note.trim() || null }
-      : {};
-
+  const view = itemRateView(draft, suggestion, matching, sameCurrency);
   return {
-    suggestion: applicableSuggestion,
-    value,
+    ...view,
+    suggestion,
     setManualValue,
-    note,
     setNote,
-    manual,
-    loading,
-    unavailable,
-    valid,
-    storedRate,
-    displayRate: Number.isFinite(numeric) && numeric > 0 ? numeric : null,
-    write,
+    loading: shouldResolve && !view.manual && remote === null,
+    unavailable: !view.manual && quote === null,
   };
 }
