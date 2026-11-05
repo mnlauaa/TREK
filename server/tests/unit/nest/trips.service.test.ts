@@ -44,7 +44,6 @@ import { FilesService } from '../../../src/nest/files/files.service';
 import { ReservationsService } from '../../../src/nest/reservations/reservations.service';
 import { ReservationsReadService } from '../../../src/nest/reservations/reservations-read.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { CollabService } from '../../../src/nest/collab/collab.service';
 import { RateLimitService } from '../../../src/nest/common/rate-limit.service';
 import { VacayService } from '../../../src/nest/vacay/vacay.service';
@@ -87,7 +86,7 @@ import {
   createTestRoadtripDayBoundariesRepo,
 } from '../../helpers/test-uow';
 import { createTestTripFilesRepo, createTestFileLinksRepo, createTestBudgetItemsRepo } from '../../helpers/files-repos';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import {
   createTestCollabMessageReactionsRepo, createTestCollabNotesRepo, createTestCollabPollsRepo,
   createTestCollabPollVotesRepo, createTestCollabLinksRepo, createTestCollabMessagesRepo,
@@ -238,7 +237,7 @@ beforeAll(async () => {
     await createTestPlacesRepo(testDb),
     await createTestCollectionPlacesRepo(testDb),
   );
-  budgetSvc = new BudgetService(new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)), new ExchangeRatesService(), realtime, await createTestUnitOfWork(testDb), ...(await budgetRepoArgs(testDb)));
+  budgetSvc = new BudgetService(new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)), await createTestExchangeRates(testDb), realtime, await createTestUnitOfWork(testDb), ...(await budgetRepoArgs(testDb)));
   daysSvc = new DaysService(
     new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
     realtime,
@@ -1447,7 +1446,7 @@ describe('TripsService wrapper helpers', () => {
     const { user } = createUser(testDb);
     const trip = createTrip(testDb, user.id);
     await updateRows(await orm(), Trips, { id: trip.id }, { currency: 'EUR' });
-    const plan = { next: 'RUB', rates: null };
+    const plan = { previous: 'EUR', next: 'RUB', bridge: undefined };
     const seen: string[] = [];
     const prepareSpy = vi.spyOn(budgetSvc, 'prepareCurrencyRebase').mockResolvedValue(plan);
     const applySpy = vi.spyOn(budgetSvc, 'applyCurrencyRebase').mockImplementation(async () => {
@@ -1474,7 +1473,7 @@ describe('TripsService wrapper helpers', () => {
     const item = createBudgetItem(testDb, trip.id, { total_price: 100 });
     await updateRows(await orm(), BudgetItems, { id: item.id }, { currency: 'USD', exchange_rate: 1.1 });
     // Rates come from the network in production; the plan is handed in so the real write runs.
-    const prepareSpy = vi.spyOn(budgetSvc, 'prepareCurrencyRebase').mockResolvedValue({ next: 'JPY', rates: { USD: 0.0067, EUR: 0.0062 } });
+    const prepareSpy = vi.spyOn(budgetSvc, 'prepareCurrencyRebase').mockResolvedValue({ previous: 'EUR', next: 'JPY', bridge: 0.0062 });
     const daysSpy = vi.spyOn(svc, 'generateDays').mockRejectedValue(new Error('boom'));
     try {
       await expect(svc.update(trip.id, user.id, { currency: 'JPY', end_date: '2026-07-05' }, 'user')).rejects.toThrow('boom');

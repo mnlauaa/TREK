@@ -155,9 +155,7 @@ export class TripsRpc {
     }
     const role = await this.em.getRepository(Users).getRole(actor); // RP4 — UsersRepository.getRole
     try {
-      // The no-rebase core, parity with the legacy host path, which never
-      // re-anchored the budget currency.
-      const result = await this.trips.updateTrip(
+      const result = await this.trips.update(
         tripId,
         actor,
         input as Parameters<TripsService['updateTrip']>[2],

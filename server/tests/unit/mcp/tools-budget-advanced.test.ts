@@ -16,7 +16,7 @@ import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.se
 import { PermissionsService } from '../../../src/nest/permissions/permissions.service';
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import type { User } from '../../../src/types';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createUser, createTrip, createBudgetItem, addTripMember } from '../../helpers/factories';
 import { addBudgetItemMember, addBudgetItemPayer } from '../../helpers/factories/budget';
 import { countRows, updateRows } from '../../helpers/factories/rows';
@@ -301,7 +301,7 @@ describe('Settlement tools', () => {
     return new BudgetController(
       new BudgetService(
         new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-        new ExchangeRatesService(),
+        await createTestExchangeRates(testDb),
         new RealtimeService(),
         await createTestUnitOfWork(testDb),
         ...(await budgetRepoArgs(testDb)),

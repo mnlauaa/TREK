@@ -1,34 +1,24 @@
-/**
- * Unit tests for the DI-native ExchangeRatesService — FX-SVC-001 through
- * FX-SVC-022. New suite: the legacy services/exchangeRateService.ts had no
- * dedicated tests; the budget-domain fold moved it inside the src/nest/**
- * coverage gate. 001–012 pin the fetch/cache behavior (including the parity
- * quirks kept on purpose: `|| 'EUR'` falsy coercion, stale-cache fallback, the
- * `>1 keys` failure heuristic); 019 pins the module-scoped cache shared across
- * instances (the DI singleton and the out-of-container bridge instances wrap
- * one feed — originally pinned via the exchange-rates.bridge, deleted with the
- * budget fold); 021–022 pin the post-fold quirk fixes (AbortSignal timeout,
- * response-size cap, logged failures). 013–018 and 020 covered the dead
- * convertWithRates export and were removed with it in the quirk fixes.
- *
- * The rate cache is deliberately MODULE-scoped, so it persists across tests in
- * this file — every case uses its own base currency to stay isolated.
- */
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
+import type { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
+import { createTestExchangeRates } from '../../helpers/budget-repos';
+import { createSnapshotTestDb } from '../../helpers/db-mock';
 
+import type Database from 'better-sqlite3';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const TTL_MS = 6 * 60 * 60 * 1000; // mirrors the service's 6h TTL
 
 // A minimal Frankfurter-shaped success response (array of { quote, rate }).
-const okResponse = (data: unknown) => ({ ok: true, text: async () => JSON.stringify(data) });
+const okResponse = (data: unknown) => new Response(JSON.stringify(data));
 
-const svc = new ExchangeRatesService();
+let db: Database.Database;
+let svc: ExchangeRatesService;
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
-beforeEach(() => {
+beforeEach(async () => {
+  db = createSnapshotTestDb();
+  svc = await createTestExchangeRates(db);
   fetchMock = vi.fn(async () => okResponse([{ quote: 'USD', rate: 1.08 }]));
   vi.stubGlobal('fetch', fetchMock);
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -38,6 +28,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   errorSpy.mockRestore();
+  db.close();
 });
 
 describe('ExchangeRatesService.getRates', () => {
@@ -92,7 +83,7 @@ describe('ExchangeRatesService.getRates', () => {
   it('FX-SVC-008: serves the cached rates within the TTL without refetching', async () => {
     const first = await svc.getRates('PLN');
     const second = await svc.getRates('PLN');
-    expect(second).toBe(first);
+    expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -111,7 +102,7 @@ describe('ExchangeRatesService.getRates', () => {
     const first = await svc.getRates('RON');
     vi.advanceTimersByTime(TTL_MS + 1);
     fetchMock.mockRejectedValueOnce(new Error('down'));
-    expect(await svc.getRates('RON')).toBe(first);
+    expect(await svc.getRates('RON')).toEqual(first);
   });
 
   it('FX-SVC-011: coalesces concurrent fetches for the same base into one request', async () => {
@@ -141,19 +132,16 @@ describe('ExchangeRatesService.getRates', () => {
   });
 
   it('FX-SVC-022: treats an oversized response body as failure (quirk fix)', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, text: async () => 'x'.repeat(1024 * 1024 + 1) });
+    fetchMock.mockResolvedValueOnce({ ok: true, headers: new Headers(), text: async () => 'x'.repeat(1024 * 1024 + 1) });
     expect(await svc.getRates('BRL')).toBeNull();
   });
 });
 
-describe('cross-instance cache sharing', () => {
-  it('FX-SVC-019: a second instance (the out-of-container bridge shape) serves the module-scoped cache', async () => {
-    // Prime the cache through the DI-style instance…
+describe('durable snapshots', () => {
+  it('FX-SVC-019: a second instance reads the previously stored snapshot', async () => {
     const primed = await svc.getRates('AUD');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // …then a separately-constructed instance (as the trips/airtrail/auth
-    // bridges new up) must serve the same cached feed instead of refetching.
-    expect(await new ExchangeRatesService().getRates('AUD')).toBe(primed);
+    expect(await (await createTestExchangeRates(db)).getRates('AUD')).toEqual(primed);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

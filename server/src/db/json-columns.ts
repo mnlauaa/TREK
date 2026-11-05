@@ -1,6 +1,9 @@
 import type { JsonColumn } from '../utils/json-column';
 import {
   FERRATAS_RESULT_CAP,
+  exchangeRateBatchPreviewSchema,
+  exchangeRateSnapshotSchema,
+  type ExchangeRateBatchPreview,
   dawarichTrackSegmentSchema,
   assistantChangePreviewSchema,
   assistantChangePreviewWriteSchema,
@@ -510,5 +513,17 @@ export const PLACES_CONTRIBUTE_PAUSE: JsonColumn<PlacesContributePause | null> =
 export const PLACE_DETAILS_CACHE_PAYLOAD: JsonColumn<Record<string, unknown> | null> = {
   column: 'place_details_cache.payload_json',
   schema: z.record(z.string(), z.unknown()).nullable(),
+  fallback: () => null,
+};
+
+export const GLOBAL_EXCHANGE_RATE_MAP: JsonColumn<Record<string, number> | null> = {
+  column: 'global_exchange_rate_snapshots.rates_json',
+  schema: exchangeRateSnapshotSchema.shape.rates,
+  fallback: () => null,
+};
+
+export const EXCHANGE_RATE_BATCH_PREVIEW: JsonColumn<ExchangeRateBatchPreview | null> = {
+  column: 'exchange_rate_batch_previews.preview_json',
+  schema: exchangeRateBatchPreviewSchema,
   fallback: () => null,
 };

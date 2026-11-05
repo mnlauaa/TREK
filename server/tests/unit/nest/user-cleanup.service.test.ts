@@ -34,10 +34,9 @@ import { MaintenanceRepository } from '../../../src/db/repositories/MaintenanceR
 import type { TripMembersRepository } from '../../../src/db/repositories/TripMembers.repository';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { PermissionsService } from '../../../src/nest/permissions/permissions.service';
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import { createUser, createTrip } from '../../helpers/factories';
 import { countRows, deleteRows, findRow, findRows, insertRow, updateRows } from '../../helpers/factories/rows';
@@ -101,7 +100,7 @@ beforeAll(async () => {
   em = orm.em;
   budget = new BudgetService(
     new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-    new ExchangeRatesService(),
+    await createTestExchangeRates(testDb),
     new RealtimeService(),
     await createTestUnitOfWork(testDb),
     ...(await budgetRepoArgs(testDb)),

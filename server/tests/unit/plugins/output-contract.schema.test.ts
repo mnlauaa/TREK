@@ -292,6 +292,35 @@ describe('the output contract drops only the withheld fields', () => {
     await callAndCheck('collections.update', { id: collection, input: { name: 'Rome again' } });
   });
 
+  it('projects and authorizes the fork rate and settlement methods', async () => {
+    const currency = 'CAD';
+    expect(await callAndCheck('costs.setRate', { tripId, currency, exchangeRate: 1 })).toMatchObject({
+      currency,
+      exchange_rate: 1,
+      set_by_user_id: ownerId,
+    });
+    expect(await callHandler('costs.resolveRate', { tripId, currency })).toMatchObject({
+      source: 'trip',
+      item_currency: currency,
+      exchange_rate: 1,
+    });
+    expect(await callAndCheck('costs.listRates', { tripId })).toHaveLength(1);
+    const input = { from_user_id: ownerId, to_user_id: memberId, currency, amount: 15 };
+    const payment = await callAndCheck('costs.createSettlement', { tripId, input });
+    expect(payment).toMatchObject({
+      exchange_rate: 1,
+      exchange_rate_source: 'trip',
+      exchange_rate_set_by_user_id: ownerId,
+    });
+    expect(await callAndCheck('costs.listSettlements', { tripId })).toHaveLength(1);
+    const settlementId = idOf(payment);
+    expect(
+      await callAndCheck('costs.updateSettlement', { tripId, settlementId, input: { ...input, amount: 19 } }),
+    ).toMatchObject({ amount: 19, exchange_rate: 1, exchange_rate_source: 'trip' });
+    expect(await callHandler('costs.deleteSettlement', { tripId, settlementId })).toEqual({ deleted: true });
+    expect(await callHandler('costs.deleteRate', { tripId, currency })).toEqual({ deleted: true });
+  });
+
   it('OUTCONTRACT-002 the reads return every field they returned before, minus credentials', async () => {
     const collection = idOf(await callHandler('collections.create', { input: { name: 'Read me' } }));
     const reads: Array<[string, Record<string, unknown>]> = [

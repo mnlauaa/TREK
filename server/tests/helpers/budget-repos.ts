@@ -1,3 +1,7 @@
+import { ExchangeRateBatchPreviews } from '../../src/db/entities/ExchangeRateBatchPreviews.entity';
+import { GlobalExchangeRateSnapshots } from '../../src/db/entities/GlobalExchangeRateSnapshots.entity';
+import { TripExchangeRates } from '../../src/db/entities/TripExchangeRates.entity';
+import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { BudgetCategoryOrder } from '../../src/db/entities/BudgetCategoryOrder.entity';
 import { BudgetItemMembers } from '../../src/db/entities/BudgetItemMembers.entity';
 import { BudgetItemPayers } from '../../src/db/entities/BudgetItemPayers.entity';
@@ -18,6 +22,7 @@ import {
   createTestPlacesRepo,
   createTestTripsRepo,
   createTestTripMembersRepo,
+  createTestUnitOfWork,
 } from './test-uow';
 
 import type Database from 'better-sqlite3';
@@ -87,4 +92,15 @@ export async function budgetRepoArgs(
     await createTestTripsRepo(db),
     await createTestTripMembersRepo(db),
   ];
+}
+
+export async function createTestExchangeRates(db: Database.Database): Promise<ExchangeRatesService> {
+  const orm = await sharedTestOrm(db);
+  return new ExchangeRatesService(
+    orm.repo(GlobalExchangeRateSnapshots),
+    orm.repo(TripExchangeRates),
+    orm.repo(ExchangeRateBatchPreviews),
+    await createTestTripsRepo(db),
+    await createTestUnitOfWork(db),
+  );
 }

@@ -57,14 +57,11 @@ export class ReservationsController {
   ) {
     const body = rawBody as ReservationBody & { title: string };
     await this.rejectForeignReferences(tripId, body);
-    // Before the writes: the price keeps the currency it was quoted in,
-    // at a rate frozen now (#2525).
-    const budgetEntry = await this.reservations.withFrozenRate(tripId, body.create_budget_entry);
     // The booking and its linked cost are one write.
     return this.writes.createBooking(
       tripId,
       body as never,
-      budgetEntry,
+      body.create_budget_entry,
       this.writes.restWriter(tripId, user, socketId),
     );
   }

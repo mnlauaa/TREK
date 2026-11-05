@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import type { BudgetFallbackFx, BudgetParticipantFinal, BudgetUnconverted, TrekWsPayload, TrekWsTripEventName } from '@trek/shared';
-import { currencyDecimals, splitEqualShares, sumMinor, toMinor } from '@trek/shared';
+import { currencyDecimals, exchangeRateSourceSchema, splitEqualShares, sumMinor, toMinor } from '@trek/shared';
 import { RealtimeService } from '../realtime/realtime.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { byCodeUnit } from '../common/compare';
 import type { User, BudgetItem, BudgetItemMember, BudgetItemPayer, BudgetItemReceipt } from '../../types';
-import { ExchangeRatesService } from './exchange-rates.service';
+import { ExchangeRatesService, freezeRate, normalizeCurrency, type FrozenRate, type PreparedRate, type RateWrite } from './exchange-rates.service';
+import { budgetRateColumns, type BudgetRateColumns } from '../../db/repositories/_shared/budget-rate';
 import { UnitOfWork } from '../database/unit-of-work';
 import { BudgetItems } from '../../db/entities/BudgetItems.entity';
 import type { BudgetItemsRepository, BudgetItemRow } from '../../db/repositories/BudgetItems.repository';
@@ -29,18 +30,18 @@ import { TripMembers } from '../../db/entities/TripMembers.entity';
 import type { TripMembersRepository } from '../../db/repositories/TripMembers.repository';
 import { BUDGET_ITEM_TICKET, RESERVATION_METADATA } from '../../db/json-columns';
 import { decodeJson, decodeJsonResult, encodeJson } from '../../utils/json-column';
-import { DomainError } from '../common/domain-error';
+import { conflict, DomainError } from '../common/domain-error';
 import { GUEST_HAS_PAYMENTS, shareAfterLeaving } from './budget-departure.helpers';
-import { allocateDisplayCents, customSplitCents, isFrozenRate, NOT_FROZEN_RATE, quoteRatio, summaryShareCents, sumMoney, tripConverter } from './budget-money.helpers';
+import { allocateDisplayCents, customSplitCents, isFrozenRate, positiveRate, quoteRatio, summaryShareCents, sumMoney, tripConverter } from './budget-money.helpers';
 
 type Trip = TripAccess;
 
 /** A trip currency switch whose rates are already fetched, ready to write (#1543). */
-export type CurrencyRebase = { next: string; rates: Record<string, number> | null };
+export type CurrencyRebase = { previous: string; next: string; bridge: number | undefined };
 
-type SettlementRow = {
+type SettlementRow = BudgetRateColumns & {
   id: number; trip_id: number; from_user_id: number; to_user_id: number;
-  amount: number; currency: string | null; exchange_rate: number | null;
+  amount: number; currency: string | null;
   created_at: string; settled_at: string | null; note?: string | null; created_by_user_id: number | null;
   from_username: string; from_avatar: string | null;
   to_username: string; to_avatar: string | null;
@@ -138,7 +139,12 @@ export class BudgetService {
    * silently assumed.
    */
   private toBudgetItem(row: BudgetItemRow): BudgetItem {
-    return { ...row, sort_order: row.sort_order ?? 0, created_at: row.created_at ?? undefined };
+    return {
+      ...row,
+      exchange_rate_source: exchangeRateSourceSchema.safeParse(row.exchange_rate_source).data ?? 'legacy',
+      sort_order: row.sort_order ?? 0,
+      created_at: row.created_at ?? undefined,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -296,88 +302,29 @@ export class BudgetService {
     return items;
   }
 
-  /**
-   * Freeze the live FX rate at entry time into `exchange_rate` so a settled position
-   * isn't re-opened when live rates drift later (#1335 / #1445). The stored rate is
-   * "units of the item/display currency per 1 trip currency" — the settlement
-   * converts with it via `amount / rate`.
-   *
-   * Only freezes for a foreign currency with no explicit rate. The server's own rate
-   * comes first; `fallback_fx`, rates the caller lent for this write, only fills a
-   * currency the server cannot quote (resolveRate). With neither, a new row is
-   * stored unfrozen and left out of every figure until a rate turns up. On update it
-   * (re)freezes only when the currency changes (checked against `budget_items`), so
-   * an unrelated edit never moves money, and a change with no rate at all resets the
-   * row to unfrozen instead of keeping the old currency's rate. `fallback_fx` is taken
-   * off `data` either way, so it never reaches the write. Callers invoke this *before*
-   * the DB write, outside its transaction: the rate fetch is network I/O.
-   */
-  /**
-   * `existingItemId?: number` (Plan 4 Task 8b, U6 — the program's gate-level
-   * id parsing carry: `BudgetController.update` now parses `:id` once via
-   * `toRowId` and threads the number down through `update` to here; the
-   * other caller, `booking-import.service.ts`, never passes this param).
-   */
-  async freezeForeignRate(
+  async prepareRate(tripId: string | number, data: RateWrite, userId?: number, existing?: { currency: string | null }) {
+    return this.exchangeRates.prepareWrite(tripId, data, userId, existing);
+  }
+
+  private async rateForCommit(
     tripId: string | number,
-    data: { currency?: string | null; exchange_rate?: number; fallback_fx?: BudgetFallbackFx },
-    existingItemId?: number,
-    existingCurrency?: string | null,
-  ): Promise<void> {
-    const fallback = data.fallback_fx;
-    delete data.fallback_fx;
-    if (data.exchange_rate != null) return; // an explicit rate from the caller wins
-    const cur = (data.currency || '').toUpperCase();
-    if (!cur) return; // currency not being set in this request
-    // Skip the re-freeze when the currency isn't actually changing, so an unrelated
-    // edit never moves money. Items resolve the prior currency from budget_items; a
-    // settlement lives in a different table, so its caller passes it in directly.
-    let prior: string | undefined;
-    if (existingCurrency !== undefined) {
-      prior = (existingCurrency || '').toUpperCase();
-    } else if (existingItemId != null) {
-      const existing = await this.budgetItemsRepo.getCurrency(existingItemId, tripId);
-      if (existing !== undefined) prior = (existing || '').toUpperCase();
-    }
-    if (prior !== undefined && prior === cur) return; // currency unchanged
-    const tripCur = await this.tripCurrency(tripId);
-    if (cur === tripCur) return; // same as the trip currency → no conversion to freeze
-    const rate = this.resolveRate(tripCur, cur, await this.exchangeRates.getRates(tripCur), fallback);
-    if (rate !== null) data.exchange_rate = rate;
-    // The update SQL keeps the stored rate when none is sent, which left the old
-    // currency's rate on the row (a USD 1.08 on a VND bill) and counted it as frozen.
-    else if (prior !== undefined) data.exchange_rate = NOT_FROZEN_RATE;
+    prepared: PreparedRate | undefined,
+    existing?: { currency: string | null },
+  ): Promise<FrozenRate | undefined> {
+    if (!prepared) return undefined;
+    await this.exchangeRates.requireCurrentBase(tripId, prepared.base);
+    const prior = existing ? normalizeCurrency(existing.currency, prepared.base) : null;
+    if (prior !== prepared.previousCurrency) throw conflict('Booked currency changed while resolving the exchange rate');
+    return prepared.kind === 'freeze' ? prepared.rate : undefined;
   }
 
-  /** The trip's currency, upper case, EUR when it has none (the default the app reads). */
   private async tripCurrency(tripId: string | number): Promise<string> {
-    const currency = await this.tripsRepo.getCurrency(tripId);
-    return (currency || 'EUR').toUpperCase();
-  }
-
-  /**
-   * The rate to freeze `cur` at on a `tripCur` trip: the server's own quote, else the one
-   * the caller lent, but only while the lent table is quoted against the trip currency
-   * (a table against the old currency after a switch would freeze the wrong figure).
-   * A result that is not a usable frozen rate, exactly 1 among them, counts as none.
-   */
-  private resolveRate(
-    tripCur: string,
-    cur: string,
-    serverRates: Record<string, number> | null,
-    fallback: BudgetFallbackFx | undefined,
-  ): number | null {
-    const own = serverRates?.[cur];
-    if (isFrozenRate(own)) return own;
-    const lent = fallback && fallback.base.toUpperCase() === tripCur ? fallback.rates[cur] : undefined;
-    return isFrozenRate(lent) ? lent : null;
+    return normalizeCurrency(await this.tripsRepo.getCurrency(tripId));
   }
 
   /**
    * Freeze a rate onto every expense and transfer in a foreign currency that never
-   * froze one: the rows the settlement lists as `unconverted`, and also those it still
-   * converts at today's live rate. Today's server rate first, `fallback` (rates the
-   * caller holds) for what the server cannot quote. A row that is frozen, in the trip
+   * froze one. Resolve the trip default, the server snapshot, then a caller fallback. A row that is frozen, in the trip
    * currency or without a currency is never touched, so a second call heals nothing.
    *
    * The write is a compare-and-set in one transaction: only rows that are still
@@ -385,9 +332,11 @@ export class BudgetService {
    * the rates were fetched (null, so the caller can say so). A healthy trip with
    * nothing pending returns before any fetch.
    */
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async freezeMissingRates(
     tripId: string | number,
     fallback?: BudgetFallbackFx,
+    userId?: number,
   ): Promise<{ items: BudgetItem[]; settlements: NonNullable<Awaited<ReturnType<BudgetService['getSettlement']>>>[]; unresolved: string[] } | null> {
     const tripCur = await this.tripCurrency(tripId);
     // The legacy statement was one UNION of both tables, ORDER BY cur.
@@ -397,11 +346,10 @@ export class BudgetService {
     ])].sort(byCodeUnit);
     if (pending.length === 0) return { items: [], settlements: [], unresolved: [] };
 
-    const serverRates = await this.exchangeRates.getRates(tripCur);
-    const resolved: [string, number][] = [];
+    const resolved: [string, FrozenRate][] = [];
     const unresolved: string[] = [];
     for (const cur of pending) {
-      const rate = this.resolveRate(tripCur, cur, serverRates, fallback);
+      const rate = await this.exchangeRates.resolveWriteRate(tripId, tripCur, cur, { fallback_fx: fallback }, userId);
       if (rate === null) unresolved.push(cur);
       else resolved.push([cur, rate]);
     }
@@ -435,70 +383,65 @@ export class BudgetService {
     return { items, settlements, unresolved };
   }
 
-  /**
-   * Re-anchor a trip's money when its base currency changes (#1543).
-   *
-   * Every frozen `exchange_rate` is "units of the row's currency per 1 *trip*
-   * currency", and `currency = NULL` means "the trip's own currency" — both are
-   * relative to the trip currency, so swapping it out from under them silently
-   * corrupts the settlement: NULL rows redenominate (9 000 RUB becomes 9 000 EUR)
-   * and frozen rates keep pointing at the old base, which is exactly the mismatch
-   * that inflated #1543 by ~27x.
-   *
-   * So, before the switch: pin the implicit rows to the outgoing currency (their
-   * amounts really were in it) and re-freeze every row against the incoming one.
-   * No stored amount is rewritten — each expense keeps the figure the user typed,
-   * in the currency they typed it in, and its real-world value is preserved.
-   *
-   * Place prices follow the same NULL = "the trip's own currency" convention (that
-   * is how the PDF export and the place chips read them), so they are pinned too —
-   * otherwise a €15 museum on a trip switched to JPY starts reading as ¥15. They
-   * carry no frozen rate, so pinning the currency is all they need.
-   *
-   * Runs before the trip update, while the old currency is still in `trips`; a no-op without a change.
-   */
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async rebaseTripCurrency(tripId: string | number, newCurrency?: string | null): Promise<void> {
     const plan = await this.prepareCurrencyRebase(tripId, newCurrency);
     if (plan) await this.applyCurrencyRebase(tripId, plan);
   }
 
-  /** rebaseTripCurrency's network half: the rates, fetched outside any transaction. Null when nothing changes. */
   async prepareCurrencyRebase(tripId: string | number, newCurrency?: string | null): Promise<CurrencyRebase | null> {
-    const next = (newCurrency || '').toUpperCase();
+    const next = normalizeCurrency(newCurrency, '');
     if (!next) return null;
     const tripCurrency = await this.tripsRepo.getCurrency(tripId);
-    if (tripCurrency === undefined || (tripCurrency || 'EUR').toUpperCase() === next) return null;
-    return { next, rates: await this.exchangeRates.getRates(next) };
+    if (tripCurrency === undefined) return null;
+    const previous = normalizeCurrency(tripCurrency);
+    if (previous === next) return null;
+    const rates = await this.exchangeRates.getRates(next);
+    return { previous, next, bridge: rates?.[previous] };
   }
 
-  /** rebaseTripCurrency's writes. The outgoing currency is read inside them, so the trip update can share the transaction. */
-  async applyCurrencyRebase(tripId: string | number, { next, rates }: CurrencyRebase): Promise<void> {
-    // A row already denominated in the new base needs no conversion (rate 1). When no
-    // live rate is available we also store 1 rather than a stale one: rate 1 means "not
-    // frozen", so the settlement falls back to live rates instead of trusting a figure
-    // anchored to a currency this trip no longer uses.
-    const rateFor = (cur: string): number => {
-      if (cur === next) return 1;
-      const r = rates?.[cur];
-      return r && r > 0 ? r : 1;
-    };
-
+  async applyCurrencyRebase(tripId: string | number, { previous, next, bridge }: CurrencyRebase): Promise<void> {
     await this.uow.transactional(async () => {
-      const current = await this.tripsRepo.getCurrency(tripId);
-      const prev = (current || 'EUR').toUpperCase();
-      if (current === undefined || prev === next) return;
-      // D4 (rule 23): each table's own pinCurrency/listDistinctCurrencies/setExchangeRateForCurrency, no dynamic identifier.
-      await this.budgetItemsRepo.pinCurrency(tripId, prev);
-      for (const cur of await this.budgetItemsRepo.listDistinctCurrencies(tripId)) {
-        await this.budgetItemsRepo.setExchangeRateForCurrency(tripId, cur, rateFor(cur.toUpperCase()));
+      await this.exchangeRates.requireCurrentBase(tripId, previous);
+      const rebase = (row: BudgetRateColumns & { currency: string | null }) => {
+        const currency = normalizeCurrency(row.currency, previous);
+        if (currency === next) {
+          return { currency, rate: freezeRate(1, 'identity', `identity:${next}`) };
+        }
+        const oldRate = currency === previous ? 1 : row.exchange_rate;
+        if (currency !== previous && !isFrozenRate(oldRate, row.exchange_rate_source)) {
+          return { currency, rate: { exchange_rate: 1, exchange_rate_source: 'legacy' } };
+        }
+        if (!positiveRate(bridge)) throw new DomainError(400, 'No bridge exchange rate is available for the trip currency change');
+        const rebased = oldRate * bridge;
+        if (!positiveRate(rebased)) throw new DomainError(400, 'Invalid exchange rate after trip currency change');
+        const rate = budgetRateColumns(row);
+        const version = row.exchange_rate_source_version ?? 'legacy';
+        return {
+          currency,
+          rate: {
+            ...rate,
+            exchange_rate: rebased,
+            exchange_rate_source: currency === previous || row.exchange_rate_source === 'identity' || row.exchange_rate_source === 'legacy'
+              ? 'global' : row.exchange_rate_source,
+            exchange_rate_source_version: `rebase:${previous}:${next}:${version}`,
+            exchange_rate_effective_date: null,
+            exchange_rate_set_at: new Date().toISOString(),
+            exchange_rate_set_by_user_id: null,
+          },
+        };
+      };
+
+      for (const row of await this.budgetItemsRepo.listAllForTrip(tripId)) {
+        const { currency, rate } = rebase(row);
+        await this.budgetItemsRepo.setRebasedRate(row.id, currency, rate);
       }
-      await this.budgetSettlementsRepo.pinCurrency(tripId, prev);
-      for (const cur of await this.budgetSettlementsRepo.listDistinctCurrencies(tripId)) {
-        await this.budgetSettlementsRepo.setExchangeRateForCurrency(tripId, cur, rateFor(cur.toUpperCase()));
+      for (const row of await this.budgetSettlementsRepo.listRawForTrip(tripId)) {
+        const { currency, rate } = rebase(row);
+        await this.budgetSettlementsRepo.setRebasedRate(row.id, currency, rate);
       }
-      // Only priced places are pinned. Their `updated_at` bump (the #1135 concurrency token)
-      // stops a client holding the pre-switch row from writing the pin away.
-      await this.placesRepo.pinCurrencyForTrip(tripId, prev);
+      await this.exchangeRates.rebaseTripRates(tripId, previous, next, bridge);
+      await this.placesRepo.pinCurrencyForTrip(tripId, previous);
     });
   }
 
@@ -515,8 +458,10 @@ export class BudgetService {
       place_id?: number | null;
       receipt_file_ids?: number[];
     },
+    prepared?: PreparedRate,
   ) {
     return await this.uow.transactional(async () => {
+      const rate = await this.rateForCommit(tripId, prepared);
       const maxOrder = await this.budgetItemsRepo.maxSortOrder(tripId);
       const sortOrder = (maxOrder !== null ? maxOrder : -1) + 1;
 
@@ -548,8 +493,9 @@ export class BudgetService {
         category: cat,
         name: data.name,
         total_price: total,
-        currency: data.currency || null,
-        exchange_rate: data.exchange_rate != null ? data.exchange_rate : 1,
+        currency: normalizeCurrency(data.currency, '') || null,
+        exchange_rate: data.exchange_rate ?? 1,
+        ...rate,
         persons: memberIds ? memberIds.length : (data.persons != null ? data.persons : null),
         days: data.days !== undefined && data.days !== null ? data.days : null,
         note: note || null,
@@ -609,10 +555,11 @@ export class BudgetService {
     tripId: string | number,
     reservationId: number,
     data: { name: string; category?: string; total_price: number; currency?: string | null; exchange_rate?: number; expense_date?: string | null },
+    prepared?: PreparedRate,
   ) {
     // createBudgetItem accepts reservation_id directly — the legacy separate
     // UPDATE after the insert was redundant (and non-atomic).
-    return await this.createBudgetItem(tripId, { ...data, reservation_id: reservationId });
+    return await this.createBudgetItem(tripId, { ...data, reservation_id: reservationId }, prepared);
   }
 
   /**
@@ -635,10 +582,12 @@ export class BudgetService {
       reservation_id?: number | null;
       place_id?: number | null;
     },
+    prepared?: PreparedRate,
   ) {
     return await this.uow.transactional(async () => {
       const item = await this.budgetItemsRepo.findInTrip(id, tripId);
       if (!item) return null;
+      const rate = await this.rateForCommit(tripId, prepared, item);
 
       // Who may stay on or join this expense, and the paid ticks of its split, are
       // read before the payer and member rows below are replaced.
@@ -663,7 +612,7 @@ export class BudgetService {
         category: [!!data.category, data.category || ''],
         name: [!!data.name, data.name || ''],
         total_price: [data.total_price !== undefined, data.total_price !== undefined ? data.total_price : 0],
-        currency: [data.currency !== undefined, data.currency !== undefined ? (data.currency || null) : null],
+        currency: [data.currency !== undefined, normalizeCurrency(data.currency, '') || null],
         exchange_rate: [data.exchange_rate !== undefined, data.exchange_rate !== undefined ? data.exchange_rate : 1],
         persons: [data.persons !== undefined, data.persons !== undefined ? data.persons : null],
         days: [data.days !== undefined, data.days !== undefined ? data.days : null],
@@ -673,7 +622,7 @@ export class BudgetService {
         expense_date: [data.expense_date !== undefined, data.expense_date !== undefined ? (data.expense_date || null) : null],
         reservation_id: [data.reservation_id !== undefined, data.reservation_id ?? null],
         place_id: [data.place_id !== undefined, data.place_id ?? null],
-      });
+      }, rate);
 
       // Optional inline payer/member replacement (the edit modal saves all at once).
       if (data.payers !== undefined) {
@@ -981,7 +930,7 @@ export class BudgetService {
    * currencies and divided them in floats, so a bill of 801.76 USD counted as 801.76 of
    * the trip's euros and a third of 100 came out as 33.333…
    */
-  async getPerPersonSummary(tripId: string | number, rates: Record<string, number> | null = null) {
+  async getPerPersonSummary(tripId: string | number) {
     const tripCurrency = await this.tripCurrency(tripId);
     const items = await this.budgetItemsRepo.listMoneyRows(tripId);
     const members = await this.budgetItemMembersRepo.listForTripWithUsersAndPaid(tripId);
@@ -990,7 +939,7 @@ export class BudgetService {
       const own = members.filter(m => m.budget_item_id === item.id);
       if (own.length === 0) continue;
       // A foreign row nothing can convert counts for nobody, as in the settlement.
-      const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, rates);
+      const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, item.exchange_rate_source);
       if (!convert) continue;
       const shares = summaryShareCents(own, convert, item.total_price || 0, item.id);
       for (const m of own) {
@@ -1023,14 +972,14 @@ export class BudgetService {
    * dollars to euros and labels the result with the trip currency. A foreign row nothing
    * can convert is left out and its id listed under `unconverted`.
    */
-  async tripTotals(tripId: string | number, tripCurrency: string, rates: Record<string, number> | null = null): Promise<{ total: number; byCategory: Record<string, number>; unconverted: number[] }> {
+  async tripTotals(tripId: string | number, tripCurrency: string): Promise<{ total: number; byCategory: Record<string, number>; unconverted: number[] }> {
     const trip = (tripCurrency || 'EUR').toUpperCase();
     const rows = await this.budgetItemsRepo.listMoneyRows(tripId);
     let total = 0;
     const byCategory: Record<string, number> = {};
     const unconverted: number[] = [];
     for (const r of rows) {
-      const convert = tripConverter(r.currency, r.exchange_rate, trip, rates);
+      const convert = tripConverter(r.currency, r.exchange_rate, trip, r.exchange_rate_source);
       if (!convert) {
         unconverted.push(r.id);
         continue;
@@ -1048,17 +997,6 @@ export class BudgetService {
   }
 
   /**
-   * Today's rates against the trip currency, for the totals above. Fetched only when a
-   * row in another currency never froze a rate of its own: every other row converts
-   * without them, so a trip whose rows were all booked never waits on the network.
-   */
-  async ratesForTripTotals(tripId: string | number, tripCurrency: string): Promise<Record<string, number> | null> {
-    const trip = (tripCurrency || 'EUR').toUpperCase();
-    const unbooked = await this.budgetItemsRepo.hasUnfrozenForeign(tripId, trip);
-    return unbooked ? this.exchangeRates.getRates(trip) : null;
-  }
-
-  /**
    * Who owes whom (`balances` + the simplified `flows`), the recorded transfers
    * (`settlements`), and what the trip ends up costing each participant
    * (`finalBudgets`).
@@ -1073,8 +1011,7 @@ export class BudgetService {
    * expense list converted again on the client with today's rate would not add up
    * to a figure that was booked at the rate frozen on entry.
    *
-   * A row nothing can convert (a foreign currency with no frozen rate and no live
-   * one) is left out whole and listed under `unconverted`, so Σ balances stays 0.
+   * A foreign row with no frozen rate is left out whole and listed under `unconverted`, so Σ balances stays 0.
    * `currency` says what the amounts are in: the display currency when there is a
    * quote for it (the rates, else `baseRate`, the caller's own units of display
    * currency per 1 trip currency), otherwise the trip currency.
@@ -1096,9 +1033,8 @@ export class BudgetService {
     // per 1 trip-currency. Pre-rework rows store currency = NULL = "the trip's own currency".
     // Prefer the FX rate frozen at entry time (#1335): a settled expense keeps the rate
     // it was booked at, so a later live-rate drift doesn't re-open it with a residual.
-    // Legacy rows without a frozen rate convert via base with live rates.
-    const converterFor = (itemCurrency: string | null | undefined, itemRate?: number | null) =>
-      tripConverter(itemCurrency, itemRate, tripCurrency, rates);
+    const converterFor = (itemCurrency: string | null | undefined, itemRate?: number | null, source?: string) =>
+      tripConverter(itemCurrency, itemRate, tripCurrency, source);
     // trip-currency → display currency, applied once to the final netted totals.
     // Held as a plain factor so it is exactly linear: the balances are converted as
     // one set (allocateDisplayCents) rather than one at a time, which is what keeps
@@ -1126,14 +1062,12 @@ export class BudgetService {
     const toDisplay = (cents: number[], total?: number) => allocateDisplayCents(cents, displayFactor, total, displayUnit);
     // A recorded settle-up amount is entered in whatever display currency the payer
     // was viewing. New rows capture that currency and the rate frozen at settle time
-    // (#1445), so a settled position stays balanced when live rates drift — mirroring
-    // the expenses; a frozen currency without a usable rate falls back to live rates,
-    // and without those the transfer is left out like an expense. Legacy rows
+    // (#1445), so a settled position stays balanced when live rates drift. Legacy rows
     // (currency = NULL) have no frozen rate, so fall back to the old behaviour: assume
     // they were entered in the current display base and convert with live rates.
-    const settleConverterFor = (sCurrency?: string | null, sRate?: number | null) =>
-      sCurrency
-        ? tripConverter(sCurrency, sRate, tripCurrency, rates)
+    const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string) =>
+      sCurrency || source === 'identity'
+        ? tripConverter(sCurrency, sRate, tripCurrency, source)
         // The inverse of the display factor, so such a transfer reads back as entered.
         : (amount: number) => amount / displayFactor;
     const unconvertedItems: number[] = [];
@@ -1175,7 +1109,7 @@ export class BudgetService {
     for (const item of items) {
       // Before anything else, planning-only and unpaid rows included: a row no rate can
       // convert is reported whole and moves nothing, credits and shares alike.
-      const convert = converterFor(item.currency, item.exchange_rate);
+      const convert = converterFor(item.currency, item.exchange_rate, item.exchange_rate_source);
       if (!convert) {
         unconvertedItems.push(item.id);
         unconvertedCurrencies.add((item.currency || '').toUpperCase());
@@ -1246,7 +1180,7 @@ export class BudgetService {
       return balances[id];
     };
     for (const s of settlements) {
-      const convert = settleConverterFor(s.currency, s.exchange_rate);
+      const convert = settleConverterFor(s.currency, s.exchange_rate, s.exchange_rate_source);
       if (!convert) {
         unconvertedSettlements.push(s.id);
         unconvertedCurrencies.add((s.currency || '').toUpperCase());
@@ -1367,7 +1301,9 @@ export class BudgetService {
     return {
       id: r.id, trip_id: r.trip_id,
       from_user_id: r.from_user_id, to_user_id: r.to_user_id,
-      amount: r.amount, currency: r.currency ?? null, exchange_rate: r.exchange_rate ?? 1,
+      amount: r.amount, currency: r.currency ?? null,
+      ...budgetRateColumns(r),
+      exchange_rate_source: exchangeRateSourceSchema.safeParse(r.exchange_rate_source).data ?? 'legacy',
       created_at: r.created_at, settled_at: r.settled_at ?? null, note: r.note ?? null, created_by_user_id: r.created_by_user_id,
       from_username: r.from_username, from_avatar_url: avatarUrl({ avatar: r.from_avatar }),
       to_username: r.to_username, to_avatar_url: avatarUrl({ avatar: r.to_avatar }),
@@ -1395,12 +1331,14 @@ export class BudgetService {
     tripId: string | number,
     data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; exchange_rate?: number; settled_at?: string | null; note?: string | null },
     createdByUserId?: number,
+    rate?: FrozenRate,
   ) {
     const newId = await this.budgetSettlementsRepo.insertSettlement({
       trip_id: tripId, from_user_id: data.from_user_id, to_user_id: data.to_user_id,
       amount: Math.round(data.amount * 100) / 100,
       currency: data.currency ? data.currency.toUpperCase() : null,
-      exchange_rate: data.exchange_rate != null ? data.exchange_rate : 1,
+      exchange_rate: data.exchange_rate ?? 1,
+      ...rate,
       settled_at: data.settled_at || null,
       note: settlementNote(data.note),
       created_by_user_id: createdByUserId ?? null,
@@ -1418,6 +1356,7 @@ export class BudgetService {
     id: number,
     tripId: string | number,
     data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; exchange_rate?: number; settled_at?: string | null; note?: string | null },
+    rate?: FrozenRate,
   ) {
     const row = await this.budgetSettlementsRepo.findGuard(id, tripId);
     if (!row) return null;
@@ -1427,7 +1366,7 @@ export class BudgetService {
       exchange_rate: [data.exchange_rate !== undefined, data.exchange_rate !== undefined ? data.exchange_rate : 1],
       settled_at: [data.settled_at !== undefined, data.settled_at || null],
       note: [data.note !== undefined, settlementNote(data.note)],
-    });
+    }, rate);
     return await this.getSettlement(id, tripId);
   }
 
@@ -1448,8 +1387,7 @@ export class BudgetService {
   }
 
   async perPersonSummary(tripId: string | number) {
-    const currency = await this.tripsRepo.getCurrency(tripId);
-    return await this.getPerPersonSummary(tripId, await this.ratesForTripTotals(tripId, currency || 'EUR'));
+    return this.getPerPersonSummary(tripId);
   }
 
   /**
@@ -1462,23 +1400,27 @@ export class BudgetService {
    * missing display quote, which also reads a legacy transfer without a currency (taken
    * to be in the display currency, as with a live quote).
    */
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
   async settlement(tripId: string | number, base: string | undefined, tripCurrency: string, baseRate?: number) {
     const trip = (tripCurrency || 'EUR').toUpperCase();
     const effectiveBase = (base || trip).toUpperCase();
-    const rates = (await this.exchangeRates.getRates(trip))
-      ?? (effectiveBase === trip ? null : await this.exchangeRates.getRates(effectiveBase));
+    const rates = effectiveBase === trip ? null : (await this.exchangeRates.getRates(trip))
+      ?? await this.exchangeRates.getRates(effectiveBase);
     return await this.calculateSettlement(tripId, { base: effectiveBase, rates, tripCurrency: trip, baseRate });
   }
 
-  async create(tripId: string, data: Parameters<BudgetService['createBudgetItem']>[1] & { fallback_fx?: BudgetFallbackFx }) {
-    await this.freezeForeignRate(tripId, data);
-    return await this.createBudgetItem(tripId, data);
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async create(tripId: string, data: Parameters<BudgetService['createBudgetItem']>[1] & RateWrite, userId?: number) {
+    const prepared = await this.prepareRate(tripId, data, userId);
+    return this.createBudgetItem(tripId, data, prepared);
   }
 
-  /** `id: number` — Plan 4 Task 8b (U6): `BudgetController.update`/the `costs.update` RPC method both parse/hand this a real row id now (`toRowId`/`num()`). */
-  async update(id: number, tripId: string | number, data: Parameters<BudgetService['updateBudgetItem']>[2] & { fallback_fx?: BudgetFallbackFx }) {
-    await this.freezeForeignRate(tripId, data, id);
-    return await this.updateBudgetItem(id, tripId, data);
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async update(id: number, tripId: string | number, data: Parameters<BudgetService['updateBudgetItem']>[2] & RateWrite, userId?: number) {
+    const existing = await this.budgetItemsRepo.findInTrip(id, tripId);
+    if (!existing) return null;
+    const prepared = await this.prepareRate(tripId, data, userId, existing);
+    return this.updateBudgetItem(id, tripId, data, prepared);
   }
 
   /** `id: number` — same Plan 4 Task 8b (U6) narrowing as {@link update} (`BudgetController.remove`/the `costs.delete` RPC method). */
@@ -1504,23 +1446,38 @@ export class BudgetService {
     return roster.has(data.from_user_id) && roster.has(data.to_user_id);
   }
 
-  async createSettlement(tripId: string | number, data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; settled_at?: string | null; note?: string | null; fallback_fx?: BudgetFallbackFx }, userId: number) {
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async createSettlement(
+    tripId: string | number,
+    data: Parameters<BudgetService['insertSettlement']>[1] & RateWrite,
+    userId: number,
+  ) {
     if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
-    // Freeze the FX rate for the display currency the amount was entered in so the
-    // transfer keeps cancelling its expense when live rates drift (#1445).
-    await this.freezeForeignRate(tripId, data);
-    return await this.insertSettlement(tripId, data, userId);
+    const prepared = await this.prepareRate(tripId, data, userId);
+    return this.uow.transactional(async () => {
+      if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+      const rate = await this.rateForCommit(tripId, prepared);
+      return this.insertSettlement(tripId, data, userId, rate);
+    });
   }
 
-  /** `id: number` — Plan 4 Task 8b (U6): `BudgetController.updateSettlement` parses `:settlementId` via `toRowId` and threads the number here; the MCP tool's Zod-typed `settlementId` was already a number. */
-  async updateSettlement(id: number, tripId: string | number, data: { from_user_id: number; to_user_id: number; amount: number; currency?: string | null; settled_at?: string | null; note?: string | null; fallback_fx?: BudgetFallbackFx }) {
-    // Pass the settlement's stored currency so an edit that doesn't change it keeps
-    // the already-frozen rate (#1445) — otherwise a live-rate drift would re-open a
-    // settled position on an unrelated edit.
+  /** @txIndependent Provider snapshots are cached separately from trip writes. */
+  async updateSettlement(
+    id: number, tripId: string | number,
+    data: Parameters<BudgetService['applySettlementUpdate']>[2] & RateWrite,
+    userId?: number,
+  ) {
     if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
-    const existing = await this.getSettlement(id, tripId);
-    await this.freezeForeignRate(tripId, data, undefined, existing?.currency ?? null);
-    return await this.applySettlementUpdate(id, tripId, data);
+    const existing = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
+    if (!existing) return null;
+    const prepared = await this.prepareRate(tripId, data, userId, existing);
+    return this.uow.transactional(async () => {
+      if (!(await this.settlementPartiesOnTrip(tripId, data))) return null;
+      const current = await this.budgetSettlementsRepo.findWithUsers(id, tripId);
+      if (!current) return null;
+      const rate = await this.rateForCommit(tripId, prepared, current);
+      return this.applySettlementUpdate(id, tripId, data, rate);
+    });
   }
 
   async reorderItems(tripId: string, orderedIds: number[]): Promise<void> {

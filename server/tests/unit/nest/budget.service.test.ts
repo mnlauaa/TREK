@@ -128,21 +128,13 @@ describe('BudgetService', () => {
   });
 
   it('list / perPersonSummary resolve through the folded SQL methods', async () => {
-    // No row is waiting on today's rates, so none are fetched for it.
-    const getCurrency = vi.fn().mockResolvedValue('EUR');
-    const hasUnfrozenForeign = vi.fn().mockResolvedValue(false);
-    const s = svc(
-      undefined,
-      { getCurrency } as unknown as TripsRepository,
-      { hasUnfrozenForeign } as unknown as BudgetItemsRepository,
-    );
+    const s = svc();
     const listSpy = vi.spyOn(s, 'listBudgetItems').mockResolvedValue([{ id: 1 }] as never);
     expect(await s.list('5')).toEqual([{ id: 1 }]);
     expect(listSpy).toHaveBeenCalledWith('5');
     const summarySpy = vi.spyOn(s, 'getPerPersonSummary').mockResolvedValue([{ userId: 1 }] as never);
     expect(await s.perPersonSummary('5')).toEqual([{ userId: 1 }]);
-    expect(summarySpy).toHaveBeenCalledWith('5', null);
-    expect(hasUnfrozenForeign).toHaveBeenCalledWith('5', 'EUR');
+    expect(summarySpy).toHaveBeenCalledWith('5');
     expect(getRates).not.toHaveBeenCalled();
   });
 
@@ -171,7 +163,7 @@ describe('BudgetService', () => {
       const calcSpy = vi.spyOn(s, 'calculateSettlement').mockResolvedValue({ transfers: [] } as never);
       getRates.mockResolvedValue(null);
       await s.settlement('5', undefined, 'gbp');
-      expect(getRates.mock.calls).toEqual([['GBP']]);
+      expect(getRates).not.toHaveBeenCalled();
       expect(calcSpy).toHaveBeenCalledWith('5', { base: 'GBP', rates: null, tripCurrency: 'GBP' });
     });
 
@@ -180,25 +172,24 @@ describe('BudgetService', () => {
       const calcSpy = vi.spyOn(s, 'calculateSettlement').mockResolvedValue({ transfers: [] } as never);
       getRates.mockResolvedValue(null);
       await s.settlement('5', undefined, '');
-      expect(getRates).toHaveBeenCalledWith('EUR');
+      expect(getRates).not.toHaveBeenCalled();
       expect(calcSpy).toHaveBeenCalledWith('5', { base: 'EUR', rates: null, tripCurrency: 'EUR' });
     });
   });
 
-  it('create / update freeze the FX rate before the raw write', async () => {
-    const s = svc();
-    const freezeSpy = vi.spyOn(s, 'freezeForeignRate').mockResolvedValue();
-    const createSpy = vi.spyOn(s, 'createBudgetItem').mockReturnValue({ id: 1 } as never);
-    await s.create('5', { name: 'Hotel' });
-    expect(freezeSpy).toHaveBeenCalledWith('5', { name: 'Hotel' });
-    expect(createSpy).toHaveBeenCalledWith('5', { name: 'Hotel' });
-
-    const updateSpy = vi.spyOn(s, 'updateBudgetItem').mockReturnValue({ id: 9 } as never);
-    // Plan 4 Task 8b (U6) — the controller/RPC now hand this a gate-parsed number.
-    await s.update(9, '5', { name: 'X' });
-    // the item id is threaded through so an unchanged-currency edit keeps the frozen rate
-    expect(freezeSpy).toHaveBeenCalledWith('5', { name: 'X' }, 9);
-    expect(updateSpy).toHaveBeenCalledWith(9, '5', { name: 'X' });
+  it('create and update pass the prepared rate to the transactional writer', async () => {
+    const existing = { currency: 'USD' };
+    const s = svc(undefined, undefined, { findInTrip: vi.fn().mockResolvedValue(existing) } as never);
+    const prepared = { kind: 'preserve', base: 'EUR', previousCurrency: 'USD' } as const;
+    const freezeSpy = vi.spyOn(s, 'prepareRate').mockResolvedValue(prepared);
+    const createSpy = vi.spyOn(s, 'createBudgetItem').mockResolvedValue({ id: 1 } as never);
+    const updateSpy = vi.spyOn(s, 'updateBudgetItem').mockResolvedValue({ id: 9 } as never);
+    await s.create('5', { name: 'Hotel' }, 3);
+    expect(freezeSpy).toHaveBeenCalledWith('5', { name: 'Hotel' }, 3);
+    expect(createSpy).toHaveBeenCalledWith('5', { name: 'Hotel' }, prepared);
+    await s.update(9, '5', { name: 'X' }, 3);
+    expect(freezeSpy).toHaveBeenCalledWith('5', { name: 'X' }, 3, existing);
+    expect(updateSpy).toHaveBeenCalledWith(9, '5', { name: 'X' }, prepared);
   });
 
   it('remove / setPayers resolve through the folded SQL methods', async () => {
@@ -226,38 +217,9 @@ describe('BudgetService', () => {
         rosterUserIds: vi.fn().mockResolvedValue(new Set(userIds)),
       }) as unknown as TripMembersRepository;
 
-    it('createSettlement freezes the FX rate (await) before the raw insert', async () => {
-      const s = svc(rosterHas(1, 2));
-      const freezeSpy = vi.spyOn(s, 'freezeForeignRate').mockResolvedValue();
-      const insertSpy = vi.spyOn(s, 'insertSettlement').mockReturnValue({ id: 7 } as never);
-      await s.createSettlement('5', { from_user_id: 1, to_user_id: 2, amount: 10 }, 3);
-      expect(freezeSpy).toHaveBeenCalledWith('5', { from_user_id: 1, to_user_id: 2, amount: 10 });
-      expect(insertSpy).toHaveBeenCalledWith('5', { from_user_id: 1, to_user_id: 2, amount: 10 }, 3);
-    });
-
-    it('updateSettlement threads the stored currency through the freeze', async () => {
-      const s = svc(rosterHas(1, 2));
-      const freezeSpy = vi.spyOn(s, 'freezeForeignRate').mockResolvedValue();
-      // Quirk fix: the stored-currency lookup is a targeted getSettlement, not
-      // a full listSettlements scan.
-      const getSpy = vi.spyOn(s, 'getSettlement').mockReturnValue({ id: 7, currency: 'USD' } as never);
-      const applySpy = vi.spyOn(s, 'applySettlementUpdate').mockReturnValue({ id: 7 } as never);
-      // Plan 4 Task 8b (U6) — the controller/MCP tool now hand this a gate-parsed number.
-      await s.updateSettlement(7, '5', { from_user_id: 1, to_user_id: 2, amount: 12, currency: 'USD' });
-      // the settlement's stored currency is threaded through so an unchanged-currency edit keeps the frozen rate (#1445)
-      expect(getSpy).toHaveBeenCalledWith(7, '5');
-      expect(freezeSpy).toHaveBeenCalledWith(
-        '5',
-        { from_user_id: 1, to_user_id: 2, amount: 12, currency: 'USD' },
-        undefined,
-        'USD',
-      );
-      expect(applySpy).toHaveBeenCalledWith(7, '5', { from_user_id: 1, to_user_id: 2, amount: 12, currency: 'USD' });
-    });
-
     it('refuses a party who is not on the trip, before freezing or writing', async () => {
       const s = svc(rosterHas(1)); // user 2 is not on this trip
-      const freezeSpy = vi.spyOn(s, 'freezeForeignRate').mockResolvedValue();
+      const freezeSpy = vi.spyOn(s, 'prepareRate');
       const insertSpy = vi.spyOn(s, 'insertSettlement').mockReturnValue({ id: 7 } as never);
 
       await expect(s.createSettlement('5', { from_user_id: 1, to_user_id: 2, amount: 10 }, 3)).resolves.toBeNull();

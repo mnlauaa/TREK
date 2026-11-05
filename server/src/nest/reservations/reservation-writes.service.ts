@@ -59,6 +59,7 @@ export class ReservationWritesService {
       tripId,
       data,
       entry,
+      writer.userId,
     );
     if (accommodationCreated) writer.events.emit('accommodation:created', {});
     this.sendCost(costEvents, writer);
@@ -115,7 +116,7 @@ export class ReservationWritesService {
     writer: TripWriter,
   ) {
     const { reservation, accommodationChanged, accommodationCreated, costEvents } =
-      await this.reservations.updateWithCost(id, tripId, data, current, entry);
+      await this.reservations.updateWithCost(id, tripId, data, current, entry, writer.userId);
     if (accommodationCreated) writer.events.emit('accommodation:created', {});
     else if (accommodationChanged) writer.events.emit('accommodation:updated', {});
     this.sendCost(costEvents, writer);

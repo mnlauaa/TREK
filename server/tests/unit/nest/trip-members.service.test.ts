@@ -27,13 +27,12 @@ import type { TripsRepository } from '../../../src/db/repositories/Trips.reposit
 import type { UsersRepository } from '../../../src/db/repositories/Users.repository';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { NotFoundError, ValidationError } from '../../../src/nest/common/domain-errors';
 import { PermissionsService } from '../../../src/nest/permissions/permissions.service';
 import { TripMembersService } from '../../../src/nest/trip-members/trip-members.service';
 import { setUserDeletedSink } from '../../../src/plugin-user-lifecycle';
 import type { User } from '../../../src/types';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import { createUser, createTrip, addTripMember } from '../../helpers/factories';
 import { addBudgetItemMember, addBudgetItemPayer, makeBudgetItem } from '../../helpers/factories/budget';
@@ -124,7 +123,7 @@ beforeAll(async () => {
   tripMembersRepo = await createTestTripMembersRepo(testDb);
   budgetSvc = new BudgetService(
     new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-    new ExchangeRatesService(),
+    await createTestExchangeRates(testDb),
     realtime,
     await createTestUnitOfWork(testDb),
     ...(await budgetRepoArgs(testDb)),

@@ -20,7 +20,6 @@ import { AuthService } from '../../../src/nest/auth/auth.service';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { WebauthnConfigService } from '../../../src/nest/auth/webauthn-config.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { AllowedFileTypesService } from '../../../src/nest/files/allowed-file-types.service';
 import { DEFAULT_ALLOWED_EXTENSIONS } from '../../../src/nest/files/files.constants';
 import { MailerService } from '../../../src/nest/notifications/mailer/mailer.service';
@@ -28,7 +27,7 @@ import { PermissionsService } from '../../../src/nest/permissions/permissions.se
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import { TokenService } from '../../../src/nest/tokens/token.service';
 import { TripMembershipService } from '../../../src/nest/trip-membership/trip-membership.service';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import { asLegacyResult } from '../../helpers/domain-error';
 import {
@@ -142,7 +141,7 @@ beforeAll(async () => {
       new MaintenanceRepository((await sharedTestOrm(testDb)).em),
       new BudgetService(
         new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-        new ExchangeRatesService(),
+        await createTestExchangeRates(testDb),
         new RealtimeService(),
         await createTestUnitOfWork(testDb),
         ...(await budgetRepoArgs(testDb)),

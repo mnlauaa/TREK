@@ -58,11 +58,7 @@ export class TripReadModelService {
     // In the trip currency, each row at the rate it was booked at (#2525). A raw sum of
     // total_price added a dollar bill to the euros and called the result euros.
     const tripCurrency = String(trip.currency || 'EUR');
-    const totals = await this.budget.tripTotals(
-      tripId,
-      tripCurrency,
-      await this.budget.ratesForTripTotals(tripId, tripCurrency),
-    );
+    const totals = await this.budget.tripTotals(tripId, tripCurrency);
     const budget = {
       items: budgetItems,
       item_count: budgetItems.length,

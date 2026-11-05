@@ -3,12 +3,20 @@ import { PluginGuards } from '../../nest-rpc/plugin-guards.service';
 import { BadParams, ForbiddenResource } from '../../nest-rpc/rpc-errors';
 import { PluginController, PluginMethod } from '../../nest-rpc/rpc-kit/decorators';
 import type { PluginRpcContext } from '../../nest-rpc/rpc-kit/types';
-import { num, schemaMessage } from '../../nest-rpc/rpc-params';
+import { num, schemaMessage, str } from '../../nest-rpc/rpc-params';
+import { DomainError } from '../common/domain-error';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TripAccessService } from '../trip-membership/trip-access.service';
 import { TripMembershipService } from '../trip-membership/trip-membership.service';
 import { BudgetService } from './budget.service';
-import { budgetCreateItemRequestSchema, budgetUpdateItemRequestSchema } from '@trek/shared';
+import { ExchangeRatesService } from './exchange-rates.service';
+import {
+  budgetCreateItemRequestSchema,
+  budgetUpdateItemRequestSchema,
+  budgetCreateSettlementRequestSchema,
+  budgetUpdateSettlementRequestSchema,
+  setTripExchangeRateRequestSchema,
+} from '@trek/shared';
 
 /** Costs are budget items, and the app edits them under 'budget_edit'. */
 const BUDGET_EDIT_ACTION = 'budget_edit';
@@ -36,6 +44,7 @@ export class CostsRpc {
     private readonly realtime: RealtimeService,
     private readonly guards: PluginGuards,
     private readonly membership: TripMembershipService,
+    private readonly exchangeRates: ExchangeRatesService,
   ) {}
 
   @PluginMethod('costs.getByTrip', { permission: 'db:read:costs' })
@@ -74,7 +83,7 @@ export class CostsRpc {
     await this.refuseForeignLinks(tripId, parsed.data);
     // BudgetService.create freezes the FX rate and resolves members/payers, so the
     // plugin path produces the same row the web app would.
-    const item = await this.budget.create(String(tripId), parsed.data);
+    const item = await this.costWrite(() => this.budget.create(String(tripId), parsed.data, actor));
     if (item.reservation_id) await this.budget.resyncReservationPrice(tripId, item.reservation_id);
     this.realtime.broadcast(tripId, 'budget:created', { item });
     return item;
@@ -94,7 +103,7 @@ export class CostsRpc {
     // update re-freezes the FX rate on a currency change, exactly like create.
     // Plan 4 Task 8b (U6) — itemId is already a real row id (num() above);
     // BudgetService.update's id param no longer needs the String() wrapper.
-    const item = await this.budget.update(itemId, String(tripId), parsed.data);
+    const item = await this.costWrite(() => this.budget.update(itemId, tripId, parsed.data, actor));
     if (item == null) throw new ForbiddenResource(`no cost ${itemId} on trip ${tripId}`);
     await this.budget.resyncLinkedPrices(tripId, before?.reservation_id, item, parsed.data);
     this.realtime.broadcast(tripId, 'budget:updated', { item });
@@ -123,6 +132,119 @@ export class CostsRpc {
     }
     this.realtime.broadcast(tripId, 'budget:deleted', { itemId });
     return { deleted: true };
+  }
+
+  @PluginMethod('costs.listRates', { permission: 'db:read:costs' })
+  async listRates(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    return this.guards.tripRead(params, ctx, async () => {
+      await this.requireBudgetAddon();
+      return this.exchangeRates.listTripExchangeRates(num(params.tripId, 'tripId'));
+    });
+  }
+
+  @PluginMethod('costs.resolveRate', { permission: 'db:read:costs' })
+  async resolveRate(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    return this.guards.tripRead(params, ctx, async () => {
+      await this.requireBudgetAddon();
+      return this.costWrite(() =>
+        this.exchangeRates.resolveExchangeRate(num(params.tripId, 'tripId'), str(params.currency, 'currency')),
+      );
+    });
+  }
+
+  @PluginMethod('costs.listSettlements', { permission: 'db:read:costs' })
+  async listSettlements(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    return this.guards.tripRead(params, ctx, async () => {
+      await this.requireBudgetAddon();
+      return this.budget.listSettlements(num(params.tripId, 'tripId'));
+    });
+  }
+
+  @PluginMethod('costs.setRate', { permission: 'db:write:costs' })
+  async setRate(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    const tripId = num(params.tripId, 'tripId');
+    const actor = this.requireCostActor(ctx);
+    await this.requireBudgetAddon();
+    await this.requireCostEdit(tripId, actor);
+    const parsed = setTripExchangeRateRequestSchema.safeParse({
+      exchange_rate: params.exchangeRate,
+      note: params.note,
+    });
+    if (!parsed.success) throw new BadParams(schemaMessage(parsed.error));
+    const currency = str(params.currency, 'currency');
+    const rate = await this.costWrite(() =>
+      this.exchangeRates.setTripExchangeRate(tripId, currency, parsed.data.exchange_rate, actor, parsed.data.note),
+    );
+    this.realtime.broadcast(tripId, 'budget:exchange-rates-updated', { rate });
+    return rate;
+  }
+
+  @PluginMethod('costs.deleteRate', { permission: 'db:write:costs' })
+  async deleteRate(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    const tripId = num(params.tripId, 'tripId');
+    const actor = this.requireCostActor(ctx);
+    await this.requireBudgetAddon();
+    await this.requireCostEdit(tripId, actor);
+    const currency = str(params.currency, 'currency').toUpperCase();
+    if (!(await this.costWrite(() => this.exchangeRates.deleteTripExchangeRate(tripId, currency)))) {
+      throw new ForbiddenResource(`no trip exchange rate for ${currency}`);
+    }
+    this.realtime.broadcast(tripId, 'budget:exchange-rates-updated', { currency, deleted: true });
+    return { deleted: true };
+  }
+
+  @PluginMethod('costs.createSettlement', { permission: 'db:write:costs' })
+  async createSettlement(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    const tripId = num(params.tripId, 'tripId');
+    const actor = this.requireCostActor(ctx);
+    await this.requireBudgetAddon();
+    await this.requireCostEdit(tripId, actor);
+    const parsed = budgetCreateSettlementRequestSchema.safeParse(params.input);
+    if (!parsed.success) throw new BadParams(`invalid settlement: ${schemaMessage(parsed.error)}`);
+    const settlement = await this.costWrite(() => this.budget.createSettlement(tripId, parsed.data, actor));
+    if (!settlement) throw new ForbiddenResource(`no settlement on trip ${tripId}`);
+    this.realtime.broadcast(tripId, 'budget:settlement-created', { settlement });
+    return settlement;
+  }
+
+  @PluginMethod('costs.updateSettlement', { permission: 'db:write:costs' })
+  async updateSettlement(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    const tripId = num(params.tripId, 'tripId');
+    const settlementId = num(params.settlementId, 'settlementId');
+    const actor = this.requireCostActor(ctx);
+    await this.requireBudgetAddon();
+    await this.requireCostEdit(tripId, actor);
+    const parsed = budgetUpdateSettlementRequestSchema.safeParse(params.input);
+    if (!parsed.success) throw new BadParams(`invalid settlement: ${schemaMessage(parsed.error)}`);
+    const settlement = await this.costWrite(() =>
+      this.budget.updateSettlement(settlementId, tripId, parsed.data, actor),
+    );
+    if (!settlement) throw new ForbiddenResource(`no settlement ${settlementId} on trip ${tripId}`);
+    this.realtime.broadcast(tripId, 'budget:settlement-updated', { settlement });
+    return settlement;
+  }
+
+  @PluginMethod('costs.deleteSettlement', { permission: 'db:write:costs' })
+  async deleteSettlement(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    const tripId = num(params.tripId, 'tripId');
+    const settlementId = num(params.settlementId, 'settlementId');
+    const actor = this.requireCostActor(ctx);
+    await this.requireBudgetAddon();
+    await this.requireCostEdit(tripId, actor);
+    if (!(await this.budget.deleteSettlement(settlementId, tripId))) {
+      throw new ForbiddenResource(`no settlement ${settlementId} on trip ${tripId}`);
+    }
+    this.realtime.broadcast(tripId, 'budget:settlement-deleted', { settlementId });
+    return { deleted: true };
+  }
+
+  private async costWrite<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      if (error instanceof DomainError) throw new BadParams(error.publicMessage);
+      throw error;
+    }
   }
 
   /** The writes say "cost writes", not the "<noun> writes" requireActor produces. */

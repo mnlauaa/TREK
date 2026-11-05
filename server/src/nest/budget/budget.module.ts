@@ -1,3 +1,8 @@
+import { ExchangeRateBatchPreviews } from '../../db/entities/ExchangeRateBatchPreviews.entity';
+import { GlobalExchangeRateSnapshots } from '../../db/entities/GlobalExchangeRateSnapshots.entity';
+import { TripExchangeRates } from '../../db/entities/TripExchangeRates.entity';
+import { AuditModule } from '../audit/audit.module';
+import { GlobalExchangeRateController, TripExchangeRateController } from './exchange-rate.controller';
 import { BudgetCategoryOrder } from '../../db/entities/BudgetCategoryOrder.entity';
 import { BudgetItemMembers } from '../../db/entities/BudgetItemMembers.entity';
 import { BudgetItemPayers } from '../../db/entities/BudgetItemPayers.entity';
@@ -42,6 +47,7 @@ import { Module } from '@nestjs/common';
     McpSharedModule,
     PermissionsModule,
     AppConfigModule,
+    AuditModule,
     DemoModule,
     RealtimeModule,
     PluginGuardsModule,
@@ -53,13 +59,16 @@ import { Module } from '@nestjs/common';
       BudgetItemPayers,
       BudgetSettlements,
       BudgetCategoryOrder,
+      GlobalExchangeRateSnapshots,
+      ExchangeRateBatchPreviews,
+      TripExchangeRates,
       Reservations,
       Places,
       Trips,
       TripMembers,
     ]),
   ],
-  controllers: [BudgetController],
+  controllers: [BudgetController, GlobalExchangeRateController, TripExchangeRateController],
   providers: [
     BudgetService,
     BudgetWritesService,

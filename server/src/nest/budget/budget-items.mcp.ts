@@ -40,17 +40,9 @@ function shortNote(note: string | null | undefined): string | null {
   return line.length > NOTE_CHARS ? `${line.slice(0, NOTE_CHARS - 1)}…` : line;
 }
 
-/** Today's rates for the expenses that froze none, as the totals use them; null when none were needed. */
-type Rates = Record<string, number> | null;
-
-/**
- * A foreign expense in the trip currency, at the rate it was booked at (else
- * today's), to the cent; null for one in the trip currency or one no rate
- * converts.
- */
-function tripAmount(item: BudgetItem, tripCurrency: string, rates: Rates): number | null {
+function tripAmount(item: BudgetItem, tripCurrency: string): number | null {
   if ((item.currency || tripCurrency).toUpperCase() === tripCurrency) return null;
-  const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, rates);
+  const convert = tripConverter(item.currency, item.exchange_rate, tripCurrency, item.exchange_rate_source);
   return convert ? toMinor(convert(item.total_price || 0)) / 100 : null;
 }
 
@@ -61,14 +53,14 @@ function tripAmount(item: BudgetItem, tripCurrency: string, rates: Rates): numbe
  * Amounts stay in the expense's own currency, which is the trip's when the row
  * names none; a foreign one also says what it comes to in the trip currency.
  */
-function slimItem(item: BudgetItem, tripCurrency: string, rates: Rates) {
+function slimItem(item: BudgetItem, tripCurrency: string) {
   return {
     id: item.id,
     name: item.name,
     category: item.category,
     total_price: item.total_price,
     currency: item.currency || tripCurrency,
-    trip_amount: tripAmount(item, tripCurrency, rates),
+    trip_amount: tripAmount(item, tripCurrency),
     expense_date: item.expense_date ?? null,
     note: shortNote(item.note),
     place_id: item.place_id ?? null,
@@ -84,11 +76,11 @@ function slimItem(item: BudgetItem, tripCurrency: string, rates: Rates) {
  * would pass PAGE_CHARS. Always at least one, so a page is never empty while
  * expenses are left.
  */
-function fillPage(items: BudgetItem[], tripCurrency: string, rates: Rates) {
+function fillPage(items: BudgetItem[], tripCurrency: string) {
   const page: ReturnType<typeof slimItem>[] = [];
   let chars = 0;
   for (const item of items) {
-    const slim = slimItem(item, tripCurrency, rates);
+    const slim = slimItem(item, tripCurrency);
     chars += JSON.stringify(slim).length + 1;
     if (page.length > 0 && chars > PAGE_CHARS) break;
     page.push(slim);
@@ -136,10 +128,9 @@ export class BudgetItemsMcp {
     const currency = (trip.currency || 'EUR').toUpperCase();
     const items = await this.budget.listBudgetItems(tripId);
     // The figures get_trip_summary shows: each row at the rate it was booked at (#2525).
-    const rates = await this.budget.ratesForTripTotals(tripId, currency);
-    const totals = await this.budget.tripTotals(tripId, currency, rates);
+    const totals = await this.budget.tripTotals(tripId, currency);
     const start = offset ?? 0;
-    const page = fillPage(items.slice(start, start + (limit ?? BUDGET_ITEMS_PAGE_DEFAULT)), currency, rates);
+    const page = fillPage(items.slice(start, start + (limit ?? BUDGET_ITEMS_PAGE_DEFAULT)), currency);
     const end = start + page.length;
     return ok({
       currency,

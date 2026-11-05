@@ -33,7 +33,7 @@ import type { ExchangeRatesService } from '../../../src/nest/budget/exchange-rat
 import type { PermissionsService } from '../../../src/nest/permissions/permissions.service';
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import type { BudgetItem, BudgetItemMember, BudgetItemPayer } from '../../../src/types';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { deleteRows, findRow, insertRow } from '../../helpers/factories/rows';
 import { resetTestDb } from '../../helpers/test-db';
 import { createTestUnitOfWork } from '../../helpers/test-uow';
@@ -46,16 +46,17 @@ vi.mock('../../../src/db/database', async () => {
   return buildDbMock(createSnapshotTestDb());
 });
 
-const mockRates = { getRates: vi.fn() };
+let rates: ExchangeRatesService;
 
 const permissionsStub = { checkPermission: vi.fn(() => true) } as unknown as PermissionsService;
 
 let budget: BudgetService;
 
 beforeAll(async () => {
+  rates = await createTestExchangeRates(testDb);
   budget = new BudgetService(
     permissionsStub,
-    mockRates as unknown as ExchangeRatesService,
+    rates,
     new RealtimeService(),
     await createTestUnitOfWork(testDb),
     ...(await budgetRepoArgs(testDb)),
@@ -382,7 +383,7 @@ describe('calculateSettlement', () => {
     expect(bob.balance).toBeCloseTo(-50, 2);
   });
 
-  it('#1335 a legacy row (exchange_rate = 1) still converts with live rates', async () => {
+  it('#1335 a legacy row with the default rate stays out even when a live quote exists', async () => {
     await setupDb(
       [{ ...makeItem(1, 120), currency: 'USD', exchange_rate: 1 } as BudgetItem],
       [makeMember(1, 1, 'alice'), makeMember(1, 2, 'bob')],
@@ -393,9 +394,8 @@ describe('calculateSettlement', () => {
       tripCurrency: 'EUR',
       rates: { EUR: 1, USD: 1.2 },
     });
-    const bob = result.balances.find((b) => b.user_id === 2)!;
-    // 120 / 1.2 (live) = 100 EUR; Bob owes 50 — unchanged behaviour for pre-#1335 rows.
-    expect(bob.balance).toBeCloseTo(-50, 2);
+    expect(result.unconverted.item_ids).toEqual([1]);
+    expect(result.balances).toEqual([]);
   });
 
   it('#1445 a settle-up transfer with a frozen currency+rate keeps the position balanced when rates drift', async () => {
@@ -1114,9 +1114,9 @@ describe('calculateSettlement: unconverted rows', () => {
     expect(result.finalBudgets.find((f) => f.user_id === 1)!.expenses).toBe(489);
   });
 
-  it('a foreign row the rates do not quote is left out and listed while others convert live', async () => {
+  it('an unfrozen foreign row is listed while a booked row converts', async () => {
     await setupDb(
-      [vndBill(1), { ...makeItem(2, 65), currency: 'USD', exchange_rate: 1 } as BudgetItem],
+      [vndBill(1), { ...makeItem(2, 65), currency: 'USD', exchange_rate: 0.65 } as BudgetItem],
       [...four(), makeMember(2, 1, 'alice'), makeMember(2, 2, 'bob')],
       [makePayer(1, 1, 8920000, 'alice'), makePayer(2, 1, 65, 'alice')],
     );
@@ -1126,7 +1126,7 @@ describe('calculateSettlement: unconverted rows', () => {
       rates: { AUD: 1, USD: 0.65 },
     });
     expect(result.unconverted).toEqual({ item_ids: [1], settlement_ids: [], currencies: ['VND'] });
-    // 65 USD at today's 0.65 per dollar is 100 AUD, half of it Bob's.
+    // 65 USD at its booked 0.65 rate is 100 AUD, half of it Bob's.
     expect(result.balances.map((b) => [b.user_id, b.balance])).toEqual([
       [1, 50],
       [2, -50],
@@ -1434,67 +1434,44 @@ describe('calculateSettlement: currencies shown in whole units (#2604)', () => {
   });
 });
 
-// ── freezeForeignRate (write-path FX freeze, #1445) ───────────────────────────
-// The trip seeded by beforeEach/seedBaseline is EUR — every case here relies on
-// that baseline instead of reconfiguring a `FROM trips` stub.
-
-describe('freezeForeignRate', () => {
-  it('freezes the live rate for a foreign currency into exchange_rate', async () => {
-    mockRates.getRates.mockResolvedValue({ EUR: 1, USD: 1.25 });
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'usd' };
-    await budget.freezeForeignRate(1, data);
-    expect(mockRates.getRates).toHaveBeenCalledWith('EUR');
-    expect(data.exchange_rate).toBe(1.25);
-  });
-
-  it('leaves the rate unset when the currency equals the trip currency', async () => {
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'EUR' };
-    await budget.freezeForeignRate(1, data);
-    expect(mockRates.getRates).not.toHaveBeenCalled();
-    expect(data.exchange_rate).toBeUndefined();
-  });
-
-  it('respects an explicit exchange_rate from the caller', async () => {
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'USD', exchange_rate: 2 };
-    await budget.freezeForeignRate(1, data);
-    expect(mockRates.getRates).not.toHaveBeenCalled();
-    expect(data.exchange_rate).toBe(2);
-  });
-
-  it('degrades to live rates (no freeze) when the rate fetch fails', async () => {
-    mockRates.getRates.mockResolvedValue(null);
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'USD' };
-    await budget.freezeForeignRate(1, data);
-    expect(data.exchange_rate).toBeUndefined();
-  });
-
-  it('does not re-freeze on update when the currency is unchanged', async () => {
-    await insertRow(await sharedTestOrm(testDb), BudgetItems, {
-      id: 9,
-      trip: 1,
-      name: 'Existing',
-      total_price: 1,
-      currency: 'USD',
+describe('prepareRate', () => {
+  it('freezes an available global quote', async () => {
+    const snapshot = vi.spyOn(rates, 'getGlobalRateSnapshot').mockResolvedValueOnce({
+      base_currency: 'EUR', rates: { EUR: 1, USD: 1.25 }, source_version: 'test',
+      effective_date: null, fetched_at: new Date().toISOString(), stale: false,
     });
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'USD' };
-    await budget.freezeForeignRate(1, data, 9);
-    expect(mockRates.getRates).not.toHaveBeenCalled();
-    expect(data.exchange_rate).toBeUndefined();
+    try {
+      await expect(budget.prepareRate(1, { currency: 'usd' })).resolves.toMatchObject({
+        kind: 'freeze', rate: { exchange_rate: 1.25, exchange_rate_source: 'global' },
+      });
+      expect(snapshot).toHaveBeenCalledWith('EUR');
+    } finally {
+      snapshot.mockRestore();
+    }
   });
 
-  it('does not re-freeze a settlement edit when its stored currency is unchanged (#1445)', async () => {
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'USD' };
-    // the settlement already holds USD — pass it as existingCurrency → keep the frozen rate
-    await budget.freezeForeignRate(1, data, undefined, 'USD');
-    expect(mockRates.getRates).not.toHaveBeenCalled();
-    expect(data.exchange_rate).toBeUndefined();
+  it('preserves a booked currency on an unrelated edit', async () => {
+    await expect(budget.prepareRate(1, {}, undefined, { currency: 'USD' })).resolves.toEqual({
+      kind: 'preserve', base: 'EUR', previousCurrency: 'USD',
+    });
   });
 
-  it('re-freezes a settlement edit when its currency actually changes', async () => {
-    mockRates.getRates.mockResolvedValue({ EUR: 1, USD: 1.25 });
-    const data: { currency?: string | null; exchange_rate?: number } = { currency: 'USD' };
-    await budget.freezeForeignRate(1, data, undefined, 'GBP'); // was GBP → now USD → re-freeze
-    expect(data.exchange_rate).toBe(1.25);
+  it('records identity and accepts an explicit foreign rate of exactly one', async () => {
+    await expect(budget.prepareRate(1, { currency: 'EUR' })).resolves.toMatchObject({
+      kind: 'freeze', rate: { exchange_rate: 1, exchange_rate_source: 'identity' },
+    });
+    await expect(budget.prepareRate(1, { currency: 'USD', exchange_rate: 1 }, 2)).resolves.toMatchObject({
+      kind: 'freeze', rate: { exchange_rate: 1, exchange_rate_source: 'explicit', exchange_rate_set_by_user_id: 2 },
+    });
+  });
+
+  it('rejects a foreign write without an available quote', async () => {
+    const snapshot = vi.spyOn(rates, 'getGlobalRateSnapshot').mockResolvedValueOnce(null);
+    try {
+      await expect(budget.prepareRate(1, { currency: 'USD' })).rejects.toThrow(/enter a manual exchange rate/);
+    } finally {
+      snapshot.mockRestore();
+    }
   });
 });
 

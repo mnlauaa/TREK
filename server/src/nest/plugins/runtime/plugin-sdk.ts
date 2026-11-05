@@ -1,3 +1,4 @@
+import { buildPluginCostsApi, type PluginCostsApi } from './plugin-costs';
 /**
  * The plugin API as the isolated child implements it, its own copy of the trek-plugin-sdk
  * types (plugin-sdk's test/host-types.test-d.ts holds the two to the same names and members).
@@ -268,13 +269,7 @@ export interface PluginContext {
   // "Costs" = budget items. Reads are membership-checked against the current
   // invocation's user (like `trips`); `create` additionally needs the acting
   // user's 'budget_edit' permission and the Costs addon enabled.
-  costs: {
-    getByTrip(tripId: number): Promise<unknown[]>;
-    listMine(): Promise<unknown[]>;
-    create(tripId: number, input: Record<string, unknown>): Promise<unknown>;
-    update(tripId: number, itemId: number, input: Record<string, unknown>): Promise<unknown>;
-    delete(tripId: number, itemId: number): Promise<{ deleted: boolean }>;
-  };
+  costs: PluginCostsApi;
   // Core planner writes (#1429). Each is membership-checked against the current
   // invocation's user and needs the matching write scope + the app's edit
   // permission (place_edit / day_edit / trip_edit). Route context only.
@@ -954,13 +949,7 @@ export function createPluginContext(
       update: (tripId, dayId, noteId, input) => t.rpc('daynotes.update', { tripId, dayId, noteId, input, _inv: invocationId }),
       delete: (tripId, dayId, noteId) => t.rpc('daynotes.delete', { tripId, dayId, noteId, _inv: invocationId }) as Promise<{ deleted: boolean }>,
     },
-    costs: {
-      getByTrip: (tripId) => t.rpc('costs.getByTrip', { tripId, _inv: invocationId }) as Promise<unknown[]>,
-      listMine: () => t.rpc('costs.listMine', { _inv: invocationId }) as Promise<unknown[]>,
-      create: (tripId, input) => t.rpc('costs.create', { tripId, input, _inv: invocationId }),
-      update: (tripId, itemId, input) => t.rpc('costs.update', { tripId, itemId, input, _inv: invocationId }),
-      delete: (tripId, itemId) => t.rpc('costs.delete', { tripId, itemId, _inv: invocationId }) as Promise<{ deleted: boolean }>,
-    },
+    costs: buildPluginCostsApi(t, invocationId),
     places: {
       create: (tripId, input) => t.rpc('places.create', { tripId, input, _inv: invocationId }),
       update: (tripId, placeId, input) => t.rpc('places.update', { tripId, placeId, input, _inv: invocationId }),

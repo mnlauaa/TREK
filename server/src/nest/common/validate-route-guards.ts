@@ -121,6 +121,7 @@ export const PUBLIC_ROUTE_ALLOW_LIST: string[] = [
   // calendar client polling it has no TREK session to send.
   'FeedsPublicController.tripFeed',
   'FeedsPublicController.userFeed',
+  'GlobalExchangeRateController.get',
   // The download link carries its own short-lived token.
   'FilesDownloadController.download',
   'HelpController.asset',

@@ -24,7 +24,7 @@ const permissionsStub = { checkPermission } as unknown as PermissionsService;
 
 // Constructor-injected since the budget fold (was a path mock of the deleted
 // services/budgetService).
-const budget = { createBudgetItem: vi.fn(), updateBudgetItem: vi.fn(), deleteBudgetItem: vi.fn(), linkBudgetItemToReservation: vi.fn(), freezeForeignRate: vi.fn() };
+const budget = { createBudgetItem: vi.fn(), updateBudgetItem: vi.fn(), deleteBudgetItem: vi.fn(), linkBudgetItemToReservation: vi.fn(), prepareRate: vi.fn() };
 
 const { notif } = vi.hoisted(() => ({ notif: { send: vi.fn().mockResolvedValue(undefined) } }));
 
@@ -586,7 +586,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
     it('links a budget item and broadcasts budget:created', async () => {
       budget.linkBudgetItemToReservation.mockReturnValue({ id: 7 });
       await svc.syncBudgetOnCreate('5', 9, 'Hotel', 'lodging', { total_price: 200, category: 'Lodging' }, 'sock');
-      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith('5', 9, { name: 'Hotel', category: 'Lodging', total_price: 200 });
+      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith('5', 9, { name: 'Hotel', category: 'Lodging', total_price: 200 }, undefined);
       expect(broadcast).toHaveBeenCalledWith('5', 'budget:created', { item: { id: 7 } }, 'sock');
     });
 
@@ -594,39 +594,37 @@ describe('ReservationsService (DI-native, real SQL)', () => {
       budget.linkBudgetItemToReservation.mockImplementation(() => { throw new Error('boom'); });
       // createWithCost relies on the throw to roll the booking back with its cost.
       await expect(svc.syncBudgetOnCreate('5', 9, 'Hotel', undefined, { total_price: 50 }, 'sock')).rejects.toThrow('boom');
-      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith('5', 9, { name: 'Hotel', category: 'Other', total_price: 50 });
+      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith('5', 9, { name: 'Hotel', category: 'Other', total_price: 50 }, undefined);
       expect(broadcast).not.toHaveBeenCalled();
     });
 
     // #2525: an imported booking quoted in dollars became a cost of that many euros.
-    it('links the cost in the currency and at the rate it arrives with', async () => {
+    it('links the cost in its currency with the trusted rate', async () => {
       budget.linkBudgetItemToReservation.mockReturnValue({ id: 7 });
-      await svc.syncBudgetOnCreate('5', 9, 'Hotel', 'hotel', { total_price: 801.76, currency: 'USD', exchange_rate: 1.17 }, 'sock');
+      const preparedRate = {
+        kind: 'freeze', base: 'EUR', previousCurrency: null, rate: { exchange_rate: 1.17, exchange_rate_source: 'global' },
+      } as never;
+      await svc.syncBudgetOnCreate('5', 9, 'Hotel', 'hotel', { total_price: 801.76, currency: 'USD', preparedRate }, 'sock');
       expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith('5', 9, {
-        name: 'Hotel', category: 'hotel', total_price: 801.76, currency: 'USD', exchange_rate: 1.17,
-      });
+        name: 'Hotel', category: 'hotel', total_price: 801.76, currency: 'USD',
+      }, preparedRate);
     });
   });
 
-  describe('withFrozenRate (#2525)', () => {
-    it('keeps a quoted currency and freezes a rate for it', async () => {
-      budget.freezeForeignRate.mockImplementation(async (_tripId: unknown, data: { exchange_rate?: number }) => { data.exchange_rate = 1.17; });
-      expect(await svc.withFrozenRate('5', { total_price: 801.76, category: 'hotel', currency: ' usd ' })).toEqual({
-        total_price: 801.76, category: 'hotel', currency: 'USD', exchange_rate: 1.17,
+  describe('withFrozenRate', () => {
+    it('normalizes the currency and threads the prepared rate separately from the request', async () => {
+      const prepared = { kind: 'freeze', base: 'EUR', previousCurrency: null, rate: { exchange_rate: 1 } };
+      budget.prepareRate.mockResolvedValueOnce(prepared);
+      expect(await svc.withFrozenRate('5', { total_price: 801.76, category: 'hotel', currency: ' usd ', exchange_rate: 1 }, 2)).toEqual({
+        total_price: 801.76, category: 'hotel', currency: 'USD', preparedRate: prepared,
       });
-      expect(budget.freezeForeignRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate: 1.17 });
+      expect(budget.prepareRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate: 1, exchange_rate_note: null }, 2, undefined);
     });
 
-    it('leaves the rate off when none could be frozen, so the cost converts live', async () => {
-      budget.freezeForeignRate.mockResolvedValue(undefined);
-      expect(await svc.withFrozenRate('5', { total_price: 10, currency: 'EUR' })).toEqual({ total_price: 10, currency: 'EUR' });
-    });
-
-    it('drops a currency that is not a code, and never takes a rate from the caller', async () => {
-      expect(await svc.withFrozenRate('5', { total_price: 10, currency: 'dollars', exchange_rate: 99 })).toEqual({ total_price: 10 });
-      expect(await svc.withFrozenRate('5', { total_price: 10, exchange_rate: 99 })).toEqual({ total_price: 10 });
-      expect(budget.freezeForeignRate).not.toHaveBeenCalled();
+    it('does not prepare a rate when no expense will be written', async () => {
+      expect(await svc.withFrozenRate('5', { total_price: 0 })).toEqual({ total_price: 0 });
       expect(await svc.withFrozenRate('5', undefined)).toBeUndefined();
+      expect(budget.prepareRate).not.toHaveBeenCalled();
     });
   });
 
@@ -729,7 +727,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
       const { trip, res, item } = await linkedItem();
       budget.updateBudgetItem.mockReturnValue({ id: item.id });
       await svc.syncBudgetOnUpdate(String(trip.id), String(res.id), 'New', 'lodging', 'Old', 'lodging', { total_price: 80 }, 'sock');
-      expect(budget.updateBudgetItem).toHaveBeenCalledWith(item.id, String(trip.id), { name: 'New', category: 'lodging', total_price: 80 });
+      expect(budget.updateBudgetItem).toHaveBeenCalledWith(item.id, String(trip.id), { name: 'New', category: 'lodging', total_price: 80, currency: undefined }, undefined);
       expect(broadcast).toHaveBeenCalledWith(String(trip.id), 'budget:updated', { item: { id: item.id } }, 'sock');
     });
 
@@ -740,7 +738,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
       await svc.syncBudgetOnUpdate(String(trip.id), String(res.id), '', undefined, 'Old title', 'flight', { total_price: 120 }, 'sock');
       // One statement carries the link: no unlinked insert followed by a separate
       // back-link that a swallowed failure inside updateWithCost could leave half done.
-      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), res.id, { name: 'Old title', category: 'flight', total_price: 120 });
+      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), res.id, { name: 'Old title', category: 'flight', total_price: 120, currency: undefined }, undefined);
       expect(budget.createBudgetItem).not.toHaveBeenCalled();
       expect(broadcast).toHaveBeenCalledWith(String(trip.id), 'budget:created', { item: { id: 31, reservation_id: res.id } }, 'sock');
     });
@@ -795,7 +793,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
 
       const out = await svc.createWithCost(String(trip.id), { title: 'Hotel', type: 'other' } as never, { total_price: 200 });
 
-      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), out.reservation.id, { name: 'Hotel', category: 'other', total_price: 200 });
+      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), out.reservation.id, { name: 'Hotel', category: 'other', total_price: 200 }, undefined);
       expect(out.costEvents).toEqual([{ event: 'budget:created', payload: { item: { id: 7 } } }]);
       expect(broadcast).not.toHaveBeenCalledWith(String(trip.id), 'budget:created', expect.anything(), expect.anything());
     });
@@ -853,7 +851,7 @@ describe('ReservationsService (DI-native, real SQL)', () => {
 
       await svc.updateWithCost(String(created.reservation.id), String(trip.id), { title: 'Ferry' } as never, current, { total_price: 30000 });
 
-      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), created.reservation.id, expect.objectContaining({ expense_date: '2026-11-13' }));
+      expect(budget.linkBudgetItemToReservation).toHaveBeenCalledWith(String(trip.id), created.reservation.id, expect.objectContaining({ expense_date: '2026-11-13' }), undefined);
     });
   });
 

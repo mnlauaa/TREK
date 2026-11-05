@@ -1,3 +1,4 @@
+import { budgetRateColumns } from '../../db/repositories/_shared/budget-rate';
 import { Injectable } from '@nestjs/common';
 import path from 'path';
 import { EntityManager } from '@mikro-orm/core';
@@ -466,12 +467,6 @@ export class TripsService {
     return ownerId === null ? undefined : { user_id: ownerId };
   }
 
-  /**
-   * The folded legacy updateTrip core. The plugin RPC host calls it without `rebase` (the legacy
-   * host path never rebased); update() below passes one. TP24 to TP29 (inventory §11c): the budget
-   * rebase, the trip row (TP25), the leave entries that follow its dates and the rebuilt day grid
-   * are one transaction, so a failing `generateDays` or booking resync leaves all of them as they were.
-   */
   async updateTrip(tripId: string | number, userId: number, data: UpdateTripData, userRole: string, rebase: CurrencyRebase | null = null): Promise<UpdateTripResult> {
     const trip = await this.tripsRepo.findRaw(tripId) as (Trip & { reminder_days?: number }) | null; // TP24
     if (!trip) throw new NotFoundError('Trip not found');
@@ -577,6 +572,7 @@ export class TripsService {
     return range;
   }
 
+  /** @txIndependent Quote snapshot caching precedes the atomic currency and trip update. */
   async update(tripId: string | number, userId: number, body: UpdateTripData, role: string) {
     // A refused range must not leave the budget rebased onto a currency the trip
     // never took, so the dates are checked before the first write.
@@ -881,7 +877,9 @@ export class TripsService {
           persons: planningOnly && hasSplitRows.has(b.id) ? null : b.persons, days: b.days,
           note: b.note, sort_order: b.sort_order,
           reservation_id: b.reservation_id ? (reservationMap.get(b.reservation_id) ?? null) : null,
-          currency: b.currency, exchange_rate: b.exchange_rate ?? 1, expense_date: b.expense_date,
+          currency: b.currency, expense_date: b.expense_date,
+          ...budgetRateColumns(b),
+          exchange_rate_set_by_user_id: b.exchange_rate_set_by_user_id === newOwnerId ? newOwnerId : null,
           ticket_json: planningOnly ? null : b.ticket_json,
           paid_by_user_id: b.paid_by_user_id === newOwnerId ? b.paid_by_user_id : null,
         });

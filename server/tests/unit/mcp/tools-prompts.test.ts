@@ -20,7 +20,6 @@ import { RuntimeEnvService } from '../../../src/nest/app-config/runtime-env.serv
 import { AuthMcp } from '../../../src/nest/auth/auth.mcp';
 import { BudgetMcp } from '../../../src/nest/budget/budget.mcp';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import type { CollabService } from '../../../src/nest/collab/collab.service';
 import { McpToolGuardsService } from '../../../src/nest/mcp-shared/mcp-tool-guards.service';
 import { PackingMcp } from '../../../src/nest/packing/packing.mcp';
@@ -32,7 +31,7 @@ import { TripMembershipService } from '../../../src/nest/trip-membership/trip-me
 import { TripPromptsMcp } from '../../../src/nest/trips/trip-prompts.mcp';
 import { TripsMcp } from '../../../src/nest/trips/trips.mcp';
 import type { TripsService } from '../../../src/nest/trips/trips.service';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createUser, createTrip, addTripMember, createPackingItem, createBudgetItem } from '../../helpers/factories';
 import { inContext } from '../../helpers/factories/context';
 import { findRow, findRows } from '../../helpers/factories/rows';
@@ -155,14 +154,13 @@ beforeAll(async () => {
   packingMcp = new PackingMcp(promptPackingService, addonsStub, promptGuards, {} as never);
   promptBudget = new BudgetService(
     new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-    new ExchangeRatesService(),
+    await createTestExchangeRates(testDb),
     new RealtimeService(),
     await createTestUnitOfWork(testDb),
     ...(await budgetRepoArgs(testDb)),
   );
   budgetMcp = new BudgetMcp(
     promptBudget,
-    new ExchangeRatesService(),
     new RuntimeEnvService(),
     new TripMembershipService(await createTestTripsRepo(testDb), await createTestTripMembersRepo(testDb)),
     addonsStub,

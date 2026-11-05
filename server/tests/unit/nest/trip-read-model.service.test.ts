@@ -21,7 +21,6 @@ import { RuntimeEnvService } from '../../../src/nest/app-config/runtime-env.serv
 import { EphemeralTokenService } from '../../../src/nest/auth-core/ephemeral-token.service';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { CollabService } from '../../../src/nest/collab/collab.service';
 import { RateLimitService } from '../../../src/nest/common/rate-limit.service';
 import { DaysService } from '../../../src/nest/days/days.service';
@@ -42,7 +41,7 @@ import { TripReadModelService } from '../../../src/nest/trip-read-model/trip-rea
 import { UnsplashService } from '../../../src/nest/unsplash/unsplash.service';
 import { makeAccommodationsService } from '../../helpers/accommodations-service';
 import { accommodationsOver } from '../../helpers/accommodations-service';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import {
   createTestCollabMessageReactionsRepo,
@@ -158,7 +157,7 @@ beforeAll(async () => {
   );
   budgetSvc = new BudgetService(
     new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-    new ExchangeRatesService(),
+    await createTestExchangeRates(testDb),
     realtime,
     await createTestUnitOfWork(testDb),
     ...(await budgetRepoArgs(testDb)),

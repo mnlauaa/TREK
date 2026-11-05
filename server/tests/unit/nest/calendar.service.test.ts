@@ -29,7 +29,6 @@ import { PermissionsService } from '../../../src/nest/permissions/permissions.se
 import { ReservationsService } from '../../../src/nest/reservations/reservations.service';
 import { ReservationsReadService } from '../../../src/nest/reservations/reservations-read.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { CalendarService, foldICS } from '../../../src/nest/calendar/calendar.service';
 import { CalendarModule } from '../../../src/nest/calendar/calendar.module';
 import { expectRegisteredProvider } from '../../helpers/module-providers';
@@ -37,7 +36,7 @@ import { notificationsStub } from '../../helpers/notifications';
 import { accommodationsOver } from '../../helpers/accommodations-service';
 import { createTestUnitOfWork, createTestAppSettingsRepo, createTestReservationsRepo, createTestReservationEndpointsRepo, createTestReservationTravelersRepo, createTestReservationDayPositionsRepo, createTestDayAccommodationsRepo, createTestDaysRepo, createTestDayNotesRepo, createTestPlacesRepo, createTestDayAssignmentsRepo, createTestTripMembersRepo, createTestUsersRepo, createTestTripsRepo } from '../../helpers/test-uow';
 import { createTestBudgetItemsRepo } from '../../helpers/files-repos';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { sharedTestOrm } from '../../helpers/test-uow';
 import type { TestOrm } from '../../helpers/test-orm';
 import { findRow, findRows, insertRow, insertRows, updateRows } from '../../helpers/factories/rows';
@@ -56,7 +55,7 @@ let budgetSvc: BudgetService;
 let svc: CalendarService;
 let orm: TestOrm;
 beforeAll(async () => {
-  budgetSvc = new BudgetService(new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)), new ExchangeRatesService(), realtime, await createTestUnitOfWork(testDb), ...(await budgetRepoArgs(testDb)));
+  budgetSvc = new BudgetService(new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)), await createTestExchangeRates(testDb), realtime, await createTestUnitOfWork(testDb), ...(await budgetRepoArgs(testDb)));
   svc = new CalendarService(
   new ReservationsService(new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)), budgetSvc, realtime, notificationsStub(), new ReservationsReadService(await createTestReservationsRepo(testDb), await createTestReservationEndpointsRepo(testDb), await createTestReservationTravelersRepo(testDb), await createTestReservationDayPositionsRepo(testDb)), await accommodationsOver(testDb, realtime), await createTestUnitOfWork(testDb), await createTestReservationsRepo(testDb), await createTestReservationEndpointsRepo(testDb), await createTestReservationTravelersRepo(testDb), await createTestReservationDayPositionsRepo(testDb), await createTestDayAccommodationsRepo(testDb), await createTestDaysRepo(testDb), await createTestPlacesRepo(testDb), await createTestDayAssignmentsRepo(testDb), await createTestTripMembersRepo(testDb), await createTestUsersRepo(testDb), await createTestTripsRepo(testDb), await createTestBudgetItemsRepo(testDb)),
   await createTestTripsRepo(testDb), await createTestDaysRepo(testDb), await createTestDayNotesRepo(testDb), await createTestReservationsRepo(testDb),

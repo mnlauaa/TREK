@@ -99,6 +99,7 @@ function build(addonOn: boolean) {
       { broadcast: vi.fn() } as never,
       guards,
       spyService(calls, 'membership'),
+      {} as never,
     ),
   ]);
   const granted = new Set([

@@ -275,7 +275,7 @@ export class BookingImportService {
   private async linkedCost(
     tripId: string,
     item: BookingImportPreviewItem,
-  ): Promise<{ total_price: number; category: string; currency?: string | null; exchange_rate?: number } | undefined> {
+  ): ReturnType<ReservationsService['withFrozenRate']> {
     if (!(await this.addons.isAddonEnabled(ADDON_IDS.BUDGET))) return undefined;
     const meta = item.metadata && typeof item.metadata === 'object' ? (item.metadata as Record<string, unknown>) : null;
     const price = meta && meta.price != null ? Number(meta.price) : Number.NaN;
@@ -286,7 +286,8 @@ export class BookingImportService {
       currency: meta && typeof meta.priceCurrency === 'string' ? meta.priceCurrency : null,
     };
     try {
-      await this.budget.freezeForeignRate(tripId, entry);
+      const preparedRate = await this.budget.prepareRate(tripId, entry);
+      return { ...entry, preparedRate };
     } catch (err) {
       console.error(
         `[booking-import] Failed to create cost for "${item.title}":`,
@@ -294,7 +295,6 @@ export class BookingImportService {
       );
       return undefined;
     }
-    return entry;
   }
 
   /**

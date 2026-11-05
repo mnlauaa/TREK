@@ -1,11 +1,12 @@
 import type { BudgetSettlements } from '../entities/BudgetSettlements.entity';
 import type { DB } from '../kysely/db';
+import type { BudgetRateColumns } from './_shared/budget-rate';
 import { presenceSet } from './_shared/presence-set';
 import { type AssertRowKeys } from './_shared/rows';
 import { TrekRepository } from './_shared/trek-repository';
 
 /** A bare `budget_settlements` row — every scalar column, incl. the `persist(false)` relation mirrors. */
-export interface BudgetSettlementRow {
+export interface BudgetSettlementRow extends BudgetRateColumns {
   id: number;
   trip_id: number;
   from_user_id: number;
@@ -14,7 +15,6 @@ export interface BudgetSettlementRow {
   created_at: string | null;
   created_by_user_id: number | null;
   currency: string | null;
-  exchange_rate: number;
   settled_at: string | null;
   note: string | null;
 }
@@ -49,18 +49,8 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       .selectFrom('budget_settlements as s')
       .innerJoin('users as fu', 'fu.id', 's.from_user_id')
       .innerJoin('users as tu', 'tu.id', 's.to_user_id')
+      .selectAll('s')
       .select([
-        's.id',
-        's.trip_id',
-        's.from_user_id',
-        's.to_user_id',
-        's.amount',
-        's.currency',
-        's.exchange_rate',
-        's.created_at',
-        's.settled_at',
-        's.note',
-        's.created_by_user_id',
         (eb) => eb.fn.coalesce('fu.display_name', 'fu.username').as('from_username'),
         'fu.avatar as from_avatar',
         (eb) => eb.fn.coalesce('tu.display_name', 'tu.username').as('to_username'),
@@ -75,6 +65,11 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       .orderBy('s.created_at', 'desc')
       .orderBy('s.id', 'desc')
       .execute();
+  }
+
+  async listRawForTrip(tripId: number | string): Promise<BudgetSettlementRow[]> {
+    return this.kysely<BudgetSettlementsWriteKyselyDB>()
+      .selectFrom('budget_settlements').selectAll().where('trip_id', '=', Number(tripId)).execute();
   }
 
   /**
@@ -118,20 +113,10 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
     settled_at: string | null;
     note: string | null;
     created_by_user_id: number | null;
-  }): Promise<number> {
+  } & Partial<BudgetRateColumns>): Promise<number> {
     const inserted = await this.kysely<BudgetSettlementsWriteKyselyDB>()
       .insertInto('budget_settlements')
-      .values({
-        trip_id: row.trip_id as number,
-        from_user_id: row.from_user_id,
-        to_user_id: row.to_user_id,
-        amount: row.amount,
-        currency: row.currency,
-        exchange_rate: row.exchange_rate,
-        settled_at: row.settled_at,
-        note: row.note,
-        created_by_user_id: row.created_by_user_id,
-      })
+      .values({ ...row, trip_id: row.trip_id as number })
       .returning('id')
       .executeTakeFirstOrThrow();
     return inserted.id;
@@ -155,6 +140,7 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       settled_at?: [present: boolean, value: string | null];
       note?: [present: boolean, value: string | null];
     },
+    rate?: Partial<BudgetRateColumns>,
   ): Promise<void> {
     const data = presenceSet<{
       currency: string | null;
@@ -169,7 +155,7 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
     });
     await this.kysely<BudgetSettlementsKyselyDB>()
       .updateTable('budget_settlements')
-      .set({ from_user_id: write.from_user_id, to_user_id: write.to_user_id, amount: write.amount, ...data })
+      .set({ from_user_id: write.from_user_id, to_user_id: write.to_user_id, amount: write.amount, ...data, ...rate })
       .where('id', '=', id)
       .execute();
   }
@@ -203,28 +189,6 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       .execute();
   }
 
-  /** BG17's `budget_settlements` half — `UPDATE budget_settlements SET currency = ? WHERE trip_id = ? AND (currency IS NULL OR currency = '')`. */
-  async pinCurrency(trip_id: number | string, prev_currency: string): Promise<void> {
-    await this.kysely<BudgetSettlementsKyselyDB>()
-      .updateTable('budget_settlements')
-      .set({ currency: prev_currency })
-      .where('trip_id', '=', trip_id as number)
-      .where((eb) => eb.or([eb('currency', 'is', null), eb('currency', '=', '')]))
-      .execute();
-  }
-
-  /** BG18's `budget_settlements` half — `SELECT DISTINCT currency AS cur FROM budget_settlements WHERE trip_id = ? AND currency IS NOT NULL`. */
-  async listDistinctCurrencies(trip_id: number | string): Promise<string[]> {
-    const rows = await this.kysely<BudgetSettlementsKyselyDB>()
-      .selectFrom('budget_settlements')
-      .select('currency')
-      .distinct()
-      .where('trip_id', '=', trip_id as number)
-      .where('currency', 'is not', null)
-      .execute();
-    return rows.map((r) => r.currency as string);
-  }
-
   /**
    * BG90's `budget_settlements` half (`freezeMissingRates`) — `SELECT
    * UPPER(currency) AS cur FROM budget_settlements WHERE trip_id = ? AND
@@ -242,7 +206,14 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       .where('currency', '!=', '')
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '!=', trip_currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
     return rows.map((r) => r.cur);
@@ -256,32 +227,44 @@ export class BudgetSettlementsRepository extends TrekRepository<BudgetSettlement
       .where('trip_id', '=', trip_id as number)
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '=', currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
     return rows.map((r) => r.id);
   }
 
   /** BG92's `budget_settlements` half (`freezeMissingRates`) — `UPDATE budget_settlements SET exchange_rate = ? WHERE trip_id = ? AND UPPER(currency) = ? AND (exchange_rate IS NULL OR exchange_rate <= 0 OR exchange_rate = 1)`, the compare-and-set write. */
-  async freezeUnfrozenForCurrency(trip_id: number | string, currency: string, exchange_rate: number): Promise<void> {
+  async freezeUnfrozenForCurrency(trip_id: number | string, currency: string, rate: BudgetRateColumns): Promise<void> {
     await this.kysely<BudgetSettlementsKyselyDB>()
       .updateTable('budget_settlements')
-      .set({ exchange_rate })
+      .set(rate)
       .where('trip_id', '=', trip_id as number)
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '=', currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
   }
 
-  /** BG19's `budget_settlements` half — `UPDATE budget_settlements SET exchange_rate = ? WHERE trip_id = ? AND currency = ?`. */
-  async setExchangeRateForCurrency(trip_id: number | string, currency: string, exchange_rate: number): Promise<void> {
-    await this.kysely<BudgetSettlementsKyselyDB>()
+  async setRebasedRate(id: number, currency: string, rate: Partial<BudgetRateColumns>): Promise<void> {
+    await this.kysely<BudgetSettlementsWriteKyselyDB>()
       .updateTable('budget_settlements')
-      .set({ exchange_rate })
-      .where('trip_id', '=', trip_id as number)
-      .where('currency', '=', currency)
+      .set({ currency, ...rate })
+      .where('id', '=', id)
       .execute();
   }
 }

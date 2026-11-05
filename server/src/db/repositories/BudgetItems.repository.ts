@@ -1,12 +1,13 @@
 import { columnRef } from '../dialect/sql-functions';
 import type { BudgetItems } from '../entities/BudgetItems.entity';
 import type { DB } from '../kysely/db';
+import type { BudgetRateColumns } from './_shared/budget-rate';
 import { presenceSet } from './_shared/presence-set';
 import { type AssertRowKeys } from './_shared/rows';
 import { TrekRepository } from './_shared/trek-repository';
 
 /** A bare `budget_items` row — every scalar column, incl. the four `persist(false)` relation mirrors (the program-wide trap this class goes through Kysely to avoid). */
-export interface BudgetItemRow {
+export interface BudgetItemRow extends BudgetRateColumns {
   id: number;
   trip_id: number;
   category: string;
@@ -21,7 +22,6 @@ export interface BudgetItemRow {
   expense_date: string | null;
   reservation_id: number | null;
   currency: string | null;
-  exchange_rate: number;
   ticket_json: string | null;
   place_id: number | null;
 }
@@ -54,6 +54,7 @@ export interface BudgetItemMoneyRow {
   total_price: number;
   currency: string | null;
   exchange_rate: number;
+  exchange_rate_source: string;
 }
 
 type BudgetKyselyDB = Pick<
@@ -82,6 +83,14 @@ type BudgetItemsCopyInsertKyselyDB = Pick<DB, 'budget_items'>;
  * way here.
  */
 export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
+  async setRebasedRate(id: number, currency: string, rate: Partial<BudgetRateColumns>): Promise<void> {
+    await this.kysely<BudgetKyselyDB>()
+      .updateTable('budget_items')
+      .set({ currency, ...rate })
+      .where('id', '=', id)
+      .execute();
+  }
+
   /**
    * FL4 (`FilesService.findForeignLinkTarget`'s budget-expense branch, R12)
    * — kept from Task 1, unchanged.
@@ -199,7 +208,7 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
     expense_date: string | null;
     reservation_id: number | null;
     place_id: number | null;
-  }): Promise<number> {
+  } & Partial<BudgetRateColumns>): Promise<number> {
     const inserted = await this.kysely<BudgetItemsInsertKyselyDB>()
       .insertInto('budget_items')
       .values({ ...row, trip_id: row.trip_id as number })
@@ -231,7 +240,7 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
     expense_date: string | null;
     ticket_json: string | null;
     paid_by_user_id: number | null;
-  }): Promise<number> {
+  } & Partial<BudgetRateColumns>): Promise<number> {
     const inserted = await this.kysely<BudgetItemsCopyInsertKyselyDB>()
       .insertInto('budget_items')
       .values({ ...row, trip_id: row.trip_id as number })
@@ -268,6 +277,7 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       reservation_id?: readonly [present: boolean, value: number | null];
       place_id?: readonly [present: boolean, value: number | null];
     },
+    rate?: Partial<BudgetRateColumns>,
   ): Promise<void> {
     const data = presenceSet<{
       category: string;
@@ -284,8 +294,8 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       reservation_id: number | null;
       place_id: number | null;
     }>(write);
-    if (Object.keys(data).length === 0) return;
-    await this.kysely<BudgetKyselyDB>().updateTable('budget_items').set(data).where('id', '=', id).execute();
+    if (!rate && Object.keys(data).length === 0) return;
+    await this.kysely<BudgetKyselyDB>().updateTable('budget_items').set({ ...data, ...rate }).where('id', '=', id).execute();
   }
 
   /** BG6/BG34 — `UPDATE budget_items SET total_price = ? WHERE id = ?`. */
@@ -364,7 +374,7 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
   async listMoneyRows(trip_id: number | string): Promise<BudgetItemMoneyRow[]> {
     return await this.kysely<BudgetKyselyDB>()
       .selectFrom('budget_items')
-      .select(['id', 'category', 'total_price', 'currency', 'exchange_rate'])
+      .select(['id', 'category', 'total_price', 'currency', 'exchange_rate', 'exchange_rate_source'])
       .where('trip_id', '=', trip_id as number)
       .orderBy('id', 'asc')
       .execute();
@@ -384,7 +394,14 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       .where('currency', '!=', '')
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '!=', trip_currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .limit(1)
       .executeTakeFirst();
@@ -409,7 +426,14 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       .where('currency', '!=', '')
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '!=', trip_currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
     return rows.map((r) => r.cur);
@@ -423,21 +447,35 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       .where('trip_id', '=', trip_id as number)
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '=', currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
     return rows.map((r) => r.id);
   }
 
   /** BG92's `budget_items` half (`freezeMissingRates`) — `UPDATE budget_items SET exchange_rate = ? WHERE trip_id = ? AND UPPER(currency) = ? AND (exchange_rate IS NULL OR exchange_rate <= 0 OR exchange_rate = 1)`, the compare-and-set write. */
-  async freezeUnfrozenForCurrency(trip_id: number | string, currency: string, exchange_rate: number): Promise<void> {
+  async freezeUnfrozenForCurrency(trip_id: number | string, currency: string, rate: BudgetRateColumns): Promise<void> {
     await this.kysely<BudgetKyselyDB>()
       .updateTable('budget_items')
-      .set({ exchange_rate })
+      .set(rate)
       .where('trip_id', '=', trip_id as number)
       .where((eb) => eb(eb.fn<string>('upper', ['currency']), '=', currency))
       .where((eb) =>
-        eb.or([eb('exchange_rate', 'is', null), eb('exchange_rate', '<=', 0), eb('exchange_rate', '=', 1)]),
+        eb.or([
+          eb('exchange_rate', 'is', null),
+          eb('exchange_rate', '<=', 0),
+          eb.and([
+            eb('exchange_rate', '=', 1),
+            eb('exchange_rate_source', 'not in', ['identity', 'explicit', 'trip', 'global']),
+          ]),
+        ]),
       )
       .execute();
   }
@@ -490,48 +528,6 @@ export class BudgetItemsRepository extends TrekRepository<BudgetItems> {
       .orderBy('b.id', 'asc')
       .execute();
   }
-
-  /** BG17's `budget_items` half — `UPDATE budget_items SET currency = ? WHERE trip_id = ? AND (currency IS NULL OR currency = '')`. */
-  async pinCurrency(trip_id: number | string, prev_currency: string): Promise<void> {
-    await this.kysely<BudgetKyselyDB>()
-      .updateTable('budget_items')
-      .set({ currency: prev_currency })
-      .where('trip_id', '=', trip_id as number)
-      .where((eb) => eb.or([eb('currency', 'is', null), eb('currency', '=', '')]))
-      .execute();
-  }
-
-  /** BG18's `budget_items` half — `SELECT DISTINCT currency AS cur FROM budget_items WHERE trip_id = ? AND currency IS NOT NULL`. */
-  async listDistinctCurrencies(trip_id: number | string): Promise<string[]> {
-    const rows = await this.kysely<BudgetKyselyDB>()
-      .selectFrom('budget_items')
-      .select('currency')
-      .distinct()
-      .where('trip_id', '=', trip_id as number)
-      .where('currency', 'is not', null)
-      .execute();
-    return rows.map((r) => r.currency as string);
-  }
-
-  /** BG19's `budget_items` half — `UPDATE budget_items SET exchange_rate = ? WHERE trip_id = ? AND currency = ?`. */
-  async setExchangeRateForCurrency(trip_id: number | string, currency: string, exchange_rate: number): Promise<void> {
-    await this.kysely<BudgetKyselyDB>()
-      .updateTable('budget_items')
-      .set({ exchange_rate })
-      .where('trip_id', '=', trip_id as number)
-      .where('currency', '=', currency)
-      .execute();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Receipts — budget's own view across `trip_files`/`file_links` (owned by
-  // Plan 3e Task 1, consumed here the same way `Reservations`/`Places` are
-  // consumed elsewhere: a cross-table Kysely read/write within the domain
-  // that needs the join, not a new method on the owning task's repository —
-  // Task 1's landed `TripFilesRepository`/`FileLinksRepository` do not carry
-  // the item-scoped shapes this domain needs (see the task report's
-  // deviation note).
-  // ---------------------------------------------------------------------------
 
   /** BG3 (`loadItemReceipts`) — `SELECT f.id, f.filename, f.original_name, f.file_size, f.mime_type, f.trip_id FROM trip_files f JOIN file_links fl ON fl.file_id = f.id WHERE f.deleted_at IS NULL AND fl.budget_item_id = ? ORDER BY f.created_at ASC`. */
   async listReceipts(budget_item_id: number | string): Promise<BudgetReceiptRow[]> {

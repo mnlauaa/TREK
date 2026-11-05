@@ -49,7 +49,7 @@ export class BudgetWritesService {
     );
     const refusal = await this.budget.linkRefusal(tripId, data);
     if (refusal) throw new DomainError(400, refusal);
-    const item = await this.budget.create(String(tripId), data);
+    const item = await this.budget.create(String(tripId), data, writer.userId);
     if (item.reservation_id) await this.budget.resyncReservationPrice(tripId, item.reservation_id, writer.socketId);
     writer.events.emit('budget:created', { item });
     return item;

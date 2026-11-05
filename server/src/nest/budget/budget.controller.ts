@@ -105,6 +105,8 @@ export class BudgetController {
         to_user_id: body.to_user_id,
         amount: body.amount,
         currency: body.currency,
+        exchange_rate: body.exchange_rate,
+        exchange_rate_note: body.exchange_rate_note,
         settled_at: body.settled_at,
         note: body.note,
         fallback_fx: body.fallback_fx,
@@ -144,10 +146,12 @@ export class BudgetController {
       to_user_id: body.to_user_id,
       amount: body.amount,
       currency: body.currency,
+      exchange_rate: body.exchange_rate,
+      exchange_rate_note: body.exchange_rate_note,
       settled_at: body.settled_at,
       note: body.note,
       fallback_fx: body.fallback_fx,
-    });
+    }, user.id);
     if (!settlement) {
       throw new HttpException({ error: 'Settlement not found' }, 404);
     }
@@ -193,7 +197,7 @@ export class BudgetController {
     @Body() body: BudgetFreezeRatesDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const healed = await this.budget.freezeMissingRates(tripId, body.fallback_fx);
+    const healed = await this.budget.freezeMissingRates(tripId, body.fallback_fx, user.id);
     if (!healed) {
       throw new HttpException({ error: 'The trip currency changed. Reload and try again.' }, 409);
     }
@@ -269,7 +273,7 @@ export class BudgetController {
     }
     // The booking an expense leaves also needs its price worked out again.
     const before = body.reservation_id !== undefined ? await this.budget.getBudgetItem(itemId, tripId) : null;
-    const updated = await this.budget.update(itemId, tripId, body);
+    const updated = await this.budget.update(itemId, tripId, body, user.id);
     if (!updated) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }

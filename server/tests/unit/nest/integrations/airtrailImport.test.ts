@@ -10,7 +10,6 @@ import { Days } from '../../../../src/db/entities/Days.entity';
 import { ReservationEndpoints } from '../../../../src/db/entities/ReservationEndpoints.entity';
 import { Reservations } from '../../../../src/db/entities/Reservations.entity';
 import { BudgetService } from '../../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../../src/nest/budget/exchange-rates.service';
 import { AirtrailImportService } from '../../../../src/nest/integrations/airtrail-import.service';
 import type { AirtrailAirport, AirtrailFlightRaw } from '../../../../src/nest/integrations/airtrail.client';
 import type { AirtrailClient } from '../../../../src/nest/integrations/airtrail.client';
@@ -20,7 +19,7 @@ import { RealtimeService } from '../../../../src/nest/realtime/realtime.service'
 import { ReservationsReadService } from '../../../../src/nest/reservations/reservations-read.service';
 import { ReservationsService } from '../../../../src/nest/reservations/reservations.service';
 import { accommodationsOver } from '../../../helpers/accommodations-service';
-import { budgetRepoArgs } from '../../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../../helpers/budget-repos';
 import { createUser, createTrip } from '../../../helpers/factories';
 import { findRow, findRows } from '../../../helpers/factories/rows';
 import { createTestBudgetItemsRepo } from '../../../helpers/files-repos';
@@ -62,7 +61,7 @@ async function makeImportService(): Promise<AirtrailImportService> {
       permissions,
       new BudgetService(
         permissions,
-        new ExchangeRatesService(),
+        await createTestExchangeRates(db),
         realtime,
         await createTestUnitOfWork(db),
         ...(await budgetRepoArgs(db)),

@@ -1,3 +1,4 @@
+import type { PreparedRate } from '../budget/exchange-rates.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import type { TripAccess, TripsRepository } from '../../db/repositories/Trips.repository';
@@ -42,9 +43,16 @@ import { RESERVATION_METADATA } from '../../db/json-columns';
 import { decodeJson } from '../../utils/json-column';
 
 type Trip = TripAccess;
-type BudgetEntry = { total_price?: number; category?: string; currency?: string | null; exchange_rate?: number } | undefined;
-/** A booking's cost as written: the entry, dated on the booking's day (bookingDate), never by the caller. */
-type DatedBudgetEntry = (NonNullable<BudgetEntry> & { expense_date?: string | null }) | undefined;
+type BudgetEntry = {
+  total_price?: number;
+  category?: string;
+  currency?: string | null;
+  exchange_rate?: number;
+  exchange_rate_note?: string | null;
+} | undefined;
+type PreparedBudgetEntry = (NonNullable<BudgetEntry> & { preparedRate?: PreparedRate }) | undefined;
+
+type DatedBudgetEntry = (NonNullable<PreparedBudgetEntry> & { expense_date?: string | null }) | undefined;
 
 /** What a booking write did to its linked costs, for the caller to send once the write has committed. */
 export type CostEvent =
@@ -627,27 +635,35 @@ export class ReservationsService {
     return written;
   }
 
-  /** create and the booking's linked cost as one write; the rate is frozen before (withFrozenRate, network I/O). */
-  async createWithCost(tripId: string, data: CreateReservationData, entry: BudgetEntry) {
-    const { stayMirror, ...written } = await this.uow.transactional(() => this.createWithCostInTx(tripId, data, entry));
+  /** @txIndependent Quote snapshot caching is independent of the booking transaction. */
+  async createWithCost(tripId: string, data: CreateReservationData, entry: BudgetEntry, userId?: number) {
+    const priced = await this.withFrozenRate(tripId, entry, userId);
+    const { stayMirror, ...written } = await this.uow.transactional(() => this.createWithCostInTx(tripId, data, priced));
     await this.announceStayMirror(tripId, stayMirror);
     return written;
   }
 
   /** createWithCost's writes, for a caller whose transaction holds more (an imported venue). It announces after. */
-  async createWithCostInTx(tripId: string, data: CreateReservationData, entry: BudgetEntry) {
+  async createWithCostInTx(tripId: string, data: CreateReservationData, entry: PreparedBudgetEntry) {
     const costEvents: CostEvent[] = [];
     const done = await this.createInTx(tripId, data);
     await this.syncBudgetOnCreate(tripId, done.reservation.id, data.title, data.type, await this.dated(entry, done.reservation), undefined, costEvents);
     return { ...done, costEvents };
   }
 
-  /** update and the linked cost it moves, as one write, the way createWithCost is. */
-  async updateWithCost(id: string, tripId: string, data: UpdateReservationData, current: Reservation, entry: BudgetEntry) {
+  /** @txIndependent Quote snapshot caching is independent of the booking transaction. */
+  async updateWithCost(id: string, tripId: string, data: UpdateReservationData, current: Reservation, entry: BudgetEntry, userId?: number) {
     const costEvents: CostEvent[] = [];
+    const linked = entry && Number(entry.total_price) > 0
+      ? await this.budgetItemsRepo.listIdAndCategoryByReservation(tripId, id)
+      : [];
+    const prior = linked.length === 1 ? await this.budgetItemsRepo.getCurrency(linked[0].id, tripId) : undefined;
+    const priced = linked.length > 1 ? undefined : await this.withFrozenRate(
+      tripId, entry, userId, prior === undefined ? undefined : { currency: prior },
+    );
     const { stayMirror, ...written } = await this.uow.transactional(async () => {
       const done = await this.updateInTx(id, tripId, data, current);
-      await this.syncBudgetOnUpdate(tripId, id, data.title ?? '', data.type, current.title, current.type ?? undefined, await this.dated(entry, done.reservation), undefined, costEvents);
+      await this.syncBudgetOnUpdate(tripId, id, data.title ?? '', data.type, current.title, current.type ?? undefined, await this.dated(priced, done.reservation), undefined, costEvents);
       return done;
     });
     await this.announceStayMirror(tripId, stayMirror);
@@ -1086,31 +1102,23 @@ export class ReservationsService {
     return answer;
   }
 
-  /**
-   * The linked cost a new booking's price becomes, in the currency the price was quoted
-   * in and at the rate frozen for it now (#2525). An imported booking previewed its
-   * $801.76 in dollars, then stored 801.76 in the trip's own currency, because only the
-   * amount travelled. The rate is resolved here, before the writes and outside their
-   * transaction (the fetch is network I/O, and `UnitOfWork.transactional` holds the
-   * connection), the way the direct booking import and the Costs routes resolve it.
-   * A currency that is not a three-letter code is dropped, which leaves the price in
-   * the trip currency as before, and a rate is never taken from the caller.
-   */
-  async withFrozenRate(tripId: string | number, entry: BudgetEntry): Promise<BudgetEntry> {
-    if (!entry || typeof entry !== 'object') return entry;
-    const { currency: rawCurrency, exchange_rate: _callerRate, ...rest } = entry;
-    const currency = typeof rawCurrency === 'string' ? rawCurrency.trim().toUpperCase() : '';
-    if (!/^[A-Z]{3}$/.test(currency)) return rest;
-    const priced: { currency?: string | null; exchange_rate?: number } = { currency };
-    await this.budget.freezeForeignRate(tripId, priced);
-    return { ...rest, currency, ...(priced.exchange_rate != null ? { exchange_rate: priced.exchange_rate } : {}) };
+  async withFrozenRate(
+    tripId: string | number,
+    entry: BudgetEntry,
+    userId?: number,
+    existing?: { currency: string | null },
+  ): Promise<PreparedBudgetEntry> {
+    if (!entry || typeof entry !== 'object' || !(Number(entry.total_price) > 0)) return entry;
+    const currency = typeof entry.currency === 'string' ? entry.currency.trim().toUpperCase() : entry.currency === null ? null : undefined;
+    const input = {
+      currency: currency && !/^[A-Z]{3}$/.test(currency) ? undefined : currency,
+      exchange_rate: entry.exchange_rate,
+      exchange_rate_note: typeof entry.exchange_rate_note === 'string' ? entry.exchange_rate_note.slice(0, 500) : null,
+    };
+    const preparedRate = await this.budget.prepareRate(tripId, input, userId, existing);
+    return { total_price: Number(entry.total_price), category: entry.category, currency: input.currency, preparedRate };
   }
 
-  /**
-   * The calendar day a booking falls on, which a cost created with it is dated on
-   * (#2604): its own date, else a hotel's check-in day, else the day it sits on.
-   * Null for a booking without any of them; the cost then has no date, as before.
-   */
   private async bookingDate(reservation: ReservationRow): Promise<string | null> {
     const own = String(reservation.reservation_time ?? '').slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(own)) return own;
@@ -1119,12 +1127,11 @@ export class ReservationsService {
   }
 
   /** The entry with the booking's day as its date, replacing anything the caller sent. */
-  private async dated(entry: BudgetEntry, reservation: ReservationRow): Promise<DatedBudgetEntry> {
+  private async dated(entry: PreparedBudgetEntry, reservation: ReservationRow): Promise<DatedBudgetEntry> {
     if (!entry || typeof entry !== 'object' || !(Number(entry.total_price) > 0)) return entry;
     return { ...entry, expense_date: await this.bookingDate(reservation) };
   }
 
-  /** POST side effect: link a budget item when a price is provided. `collect` holds the broadcast for the caller's transaction. */
   async syncBudgetOnCreate(tripId: string, reservationId: number, title: string, type: string | undefined, entry: DatedBudgetEntry, socketId: string | undefined, collect?: CostEvent[]): Promise<void> {
     if (!entry || !(Number(entry.total_price) > 0)) return;
     // A failing cost write is not caught: it rolls the booking back with it in createWithCost.
@@ -1133,17 +1140,12 @@ export class ReservationsService {
       category: entry.category || type || 'Other',
       total_price: entry.total_price!,
       ...(entry.currency ? { currency: entry.currency } : {}),
-      ...(entry.exchange_rate != null ? { exchange_rate: entry.exchange_rate } : {}),
       ...(entry.expense_date ? { expense_date: entry.expense_date } : {}),
-    });
+    }, entry.preparedRate);
     this.sendCost(tripId, { event: 'budget:created', payload: { item } }, socketId, collect);
   }
 
-  /** PUT side effect: drop the linked budget item when the price is cleared, else create/update it. `collect` and failures as on create. */
   async syncBudgetOnUpdate(tripId: string, id: string, title: string, type: string | undefined, currentTitle: string, currentType: string | undefined, entry: DatedBudgetEntry, socketId: string | undefined, collect?: CostEvent[]): Promise<void> {
-    // When the booking type changes, keep a linked expense's category in sync —
-    // but only if it still carries the auto-derived category (so a manual pick in
-    // the Costs editor is preserved). Runs regardless of create_budget_entry.
     if (type && currentType && type !== currentType) {
       const oldCat = typeToCostCategory(currentType);
       const newCat = typeToCostCategory(type);
@@ -1155,12 +1157,7 @@ export class ReservationsService {
       }
     }
 
-    // No budget entry on the payload — the booking edit isn't touching its linked
-    // expense, so leave any linked item alone. Expenses are managed from the
-    // booking's Costs section / the Costs tab, not by re-saving the booking.
     if (!entry) return;
-    // The price field speaks for a single expense. With several linked (#2084)
-    // it has none to mean, so they are managed from the Costs block only.
     if ((await this.budgetItemsRepo.listIdAndCategoryByReservation(tripId, id)).length > 1) return;
 
     if (!(Number(entry.total_price) > 0)) {
@@ -1177,7 +1174,9 @@ export class ReservationsService {
     const category = entry.category || type || currentType || 'Other';
     const existing = await this.budgetItemsRepo.findIdByReservationInTrip(tripId, id);
     if (existing) {
-      const updated = await this.budget.updateBudgetItem(existing.id, tripId, { name: itemName, category, total_price: entry.total_price });
+      const updated = await this.budget.updateBudgetItem(existing.id, tripId, {
+        name: itemName, category, total_price: entry.total_price, currency: entry.currency,
+      }, entry.preparedRate);
       this.sendCost(tripId, { event: 'budget:updated', payload: { item: updated } }, socketId, collect);
     } else {
       // The link travels on the insert, so a cost is never written without its booking.
@@ -1185,8 +1184,9 @@ export class ReservationsService {
         name: itemName,
         category,
         total_price: entry.total_price!,
+        currency: entry.currency,
         ...(entry.expense_date ? { expense_date: entry.expense_date } : {}),
-      });
+      }, entry.preparedRate);
       this.sendCost(tripId, { event: 'budget:created', payload: { item } }, socketId, collect);
     }
   }

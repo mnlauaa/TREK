@@ -24,9 +24,8 @@ import { McpToolGuardsService } from '../mcp-shared/mcp-tool-guards.service';
 import { TripMembershipService } from '../trip-membership/trip-membership.service';
 import { BudgetWritesService } from './budget-writes.service';
 import { BudgetService } from './budget.service';
-import { ExchangeRatesService } from './exchange-rates.service';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { idSchema, sumMinor, toMinor } from '@trek/shared';
+import { exchangeRateWriteSchema, idSchema, sumMinor, toMinor } from '@trek/shared';
 
 import { z } from 'zod';
 
@@ -68,32 +67,10 @@ function formatCents(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
-/**
- * Budget MCP surface — ported from the legacy registrars: the eleven tools
- * from src/mcp/tools/budget.ts and the trek://trips/{tripId}/budget,
- * …/budget/per-person and …/budget/settlement resources from
- * src/mcp/resources.ts (identical names, descriptions, schemas, annotations
- * and error shapes). The registration-time gates map to `when` (the
- * whole-registrar budget-addon check) plus the declarative budget read/write
- * access markers (the legacy `if (R)` / `if (W)` checks, resolved by
- * trekMcpAccessPolicy).
- *
- * Quirk fixes on top of the ported legacy behavior: broadcasts use the REST
- * payload shapes ('budget:members-updated' { itemId, members, persons } and
- * 'budget:member-paid-updated' { itemId, userId, paid } — the legacy
- * MCP-specific { item } / { itemId, member } shapes were silent no-ops in the
- * client's remoteEventHandler), the mutating settlement/item paths route
- * through the freeze-then-write composites so REST and MCP can't diverge on
- * the #1445 FX freeze, and the settlement resource resolves the trip currency
- * and live rates like get_settlement_summary instead of silently defaulting
- * to an unconverted EUR base. freeze_budget_rates has no legacy counterpart; it
- * is the REST freeze-rates route without the rate table a browser may lend.
- */
 @McpController()
 export class BudgetMcp {
   constructor(
     private readonly budget: BudgetService,
-    private readonly exchangeRates: ExchangeRatesService,
     private readonly env: RuntimeEnvService,
     private readonly membership: TripMembershipService,
     readonly addons: AddonsService,
@@ -196,8 +173,9 @@ export class BudgetMcp {
   @Tool({
     name: 'create_budget_item',
     description:
-      'Add a budget/expense item to a trip. The cost is split equally among member_ids (omit to split across all trip members, or pass [] for a planning-only entry with no split); for an uneven split, give `members` the amount each participant owes instead. Use `payers` to record who actually paid and how much. Ask the user which trip members share this expense and who paid (resolve user IDs with list_trip_members) rather than guessing. A foreign currency is frozen at the exchange rate the server quotes today; when the server has none, the expense counts in no balance or total and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Add a budget/expense item to a trip. The cost is split equally among member_ids (omit to split across all trip members, or pass [] for a planning-only entry with no split); for an uneven split, give `members` the amount each participant owes instead. Use `payers` to record who actually paid and how much. Ask the user which trip members share this expense and who paid (resolve user IDs with list_trip_members) rather than guessing. A foreign currency uses an explicit exchange_rate, the trip default, or a global quote in that order. Supply an explicit rate if neither quote is available.',
     inputSchema: {
+      ...exchangeRateWriteSchema.shape,
       tripId: idSchema,
       name: z.string().min(1).max(200),
       category: z.string().max(100).optional().describe('Budget category (e.g. Accommodation, Food, Transport)'),
@@ -248,6 +226,8 @@ export class BudgetMcp {
       category,
       total_price,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       member_ids,
       members,
       payers,
@@ -261,6 +241,8 @@ export class BudgetMcp {
       category?: string;
       total_price: number;
       currency?: string | null;
+      exchange_rate?: number;
+      exchange_rate_note?: string | null;
       member_ids?: number[];
       members?: { user_id: number; amount: number }[];
       payers?: { user_id: number; amount: number }[];
@@ -336,8 +318,9 @@ export class BudgetMcp {
   @Tool({
     name: 'update_budget_item',
     description:
-      'Update an existing budget/expense item in a trip. You can also re-split it (equally via member_ids, unevenly via members), change the currency it was entered in, move it to another date, and record who actually paid via payers (amounts in the expense currency). When changing who shares an expense or who paid, ask the user rather than guessing; resolve user IDs with list_trip_members. A foreign currency is frozen at the exchange rate the server quotes today; when the server has none, the expense counts in no balance or total and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Update an existing budget/expense item in a trip. You can also re-split it (equally via member_ids, unevenly via members), change the currency it was entered in, move it to another date, and record who actually paid via payers (amounts in the expense currency). When changing who shares an expense or who paid, ask the user rather than guessing; resolve user IDs with list_trip_members. A foreign currency uses an explicit exchange_rate, the trip default, or a global quote in that order. Supply an explicit rate if neither quote is available.',
     inputSchema: {
+      ...exchangeRateWriteSchema.shape,
       tripId: idSchema,
       itemId: idSchema,
       name: z.string().min(1).max(200).optional(),
@@ -401,6 +384,8 @@ export class BudgetMcp {
       category,
       total_price,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       member_ids,
       members,
       payers,
@@ -417,6 +402,8 @@ export class BudgetMcp {
       category?: string;
       total_price?: number;
       currency?: string | null;
+      exchange_rate?: number;
+      exchange_rate_note?: string | null;
       member_ids?: number[];
       members?: { user_id: number; amount: number }[];
       payers?: { user_id: number; amount: number }[];
@@ -449,14 +436,14 @@ export class BudgetMcp {
       );
       if (refusal) return errorResult(refusal);
     }
-    // Freeze-then-write composite: a currency change re-freezes the rate at entry
-    // time (#1445) on the same code path the REST update uses.
     const before = reservation_id !== undefined ? await this.budget.getBudgetItem(itemId, tripId) : null;
     const item = await this.budget.update(itemId, tripId, {
       name,
       category,
       total_price,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       member_ids,
       members,
       payers,
@@ -466,7 +453,7 @@ export class BudgetMcp {
       note,
       reservation_id,
       place_id,
-    });
+    }, ctx.userId);
     if (!item) return errorResult('Budget item not found.');
     await this.budget.resyncLinkedPrices(tripId, before?.reservation_id, item, { total_price, reservation_id });
     this.guards.safeBroadcast(tripId, 'budget:updated', { item });
@@ -642,8 +629,9 @@ export class BudgetMcp {
   @Tool({
     name: 'create_settlement',
     description:
-      "Record a settle-up payment: from_user_id paid to_user_id the given amount to settle shared expenses, optionally with a note. The amount is in the trip's base currency unless `currency` says otherwise. Use get_settlement_summary first to find who owes whom and how much. When the server has no exchange rate for a foreign `currency`, the payment counts in no balance and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.",
+      "Record a settle-up payment: from_user_id paid to_user_id the given amount to settle shared expenses, optionally with a note. The amount is in the trip's base currency unless `currency` says otherwise. Use get_settlement_summary first to find who owes whom and how much. A foreign currency requires an explicit exchange_rate or an available trip or global quote.",
     inputSchema: {
+      ...exchangeRateWriteSchema.shape,
       tripId: idSchema,
       from_user_id: idSchema.describe('User ID of the member who paid'),
       to_user_id: idSchema.describe('User ID of the member who received the payment'),
@@ -682,6 +670,8 @@ export class BudgetMcp {
       to_user_id,
       amount,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       settled_at,
       note,
     }: {
@@ -690,6 +680,8 @@ export class BudgetMcp {
       to_user_id: number;
       amount: number;
       currency?: string | null;
+      exchange_rate?: number;
+      exchange_rate_note?: string | null;
       settled_at?: string | null;
       note?: string | null;
     },
@@ -697,11 +689,9 @@ export class BudgetMcp {
   ) {
     if (!(await this.budget.verifyTripAccess(tripId, ctx.userId))) return noAccess();
     if (!(await this.guards.hasTripPermission('budget_edit', tripId, ctx.userId))) return permissionDenied();
-    // Freeze-then-write composite, same as the REST path: the rate for the display
-    // currency is frozen at entry time (#1445).
     const settlement = await this.budget.createSettlement(
       tripId,
-      { from_user_id, to_user_id, amount, currency, settled_at, note },
+      { from_user_id, to_user_id, amount, currency, exchange_rate, exchange_rate_note, settled_at, note },
       ctx.userId,
     );
     if (!settlement) return errorResult('Settlement not found.');
@@ -712,8 +702,9 @@ export class BudgetMcp {
   @Tool({
     name: 'update_settlement',
     description:
-      'Update a recorded settle-up payment (who paid, who received, the amount, the currency it was made in and its note). Every field is a full replace, so restate the ones that stay the same. When the server has no exchange rate for a foreign `currency`, the payment counts in no balance and is listed under `unconverted` in get_settlement_summary until freeze_budget_rates pins one.',
+      'Update a recorded settle-up payment (who paid, who received, the amount, the currency it was made in and its note). Every field is a full replace, so restate the ones that stay the same. A foreign currency requires an explicit exchange_rate or an available trip or global quote.',
     inputSchema: {
+      ...exchangeRateWriteSchema.shape,
       tripId: idSchema,
       settlementId: idSchema,
       from_user_id: idSchema.describe('User ID of the member who paid'),
@@ -752,6 +743,8 @@ export class BudgetMcp {
       to_user_id,
       amount,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       settled_at,
       note,
     }: {
@@ -761,6 +754,8 @@ export class BudgetMcp {
       to_user_id: number;
       amount: number;
       currency?: string | null;
+      exchange_rate?: number;
+      exchange_rate_note?: string | null;
       settled_at?: string | null;
       note?: string | null;
     },
@@ -768,16 +763,16 @@ export class BudgetMcp {
   ) {
     if (!(await this.budget.verifyTripAccess(tripId, ctx.userId))) return noAccess();
     if (!(await this.guards.hasTripPermission('budget_edit', tripId, ctx.userId))) return permissionDenied();
-    // Freeze-then-write composite, same as the REST path: an edit that leaves the
-    // currency alone keeps the rate frozen at settle time.
     const settlement = await this.budget.updateSettlement(settlementId, tripId, {
       from_user_id,
       to_user_id,
       amount,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       settled_at,
       note,
-    });
+    }, ctx.userId);
     if (!settlement) return errorResult('Settlement not found.');
     this.guards.safeBroadcast(tripId, 'budget:settlement-updated', { settlement });
     return ok({ settlement });
@@ -822,7 +817,7 @@ export class BudgetMcp {
     if (!(await this.guards.hasTripPermission('budget_edit', tripId, ctx.userId))) return permissionDenied();
     // The same service call as POST …/budget/freeze-rates, without a lent rate table:
     // a rate from an MCP caller is never frozen, like everywhere else on this surface.
-    const healed = await this.budget.freezeMissingRates(tripId);
+    const healed = await this.budget.freezeMissingRates(tripId, undefined, ctx.userId);
     if (!healed) return errorResult('The trip currency changed. Reload and try again.');
     for (const item of healed.items) this.guards.safeBroadcast(tripId, 'budget:updated', { item });
     for (const settlement of healed.settlements)
@@ -926,8 +921,7 @@ export class BudgetMcp {
     const currency = await this.trips.getCurrency(id);
     const tripCurrency = currency || 'EUR';
     const effectiveBase = tripCurrency.toUpperCase();
-    const rates = await this.exchangeRates.getRates(effectiveBase);
-    const settlement = await this.budget.calculateSettlement(id, { base: effectiveBase, rates, tripCurrency });
+    const settlement = await this.budget.settlement(id, effectiveBase, tripCurrency);
     return {
       contents: [
         {

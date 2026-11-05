@@ -27,23 +27,12 @@ const { RATES } = vi.hoisted(() => ({
     USD: { USD: 1, EUR: 0.87497 },
   } as Record<string, Record<string, number>>,
 }));
-// Constructor-injected since the fold; the class is mocked at the module path
-// so every separately-constructed instance sees the same deterministic rates
-// as the SUT.
-vi.mock('../../../src/nest/budget/exchange-rates.service', () => ({
-  ExchangeRatesService: class {
-    async getRates(base: string) {
-      return RATES[base.toUpperCase()] ?? null;
-    }
-  },
-}));
-
 import { db as testDb } from '../../../src/db/database';
 import { resetTestDb } from '../../helpers/test-db';
 import { createUser, createTrip, addTripMember } from '../../helpers/factories';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
 import { PermissionsService } from '../../../src/nest/permissions/permissions.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
+import type { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import { TripMembersService } from '../../../src/nest/trip-members/trip-members.service';
@@ -57,7 +46,7 @@ import { VacayService } from '../../../src/nest/vacay/vacay.service';
 import { QueryHelpersService } from '../../../src/nest/query-helpers/query-helpers.service';
 import { notificationsStub } from '../../helpers/notifications';
 import { createTestUnitOfWork, createTestAppSettingsRepo, createTestUsersRepo, sharedTestOrm, createTestTripsRepo, createTestTripMembersRepo } from '../../helpers/test-uow';
-import { budgetRepoArgs, createTestBudgetItemMembersRepo, createTestBudgetItemPayersRepo, createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestBudgetItemMembersRepo, createTestBudgetItemPayersRepo, createTestBudgetSettlementsRepo, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestShareTokensRepo, createTestPluginsRepo, createTestPluginUserErasureQueueRepo } from '../../helpers/share-repos';
 import { createTestBudgetItemsRepo } from '../../helpers/files-repos';
 import { createTestJourneysRepo, createTestJourneyEntriesRepo, createTestJourneyContributorsRepo } from '../../helpers/journey-repos';
@@ -135,6 +124,7 @@ async function linkOfFile(fileId: number) {
 let dbsEm: import('@mikro-orm/core').EntityManager | undefined;
 
 let budget: BudgetService;
+let ratesService: ExchangeRatesService;
 let membersSvc: TripMembersService;
 let createGuest: typeof membersSvc.createGuest;
 let deleteGuest: typeof membersSvc.deleteGuest;
@@ -148,9 +138,17 @@ beforeAll(async () => {
   budgetItemMembersRepoDirect = await createTestBudgetItemMembersRepo(testDb);
   budgetItemPayersRepoDirect = await createTestBudgetItemPayersRepo(testDb);
   budgetSettlementsRepoDirect = await createTestBudgetSettlementsRepo(testDb);
+  ratesService = await createTestExchangeRates(testDb);
+  vi.spyOn(ratesService, 'getGlobalRateSnapshot').mockImplementation(async (base = 'EUR') => {
+    const rates = await ratesService.getRates(base);
+    return rates ? {
+      base_currency: base, rates, source_version: 'fixture', effective_date: null,
+      fetched_at: new Date().toISOString(), stale: false,
+    } : null;
+  });
   budget = new BudgetService(
   new PermissionsService(await createTestAppSettingsRepo(testDb), await createTestUnitOfWork(testDb)),
-  new ExchangeRatesService(),
+  ratesService,
   new RealtimeService(),
   await createTestUnitOfWork(testDb),
   ...(await budgetRepoArgs(testDb)),
@@ -171,6 +169,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  vi.spyOn(ratesService, 'getRates').mockImplementation(async (base) => RATES[base] ?? null);
+  vi.mocked(ratesService.getRates).mockClear();
   resetTestDb(testDb);
 });
 
@@ -495,7 +495,7 @@ describe('rebaseTripCurrency', () => {
     // The implicit row really held euros, so it is stamped EUR rather than silently
     // becoming 100 ₽, and every rate is re-anchored to the new base.
     expect(await itemRow(implicit.id)).toEqual({ currency: 'EUR', exchange_rate: RATES.RUB.EUR });
-    expect(await itemRow(usd.id)).toEqual({ currency: 'USD', exchange_rate: RATES.RUB.USD });
+    expect(await itemRow(usd.id)).toEqual({ currency: 'USD', exchange_rate: RATES.RUB.EUR * RATES.EUR.USD });
     // Already in the trip's new currency → no conversion left to freeze.
     expect(await itemRow(rub.id)).toEqual({ currency: 'RUB', exchange_rate: 1 });
   });
@@ -572,7 +572,7 @@ describe('rebaseTripCurrency', () => {
 
     // USD isn't the incoming base, so the settlement's frozen rate is re-anchored
     // against RUB rather than left pointing at the trip's old EUR base.
-    expect(await settlementRow()).toEqual({ currency: 'USD', exchange_rate: RATES.RUB.USD });
+    expect(await settlementRow()).toEqual({ currency: 'USD', exchange_rate: RATES.RUB.EUR * RATES.EUR.USD });
   });
 
   it('BUDGET-SVC-DB-008: is a no-op when the currency is unchanged', async () => {
@@ -637,12 +637,12 @@ describe('composite service paths (ex budget.bridge delegation)', () => {
     expect(await budget.prepareCurrencyRebase(trip.id, '')).toBeNull();
     expect(await budget.prepareCurrencyRebase(999999, 'RUB')).toBeNull();
     const plan = await budget.prepareCurrencyRebase(trip.id, 'rub');
-    expect(plan).toEqual({ next: 'RUB', rates: RATES.RUB });
+    expect(plan).toEqual({ previous: 'EUR', next: 'RUB', bridge: RATES.RUB.EUR });
     expect(await row()).toEqual(before);
 
-    // The trip took the new currency in the meantime: nothing is left to rebase.
+    // The prepared quote cannot be applied after another writer changes the base.
     await setTrip(trip.id, { currency: 'RUB' });
-    await budget.applyCurrencyRebase(trip.id, plan!);
+    await expect(budget.applyCurrencyRebase(trip.id, plan!)).rejects.toThrow(/Trip currency changed/);
     expect(await row()).toEqual(before);
 
     await setTrip(trip.id, { currency: 'EUR' });
@@ -1669,8 +1669,7 @@ describe('repository parity (rule 19 — full-key toEqual against the legacy sta
     const s2 = await budget.createSettlement(trip.id, { from_user_id: alice.id, to_user_id: bob.id, amount: 10 }, bob.id) as { id: number };
 
     const SETTLEMENT_SELECT = `
-      SELECT s.id, s.trip_id, s.from_user_id, s.to_user_id, s.amount, s.currency, s.exchange_rate,
-             s.created_at, s.settled_at, s.note, s.created_by_user_id,
+      SELECT s.*,
              COALESCE(fu.display_name, fu.username) AS from_username, fu.avatar AS from_avatar,
              COALESCE(tu.display_name, tu.username) AS to_username, tu.avatar AS to_avatar
       FROM budget_settlements s
@@ -1739,19 +1738,14 @@ describe('trip totals read every row in the trip currency (#2525)', () => {
       byCategory: { accommodation: 685.26, food: 100 },
       unconverted: [],
     });
-    // Both rows carry what they need, so nothing waits on today's rates.
-    expect(await budget.ratesForTripTotals(trip.id, 'EUR')).toBeNull();
   });
 
-  it('BUDGET-SVC-DB-079: fetches today\'s rate only for a row that never froze one', async () => {
+  it('BUDGET-SVC-DB-079: excludes a foreign row that never froze a rate', async () => {
     const { user: me } = createUser(testDb);
     const trip = createTrip(testDb, me.id);
     // Written before the freeze existed: the column default of 1 is not a booked rate.
-    await budget.createBudgetItem(trip.id, { name: 'Old taxi', category: 'transport', total_price: 114.29, currency: 'USD' });
-    const rates = await budget.ratesForTripTotals(trip.id, 'EUR');
-    expect(rates).toEqual(RATES.EUR);
-    // 114.29 USD at 1.1429 per euro, the same way the settlement reads such a row.
-    expect((await budget.tripTotals(trip.id, 'EUR', rates)).total).toBe(100);
+    const old = await budget.createBudgetItem(trip.id, { name: 'Old taxi', category: 'transport', total_price: 114.29, currency: 'USD' });
+    expect(await budget.tripTotals(trip.id, 'EUR')).toEqual({ total: 0, byCategory: {}, unconverted: [old.id] });
   });
 
   it('BUDGET-SVC-DB-080: the per-person summary splits trip cents, not raw amounts', async () => {
@@ -1837,9 +1831,9 @@ describe('the settlement converts with the quote the entry rate was frozen from 
     expect(inEur.finalBudgets.find(f => f.user_id === me.id)!.sources.fronted).toEqual([{ item_id: bill.id, cents: 10801 }]);
   });
 
-  it('BUDGET-SVC-DB-084: a transfer saved without a currency reads back in the display currency as entered', async () => {
+  it('BUDGET-SVC-DB-084: a legacy transfer without a currency reads back in the display currency as entered', async () => {
     const { trip, me, bob } = seedSameDayBill();
-    await budget.createSettlement(trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: 30 }, me.id);
+    await budget.insertSettlement(trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: 30 }, me.id);
     const s = await budget.settlement(trip.id, 'USD', 'EUR');
     const mine = s.finalBudgets.find(f => f.user_id === me.id)!;
     expect(mine.reimbursed).toBe(30);
@@ -1877,7 +1871,7 @@ describe('rows no rate can convert, and the rates that heal them', () => {
     if (!row) throw new Error(`no ${table} row ${id}`);
     return row.exchange_rate;
   };
-  const exchangeRates = () => (budget as unknown as { exchangeRates: ExchangeRatesService }).exchangeRates;
+  const exchangeRates = () => ratesService;
 
   async function seedAudTrip() {
     const { user: me } = createUser(testDb);
@@ -1913,10 +1907,9 @@ describe('rows no rate can convert, and the rates that heal them', () => {
   it('BUDGET-SVC-DB-058: fallback_fx on another base is ignored', async () => {
     const { trip } = await seedAudTrip();
     // Quoted against euros, the figure would freeze the bill against the wrong currency.
-    const bill = await budget.create(String(trip.id), {
+    await expect(budget.create(String(trip.id), {
       name: 'Pho', currency: 'VND', total_price: 100000, fallback_fx: { base: 'EUR', rates: { VND: 27000 } },
-    });
-    expect(bill.exchange_rate).toBe(1);
+    })).rejects.toThrow(/enter a manual exchange rate/);
   });
 
   it('BUDGET-SVC-DB-059: explicit exchange_rate wins, fallback_fx never reaches the row', async () => {
@@ -1924,14 +1917,14 @@ describe('rows no rate can convert, and the rates that heal them', () => {
     const data = { name: 'Pho', currency: 'VND', total_price: 100000, exchange_rate: 18000, fallback_fx: VND_FX };
     const bill = await budget.create(String(trip.id), data);
     expect(bill.exchange_rate).toBe(18000);
-    expect('fallback_fx' in data).toBe(false);
+    expect(bill).not.toHaveProperty('fallback_fx');
   });
 
-  it('BUDGET-SVC-DB-060: currency change without any rate drops the old rate (items)', async () => {
+  it('BUDGET-SVC-DB-060: currency change without any rate preserves the booked expense', async () => {
     const { trip } = await seedAudTrip();
     const item = await budget.createBudgetItem(trip.id, { name: 'Taxi', currency: 'USD', exchange_rate: 0.65, total_price: 20 });
-    // The update SQL keeps the stored rate when none is sent: a USD rate on a VND bill.
-    expect(await budget.update(item.id, trip.id, { currency: 'VND' })).toMatchObject({ currency: 'VND', exchange_rate: 1 });
+    await expect(budget.update(item.id, trip.id, { currency: 'VND' })).rejects.toThrow(/enter a manual exchange rate/);
+    expect(await budgetItemFx(item.id)).toEqual({ currency: 'USD', exchange_rate: 0.65 });
     // With a lent rate the new currency freezes instead.
     expect(await budget.update(item.id, trip.id, { currency: 'THB', fallback_fx: { base: 'AUD', rates: { THB: 23.5 } } }))
       .toMatchObject({ currency: 'THB', exchange_rate: 23.5 });
@@ -1943,8 +1936,10 @@ describe('rows no rate can convert, and the rates that heal them', () => {
       from_user_id: bob.id, to_user_id: me.id, amount: 20, currency: 'USD', fallback_fx: { base: 'AUD', rates: { USD: 0.65 } },
     }, me.id);
     expect(transfer).toMatchObject({ currency: 'USD', exchange_rate: 0.65 });
-    const moved = await budget.updateSettlement(transfer!.id, trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: 20, currency: 'VND' });
-    expect(moved).toMatchObject({ currency: 'VND', exchange_rate: 1 });
+    await expect(budget.updateSettlement(transfer!.id, trip.id, {
+      from_user_id: bob.id, to_user_id: me.id, amount: 20, currency: 'VND',
+    })).rejects.toThrow(/enter a manual exchange rate/);
+    expect(await budget.getSettlement(transfer!.id, trip.id)).toMatchObject({ currency: 'USD', exchange_rate: 0.65 });
   });
 
   it('BUDGET-SVC-DB-062: unchanged currency never touches the rate', async () => {
@@ -2067,9 +2062,7 @@ describe('rows no rate can convert, and the rates that heal them', () => {
       name: 'Ferry', category: 'transport', currency: 'AUD', payers: [{ user_id: bob.id, amount: 40 }],
       members: [{ user_id: me.id }, { user_id: bob.id }],
     });
-    const rates = await budget.ratesForTripTotals(trip.id, 'AUD');
-    expect(rates).toBeNull();
-    expect(await budget.tripTotals(trip.id, 'AUD', rates)).toEqual({ total: 40, byCategory: { transport: 40 }, unconverted: [bill.id] });
+    expect(await budget.tripTotals(trip.id, 'AUD')).toEqual({ total: 40, byCategory: { transport: 40 }, unconverted: [bill.id] });
     const summary = await budget.perPersonSummary(trip.id);
     expect(summary.map(s => [s.user_id, s.total_assigned, s.items_count])).toEqual([[me.id, 20, 1], [bob.id, 20, 1]]);
   });

@@ -37,7 +37,6 @@ import { PasskeyService } from '../../../src/nest/auth/passkey.service';
 import { UserCleanupService } from '../../../src/nest/auth/user-cleanup.service';
 import { WebauthnConfigService } from '../../../src/nest/auth/webauthn-config.service';
 import { BudgetService } from '../../../src/nest/budget/budget.service';
-import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
 import type { DatabaseBackupStrategy } from '../../../src/nest/database/database-backup.interface';
 import { AllowedFileTypesService } from '../../../src/nest/files/allowed-file-types.service';
 import { MailerService } from '../../../src/nest/notifications/mailer/mailer.service';
@@ -48,7 +47,7 @@ import { RealtimeService } from '../../../src/nest/realtime/realtime.service';
 import type { CronRegistrarService } from '../../../src/nest/scheduling/cron-registrar.service';
 import { SettingsService } from '../../../src/nest/settings/settings.service';
 import { TripMembershipService } from '../../../src/nest/trip-membership/trip-membership.service';
-import { budgetRepoArgs } from '../../helpers/budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import { asLegacyResult } from '../../helpers/domain-error';
 import { createUser, createUserWithMfa, createAdmin, createInviteToken } from '../../helpers/factories';
@@ -156,7 +155,7 @@ beforeAll(async () => {
     new MaintenanceRepository((await sharedTestOrm(testDb)).em),
     new BudgetService(
       permissions,
-      new ExchangeRatesService(),
+      await createTestExchangeRates(testDb),
       realtime,
       await createTestUnitOfWork(testDb),
       ...(await budgetRepoArgs(testDb)),

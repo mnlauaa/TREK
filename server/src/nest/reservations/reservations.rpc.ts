@@ -40,12 +40,11 @@ export class ReservationsRpc {
     await this.guards.requireTripEdit(tripId, actor, RESERVATION_EDIT_ACTION);
     await this.requireOwnReferences(tripId, input);
     const i = input as { title?: string; type?: string; create_budget_entry?: unknown };
-    // Same as the REST route: the price keeps its currency, at a rate frozen now (#2525).
-    const budgetEntry = await this.reservations.withFrozenRate(tripId, i.create_budget_entry as never);
     const { reservation, accommodationCreated, costEvents } = await this.reservations.createWithCost(
       String(tripId),
       input as never,
-      budgetEntry,
+      i.create_budget_entry as never,
+      actor,
     );
     if (accommodationCreated) this.realtime.broadcast(tripId, 'accommodation:created', {}, undefined);
     this.reservations.announceCost(tripId, costEvents, undefined);
@@ -75,6 +74,7 @@ export class ReservationsRpc {
         input as never,
         current,
         i.create_budget_entry as never,
+        actor,
       );
     // A stay this edit wrote for the first time is new, as the REST route announces it.
     if (accommodationCreated) this.realtime.broadcast(tripId, 'accommodation:created', {}, undefined);

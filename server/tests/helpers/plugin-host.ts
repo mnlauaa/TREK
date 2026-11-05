@@ -36,7 +36,6 @@ import { UserCleanupService } from '../../src/nest/auth/user-cleanup.service';
 import { BudgetService } from '../../src/nest/budget/budget.service';
 import { CostsRpc } from '../../src/nest/budget/costs.rpc';
 import { ExchangeRatesRpc } from '../../src/nest/budget/exchange-rates.rpc';
-import { ExchangeRatesService } from '../../src/nest/budget/exchange-rates.service';
 import { CategoriesRpc } from '../../src/nest/categories/categories.rpc';
 import { CategoriesService } from '../../src/nest/categories/categories.service';
 import { CollabRpc } from '../../src/nest/collab/collab.rpc';
@@ -100,7 +99,7 @@ import {
   createTestVisitedRegionsRepo,
   createTestPlaceRegionsRepo,
 } from './atlas-repos';
-import { budgetRepoArgs } from './budget-repos';
+import { budgetRepoArgs, createTestExchangeRates } from './budget-repos';
 import { createTestBudgetSettlementsRepo } from './budget-repos';
 import {
   createTestCollabMessageReactionsRepo,
@@ -228,7 +227,7 @@ export async function createPluginRpcHostParts(
   // `budgetFor` calls now take `PluginCapabilityAuditRepository`, not a raw connection.
   const pluginAuditRepo = (await sharedTestOrm(db)).repo(PluginCapabilityAudit);
   const permissions = new PermissionsService(await createTestAppSettingsRepo(db), await createTestUnitOfWork(db));
-  const exchangeRates = new ExchangeRatesService();
+  const exchangeRates = await createTestExchangeRates(db);
   const realtime = new RealtimeService();
   const budget = new BudgetService(
     permissions,
@@ -605,7 +604,7 @@ export async function createPluginRpcHostParts(
       members,
       (await sharedTestOrm(db)).em,
     ),
-    new CostsRpc(budget, new TripAccessService(await createTestTripsRepo(db)), realtime, guards, membership),
+    new CostsRpc(budget, new TripAccessService(await createTestTripsRepo(db)), realtime, guards, membership, exchangeRates),
     new ReservationsRpc(reservations, realtime, guards),
     new CollabRpc(collab, realtime, guards),
     new AtlasRpc(atlas, guards),

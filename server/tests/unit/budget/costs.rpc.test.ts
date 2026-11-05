@@ -68,7 +68,7 @@ function build(
   );
   // The leaf membership read replaced the deleted trips.bridge for listMine.
   const membership = { listAccessibleTripIds: vi.fn(() => [1, 2]) } as unknown as TripMembershipService;
-  const rpc = new CostsRpc(budget, new TripAccessService(db), realtime, guards, membership);
+  const rpc = new CostsRpc(budget, new TripAccessService(db), realtime, guards, membership, {} as never);
   const host = (...grants: string[]) =>
     new PluginRpcHost(
       'p',

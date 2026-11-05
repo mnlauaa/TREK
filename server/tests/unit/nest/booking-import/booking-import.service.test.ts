@@ -333,14 +333,16 @@ describe('BookingImportService.confirm writes the booking with its cost', () => 
       }),
     };
     const budget = {
-      freezeForeignRate: vi.fn(async (tripId: string, entry: { currency?: string | null; exchange_rate?: number }) => {
+      prepareRate: vi.fn(async (tripId: string, entry: { currency?: string | null; exchange_rate?: number }) => {
         order.push('freeze');
+        const quoted = { ...entry };
         await (
           opts.freeze ??
           (async (_t: string, e: { exchange_rate?: number }) => {
             e.exchange_rate = 0.5;
           })
-        )(tripId, entry);
+        )(tripId, quoted);
+        return { kind: 'freeze', rate: { exchange_rate: quoted.exchange_rate } };
       }),
     };
     const realtime = {
@@ -385,7 +387,7 @@ describe('BookingImportService.confirm writes the booking with its cost', () => 
         total_price: 49.9,
         category: 'transport',
         currency: 'CHF',
-        exchange_rate: 0.5,
+        preparedRate: { kind: 'freeze', rate: { exchange_rate: 0.5 } },
       },
     );
     expect(reservations.announceCost).toHaveBeenCalledWith('5', costEvents, 'sock');
@@ -434,19 +436,19 @@ describe('BookingImportService.confirm writes the booking with its cost', () => 
     expect(reservations.createWithCostInTx).toHaveBeenCalledWith(
       '5',
       expect.objectContaining({ type: 'train', confirmation_number: '297199016704' }),
-      { total_price: 71.67, category: 'transport', currency: 'EUR' },
+      expect.objectContaining({ total_price: 71.67, category: 'transport', currency: 'EUR' }),
     );
   });
 
   it('BOOKING-IMPORT-TX-002: no cost without the Costs addon or without a price', async () => {
     const off = makeConfirm({ budget: false });
     await off.svc.confirm('5', [priced as never], undefined);
-    expect(off.budget.freezeForeignRate).not.toHaveBeenCalled();
+    expect(off.budget.prepareRate).not.toHaveBeenCalled();
     expect(off.reservations.createWithCostInTx).toHaveBeenCalledWith('5', expect.anything(), undefined);
 
     const free = makeConfirm();
     await free.svc.confirm('5', [{ ...priced, metadata: { price: '0' } } as never], undefined);
-    expect(free.budget.freezeForeignRate).not.toHaveBeenCalled();
+    expect(free.budget.prepareRate).not.toHaveBeenCalled();
     expect(free.reservations.createWithCostInTx).toHaveBeenCalledWith('5', expect.anything(), undefined);
   });
 
