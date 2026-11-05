@@ -2,6 +2,7 @@ import {
   classifyPositionalLineage,
   FORK_RECONCILIATION,
   FORK_SCHEMA_MIGRATION_IDS,
+  hasColumn,
   hasTable,
   normalizeNumericFork,
   readForkLedger,
@@ -164,8 +165,12 @@ export function inspectMigrationLineage(db: Database.Database, finalStep = 258):
     : [];
   if (new Set(executed).size !== executed.length) throw new Error(`${REFUSAL} duplicate ORM migration names`);
   if (executed.length > 0) {
-    if (executed.includes(FORK_RECONCILIATION) && forkLedger.length !== FORK_SCHEMA_MIGRATION_IDS.length) {
-      throw new Error(`${REFUSAL} fork reconciliation is recorded without its complete fork ledger`);
+    if (
+      executed.includes(FORK_RECONCILIATION) &&
+      (forkLedger.length !== FORK_SCHEMA_MIGRATION_IDS.length ||
+        !hasColumn(db, 'trip_members', 'new_member_identity_check_completed_at'))
+    ) {
+      throw new Error(`${REFUSAL} fork reconciliation is recorded without its complete fork ledger and schema`);
     }
     return { kind: 'orm', executed };
   }

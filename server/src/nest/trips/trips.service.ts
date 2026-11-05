@@ -1,3 +1,4 @@
+import { conflict } from '../common/domain-error';
 import { budgetRateColumns } from '../../db/repositories/_shared/budget-rate';
 import { Injectable } from '@nestjs/common';
 import path from 'path';
@@ -476,7 +477,7 @@ export class TripsService {
 
     const newTitle = title || trip.title;
     const newDesc = description !== undefined ? description : trip.description;
-    const newCurrency = currency || trip.currency;
+    const newCurrency = currency?.trim().toUpperCase() || undefined;
     const newArchived = is_archived !== undefined ? (is_archived ? 1 : 0) : trip.is_archived;
     const newCover = cover_image !== undefined ? cover_image : trip.cover_image;
     const oldReminder = (trip as any).reminder_days ?? 3;
@@ -490,19 +491,17 @@ export class TripsService {
     let removedDays: DayGridRemoval[] = [];
     let vacayId: number | undefined; // the vacay plan whose leave days moved along (#2604)
     await this.uow.transactional(async () => {
-      // Before the row: the rebase reads the outgoing currency off it (#1543).
-      if (rebase) await this.budget.applyCurrencyRebase(tripId, rebase);
+      if (rebase) {
+        await this.budget.applyCurrencyRebase(tripId, rebase);
+      } else if (newCurrency && (await this.tripsRepo.getCurrency(tripId) || 'EUR').toUpperCase() !== newCurrency) {
+        throw conflict('Trip currency changed while preparing the trip update');
+      }
       await this.tripsRepo.updateTripRow(tripIdNum, { // TP25
         title: newTitle,
         description: newDesc ?? null,
         start_date: newStart || null,
         end_date: newEnd || null,
-        currency: newCurrency,
-        // Task 7 security review L1 (absorbed here): `newArchived` is already
-        // `trip.is_archived` verbatim when `data.is_archived` was never sent —
-        // the legacy statement bound that value AS-IS, including a stored
-        // `NULL`. A `?? 0` fold here would write `0` in that case instead,
-        // silently un-nulling a column the caller never asked to change.
+        ...(newCurrency ? { currency: newCurrency } : {}),
         is_archived: newArchived,
         cover_image: newCover ?? null,
         reminder_days: newReminder,

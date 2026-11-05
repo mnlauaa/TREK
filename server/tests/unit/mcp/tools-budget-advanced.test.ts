@@ -81,6 +81,37 @@ async function withResourceHarness(userId: number, fn: (h: McpHarness) => Promis
   }
 }
 
+describe('booked FX through MCP', () => {
+  it('persists a manual 1:1 rate and actor provenance on an expense and a payment', async () => {
+    const { user } = createUser(testDb);
+    const { user: member } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    addTripMember(testDb, trip.id, member.id);
+    await withHarness(user.id, async (h) => {
+      const rate = { currency: 'CAD', exchange_rate: 1, exchange_rate_note: 'Agreed rate' };
+      const expense = parseToolResult(
+        await h.client.callTool({
+          name: 'create_budget_item',
+          arguments: { tripId: trip.id, name: 'CAD expense', total_price: 30, ...rate },
+        }),
+      );
+      const payment = parseToolResult(
+        await h.client.callTool({
+          name: 'create_settlement',
+          arguments: { tripId: trip.id, from_user_id: user.id, to_user_id: member.id, amount: 10, ...rate },
+        }),
+      );
+      const provenance = {
+        ...rate,
+        exchange_rate_source: 'explicit',
+        exchange_rate_set_by_user_id: user.id,
+      };
+      expect(expense).toMatchObject({ item: provenance });
+      expect(payment).toMatchObject({ settlement: provenance });
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // set_budget_item_members
 // ---------------------------------------------------------------------------

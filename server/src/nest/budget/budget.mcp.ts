@@ -279,6 +279,8 @@ export class BudgetMcp {
       name,
       total_price,
       currency,
+      exchange_rate,
+      exchange_rate_note,
       member_ids: splitIds,
       members,
       payers,

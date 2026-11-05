@@ -1112,7 +1112,6 @@ export class ReservationsService {
     const currency = typeof entry.currency === 'string' ? entry.currency.trim().toUpperCase() : entry.currency === null ? null : undefined;
     const input = {
       currency: currency && !/^[A-Z]{3}$/.test(currency) ? undefined : currency,
-      exchange_rate: entry.exchange_rate,
       exchange_rate_note: typeof entry.exchange_rate_note === 'string' ? entry.exchange_rate_note.slice(0, 500) : null,
     };
     const preparedRate = await this.budget.prepareRate(tripId, input, userId, existing);

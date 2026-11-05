@@ -1,10 +1,17 @@
 import { DEFAULT_LANGUAGE } from '../../../src/config';
 import { ConfigController } from '../../../src/nest/config/config.controller';
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('ConfigController (parity with the legacy /api/config route)', () => {
-  it('returns the server default language, like the legacy public route', () => {
-    expect(new ConfigController().getConfig()).toEqual({ defaultLanguage: DEFAULT_LANGUAGE });
+afterEach(() => vi.unstubAllEnvs());
+
+describe('ConfigController', () => {
+  it('publishes the default language and the configured source release', () => {
+    vi.stubEnv('SOURCE_CODE_URL', 'https://example.test/trek/5.1.0');
+    expect(new ConfigController().getConfig()).toEqual({
+      defaultLanguage: DEFAULT_LANGUAGE,
+      sourceCodeUrl: 'https://example.test/trek/5.1.0',
+      version: expect.any(String),
+    });
   });
 });

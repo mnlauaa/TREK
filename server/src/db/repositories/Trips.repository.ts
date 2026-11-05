@@ -602,7 +602,7 @@ export class TripsRepository extends TrekRepository<Trips> {
     description: string | null;
     start_date: string | null;
     end_date: string | null;
-    currency: string;
+    currency?: string;
     is_archived: number | null;
     cover_image: string | null;
     reminder_days: number;

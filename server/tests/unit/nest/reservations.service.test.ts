@@ -612,13 +612,13 @@ describe('ReservationsService (DI-native, real SQL)', () => {
   });
 
   describe('withFrozenRate', () => {
-    it('normalizes the currency and threads the prepared rate separately from the request', async () => {
+    it('normalizes the currency and ignores a rate supplied by a booking writer', async () => {
       const prepared = { kind: 'freeze', base: 'EUR', previousCurrency: null, rate: { exchange_rate: 1 } };
       budget.prepareRate.mockResolvedValueOnce(prepared);
       expect(await svc.withFrozenRate('5', { total_price: 801.76, category: 'hotel', currency: ' usd ', exchange_rate: 1 }, 2)).toEqual({
         total_price: 801.76, category: 'hotel', currency: 'USD', preparedRate: prepared,
       });
-      expect(budget.prepareRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate: 1, exchange_rate_note: null }, 2, undefined);
+      expect(budget.prepareRate).toHaveBeenCalledWith('5', { currency: 'USD', exchange_rate_note: null }, 2, undefined);
     });
 
     it('does not prepare a rate when no expense will be written', async () => {
