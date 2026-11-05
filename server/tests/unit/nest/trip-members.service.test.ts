@@ -12,9 +12,12 @@
  * SQLite harness, so the SQL is exercised for real.
  */
 import { db as testDb } from '../../../src/db/database';
+import { BudgetItems } from '../../../src/db/entities/BudgetItems.entity';
+import { PlaceRatings } from '../../../src/db/entities/PlaceRatings.entity';
 import { PluginUserConfig } from '../../../src/db/entities/PluginUserConfig.entity';
 import { PluginUserErasureQueue } from '../../../src/db/entities/PluginUserErasureQueue.entity';
 import { Plugins } from '../../../src/db/entities/Plugins.entity';
+import { ReservationTravelers } from '../../../src/db/entities/ReservationTravelers.entity';
 import { TripMembers } from '../../../src/db/entities/TripMembers.entity';
 import { Trips } from '../../../src/db/entities/Trips.entity';
 import { Users } from '../../../src/db/entities/Users.entity';
@@ -28,11 +31,15 @@ import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.se
 import { NotFoundError, ValidationError } from '../../../src/nest/common/domain-errors';
 import { PermissionsService } from '../../../src/nest/permissions/permissions.service';
 import { TripMembersService } from '../../../src/nest/trip-members/trip-members.service';
+import { setUserDeletedSink } from '../../../src/plugin-user-lifecycle';
 import type { User } from '../../../src/types';
 import { budgetRepoArgs } from '../../helpers/budget-repos';
 import { createTestBudgetSettlementsRepo } from '../../helpers/budget-repos';
 import { createUser, createTrip, addTripMember } from '../../helpers/factories';
+import { addBudgetItemMember, addBudgetItemPayer, makeBudgetItem } from '../../helpers/factories/budget';
+import { makePlace } from '../../helpers/factories/places';
 import { makePlugin, setPluginUserConfig } from '../../helpers/factories/plugins';
+import { addReservationTraveler, makeReservation } from '../../helpers/factories/reservations';
 import { countRows, deleteRows, findRow, findRows, insertRow, updateRows } from '../../helpers/factories/rows';
 import { readUser } from '../../helpers/factories/users';
 import { FakeRealtimeService } from '../../helpers/fake-realtime';
@@ -558,5 +565,102 @@ describe('Task 6 review items — rollback and concurrency', () => {
     // `addMember` (forcing the TM5-catch branch instead) — not load-bearing.
     expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(/UNIQUE constraint failed: trip_members/);
     expect(await countRows(await orm(), TripMembers, { trip: trip.id, user: invitee.id })).toBe(1);
+  });
+});
+
+describe('Guest identity transfer', () => {
+  async function membership() {
+    const { user: owner } = createUser(testDb);
+    const { user: member } = createUser(testDb);
+    const trip = createTrip(testDb, owner.id);
+    addTripMember(testDb, trip.id, member.id);
+    const { member: guest } = await roster.createGuest(trip.id, 'Sam', owner.id);
+    return { trip, owner, member, guest };
+  }
+
+  it('previews a scoped transfer, keeps the member rating, and awaits deletion observers after commit', async () => {
+    const { trip, owner, member, guest } = await membership();
+    const t = await orm();
+    const reservation = await makeReservation(t, trip.id);
+    await addReservationTraveler(t, reservation.id, guest.id);
+    await addReservationTraveler(t, reservation.id, member.id);
+    const place = await makePlace(t, trip.id);
+    await insertRow(t, PlaceRatings, { place: place.id, user: guest.id, rating: 5 });
+    await insertRow(t, PlaceRatings, { place: place.id, user: member.id, rating: 3 });
+    const expense = await makeBudgetItem(t, trip.id, {
+      ticket_json: JSON.stringify({ items: [{ name: 'Train', price: 15, parts: [guest.id], extra: true }] }),
+    });
+
+    await expect(roster.runNewMemberIdentityCheck(trip.id, owner.id)).rejects.toMatchObject({
+      code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
+    });
+    const preview = await roster.runNewMemberIdentityCheck(trip.id, member.id);
+    expect(preview).toMatchObject({
+      required: true,
+      candidates: [
+        {
+          guest_user_id: guest.id,
+          name: 'Sam',
+          conflicts: [],
+          impact: { bookings: 1, ratings: 1, rating_overlaps: 1, expenses: 1 },
+        },
+      ],
+    });
+    const observer = vi.fn(async (userId: number) => {
+      expect(await findRow(t, Users, { id: userId })).toBeNull();
+      expect(await memberRow(trip.id, member.id)).toMatchObject({
+        new_member_identity_check_completed_at: expect.any(String),
+      });
+      return true;
+    });
+    let observed = false;
+    setUserDeletedSink(async (userId) => {
+      observed = await observer(userId);
+    });
+    try {
+      await expect(roster.transferGuestIdentity(trip.id, guest.id, member.id)).resolves.toMatchObject({
+        success: true,
+        transferred_guest_user_id: guest.id,
+        impact: preview.candidates[0].impact,
+      });
+      expect(observed).toBe(true);
+      expect(observer).toHaveBeenCalledWith(guest.id);
+    } finally {
+      setUserDeletedSink(null);
+    }
+    const ticket = (await findRow(t, BudgetItems, { id: expense.id }))?.ticket_json;
+    expect(JSON.parse(ticket ?? '{}')).toEqual({
+      items: [{ name: 'Train', price: 15, parts: [member.id], extra: true }],
+    });
+    expect(await findRows(t, ReservationTravelers, { reservation: reservation.id })).toMatchObject([
+      { user_id: member.id },
+    ]);
+    expect(await findRows(t, PlaceRatings, { place: place.id })).toMatchObject([{ user_id: member.id, rating: 3 }]);
+    await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({
+      required: false,
+      candidates: [],
+    });
+    await expect(roster.transferGuestIdentity(trip.id, guest.id, member.id)).rejects.toMatchObject({
+      code: 'GUEST_ALREADY_TRANSFERRED',
+    });
+  });
+
+  it('rejects financial conflicts even after an earlier clean preview', async () => {
+    const { trip, member, guest } = await membership();
+    const t = await orm();
+    const expense = await makeBudgetItem(t, trip.id, { paidByUser: guest.id });
+    await addBudgetItemMember(t, expense.id, guest.id);
+    expect((await roster.listGuestIdentityTransferCandidates(trip.id, member.id))[0]?.conflicts).toEqual([]);
+    await addBudgetItemMember(t, expense.id, member.id);
+    await addBudgetItemPayer(t, expense.id, member.id, 20);
+    await expect(roster.transferGuestIdentity(trip.id, guest.id, member.id)).rejects.toMatchObject({
+      code: 'GUEST_IDENTITY_TRANSFER_CONFLICT',
+      conflicts: [
+        { type: 'expense_share_overlap', record_id: expense.id },
+        { type: 'expense_payer_overlap', record_id: expense.id },
+      ],
+    });
+    expect(await readUser(t, guest.id)).not.toBeNull();
+    expect(await memberRow(trip.id, member.id)).toMatchObject({ new_member_identity_check_completed_at: null });
   });
 });

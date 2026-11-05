@@ -4,9 +4,11 @@ import { getClientIp } from '../audit/client-ip';
 import { CurrentUser } from '../auth-core/current-user.decorator';
 import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
 import { NotFoundError, ValidationError } from '../common/domain-errors';
+import { ResponseContract } from '../common/response-contract';
 import { toRowId } from '../common/row-id';
 import { RequireTripOwner, TripOwnerGuard } from '../permissions/trip-owner.guard';
 import { TripAddMemberDto, TripTransferOwnershipDto, TripCreateGuestDto, TripRenameGuestDto } from '../trips/trips.dto';
+import { GuestIdentityTransferError } from './guest-identity-transfer';
 import { TripMemberWritesService } from './trip-member-writes.service';
 import { TripMembersService } from './trip-members.service';
 import {
@@ -23,6 +25,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import {
+  guestIdentityTransferCandidatesResponseSchema,
+  guestIdentityTransferResponseSchema,
+  newMemberIdentityCheckCompletionResponseSchema,
+  newMemberIdentityCheckResponseSchema,
+} from '@trek/shared';
 
 import type { Request } from 'express';
 
@@ -210,5 +218,74 @@ export class TripMembersController {
       throw new HttpException({ error: 'Guest not found' }, 404);
     }
     return { success: true };
+  }
+
+  private mapGuestIdentityTransferError(error: unknown): never {
+    if (error instanceof GuestIdentityTransferError) {
+      const status = error.code === 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' ? 403 : 409;
+      throw new HttpException({ error: error.message, code: error.code, conflicts: error.conflicts }, status);
+    }
+    throw error;
+  }
+
+  @Post(':id/new-member-identity-check')
+  @ResponseContract(newMemberIdentityCheckResponseSchema)
+  async newMemberIdentityCheck(@CurrentUser() user: User, @Param('id') id: string) {
+    try {
+      return await this.roster.runNewMemberIdentityCheck(id, user.id);
+    } catch (error) {
+      return this.mapGuestIdentityTransferError(error);
+    }
+  }
+
+  @Post(':id/new-member-identity-check/decline')
+  @ResponseContract(newMemberIdentityCheckCompletionResponseSchema)
+  async declineNewMemberIdentityCheck(@CurrentUser() user: User, @Param('id') id: string) {
+    try {
+      return await this.roster.completeNewMemberIdentityCheck(id, user.id);
+    } catch (error) {
+      return this.mapGuestIdentityTransferError(error);
+    }
+  }
+
+  @Get(':id/guest-identity-transfers/candidates')
+  @ResponseContract(guestIdentityTransferCandidatesResponseSchema)
+  async guestIdentityTransferCandidates(@CurrentUser() user: User, @Param('id') id: string) {
+    try {
+      return { candidates: await this.roster.listGuestIdentityTransferCandidates(id, user.id) };
+    } catch (error) {
+      return this.mapGuestIdentityTransferError(error);
+    }
+  }
+
+  @Post(':id/guests/:userId/identity-transfer')
+  @ResponseContract(guestIdentityTransferResponseSchema)
+  async transferGuestIdentity(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Param('userId') guestUserId: string,
+    @Req() req: Request,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    try {
+      const guestId = Number(guestUserId);
+      const result = await this.roster.transferGuestIdentity(id, guestId, user.id);
+      await this.audit.writeAudit({
+        userId: user.id,
+        action: 'trip.guest_identity_transfer',
+        resource: id,
+        ip: getClientIp(req),
+        details: { tripId: Number(id), guestUserId: guestId, accountMemberUserId: user.id, impact: result.impact },
+      });
+      this.roster.broadcast(
+        id,
+        'guest:identity-transferred',
+        { guestUserId: guestId, transferredByUserId: user.id },
+        socketId,
+      );
+      return result;
+    } catch (error) {
+      return this.mapGuestIdentityTransferError(error);
+    }
   }
 }

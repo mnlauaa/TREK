@@ -1,6 +1,7 @@
 import { TripMembers } from '../../db/entities/TripMembers.entity';
 import { Trips } from '../../db/entities/Trips.entity';
 import { Users } from '../../db/entities/Users.entity';
+import type { GuestTransferScope } from '../../db/repositories/GuestIdentityTransfer.repository';
 import type { TripMembersRepository } from '../../db/repositories/TripMembers.repository';
 import type { TripsRepository } from '../../db/repositories/Trips.repository';
 import type { UsersRepository } from '../../db/repositories/Users.repository';
@@ -10,13 +11,22 @@ import { UserCleanupService } from '../auth/user-cleanup.service';
 import { BudgetService } from '../budget/budget.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { NotFoundError, ValidationError } from '../common/domain-errors';
+import { toRowId } from '../common/row-id';
 import { UnitOfWork } from '../database/unit-of-work';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { GuestIdentityTransferError, planGuestFinancialTransfer } from './guest-identity-transfer';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
-import type { TrekWsPayload, TrekWsTripEventName } from '@trek/shared';
+import type {
+  GuestIdentityTransferCandidate,
+  GuestIdentityTransferResponse,
+  NewMemberIdentityCheckCompletionResponse,
+  NewMemberIdentityCheckResponse,
+  TrekWsPayload,
+  TrekWsTripEventName,
+} from '@trek/shared';
 
 import { randomUUID } from 'crypto';
 
@@ -267,6 +277,7 @@ export class TripMembersService {
       await this.tripMembersRepo.remove(trip.id, newOwnerId);
       // …and the former owner keeps access as a member.
       await this.tripMembersRepo.addIgnoringConflict(trip.id, currentOwnerId, newOwnerId);
+      await this.tripMembersRepo.completeIdentityCheck(trip.id, currentOwnerId);
     });
 
     return { tripTitle: trip.title, fromEmail, toEmail: newOwner.email };
@@ -297,6 +308,7 @@ export class TripMembersService {
     const guestId = await this.uow.transactional(async () => {
       const newGuestId = await this.usersRepo.insertGuest({ username, email, display_name: display });
       await this.tripMembersRepo.addMember(Number(tripId), newGuestId, invitedByUserId);
+      await this.tripMembersRepo.completeIdentityCheck(Number(tripId), newGuestId);
       return newGuestId;
     });
 
@@ -343,5 +355,119 @@ export class TripMembersService {
     });
     await emitUserDeleted(guestUserId); // deliver the erasure to any active plugin now
     return true;
+  }
+
+  private async requireIdentityTransferMember(tripId: string | number, memberId: number) {
+    const id = toRowId(tripId);
+    const member = id === null ? undefined : await this.tripMembersRepo.findIdentityCheckMember(id, memberId);
+    if (id === null || !member) {
+      throw new GuestIdentityTransferError(
+        'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
+        'Only non-owner account members can transfer Guest identities',
+      );
+    }
+    return { tripId: id, completedAt: member.completedAt };
+  }
+
+  private async previewGuestTransfer(scope: GuestTransferScope, name: string) {
+    const { conflicts, tickets, expenses, payments } = planGuestFinancialTransfer(
+      scope,
+      await this.tripMembersRepo.guestTransferFinancials(scope),
+    );
+    const participation = await this.tripMembersRepo.guestTransferParticipation(scope);
+    const candidate: GuestIdentityTransferCandidate = {
+      guest_user_id: scope.guestId,
+      name,
+      impact: { expenses, payments, ...participation },
+      conflicts,
+    };
+    return { candidate, tickets };
+  }
+
+  private async guestCandidates(tripId: number, memberId: number): Promise<GuestIdentityTransferCandidate[]> {
+    const guests = await this.tripMembersRepo.listIdentityTransferGuests(tripId);
+    const candidates: GuestIdentityTransferCandidate[] = [];
+    for (const guest of guests) {
+      const { candidate } = await this.previewGuestTransfer(
+        { tripId, guestId: guest.id, memberId },
+        guest.display_name ?? guest.username,
+      );
+      candidates.push(candidate);
+    }
+    return candidates;
+  }
+
+  async listGuestIdentityTransferCandidates(tripId: string | number, memberId: number) {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      return this.guestCandidates(member.tripId, memberId);
+    });
+  }
+
+  async runNewMemberIdentityCheck(tripId: string | number, memberId: number): Promise<NewMemberIdentityCheckResponse> {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      if (member.completedAt) return { required: false, candidates: [] };
+      const candidates = await this.guestCandidates(member.tripId, memberId);
+      if (candidates.length > 0) return { required: true, candidates };
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
+      return { required: false, candidates: [] };
+    });
+  }
+
+  async completeNewMemberIdentityCheck(
+    tripId: string | number,
+    memberId: number,
+  ): Promise<NewMemberIdentityCheckCompletionResponse> {
+    return this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
+      return { success: true };
+    });
+  }
+
+  async transferGuestIdentity(
+    tripId: string | number,
+    guestId: number,
+    memberId: number,
+  ): Promise<GuestIdentityTransferResponse> {
+    const result = await this.uow.transactional(async () => {
+      const member = await this.requireIdentityTransferMember(tripId, memberId);
+      const guest = Number.isSafeInteger(guestId) ? await this.usersRepo.findIdEmailGuest(guestId) : undefined;
+      if (!guest?.is_guest) {
+        throw new GuestIdentityTransferError(
+          'GUEST_ALREADY_TRANSFERRED',
+          'Guest identity has already been transferred',
+        );
+      }
+      const guests = await this.tripMembersRepo.listIdentityTransferGuests(member.tripId);
+      const matchingGuest = guests.find((row) => row.id === guestId);
+      if (!matchingGuest || (await this.tripMembersRepo.hasOtherMembership(member.tripId, guestId))) {
+        throw new GuestIdentityTransferError(
+          'GUEST_IDENTITY_TRANSFER_FORBIDDEN',
+          'Guest does not belong exclusively to this trip',
+        );
+      }
+      const scope = { tripId: member.tripId, guestId, memberId };
+      const { candidate, tickets } = await this.previewGuestTransfer(
+        scope,
+        matchingGuest.display_name ?? matchingGuest.username,
+      );
+      if (candidate.conflicts.length > 0) {
+        throw new GuestIdentityTransferError(
+          'GUEST_IDENTITY_TRANSFER_CONFLICT',
+          'Guest identity transfer has conflicting financial records',
+          candidate.conflicts,
+        );
+      }
+      await this.tripMembersRepo.rewriteGuestFinancials(scope, tickets);
+      await this.tripMembersRepo.rewriteGuestParticipation(scope);
+      await this.userCleanup.erasePluginUserData(guestId);
+      await this.usersRepo.deleteGuest(guestId);
+      await this.tripMembersRepo.completeIdentityCheck(member.tripId, memberId);
+      return { success: true as const, transferred_guest_user_id: guestId, impact: candidate.impact };
+    });
+    await emitUserDeleted(guestId);
+    return result;
   }
 }

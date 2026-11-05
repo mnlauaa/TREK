@@ -1,8 +1,8 @@
+import { currentTimestampKysely } from '../dialect/kysely-functions';
 import { caseWhenEquals, coalesce } from '../dialect/sql-functions';
-import type { TripMembers } from '../entities/TripMembers.entity';
 import { Trips } from '../entities/Trips.entity';
 import type { DB } from '../kysely/db';
-import { TrekRepository } from './_shared/trek-repository';
+import { GuestIdentityTransferRepository } from './GuestIdentityTransfer.repository';
 
 /**
  * One row of `TripMembersService.listMembers` (`trip-members.service.ts:117-125`,
@@ -21,7 +21,51 @@ export interface MemberWithUserAndInviterRow {
   invited_by_username: string | null;
 }
 
-export class TripMembersRepository extends TrekRepository<TripMembers> {
+export class TripMembersRepository extends GuestIdentityTransferRepository {
+  async findIdentityCheckMember(tripId: number, memberId: number) {
+    return this.kysely<Pick<DB, 'trip_members' | 'trips' | 'users'>>()
+      .selectFrom('trip_members as membership')
+      .innerJoin('trips as trip', 'trip.id', 'membership.trip_id')
+      .innerJoin('users as member', 'member.id', 'membership.user_id')
+      .select('membership.new_member_identity_check_completed_at as completedAt')
+      .where('membership.trip_id', '=', tripId)
+      .where('membership.user_id', '=', memberId)
+      .where('trip.user_id', '!=', memberId)
+      .where((eb) => eb.or([eb('member.is_guest', '=', 0), eb('member.is_guest', 'is', null)]))
+      .executeTakeFirst();
+  }
+
+  async completeIdentityCheck(tripId: number, memberId: number): Promise<void> {
+    await this.kysely<Pick<DB, 'trip_members'>>()
+      .updateTable('trip_members')
+      .set({ new_member_identity_check_completed_at: currentTimestampKysely(this.getEntityManager().getPlatform()) })
+      .where('trip_id', '=', tripId)
+      .where('user_id', '=', memberId)
+      .where('new_member_identity_check_completed_at', 'is', null)
+      .execute();
+  }
+
+  async listIdentityTransferGuests(tripId: number) {
+    return this.kysely<Pick<DB, 'trip_members' | 'users'>>()
+      .selectFrom('trip_members as membership')
+      .innerJoin('users as guest', 'guest.id', 'membership.user_id')
+      .select(['guest.id', 'guest.display_name', 'guest.username'])
+      .where('membership.trip_id', '=', tripId)
+      .where('guest.is_guest', '=', 1)
+      .orderBy('membership.added_at')
+      .orderBy('guest.id')
+      .execute();
+  }
+
+  async hasOtherMembership(tripId: number, guestId: number): Promise<boolean> {
+    return !!(await this.kysely<Pick<DB, 'trip_members'>>()
+      .selectFrom('trip_members')
+      .select('id')
+      .where('user_id', '=', guestId)
+      .where('trip_id', '!=', tripId)
+      .executeTakeFirst());
+  }
+
   /**
    * The user ids a trip may refer to: its members plus the owner. Byte-for-byte
    * the legacy `DatabaseService.rosterUserIds`'s statement in intent —
