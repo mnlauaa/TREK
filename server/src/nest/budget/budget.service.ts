@@ -6,6 +6,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { byCodeUnit } from '../common/compare';
+import { inOrder } from '../common/in-order';
 import type { User, BudgetItem, BudgetItemMember, BudgetItemPayer, BudgetItemReceipt } from '../../types';
 import { ExchangeRatesService, freezeRate, normalizeCurrency, type FrozenRate, type PreparedRate, type RateWrite } from './exchange-rates.service';
 import { budgetRateColumns, type BudgetRateColumns } from '../../db/repositories/_shared/budget-rate';
@@ -431,15 +432,14 @@ export class BudgetService {
           },
         };
       };
-
-      for (const row of await this.budgetItemsRepo.listAllForTrip(tripId)) {
+      await inOrder(await this.budgetItemsRepo.listAllForTrip(tripId), (row) => {
         const { currency, rate } = rebase(row);
-        await this.budgetItemsRepo.setRebasedRate(row.id, currency, rate);
-      }
-      for (const row of await this.budgetSettlementsRepo.listRawForTrip(tripId)) {
+        return this.budgetItemsRepo.setRebasedRate(row.id, currency, rate);
+      });
+      await inOrder(await this.budgetSettlementsRepo.listRawForTrip(tripId), (row) => {
         const { currency, rate } = rebase(row);
-        await this.budgetSettlementsRepo.setRebasedRate(row.id, currency, rate);
-      }
+        return this.budgetSettlementsRepo.setRebasedRate(row.id, currency, rate);
+      });
       await this.exchangeRates.rebaseTripRates(tripId, previous, next, bridge);
       await this.placesRepo.pinCurrencyForTrip(tripId, previous);
     });

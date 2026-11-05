@@ -11,6 +11,7 @@ import type { BudgetRateColumns } from '../../db/repositories/_shared/budget-rat
 import { dbNow, parseDbTimestamp, utcSuffix } from '../../db/types/db-timestamp.type';
 import { decodeJson, encodeJson } from '../../utils/json-column';
 import { badRequest, conflict, DomainError, notFound } from '../common/domain-error';
+import { inOrder } from '../common/in-order';
 import { UnitOfWork } from '../database/unit-of-work';
 import { isFrozenRate, positiveRate } from './budget-money.helpers';
 import { InjectRepository } from '@mikro-orm/nestjs';
@@ -179,7 +180,7 @@ export class ExchangeRatesService {
     if ((this.providerFailures.get(base) ?? 0) > Date.now()) return stored;
 
     let pending = this.inflight.get(base);
-    if (!pending) {
+    if (pending === undefined) {
       pending = this.fetchSnapshot(base)
         .then((fresh) => {
           if (fresh) this.providerFailures.delete(base);
@@ -345,7 +346,7 @@ export class ExchangeRatesService {
 
   async rebaseTripRates(tripId: string | number, previous: string, next: string, bridge?: number): Promise<void> {
     const id = Number(tripId);
-    for (const rate of await this.tripRates.listForTrip(id)) {
+    await inOrder(await this.tripRates.listForTrip(id), async (rate) => {
       if (normalizeCurrency(rate.currency) === next) {
         await this.tripRates.deleteRate(id, rate.currency);
       } else {
@@ -362,7 +363,7 @@ export class ExchangeRatesService {
           set_by_user_id: null,
         });
       }
-    }
+    });
   }
 
   async deleteTripExchangeRate(tripId: string | number, currency: string): Promise<boolean> {

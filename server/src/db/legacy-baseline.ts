@@ -1,3 +1,4 @@
+import type { NativeSqliteDatabase } from './connection';
 import {
   classifyPositionalLineage,
   FORK_RECONCILIATION,
@@ -14,7 +15,6 @@ import { Migrator } from '@mikro-orm/migrations';
 import type { SqlEntityManager } from '@mikro-orm/sql';
 import type { SqliteConnection } from '@mikro-orm/sqlite';
 
-import type Database from 'better-sqlite3';
 import fs from 'node:fs';
 
 const STEP_MARKER = /Legacy migration step (\d+)\b/g;
@@ -156,7 +156,7 @@ type MigrationLineage =
   | { kind: 'orm'; executed: string[] }
   | { kind: 'positional'; recordedStep: number; lineage: PositionalLineage };
 
-export function inspectMigrationLineage(db: Database.Database, finalStep = 258): MigrationLineage {
+export function inspectMigrationLineage(db: NativeSqliteDatabase, finalStep = 258): MigrationLineage {
   const forkLedger = readForkLedger(db);
   const executed = hasTable(db, 'mikro_orm_migrations')
     ? (db.prepare('SELECT name FROM mikro_orm_migrations ORDER BY id').all() as { name: string }[]).map(({ name }) =>
@@ -226,7 +226,7 @@ export async function migrateToHead(
   safetyNet: MigrationSafetyNet = NO_SAFETY_NET,
 ): Promise<void> {
   const active = activeBoots.get(connection);
-  if (active) return active;
+  if (active !== undefined) return active;
   const migration = applyMigrations(connection, migrator, readSource, known, safetyNet);
   activeBoots.set(connection, migration);
   try {
@@ -287,7 +287,10 @@ async function applyMigrations(
       storage.setMasterMigration(trx);
       try {
         await storage.ensureTable();
-        for (const name of baselined) await storage.logMigration({ name }, trx);
+        await baselined.reduce(
+          (previous, name) => previous.then(() => storage.logMigration({ name }, trx)),
+          Promise.resolve(),
+        );
       } finally {
         storage.unsetMasterMigration();
       }

@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type { NativeSqliteDatabase } from './connection';
 
 const LAST_V4_FORK_VERSION = 244;
 export const LEGACY_FORK_BRIDGE_VERSION = 200;
@@ -12,20 +12,20 @@ export const FORK_SCHEMA_MIGRATION_IDS = [
 
 export type ForkSchemaMigrationId = (typeof FORK_SCHEMA_MIGRATION_IDS)[number];
 
-export const hasTable = (db: Database.Database, table: string): boolean =>
+export const hasTable = (db: NativeSqliteDatabase, table: string): boolean =>
   !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
 
-export const hasColumn = (db: Database.Database, table: string, column: string): boolean =>
+export const hasColumn = (db: NativeSqliteDatabase, table: string, column: string): boolean =>
   hasTable(db, table) && !!db.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?').get(table, column);
 
-function hasColumns(db: Database.Database, table: string, columns: readonly string[]): boolean {
+function hasColumns(db: NativeSqliteDatabase, table: string, columns: readonly string[]): boolean {
   if (!hasTable(db, table)) return false;
   const actual = new Set(db.prepare('SELECT name FROM pragma_table_info(?)').pluck().all(table));
   return columns.every((column) => actual.has(column));
 }
 
 function hasForeignKey(
-  db: Database.Database,
+  db: NativeSqliteDatabase,
   table: string,
   column: string,
   target: string,
@@ -36,7 +36,7 @@ function hasForeignKey(
     .get(table, column, target, 'id', deleteRule);
 }
 
-function hasUniqueKey(db: Database.Database, table: string, columns: readonly string[]): boolean {
+function hasUniqueKey(db: NativeSqliteDatabase, table: string, columns: readonly string[]): boolean {
   const indexes = db
     .prepare('SELECT name FROM pragma_index_list(?) WHERE "unique" = 1 AND partial = 0')
     .pluck()
@@ -48,17 +48,17 @@ function hasUniqueKey(db: Database.Database, table: string, columns: readonly st
   });
 }
 
-function hasPositiveRateCheck(db: Database.Database, table: string): boolean {
+function hasPositiveRateCheck(db: NativeSqliteDatabase, table: string): boolean {
   const definition = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").pluck().get(table);
   return typeof definition === 'string' && /CHECK\s*\(\s*exchange_rate\s*>\s*0\s*\)/i.test(definition);
 }
 
-export const addColumn = (db: Database.Database, table: string, definition: string): void => {
+export const addColumn = (db: NativeSqliteDatabase, table: string, definition: string): void => {
   const column = definition.trim().split(/\s+/, 1)[0];
   if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
 };
 
-export function normalizeNumericFork(db: Database.Database): void {
+export function normalizeNumericFork(db: NativeSqliteDatabase): void {
   if (!hasTable(db, 'reservations') || !hasTable(db, 'mcp_tokens')) {
     throw new Error('Legacy fork schema is missing reservations or mcp_tokens; refusing version normalization.');
   }
@@ -67,7 +67,7 @@ export function normalizeNumericFork(db: Database.Database): void {
   db.prepare('UPDATE schema_version SET version = ?').run(LEGACY_FORK_BRIDGE_VERSION);
 }
 
-export function hasCrosswalkArtifacts(db: Database.Database): boolean {
+export function hasCrosswalkArtifacts(db: NativeSqliteDatabase): boolean {
   return (
     hasColumn(db, 'vacay_entries', 'fraction') &&
     hasTable(db, 'vacay_shares') &&
@@ -80,7 +80,7 @@ export function hasCrosswalkArtifacts(db: Database.Database): boolean {
   );
 }
 
-export function hasEnhancedFxArtifacts(db: Database.Database): boolean {
+export function hasEnhancedFxArtifacts(db: NativeSqliteDatabase): boolean {
   return (
     hasColumns(db, 'global_exchange_rate_snapshots', [
       'base_currency',
@@ -132,14 +132,14 @@ export function hasEnhancedFxArtifacts(db: Database.Database): boolean {
   );
 }
 
-function hasGuestIdentityArtifacts(db: Database.Database): boolean {
+function hasGuestIdentityArtifacts(db: NativeSqliteDatabase): boolean {
   return (
     hasColumn(db, 'trip_members', 'new_member_identity_check_completed_at') ||
     hasColumn(db, 'trip_members', 'guest_claim_prompted_at')
   );
 }
 
-export function hasWebPushArtifacts(db: Database.Database): boolean {
+export function hasWebPushArtifacts(db: NativeSqliteDatabase): boolean {
   const table = 'web_push_subscriptions';
   return (
     hasColumns(db, table, [
@@ -167,7 +167,7 @@ export function hasWebPushArtifacts(db: Database.Database): boolean {
 
 /** Structural markers of the official 4.3 chain, shared by startup and audit.
  * Data-only steps (210, 229/230, 234, 240, 242) are verified by migration tests. */
-function officialPositionalArtifacts(db: Database.Database): Array<[number, string, boolean]> {
+function officialPositionalArtifacts(db: NativeSqliteDatabase): Array<[number, string, boolean]> {
   const columns: Array<[number, string, string]> = [
     [207, 'places', 'stop_type'],
     [211, 'file_links', 'budget_item_id'],
@@ -253,7 +253,7 @@ function officialPositionalArtifacts(db: Database.Database): Array<[number, stri
 
 export const FORK_RECONCILIATION = 'Migration20200101046330_adopt_fork_schema_lineages';
 
-export function readForkLedger(db: Database.Database): { id: string; applied_at: string }[] {
+export function readForkLedger(db: NativeSqliteDatabase): { id: string; applied_at: string }[] {
   if (!hasTable(db, 'fork_schema_migrations')) return [];
   const rows = db.prepare('SELECT id, applied_at FROM fork_schema_migrations ORDER BY id').all() as {
     id: string;
@@ -273,7 +273,7 @@ export type PositionalLineage =
   | { kind: 'official' | 'dual-lineage' | 'tours' | 'custom-v3'; upstreamStep: number }
   | { kind: 'numeric-fork'; upstreamStep: typeof LEGACY_FORK_BRIDGE_VERSION };
 
-export function classifyPositionalLineage(db: Database.Database, version: number): PositionalLineage {
+export function classifyPositionalLineage(db: NativeSqliteDatabase, version: number): PositionalLineage {
   const hasLedger = hasTable(db, 'fork_schema_migrations');
   const toursStep = version >= 216 && version <= 218 ? 215 : version >= 243 && version <= 246 ? 242 : null;
   if (toursStep !== null && hasTable(db, 'tour_types') && !hasLedger) {
@@ -368,4 +368,4 @@ const forkArtifacts = [
   ['fork/enhanced-fx-v1', hasEnhancedFxArtifacts],
   ['fork/guest-identity-v1', hasGuestIdentityArtifacts],
   ['fork/web-push-v1', hasWebPushArtifacts],
-] as const satisfies readonly [ForkSchemaMigrationId, (db: Database.Database) => boolean][];
+] as const satisfies readonly [ForkSchemaMigrationId, (db: NativeSqliteDatabase) => boolean][];

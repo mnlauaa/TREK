@@ -1,3 +1,4 @@
+import { version } from '../../package.json';
 import { readEnv } from './env';
 
 /**
@@ -7,5 +8,5 @@ import { readEnv } from './env';
  * here rather than inside either domain.
  */
 export function runningVersion(): string {
-  return readEnv().app.appVersion || (require('../../package.json') as { version: string }).version;
+  return readEnv().app.appVersion || version;
 }

@@ -1,3 +1,4 @@
+import type { NativeSqliteDatabase } from '../connection';
 import {
   addColumn,
   hasColumn,
@@ -10,8 +11,6 @@ import {
 import { Migration } from '@mikro-orm/migrations';
 import type { SqliteConnection } from '@mikro-orm/sqlite';
 
-import type Database from 'better-sqlite3';
-
 export class Migration20200101046330_adopt_fork_schema_lineages extends Migration {
   override name = 'Migration20200101046330_adopt_fork_schema_lineages';
 
@@ -22,7 +21,7 @@ export class Migration20200101046330_adopt_fork_schema_lineages extends Migratio
   }
 }
 
-function ensureLedger(db: Database.Database): void {
+function ensureLedger(db: NativeSqliteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS fork_schema_migrations (
       id TEXT PRIMARY KEY,
@@ -31,7 +30,7 @@ function ensureLedger(db: Database.Database): void {
   `);
 }
 
-function enhancedFxV1(db: Database.Database): void {
+function enhancedFxV1(db: NativeSqliteDatabase): void {
   if (hasEnhancedFxArtifacts(db)) {
     if (hasTable(db, 'exchange_rate_quotes')) {
       for (const table of ['budget_items', 'budget_settlements']) {
@@ -110,7 +109,7 @@ function enhancedFxV1(db: Database.Database): void {
   `);
 }
 
-function guestIdentityV1(db: Database.Database): void {
+function guestIdentityV1(db: NativeSqliteDatabase): void {
   const hadLegacy = hasColumn(db, 'trip_members', 'guest_claim_prompted_at');
   const hadCompleted = hasColumn(db, 'trip_members', 'new_member_identity_check_completed_at');
   if (hadCompleted) return;
@@ -132,7 +131,7 @@ function guestIdentityV1(db: Database.Database): void {
   }
 }
 
-function webPushV1(db: Database.Database): void {
+function webPushV1(db: NativeSqliteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS web_push_subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,7 +155,7 @@ function webPushV1(db: Database.Database): void {
   `);
 }
 
-function adoptForkMigrations(db: Database.Database): void {
+function adoptForkMigrations(db: NativeSqliteDatabase): void {
   const applied = new Set(readForkLedger(db).map(({ id }) => id));
   ensureLedger(db);
   const record = db.prepare('INSERT INTO fork_schema_migrations (id) VALUES (?)');

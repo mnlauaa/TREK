@@ -10,6 +10,7 @@ import { UserCleanupService } from '../auth/user-cleanup.service';
 import { BudgetService } from '../budget/budget.service';
 import { avatarUrl } from '../common/avatarUrl';
 import { NotFoundError, ValidationError } from '../common/domain-errors';
+import { inOrder } from '../common/in-order';
 import { toRowId } from '../common/row-id';
 import { UnitOfWork } from '../database/unit-of-work';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -386,13 +387,13 @@ export class TripMembersService {
   private async guestCandidates(tripId: number, memberId: number): Promise<GuestIdentityTransferCandidate[]> {
     const guests = await this.tripMembersRepo.listIdentityTransferGuests(tripId);
     const candidates: GuestIdentityTransferCandidate[] = [];
-    for (const guest of guests) {
+    await inOrder(guests, async (guest) => {
       const { candidate } = await this.previewGuestTransfer(
         { tripId, guestId: guest.id, memberId },
         guest.display_name ?? guest.username,
       );
       candidates.push(candidate);
-    }
+    });
     return candidates;
   }
 

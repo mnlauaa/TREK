@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 
+export type NativeSqliteDatabase = Database.Database;
+
 /**
  * Opens a SQLite connection. Every handle the server opens comes from here (the
  * main database, each plugin's own database, a backup being checked before a
@@ -21,7 +23,7 @@ import Database from 'better-sqlite3';
  * being a tmpfs. VACUUM INTO, the only VACUUM TREK runs, writes straight into
  * its target file and builds no temporary database.
  */
-export function openDatabase(filename: string | Buffer, options?: Database.Options): Database.Database {
+export function openDatabase(filename: string | Buffer, options?: Database.Options): NativeSqliteDatabase {
   const db = new Database(filename, options);
   db.pragma('temp_store = MEMORY');
   return db;
