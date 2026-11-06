@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': '時刻を自動計算',
+  'timing.fixedStart': 'Fixed start',
+  'timing.fixedEnd': 'Fixed end',
+  'timing.help': 'Arrival and departure follow stay and travel times.',
+  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
+  'timing.travelMissing': 'Travel time not set',
   'timing.arrival': '到着予定',
   'timing.departure': '出発予定',
   'timing.fixed': '時刻を指定',

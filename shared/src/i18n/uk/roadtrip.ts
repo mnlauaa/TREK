@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Автоматичний розрахунок часу',
+  'timing.fixedStart': 'Fixed start',
+  'timing.fixedEnd': 'Fixed end',
+  'timing.help': 'Arrival and departure follow stay and travel times.',
+  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
+  'timing.travelMissing': 'Travel time not set',
   'timing.arrival': 'Очікуване прибуття',
   'timing.departure': 'Очікуваний від’їзд',
   'timing.fixed': 'Задати час',

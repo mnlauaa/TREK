@@ -202,7 +202,6 @@ describe('PlTimeFields', () => {
 
   it('FE-MOB-PLTIME-017: before a start it says one will set the end, and a typed end needs no hint', () => {
     const view = renderTour('', '')
-    fireEvent.click(screen.getByRole('button', { name: 'timing.fixed' }))
     expect(screen.getByTestId('tour-day-end-hint')).toHaveTextContent('≈ 4 h')
     view.unmount()
     renderTour('09:00', '15:00')
