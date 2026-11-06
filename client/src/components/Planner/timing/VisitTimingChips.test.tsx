@@ -7,11 +7,12 @@ import type { StayDraft } from '../../Roadtrip/RoadtripStayModal';
 import { buildItineraryTiming } from './itineraryTimingModel';
 import { VisitTimingChips } from './VisitTimingChips';
 
+const timing = { enabled: true, start: '09:00', travel: [] };
 const day = daySchema.parse({
   id: 1,
   trip_id: 1,
   day_number: 1,
-  timing: { enabled: true, start: '09:00', travel: [] },
+  timing,
 });
 const visit = assignmentSchema.parse({
   id: 2,
@@ -29,7 +30,7 @@ function open(assignment = visit, onStay?: (draft: StayDraft) => void) {
   const plan = buildItineraryTiming({
     items: [{ type: 'place', data: assignment, sortKey: 0 }],
     dayId: 1,
-    timing: day.timing!,
+    timing,
     segments: [],
     profile: 'walking',
   });

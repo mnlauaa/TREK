@@ -3,7 +3,6 @@ import { DayTimingControls, TravelTimingControl } from './timing/TimingControls'
 import { dayTimingPlan, withTimingTravel } from './timing/itineraryTimingModel'
 import { useRoadtripSettings } from '../../hooks/useRoadtripSettings'
 import { isServiceStopType } from '../Roadtrip/roadtripModel'
-/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
 interface DragDataPayload { placeId?: string; assignmentId?: string; noteId?: string; reservationId?: string; fromDayId?: string; phase?: 'single' | 'start' | 'middle' | 'end'; /** A corridor hit on its way onto the drive (#1797) — not a place yet. */ poiOsmId?: string }
 declare global { interface Window { __dragData: DragDataPayload | null } }
 
@@ -552,7 +551,6 @@ function useDayPlanSidebar(props: DayPlanSidebarProps) {
   }
 
   // Pre-compute merged items for all days so the render loop doesn't recompute on unrelated state changes (e.g. hover)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const mergedItemsMap = useMemo(() => {
     const map: Record<number, ReturnType<typeof getMergedItems>> = {}
     days.forEach(day => { map[day.id] = getMergedItems(day.id) })
@@ -1466,6 +1464,7 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
           const formattedDate = formatDate(day.date, locale)
           const heading = dayHeadingParts(day.title || t('dayplan.dayN', { n: index + 1 }), formattedDate, dateFirst)
           const loc = da.find(a => a.place?.lat && a.place?.lng)
+          const hotelTop = hotelLegs[day.id]?.top
           const timingPlan = dayTimingPlan(day, mergedItemsMap[day.id] || [],
             { days, assignments, reservations, accommodations, optimizeFromAccommodation, toursEnabled, places, tourStageStops: props.tourStageStops, tours: Array.from(props.plannedTourDurations?.values() ?? []).flatMap(value => value.tour ? [value.tour] : []) },
             { segments: routeLegs[day.id] || {}, hotel: hotelLegs[day.id]?.top?.seg, profile: routeProfile ?? 'driving' })
@@ -1725,13 +1724,13 @@ const DayPlanSidebar = React.memo(function DayPlanSidebar(props: DayPlanSidebarP
                   }}
                 >
                   <DayTimingControls key={day.id} day={day} tripId={tripId} editable={canEditDays} />
-                  {!hotelLegs[day.id]?.top && timingPlan?.legs.filter(leg => leg.from.startsWith('hotel:')).map(leg => <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
-                  {hotelLegs[day.id]?.top && (() => {
-                    const targetId = hotelLegs[day.id]?.top?.targetId
-                    const connector = <HotelRouteConnector seg={withTimingTravel(hotelLegs[day.id]!.top!.seg, timingPlan?.legs.find(leg => leg.from.startsWith('hotel:')))} name={hotelLegs[day.id]!.top!.name} profile={routeProfile} placement="top" />
+                  {!hotelTop && timingPlan?.legs.filter(leg => leg.from.startsWith('hotel:')).map(leg => <TravelTimingControl key={`${leg.from}:${leg.to}:${leg.mode}`} day={day} tripId={tripId} leg={leg} editable={canEditDays} />)}
+                  {hotelTop && (() => {
+                    const targetId = hotelTop.targetId
+                    const connector = <HotelRouteConnector seg={withTimingTravel(hotelTop.seg, timingPlan?.legs.find(leg => leg.from.startsWith('hotel:')))} name={hotelTop.name} profile={routeProfile} placement="top" />
                     return canEditDays && targetId != null ? (
                       <Tooltip label={t('dayplan.transportMode.change')} placement="top">
-                        <div role="button" tabIndex={0}  onClick={e => openIncomingLegModeMenu(e, targetId, day.id, hotelLegs[day.id]!.top!.seg)} onKeyDown={e => openLegMenuByKey(e, m => openIncomingLegModeMenu(m, targetId, day.id, hotelLegs[day.id]!.top!.seg))} style={{ cursor: 'pointer' }} aria-label={t('dayplan.transportMode.change')}>
+                        <div role="button" tabIndex={0}  onClick={e => openIncomingLegModeMenu(e, targetId, day.id, hotelTop.seg)} onKeyDown={e => openLegMenuByKey(e, m => openIncomingLegModeMenu(m, targetId, day.id, hotelTop.seg))} style={{ cursor: 'pointer' }} aria-label={t('dayplan.transportMode.change')}>
                           {connector}
                         </div>
                       </Tooltip>
