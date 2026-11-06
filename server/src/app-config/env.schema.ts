@@ -9,7 +9,14 @@
  * listed here pass through untouched (Zod strips unknown keys, it does not
  * reject them).
  */
-import { parseDurationMs, parseLinkLocalAllowList } from './parsers';
+import {
+  isP256PrivateKey,
+  isServiceKeyShape,
+  isUncompressedP256Key,
+  isVapidSubject,
+  parseDurationMs,
+  parseLinkLocalAllowList,
+} from './parsers';
 import { SUPPORTED_LANGUAGE_CODES } from '@trek/shared';
 
 import { z } from 'zod';
@@ -54,15 +61,13 @@ export const envSchema = z.object({
   HOST: anyString,
   // NODE_ENV and TZ are deliberately unvalidated: non-standard values (e.g.
   // NODE_ENV=staging) behave as "not production" today and must keep booting.
+  // Surrounding whitespace on NODE_ENV is trimmed before this runs (env.ts).
   NODE_ENV: anyString,
   TZ: anyString,
   LOG_LEVEL: oneOf(['error', 'warn', 'info', 'debug']),
   APP_VERSION: anyString,
   APP_URL: url,
   SOURCE_CODE_URL: url,
-  WEB_PUSH_VAPID_PUBLIC_KEY: anyString,
-  WEB_PUSH_VAPID_PRIVATE_KEY: anyString,
-  WEB_PUSH_VAPID_SUBJECT: url,
   ALLOWED_ORIGINS: anyString,
   // Candidates lowercased so mixed-case codes (zh-TW) validate case-insensitively.
   DEFAULT_LANGUAGE: oneOf(SUPPORTED_LANGUAGE_CODES.map((c) => c.toLowerCase())),
@@ -75,6 +80,9 @@ export const envSchema = z.object({
   FORCE_HTTPS: boolStr,
   HSTS_INCLUDE_SUBDOMAINS: boolStr,
   TRUST_PROXY: integer(0, 2 ** 31, 'must be an integer (number of trusted proxy hops)'),
+  // Capped below Node's 300 s request timeout, which the headers timeout (one
+  // second above this) has to stay under.
+  HTTP_KEEP_ALIVE_TIMEOUT_MS: integer(1_000, 290_000, 'must be a whole number of milliseconds between 1000 and 290000'),
   ALLOW_INTERNAL_NETWORK: boolStr,
   ALLOW_LINK_LOCAL_IPS: optionalWith(
     (v) => parseLinkLocalAllowList(v).invalid.length === 0,
@@ -93,6 +101,7 @@ export const envSchema = z.object({
   OIDC_ONLY: boolStr,
   OIDC_ADMIN_CLAIM: anyString,
   OIDC_ADMIN_VALUE: anyString,
+  OIDC_USERNAME_CLAIM: anyString,
 
   // SMTP
   SMTP_HOST: anyString,
@@ -105,6 +114,22 @@ export const envSchema = z.object({
   // WebAuthn
   WEBAUTHN_RP_ID: anyString,
   WEBAUTHN_ORIGINS: anyString,
+
+  // Web Push (VAPID). All optional: without them the server keeps a pair of its
+  // own in the database. Only the shape is checked here; whether the two keys
+  // belong together is checked where they are used, which turns push off while
+  // they do not (never signing with a stored pair in their place) and says so
+  // in the log instead of refusing to boot.
+  VAPID_PUBLIC_KEY: optionalWith(
+    isUncompressedP256Key,
+    'must be a base64url-encoded P-256 public key (65 bytes, uncompressed, starting with 0x04)',
+  ),
+  VAPID_PRIVATE_KEY: optionalWith(isP256PrivateKey, 'must be a base64url-encoded P-256 private key (32 bytes)'),
+  VAPID_SUBJECT: optionalWith(isVapidSubject, 'must be a mailto: address or an https:// URL'),
+
+  WEB_PUSH_VAPID_PUBLIC_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_SUBJECT: z.string().optional(),
 
   // MCP
   MCP_SESSION_TTL: positiveNumber,
@@ -125,6 +150,8 @@ export const envSchema = z.object({
   // 2^31-1 makes Node clamp the delay to 1 ms and do the same. Both refuse at
   // boot rather than degrading into a timeout of zero.
   LLM_TIMEOUT_MS: integer(1, 2_147_483_647, 'must be a whole number of milliseconds between 1 and 2147483647'),
+  // Below 256 not even one reservation fits, so a value that small is a typo, not a choice.
+  LLM_MAX_OUTPUT_TOKENS: integer(256, 1_000_000, 'must be a whole number of tokens between 256 and 1000000'),
   KITINERARY_EXTRACTOR_PATH: anyString,
   // The OS search path. Not configuration anybody sets for TREK — it is here so
   // the kitinerary probe can resolve its binary to an absolute path itself
@@ -141,18 +168,34 @@ export const envSchema = z.object({
   // this schema at all. Resolution lives in parsers.resolveDurability().
   TREK_DB_JOURNAL_MODE: anyString,
   TREK_DB_SYNCHRONOUS: anyString,
+  // The copy of the database taken before a boot applies pending migrations.
+  // Unlike the two pragmas a typo here refuses the boot: the switch exists to
+  // turn a safety net off, and a misspelt "off" must not leave it on silently
+  // or a misspelt "on" turn it off.
+  TREK_DB_PRE_MIGRATE_SNAPSHOT: boolStr,
+  TREK_DB_PRE_MIGRATE_SNAPSHOT_KEEP: integer(1, 100),
   TREK_WIKI_DIR: anyString,
   TREK_PLACE_PHOTO_DIR: anyString,
   BACKUP_UPLOAD_LIMIT_MB: positiveNumber,
+  FILE_UPLOAD_LIMIT_MB: positiveNumber,
   BACKUP_MAX_DECOMPRESSED_MB: positiveNumber,
+  // A backup archive to restore on the very first start, before any setup (#1089).
+  RESTORE_FROM_BACKUP: anyString,
 
   // Admin / demo
   ADMIN_EMAIL: anyString,
   ADMIN_PASSWORD: anyString,
   TREK_MANAGED: boolStr,
   PLACES_API_BASE: url,
+  GOOGLE_LIST_DATA_BASE: url,
   TREK_PLACES_URL: url,
   TREK_PLACES_ENABLED: boolStr,
+  TREK_PLACES_CONTRIBUTE: oneOf(['off', 'admin']),
+  TREK_SERVICES: oneOf(['auto', 'off']),
+  TREK_SERVICES_KEY: optionalWith(isServiceKeyShape, 'must be a TREK services key (tk1.<kid>.<payload>.<signature>)'),
+  TREK_SERVICES_HOSTS: anyString,
+  TREK_PHOTON_URL: url,
+  TREK_VALHALLA_URL: url,
   PLACES_API_KEY: anyString,
   AMAP_API_BASE: url,
   AMAP_API_KEY: anyString,

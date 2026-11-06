@@ -1,9 +1,11 @@
+import type { TripAccess } from '../../db/repositories/Trips.repository';
 import type { User } from '../../types';
-import { CurrentUser } from '../auth/current-user.decorator';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import type { TripAccess } from '../database/database.service';
+import { CurrentUser } from '../auth-core/current-user.decorator';
+import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
+import { toRowId } from '../common/row-id';
 import { RequirePermission, TripAccessGuard } from '../permissions/trip-access.guard';
 import { Trip } from '../permissions/trip.decorator';
+import { BudgetWritesService } from './budget-writes.service';
 import {
   BudgetCreateItemDto,
   BudgetUpdateItemDto,
@@ -56,11 +58,14 @@ import {
 // passes, so the HTTP and MCP paths cannot demand different rights.
 @UseGuards(JwtAuthGuard, TripAccessGuard)
 export class BudgetController {
-  constructor(private readonly budget: BudgetService) {}
+  constructor(
+    private readonly budget: BudgetService,
+    private readonly writes: BudgetWritesService,
+  ) {}
 
   @Get()
-  list(@CurrentUser() user: User, @Param('tripId') tripId: string) {
-    return { items: this.budget.list(tripId) };
+  async list(@CurrentUser() user: User, @Param('tripId') tripId: string) {
+    return { items: await this.budget.list(tripId) };
   }
 
   @Get('summary/per-person')
@@ -71,7 +76,7 @@ export class BudgetController {
   // `base_rate` is the caller's own quote for the display currency (units per 1 trip
   // currency), used only when the server has none; a malformed one is a 400.
   @Get('settlement')
-  settlement(
+  async settlement(
     @CurrentUser() user: User,
     @Trip() trip: TripAccess,
     @Param('tripId') tripId: string,
@@ -81,8 +86,8 @@ export class BudgetController {
   }
 
   @Get('settlements')
-  listSettlements(@CurrentUser() user: User, @Param('tripId') tripId: string) {
-    return { settlements: this.budget.listSettlements(tripId) };
+  async listSettlements(@CurrentUser() user: User, @Param('tripId') tripId: string) {
+    return { settlements: await this.budget.listSettlements(tripId) };
   }
 
   @RequirePermission('budget_edit')
@@ -103,6 +108,7 @@ export class BudgetController {
         exchange_rate: body.exchange_rate,
         exchange_rate_note: body.exchange_rate_note,
         settled_at: body.settled_at,
+        note: body.note,
         fallback_fx: body.fallback_fx,
       },
       user.id,
@@ -125,8 +131,18 @@ export class BudgetController {
     @Body() body: BudgetUpdateSettlementDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
+    // Plan 4 Task 8b (U6) — :settlementId is parsed ONCE here (toRowId, not
+    // Number(): rule 15's NaN-into-SQL trap), and the parsed number is what
+    // flows into the service instead of the raw route string reaching the
+    // repository. A malformed id never matched under the legacy affinity
+    // CAST either, so it 404s with the same body updateSettlement's own
+    // not-found branch already produces below.
+    const settlementIdNum = toRowId(settlementId);
+    if (settlementIdNum === null) {
+      throw new HttpException({ error: 'Settlement not found' }, 404);
+    }
     const settlement = await this.budget.updateSettlement(
-      settlementId,
+      settlementIdNum,
       tripId,
       {
         from_user_id: body.from_user_id,
@@ -136,6 +152,7 @@ export class BudgetController {
         exchange_rate: body.exchange_rate,
         exchange_rate_note: body.exchange_rate_note,
         settled_at: body.settled_at,
+        note: body.note,
         fallback_fx: body.fallback_fx,
       },
       user.id,
@@ -149,16 +166,21 @@ export class BudgetController {
 
   @RequirePermission('budget_edit')
   @Delete('settlements/:settlementId')
-  deleteSettlement(
+  async deleteSettlement(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Param('settlementId') settlementId: string,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    if (!this.budget.deleteSettlement(settlementId, tripId)) {
+    // Plan 4 Task 8b (U6) — same single gate-level parse as updateSettlement above.
+    const settlementIdNum = toRowId(settlementId);
+    if (settlementIdNum === null) {
       throw new HttpException({ error: 'Settlement not found' }, 404);
     }
-    this.budget.broadcast(tripId, 'budget:settlement-deleted', { settlementId: Number(settlementId) }, socketId);
+    if (!(await this.budget.deleteSettlement(settlementIdNum, tripId))) {
+      throw new HttpException({ error: 'Settlement not found' }, 404);
+    }
+    this.budget.broadcast(tripId, 'budget:settlement-deleted', { settlementId: settlementIdNum }, socketId);
     return { success: true };
   }
 
@@ -198,33 +220,34 @@ export class BudgetController {
     @Body() body: BudgetCreateItemDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const item = await this.budget.create(tripId, body, user.id);
-    this.budget.broadcast(tripId, 'budget:created', { item }, socketId);
+    // The use case answers the link refusal (#2084) and works out the price of a
+    // linked booking, the way the MCP tool adding an expense with its split does.
+    const item = await this.writes.createItem(tripId, body, this.writes.restWriter(tripId, user, socketId));
     return { item };
   }
 
   @RequirePermission('budget_edit')
   @Put('reorder/items')
-  reorderItems(
+  async reorderItems(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Body() body: BudgetReorderItemsDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    this.budget.reorderItems(tripId, body.orderedIds);
+    await this.budget.reorderItems(tripId, body.orderedIds);
     this.budget.broadcast(tripId, 'budget:reordered', { orderedIds: body.orderedIds }, socketId);
     return { success: true };
   }
 
   @RequirePermission('budget_edit')
   @Put('reorder/categories')
-  reorderCategories(
+  async reorderCategories(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Body() body: BudgetReorderCategoriesDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    this.budget.reorderCategories(tripId, body.orderedCategories);
+    await this.budget.reorderCategories(tripId, body.orderedCategories);
     this.budget.broadcast(tripId, 'budget:reordered', { orderedCategories: body.orderedCategories }, socketId);
     return { success: true };
   }
@@ -238,34 +261,54 @@ export class BudgetController {
     @Body() body: BudgetUpdateItemDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const updated = await this.budget.update(id, tripId, body, user.id);
+    // A body that reaches into another trip is refused whatever :id says (#2084),
+    // so the link check sits above the id gate: a malformed id must not turn
+    // that 400 into a 404.
+    const refusal = await this.budget.linkRefusal(tripId, body);
+    if (refusal) throw new HttpException({ error: refusal }, 400);
+    // Plan 4 Task 8b (U6) — :id is parsed ONCE here (toRowId, not Number():
+    // rule 15's NaN-into-SQL trap), and the parsed number is what flows
+    // into the service instead of the raw route string reaching the
+    // repository. A malformed id never matched under the legacy affinity
+    // CAST either, so it 404s with the same body this handler's own
+    // not-found branch already produces below.
+    const itemId = toRowId(id);
+    if (itemId === null) {
+      throw new HttpException({ error: 'Budget item not found' }, 404);
+    }
+    // The booking an expense leaves also needs its price worked out again.
+    const before = body.reservation_id !== undefined ? await this.budget.getBudgetItem(itemId, tripId) : null;
+    const updated = await this.budget.update(itemId, tripId, body, user.id);
     if (!updated) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
-    if (updated.reservation_id && body.total_price !== undefined) {
-      this.budget.syncReservationPrice(tripId, updated.reservation_id, updated.total_price, socketId);
-    }
+    await this.budget.resyncLinkedPrices(tripId, before?.reservation_id, updated, body, socketId);
     this.budget.broadcast(tripId, 'budget:updated', { item: updated }, socketId);
     return { item: updated };
   }
 
   @RequirePermission('budget_edit')
   @Put(':id/members')
-  updateMembers(
+  async updateMembers(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Param('id') id: string,
     @Body() body: BudgetUpdateMembersDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const result = this.budget.updateMembers(id, tripId, body.user_ids);
+    // Plan 4 Task 8b (U6) — same single gate-level parse as update above.
+    const itemId = toRowId(id);
+    if (itemId === null) {
+      throw new HttpException({ error: 'Budget item not found' }, 404);
+    }
+    const result = await this.budget.updateMembers(itemId, tripId, body.user_ids);
     if (!result) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
     this.budget.broadcast(
       tripId,
       'budget:members-updated',
-      { itemId: Number(id), members: result.members, persons: result.item.persons },
+      { itemId, members: result.members, persons: result.item.persons },
       socketId,
     );
     return { members: result.members, item: result.item };
@@ -273,24 +316,31 @@ export class BudgetController {
 
   @RequirePermission('budget_edit')
   @Put(':id/payers')
-  setPayers(
+  async setPayers(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Param('id') id: string,
     @Body() body: BudgetUpdatePayersDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const item = this.budget.setPayers(id, tripId, body.payers);
+    // Plan 4 Task 8b (U6) — same single gate-level parse as update above.
+    const itemId = toRowId(id);
+    if (itemId === null) {
+      throw new HttpException({ error: 'Budget item not found' }, 404);
+    }
+    const item = await this.budget.setPayers(itemId, tripId, body.payers);
     if (!item) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
+    // The payers derive the total, which the linked booking mirrors.
+    if (item.reservation_id) await this.budget.resyncReservationPrice(tripId, item.reservation_id, socketId);
     this.budget.broadcast(tripId, 'budget:updated', { item }, socketId);
     return { item };
   }
 
   @RequirePermission('budget_edit')
   @Put(':id/members/:userId/paid')
-  toggleMemberPaid(
+  async toggleMemberPaid(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Param('id') id: string,
@@ -298,11 +348,27 @@ export class BudgetController {
     @Body() body: BudgetToggleMemberPaidDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    const member = this.budget.toggleMemberPaid(id, tripId, userId, body.paid);
+    // Plan 4 Task 8b (U6) — :id/:userId parsed ONCE here (toRowId). Unlike
+    // every other handler in this controller, the legacy route
+    // (server/src/routes/budget.ts, pre-ORM) never 404'd an unknown item or
+    // member on this one either: it always answered 200 { member } (member
+    // undefined on a miss) and always broadcast Number(id)/Number(userId)
+    // regardless of the result. A malformed id already short-circuits to
+    // that exact "no match" shape today — existsInTrip's affinity-seam
+    // WHERE simply never matches it — so a null parse here isn't a 404, it
+    // is that same no-op: the service call is skipped (nothing would have
+    // matched) and the broadcast keeps its legacy Number(id)/Number(userId)
+    // fallback for a malformed id.
+    const itemId = toRowId(id);
+    const memberUserId = toRowId(userId);
+    const member =
+      itemId !== null && memberUserId !== null
+        ? await this.budget.toggleMemberPaid(itemId, tripId, memberUserId, body.paid)
+        : null;
     this.budget.broadcast(
       tripId,
       'budget:member-paid-updated',
-      { itemId: Number(id), userId: Number(userId), paid: body.paid ? 1 : 0 },
+      { itemId: itemId ?? Number(id), userId: memberUserId ?? Number(userId), paid: body.paid ? 1 : 0 },
       socketId,
     );
     return { member };
@@ -310,16 +376,21 @@ export class BudgetController {
 
   @RequirePermission('budget_edit')
   @Delete(':id')
-  remove(
+  async remove(
     @CurrentUser() user: User,
     @Param('tripId') tripId: string,
     @Param('id') id: string,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    if (!this.budget.remove(id, tripId)) {
+    // Plan 4 Task 8b (U6) — same single gate-level parse as update above.
+    const itemId = toRowId(id);
+    if (itemId === null) {
       throw new HttpException({ error: 'Budget item not found' }, 404);
     }
-    this.budget.broadcast(tripId, 'budget:deleted', { itemId: Number(id) }, socketId);
+    if (!(await this.budget.remove(itemId, tripId))) {
+      throw new HttpException({ error: 'Budget item not found' }, 404);
+    }
+    this.budget.broadcast(tripId, 'budget:deleted', { itemId }, socketId);
     return { success: true };
   }
 }

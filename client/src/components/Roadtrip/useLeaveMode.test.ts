@@ -89,8 +89,8 @@ describe('useLeaveMode', () => {
     expect(renderHook(() => useLeaveMode({ ...subject, assignmentId: -5 })).result.current.remove).toBeUndefined()
   })
 
-  it('FE-ROADTRIP-LEAVE-006: an End only the place carries is taken off the place', async () => {
-    // The visit's own time write cannot reach it, so clearing that alone would change nothing.
+  it('FE-ROADTRIP-LEAVE-006: an inherited End is cleared only on this visit', async () => {
+    // An explicit clear suppresses inheritance without modifying the place.
     seedStore(useTripStore, {
       places: [{ id: 202, name: 'Bremen', end_time: '14:00' }],
       assignments: { '11': [{ ...visit, assignment_end_time: null }] },
@@ -98,13 +98,13 @@ describe('useLeaveMode', () => {
     const { result } = renderHook(() => useLeaveMode(subject))
     expect(result.current.until).toBe('14:00')
     await act(async () => { await result.current.remove!() })
-    expect(setAssignmentTimes).not.toHaveBeenCalled()
-    expect(updatePlace).toHaveBeenCalledWith(4, 202, { end_time: null })
+    expect(setAssignmentTimes).toHaveBeenCalledWith(4, 11, 102, { place_time: '09:00', end_time: null })
+    expect(updatePlace).not.toHaveBeenCalled()
     expect(result.current.until).toBeNull()
   })
 
   it.each([['the same', '14:00'], ['another', '11:00']])(
-    'FE-ROADTRIP-LEAVE-009: with %s End on the place as well, removing clears both',
+    'FE-ROADTRIP-LEAVE-009: with %s End on the place as well, removing clears only the visit',
     async (_label, placeEnd) => {
       // A migration copied the place's End onto every visit, so older trips carry it
       // twice. Clearing only the visit's left the stop leaving at the place's.
@@ -112,12 +112,12 @@ describe('useLeaveMode', () => {
       const { result } = renderHook(() => useLeaveMode(subject))
       await act(async () => { await result.current.remove!() })
       expect(setAssignmentTimes).toHaveBeenCalledWith(4, 11, 102, { place_time: '09:00', end_time: null })
-      expect(updatePlace).toHaveBeenCalledWith(4, 202, { end_time: null })
+      expect(updatePlace).not.toHaveBeenCalled()
       expect(result.current.until).toBeNull()
     },
   )
 
-  it('FE-ROADTRIP-LEAVE-010: not offered when another visit of the place still leans on its End', () => {
+  it('FE-ROADTRIP-LEAVE-010: can clear one visit while another inherits its End', () => {
     // Taking the place's End would take that visit's too, and keeping it keeps this one's.
     const other = { id: 150, day_id: 12, place_id: 202, order_index: 0, assignment_time: null, assignment_end_time: null }
     seedStore(useTripStore, {
@@ -126,17 +126,17 @@ describe('useLeaveMode', () => {
     })
     const leaning = renderHook(() => useLeaveMode(subject))
     expect(leaning.result.current.until).toBe('14:00')
-    expect(leaning.result.current.remove).toBeUndefined()
+    expect(leaning.result.current.remove).toBeTypeOf('function')
     leaning.unmount()
     // One with an End of its own does not care what the place carries.
     seedStore(useTripStore, { assignments: { '11': [visit], '12': [{ ...other, assignment_end_time: '16:00' }] } })
     expect(renderHook(() => useLeaveMode(subject)).result.current.remove).toBeTypeOf('function')
   })
 
-  it('FE-ROADTRIP-LEAVE-011: not offered to a traveller who may not edit the place its End sits on', () => {
+  it('FE-ROADTRIP-LEAVE-011: requires day permission without requiring place permission', () => {
     usePermissionsStore.setState({ permissions: { place_edit: 'trip_owner' } })
     seedStore(useTripStore, { trip: { id: 4, user_id: 2 }, places: [{ id: 202, name: 'Bremen', end_time: '14:00' }] })
-    expect(renderHook(() => useLeaveMode(subject)).result.current.remove).toBeUndefined()
+    expect(renderHook(() => useLeaveMode(subject)).result.current.remove).toBeTypeOf('function')
   })
 
   it('FE-ROADTRIP-LEAVE-012: through the real store the stop has no End left afterwards', async () => {
@@ -153,7 +153,7 @@ describe('useLeaveMode', () => {
     useTripStore.setState({ refreshDays } as never)
     server.use(
       http.put('/api/trips/4/assignments/102/time', () =>
-        HttpResponse.json({ assignment: { ...stored, assignment_end_time: null, place: { ...pool, place_time: '09:00' } } })),
+        HttpResponse.json({ assignment: { ...stored, assignment_end_time: null, times_explicit: true, place: { ...pool, place_time: '09:00', end_time: null } } })),
       http.put('/api/trips/4/places/202', () => HttpResponse.json({ place: { ...pool, end_time: null } })),
     )
     const { result } = renderHook(() => useLeaveMode(subject))

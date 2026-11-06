@@ -13,10 +13,16 @@ const map: TranslationStrings = {
   'poi.cat.museums': 'Музеи и культура',
   'poi.cat.nature': 'Природа и парки',
   'poi.cat.activities': 'Развлечения',
+  'poi.pluginCategories': 'Категории из плагинов',
   'map.showAllConnections': 'Показать все маршруты бронирований',
   'map.hideAllConnections': 'Скрыть все маршруты бронирований',
   'map.baseLayer.default': 'Карта',
   'map.baseLayer.satellite': 'Спутник',
+  'map.baseLayer.hiking': 'Походы',
+  'map.baseLayer.hikingDown':
+    'OpenHikingMap сейчас не отвечает. Переключитесь на другую карту, ваш маршрут останется без изменений.',
+  'map.baseLayer.cycle': 'Вело',
+  'map.baseLayer.cycleDown': 'CyclOSM сейчас не отвечает. Переключись на другую карту, маршрут останется прежним.',
   'map.baseLayer.switchToSatellite': 'Переключить на спутниковый вид',
   'map.baseLayer.switchToDefault': 'Переключить на вид карты',
   'map.location.denied':
@@ -25,10 +31,24 @@ const map: TranslationStrings = {
   'map.location.timeout':
     'Определение местоположения заняло слишком много времени. Попробуйте ещё раз под открытым небом.',
   'map.overview.show': 'Показать всю поездку',
+  'map.lock.lock': 'Зафиксировать вид карты',
+  'map.lock.unlock': 'Карта следует за выбором',
   'map.overview.hide': 'Скрыть всю поездку',
   'map.overview.total': 'Общее расстояние',
   'map.attribution': 'Источники карты',
-  'map.overview.unrouted': 'Не удалось построить {count} участок(ов), поэтому расстояния неполные.',
-  'map.overview.dayUnrouted': 'Не удалось построить {count} участок(ов) этого дня',
+  'map.overview.distanceAtLeast': 'не менее {distance}',
+  'map.overview.notRouted': 'маршрут не рассчитан',
+  'map.overview.unrouted': 'Не удалось построить маршрут для {count} участка, поэтому расстояния неполные.',
+  'map.overview.unrouted.one': 'Не удалось построить маршрут для {count} участка, поэтому расстояния неполные.',
+  'map.overview.unrouted.few': 'Не удалось построить маршрут для {count} участков, поэтому расстояния неполные.',
+  'map.overview.unrouted.many': 'Не удалось построить маршрут для {count} участков, поэтому расстояния неполные.',
+  'map.overview.dayUnrouted': 'Не удалось построить маршрут для {count} участка этого дня',
+  'map.overview.dayUnrouted.one': 'Не удалось построить маршрут для {count} участка этого дня',
+  'map.overview.dayUnrouted.few': 'Не удалось построить маршрут для {count} участков этого дня',
+  'map.overview.dayUnrouted.many': 'Не удалось построить маршрут для {count} участков этого дня',
+  'map.baseLayer.topo': 'Топо',
+  'map.webgl2.fallback':
+    'Этот браузер не поддерживает WebGL2, нужный картам GL, поэтому карты показываются через Leaflet.',
+  'map.webgl2.terrain': 'Для 3D нужен WebGL2, а этот браузер его не поддерживает. Карта остаётся в 2D.',
 };
 export default map;

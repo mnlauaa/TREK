@@ -5,10 +5,17 @@
  * (ZodValidationPipe), the masked-sentinel no-op, status codes and the actual
  * persisted rows.
  */
+import { AppSettings } from '../../src/db/entities/AppSettings.entity';
+import { Settings } from '../../src/db/entities/Settings.entity';
+import { TripMembers } from '../../src/db/entities/TripMembers.entity';
+import { Trips } from '../../src/db/entities/Trips.entity';
 import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { ZodValidationPipe } from '../../src/nest/common/zod-validation.pipe';
-import { DatabaseModule } from '../../src/nest/database/database.module';
 import { SettingsModule } from '../../src/nest/settings/settings.module';
+import { countRows, deleteRows, findRow, findRows, insertRow } from '../helpers/factories/rows';
+import { readUserSetting } from '../helpers/factories/settings';
+import { createTestMikroOrmModule, createTestOrm, type TestOrm } from '../helpers/test-orm';
+import { TestUnitOfWorkModule } from '../helpers/test-uow';
 import { seedUser, sessionCookie } from './harness';
 import { Test } from '@nestjs/testing';
 
@@ -27,6 +34,14 @@ const { db } = vi.hoisted(() => {
   tmp.exec(`CREATE TABLE settings (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
     key TEXT NOT NULL, value TEXT, UNIQUE(user_id, key));`);
   tmp.exec('CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT);');
+  // Only what the planner view row (#2639) asks: which trips the user can open.
+  // An ORM insert names every column the entity gives a default (currency,
+  // is_archived, reminder_days, the timestamps and added_at), so those are here too.
+  tmp.exec(`CREATE TABLE trips (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT 'Trip', currency TEXT, is_archived INTEGER DEFAULT 0, reminder_days INTEGER DEFAULT 3,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);
+  tmp.exec(`CREATE TABLE trip_members (id INTEGER PRIMARY KEY AUTOINCREMENT, trip_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL, added_at DATETIME DEFAULT CURRENT_TIMESTAMP);`);
   return { db: tmp };
 });
 
@@ -35,9 +50,15 @@ vi.mock('../../src/db/database', () => ({ db, closeDb: () => {}, reinitialize: (
 describe('Settings e2e (real auth guard + temp SQLite)', () => {
   let server: Server;
   let app: Awaited<ReturnType<typeof build>>;
+  let orm: TestOrm;
+
+  /** The stored value of one of `userId`'s settings, or null. */
+  const userSetting = (userId: number, key: string) => readUserSetting(orm, userId, key);
 
   async function build() {
-    const moduleRef = await Test.createTestingModule({ imports: [DatabaseModule, SettingsModule] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      imports: [await TestUnitOfWorkModule.forRoot(db), await createTestMikroOrmModule(db), SettingsModule],
+    }).compile();
     const nest = moduleRef.createNestApplication();
     nest.use(cookieParser());
     nest.useGlobalFilters(new TrekExceptionFilter());
@@ -49,17 +70,19 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
   beforeAll(async () => {
     seedUser(db as never, { id: 1 });
     seedUser(db as never, { id: 2, role: 'admin', email: 'e2e-admin@example.test' });
+    orm = await createTestOrm(db);
     app = await build();
     server = app.getHttpServer();
   });
 
-  beforeEach(() => {
-    db.exec('DELETE FROM settings');
-    db.exec('DELETE FROM app_settings');
+  beforeEach(async () => {
+    await deleteRows(orm, Settings);
+    await deleteRows(orm, AppSettings);
   });
 
   afterAll(async () => {
     await app.close();
+    await orm.close();
   });
 
   it('401 without a session cookie', async () => {
@@ -67,17 +90,17 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
   });
 
   it('200 list with a session', async () => {
-    db.prepare("INSERT INTO settings (user_id, key, value) VALUES (1, 'theme', 'dark')").run();
+    await insertRow(orm, Settings, { user: 1, key: 'theme', value: 'dark' });
     const res = await request(server).get('/api/settings').set('Cookie', sessionCookie(1));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ settings: { common_currencies: [], theme: 'dark' } });
+    expect(res.body).toEqual({ settings: { theme: 'dark', common_currencies: [] } });
   });
 
   it('PUT 400 without a key (pipe envelope via SettingUpsertDto)', async () => {
     const res = await request(server).put('/api/settings').set('Cookie', sessionCookie(1)).send({ value: 'x' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/^key: /);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM settings').get()).toEqual({ n: 0 });
+    expect(await countRows(orm, Settings)).toBe(0);
   });
 
   it('POST /bulk 400 without a settings object (pipe envelope via SettingsBulkDto)', async () => {
@@ -96,35 +119,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
       .send({ key: 'language', value: 'fr' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, key: 'language', value: 'fr' });
-    const row = db.prepare("SELECT value FROM settings WHERE user_id = 1 AND key = 'language'").get() as {
-      value: string;
-    };
-    expect(row.value).toBe('fr');
-  });
-
-  it('restores common currency inheritance, personal empty override, and reset', async () => {
-    db.prepare("INSERT INTO app_settings (key, value) VALUES ('default_user_setting_common_currencies', ?)").run(
-      JSON.stringify(['USD', 'JPY']),
-    );
-    expect(
-      (await request(server).get('/api/settings').set('Cookie', sessionCookie(1))).body.settings.common_currencies,
-    ).toEqual(['USD', 'JPY']);
-
-    const empty = await request(server)
-      .put('/api/settings')
-      .set('Cookie', sessionCookie(1))
-      .send({ key: 'common_currencies', value: [] });
-    expect(empty.status).toBe(200);
-    expect(
-      (await request(server).get('/api/settings').set('Cookie', sessionCookie(1))).body.settings.common_currencies,
-    ).toEqual([]);
-
-    const reset = await request(server).delete('/api/settings/common_currencies').set('Cookie', sessionCookie(1));
-    expect(reset.status).toBe(200);
-    expect(reset.body.value).toEqual(['USD', 'JPY']);
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM settings WHERE user_id = 1 AND key = 'common_currencies'").get(),
-    ).toEqual({ n: 0 });
+    expect(await userSetting(1, 'language')).toBe('fr');
   });
 
   it('PUT no-ops on the masked sentinel', async () => {
@@ -134,9 +129,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
       .send({ key: 'secret', value: '••••••••' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, key: 'secret', unchanged: true });
-    expect(db.prepare("SELECT COUNT(*) AS n FROM settings WHERE user_id = 1 AND key = 'secret'").get()).toEqual({
-      n: 0,
-    });
+    expect(await countRows(orm, Settings, { user: 1, key: 'secret' })).toBe(0);
   });
 
   it('POST /bulk 200', async () => {
@@ -146,7 +139,10 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
       .send({ settings: { a: 1, b: 2 } });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, updated: 2 });
-    const rows = db.prepare('SELECT key, value FROM settings WHERE user_id = 1 ORDER BY key').all();
+    const rows = (await findRows(orm, Settings, { user: 1 }, { key: 'asc' })).map((r) => ({
+      key: r.key,
+      value: r.value,
+    }));
     expect(rows).toEqual([
       { key: 'a', value: '1' },
       { key: 'b', value: '2' },
@@ -154,22 +150,20 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
   });
 
   it('POST /bulk skips masked-sentinel values (a stored secret survives)', async () => {
-    db.prepare("INSERT INTO settings (user_id, key, value) VALUES (1, 'ntfy_token', 'tok-real')").run();
+    await insertRow(orm, Settings, { user: 1, key: 'ntfy_token', value: 'tok-real' });
     const res = await request(server)
       .post('/api/settings/bulk')
       .set('Cookie', sessionCookie(1))
       .send({ settings: { ntfy_topic: 'trek', ntfy_token: '••••••••' } });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, updated: 1 });
-    expect(db.prepare("SELECT value FROM settings WHERE user_id = 1 AND key = 'ntfy_token'").get()).toEqual({
-      value: 'tok-real',
-    });
+    expect(await userSetting(1, 'ntfy_token')).toBe('tok-real');
   });
 
   // #1772: a free-form LLM endpoint is admin-only. The resolver ignores such a
   // row for a non-admin either way; these routes refuse it so the user is told.
   describe('LLM endpoint settings are admin-only (#1772)', () => {
-    const countRows = () => (db.prepare('SELECT COUNT(*) AS n FROM settings').get() as { n: number }).n;
+    const settingsCount = () => countRows(orm, Settings);
 
     it('PUT 403 for a non-admin naming a base URL', async () => {
       const res = await request(server)
@@ -178,7 +172,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
         .send({ key: 'llm_base_url', value: 'http://192.168.1.5:11434' });
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('PUT 403 for a non-admin picking the local provider', async () => {
@@ -187,7 +181,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
         .set('Cookie', sessionCookie(1))
         .send({ key: 'llm_provider', value: 'local' });
       expect(res.status).toBe(403);
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('PUT lets a non-admin clear the base URL and pick a hosted provider', async () => {
@@ -207,9 +201,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
             .send({ key: 'llm_provider', value: 'anthropic' })
         ).status,
       ).toBe(200);
-      expect(db.prepare("SELECT value FROM settings WHERE user_id = 1 AND key = 'llm_provider'").get()).toEqual({
-        value: 'anthropic',
-      });
+      expect(await userSetting(1, 'llm_provider')).toBe('anthropic');
     });
 
     it('PUT 403 for a non-admin naming a routing engine (#1797)', async () => {
@@ -218,23 +210,33 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
       // admin default. A value on a personal row is read by the route
       // calculator and then refused by the browser, so the app stops routing
       // with no error it could report. Refusing tells the caller instead.
-      const res = await request(server).put('/api/settings').set('Cookie', sessionCookie(1))
+      const res = await request(server)
+        .put('/api/settings')
+        .set('Cookie', sessionCookie(1))
         .send({ key: 'routing_base_url', value: 'https://osrm.example.org' });
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('PUT lets a non-admin clear a routing engine somebody set before the rule', async () => {
-      expect((await request(server).put('/api/settings').set('Cookie', sessionCookie(1))
-        .send({ key: 'routing_base_url', value: '' })).status).toBe(200);
+      expect(
+        (
+          await request(server)
+            .put('/api/settings')
+            .set('Cookie', sessionCookie(1))
+            .send({ key: 'routing_base_url', value: '' })
+        ).status,
+      ).toBe(200);
     });
 
     it('POST bulk refuses a routing engine from a non-admin', async () => {
-      const res = await request(server).post('/api/settings/bulk').set('Cookie', sessionCookie(1))
+      const res = await request(server)
+        .post('/api/settings/bulk')
+        .set('Cookie', sessionCookie(1))
         .send({ settings: { routing_base_url: 'https://osrm.example.org' } });
       expect(res.status).toBe(403);
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('PUT 403 for a non-admin naming the second routing engine', async () => {
@@ -242,16 +244,24 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
       // origin has to be in the boot-time connect-src, which is assembled from the
       // admin default alone. A personal row would be read by the route calculator and
       // then refused by the browser, so "other ways" would quietly stop offering any.
-      const res = await request(server).put('/api/settings').set('Cookie', sessionCookie(1))
+      const res = await request(server)
+        .put('/api/settings')
+        .set('Cookie', sessionCookie(1))
         .send({ key: 'valhalla_base_url', value: 'https://valhalla.example.org' });
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('PUT lets a non-admin clear the second routing engine', async () => {
-      expect((await request(server).put('/api/settings').set('Cookie', sessionCookie(1))
-        .send({ key: 'valhalla_base_url', value: '' })).status).toBe(200);
+      expect(
+        (
+          await request(server)
+            .put('/api/settings')
+            .set('Cookie', sessionCookie(1))
+            .send({ key: 'valhalla_base_url', value: '' })
+        ).status,
+      ).toBe(200);
     });
 
     it('PUT is unaffected for a non-LLM key with the same value', async () => {
@@ -271,7 +281,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
         });
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('POST /bulk 200 for a non-admin bringing their own hosted key', async () => {
@@ -293,7 +303,7 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
         .send({ settings: { llm_provider: 'local', llm_base_url: 'http://192.168.1.5:11434' } });
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'Admin access required' });
-      expect(countRows()).toBe(0);
+      expect(await settingsCount()).toBe(0);
     });
 
     it('POST /bulk 200 for an admin bringing their own hosted key', async () => {
@@ -302,9 +312,83 @@ describe('Settings e2e (real auth guard + temp SQLite)', () => {
         .set('Cookie', sessionCookie(2))
         .send({ settings: { llm_provider: 'openai', llm_base_url: '', llm_model: 'gpt-4o-mini' } });
       expect(res.status).toBe(200);
-      expect(db.prepare("SELECT value FROM settings WHERE user_id = 2 AND key = 'llm_provider'").get()).toEqual({
-        value: 'openai',
-      });
+      expect(await userSetting(2, 'llm_provider')).toBe('openai');
+    });
+  });
+
+  describe('week_start (#2029)', () => {
+    it('an admin default reaches a user who never picked a first weekday', async () => {
+      const put = await request(server)
+        .put('/api/admin/default-user-settings')
+        .set('Cookie', sessionCookie(2))
+        .send({ week_start: 'sunday' });
+      expect(put.status).toBe(200);
+      const res = await request(server).get('/api/settings').set('Cookie', sessionCookie(1));
+      expect(res.status).toBe(200);
+      expect(res.body.settings.week_start).toBe('sunday');
+    });
+
+    it('PUT /api/admin/default-user-settings 400 for a weekday the pickers do not offer', async () => {
+      const res = await request(server)
+        .put('/api/admin/default-user-settings')
+        .set('Cookie', sessionCookie(2))
+        .send({ week_start: 'friday' });
+      expect(res.status).toBe(400);
+      expect(await findRow(orm, AppSettings, { key: 'default_user_setting_week_start' })).toBeNull();
+    });
+  });
+
+  describe('planner_trip_views (#2639)', () => {
+    beforeEach(async () => {
+      await deleteRows(orm, TripMembers);
+      await deleteRows(orm, Trips);
+      await insertRow(orm, Trips, { id: 41, user: 1, title: 'Trip' });
+      await insertRow(orm, Trips, { id: 42, user: 2, title: 'Trip' });
+      await insertRow(orm, Trips, { id: 43, user: 2, title: 'Trip' });
+      await insertRow(orm, TripMembers, { trip: 43, user: 1 });
+    });
+
+    it('PUT keeps the switches of trips the user can open and GET hands them back', async () => {
+      const put = await request(server)
+        .put('/api/settings')
+        .set('Cookie', sessionCookie(1))
+        .send({
+          key: 'planner_trip_views',
+          value: {
+            '41': { roadtrip: true },
+            '42': { roadtrip: true },
+            '43': { dawarich: true, overview: false },
+            '99': { overview: true },
+          },
+        });
+      expect(put.status).toBe(200);
+      const res = await request(server).get('/api/settings').set('Cookie', sessionCookie(1));
+      expect(res.body.settings.planner_trip_views).toEqual({ '41': { roadtrip: true }, '43': { dawarich: true } });
+    });
+
+    it('bulk prunes the same way', async () => {
+      const res = await request(server)
+        .post('/api/settings/bulk')
+        .set('Cookie', sessionCookie(1))
+        .send({ settings: { planner_trip_views: { '41': { overview: true }, '42': { overview: true } } } });
+      expect(res.status).toBe(200);
+      expect(JSON.parse(String(await userSetting(1, 'planner_trip_views')))).toEqual({ '41': { overview: true } });
+    });
+
+    it('400 for a value outside the contract, on both routes, and nothing is stored', async () => {
+      const put = await request(server)
+        .put('/api/settings')
+        .set('Cookie', sessionCookie(1))
+        .send({ key: 'planner_trip_views', value: { '41': { roadtrip: 'on' } } });
+      expect(put.status).toBe(400);
+      expect(put.body.error).toMatch(/planner_trip_views/);
+      const bulk = await request(server)
+        .post('/api/settings/bulk')
+        .set('Cookie', sessionCookie(1))
+        .send({ settings: { theme: 'dark', planner_trip_views: ['41'] } });
+      expect(bulk.status).toBe(400);
+      expect(await userSetting(1, 'planner_trip_views')).toBeNull();
+      expect(await userSetting(1, 'theme')).toBeNull();
     });
   });
 });

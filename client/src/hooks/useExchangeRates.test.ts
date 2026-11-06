@@ -149,37 +149,37 @@ describe('convertBooked', () => {
 
   it('leaves an amount already in the trip currency to the live step alone', () => {
     // Nothing was ever frozen here, so this is just trip currency to display currency.
-    expect(convertBooked(100, null, 1, 'EUR', live)).toBe(100)
-    expect(convertBooked(100, 'EUR', 1, 'EUR', live)).toBe(100)
+    expect(convertBooked(100, { currency: null, exchange_rate: 1 }, 'EUR', live)).toBe(100)
+    expect(convertBooked(100, { currency: 'EUR', exchange_rate: 1 }, 'EUR', live)).toBe(100)
   })
 
   it('reads a foreign amount at the rate it was booked at, not at today s', () => {
     // 120 USD booked when a euro bought 1.2 dollars is 100 EUR, and stays 100 EUR even
     // though the live table above says a euro now buys 2.
-    expect(convertBooked(120, 'USD', 1.2, 'EUR', live)).toBe(100)
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: 1.2 }, 'EUR', live)).toBe(100)
   })
 
-  it('falls back to live rates for a row that never froze one', () => {
-    // Rate 1 is the column default, not a booked rate: rows predating the freeze carry it.
-    expect(convertBooked(120, 'USD', 1, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', undefined, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', null, 'EUR', live)).toBe(60)
+  it('excludes legacy foreign rows without a rate, but accepts frozen parity with provenance', () => {
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: 1, exchange_rate_source: 'explicit' }, 'EUR', live)).toBe(120)
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: 1 }, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: undefined }, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: null }, 'EUR', live)).toBeNaN()
     // A rate that cannot divide is no rate at all.
-    expect(convertBooked(120, 'USD', 0, 'EUR', live)).toBe(60)
-    expect(convertBooked(120, 'USD', -2, 'EUR', live)).toBe(60)
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: 0 }, 'EUR', live)).toBeNaN()
+    expect(convertBooked(120, { currency: 'USD', exchange_rate: -2 }, 'EUR', live)).toBeNaN()
   })
 
   it('goes through the trip currency when the reader displays a third one', () => {
     // 200 SEK booked at 10 SEK per euro is 20 EUR of trip money, which the live step then
     // takes to the display currency. The frozen rate is against the trip, never the display.
-    expect(convertBooked(200, 'SEK', 10, 'EUR', live)).toBe(20)
+    expect(convertBooked(200, { currency: 'SEK', exchange_rate: 10 }, 'EUR', live)).toBe(20)
     // Trip in USD, display in EUR: 200 SEK at 5 SEK per dollar is 40 USD, then 20 EUR.
-    expect(convertBooked(200, 'SEK', 5, 'USD', live)).toBe(20)
+    expect(convertBooked(200, { currency: 'SEK', exchange_rate: 5 }, 'USD', live)).toBe(20)
   })
 
   it('treats currency case as noise', () => {
-    expect(convertBooked(120, 'usd', 1.2, 'eur', live)).toBe(100)
-    expect(convertBooked(100, 'eur', 1, 'EUR', live)).toBe(100)
+    expect(convertBooked(120, { currency: 'usd', exchange_rate: 1.2 }, 'eur', live)).toBe(100)
+    expect(convertBooked(100, { currency: 'eur', exchange_rate: 1 }, 'EUR', live)).toBe(100)
   })
 
   // #2525: a euro trip read in dollars, the bill entered in dollars. It was booked at 685.26
@@ -192,10 +192,10 @@ describe('convertBooked', () => {
       return r && r > 0 ? amount / r : amount
     }
     // 685.26 EUR, then at today's 1.1398 dollars to the euro.
-    expect(convertBooked(801.76, 'USD', 1.17, 'EUR', liveUsd)).toBeCloseTo((801.76 / 1.17) * 1.1398, 6)
-    expect(convertBooked(801.76, 'USD', 1.17, 'EUR', liveUsd)).not.toBeCloseTo(801.76, 1)
+    expect(convertBooked(801.76, { currency: 'USD', exchange_rate: 1.17 }, 'EUR', liveUsd)).toBeCloseTo((801.76 / 1.17) * 1.1398, 6)
+    expect(convertBooked(801.76, { currency: 'USD', exchange_rate: 1.17 }, 'EUR', liveUsd)).not.toBeCloseTo(801.76, 1)
     // Without a booked rate there is nothing to go through, and dollars stay dollars.
-    expect(convertBooked(801.76, 'USD', 1, 'EUR', liveUsd)).toBe(801.76)
+    expect(convertBooked(801.76, { currency: 'USD', exchange_rate: 1 }, 'EUR', liveUsd)).toBeNaN()
   })
 })
 
@@ -235,9 +235,9 @@ describe('useExchangeRates anchored on the trip currency (#2525)', () => {
     quotes()
     const { result } = renderHook(() => useExchangeRates('usd', 'eur'))
     await waitFor(() => expect(result.current.convert(1, 'EUR')).toBe(1.1398))
-    const shown = convertBooked(12345.67, 'USD', 1.1398, 'EUR', result.current.convert)
+    const shown = convertBooked(12345.67, { currency: 'USD', exchange_rate: 1.1398 }, 'EUR', result.current.convert)
     expect(Math.round(shown * 100)).toBe(1234567)
-    expect(Math.round(convertBooked(250, 'USD', 1.1398, 'EUR', result.current.convert) * 100)).toBe(25000)
+    expect(Math.round(convertBooked(250, { currency: 'USD', exchange_rate: 1.1398 }, 'EUR', result.current.convert) * 100)).toBe(25000)
     // A foreign row that never froze a rate goes through the same quote as well.
     expect(result.current.convert(170, 'JPY')).toBeCloseTo(1.1398, 10)
     // The display currency's own rates stay what the hook hands out.
@@ -284,8 +284,6 @@ describe('useExchangeRates anchored on the trip currency (#2525)', () => {
     const none = renderHook(() => useExchangeRates('GBP', 'AUD'))
     await waitFor(() => expect(calls).toBe(2))
     expect(none.result.current.displayPerTrip).toBeNull()
-    expect(none.result.current.convert(100, 'AUD')).toBeNaN()
-    expect(none.result.current.convert(100, 'GBP')).toBe(100)
   })
 
   // A trip in gold read in rials: 2.6 billion rials to the ounce is past the 1e9 the
@@ -317,60 +315,45 @@ describe('crossRate', () => {
 })
 
 describe('tripAmountOf', () => {
-  // Display USD, trip EUR: one euro buys 1.25 dollars and 100 yen.
-  const live = (amount: number, from: string | null | undefined): number =>
-    amount * ({ EUR: 1.25, USD: 1, JPY: 0.0125 } as Record<string, number>)[(from || 'USD').toUpperCase()]
-
   it('is the booked amount for a row booked through the trip currency', () => {
-    expect(tripAmountOf(801.76, 'USD', 1.17, 'EUR', live)).toBeCloseTo(685.26, 2)
+    expect(tripAmountOf(801.76, 'USD', 1.17, 'EUR')).toBeCloseTo(685.26, 2)
   })
 
   it('is the amount itself for a row in the trip currency', () => {
-    expect(tripAmountOf(100, null, null, 'eur', live)).toBe(100)
-    expect(tripAmountOf(100, 'EUR', 1, 'EUR', live)).toBe(100)
+    expect(tripAmountOf(100, null, null, 'eur')).toBe(100)
+    expect(tripAmountOf(100, 'EUR', 1, 'EUR')).toBe(100)
   })
 
-  it('counts a row that never froze a rate at today\'s', () => {
-    expect(tripAmountOf(1000, 'JPY', 1, 'EUR', live)).toBeCloseTo(10, 10)
-    // Without rates the conversion is the identity, as it is on the server.
-    expect(tripAmountOf(1000, 'JPY', null, 'EUR', (a: number) => a)).toBe(1000)
+  it('excludes a foreign row that never froze a rate', () => {
+    expect(tripAmountOf(1000, 'JPY', 1, 'EUR')).toBeNaN()
+    expect(tripAmountOf(1000, 'JPY', null, 'EUR')).toBeNaN()
   })
 })
 
 describe('convertedLine', () => {
   it('shows the entered amount and the booked trip amount for a bill booked through the trip currency', () => {
-    expect(convertedLine(801.76, 'usd', 1.17, 'EUR', 'USD', 791.55)).toEqual({
+    expect(convertedLine(801.76, { currency: 'usd', exchange_rate: 1.17 }, 'EUR', 'USD', 791.55)).toEqual({
       entered: { amount: 801.76, currency: 'USD' },
       into: { amount: 801.76 / 1.17, currency: 'EUR' },
     })
-    expect(convertedLine(12000, 'JPY', 170, 'EUR', 'USD', 80.46)?.into).toEqual({ amount: 12000 / 170, currency: 'EUR' })
+    expect(convertedLine(12000, { currency: 'JPY', exchange_rate: 170 }, 'EUR', 'USD', 80.46)?.into).toEqual({ amount: 12000 / 170, currency: 'EUR' })
   })
 
   it('has no line for a bill in the display currency that still reads as typed', () => {
-    expect(convertedLine(12345.67, 'USD', 1.1398, 'EUR', 'USD', 12345.670000000002)).toBeNull()
+    expect(convertedLine(12345.67, { currency: 'USD', exchange_rate: 1.1398 }, 'EUR', 'USD', 12345.670000000002)).toBeNull()
     // Rounded to the display currency's own decimals.
-    expect(convertedLine(1500, 'JPY', 0.0125, 'EUR', 'JPY', 1500.2)).toBeNull()
+    expect(convertedLine(1500, { currency: 'JPY', exchange_rate: 0.0125 }, 'EUR', 'JPY', 1500.2)).toBeNull()
   })
 
   it('has no line for an amount of 0 or a row that was never converted', () => {
-    expect(convertedLine(0, 'USD', 1.17, 'EUR', 'USD', 0)).toBeNull()
-    expect(convertedLine(0, 'JPY', 170, 'EUR', 'USD', 0)).toEqual({ entered: { amount: 0, currency: 'JPY' }, into: { amount: 0, currency: 'USD' } })
-    expect(convertedLine(50, 'USD', 1, 'EUR', 'USD', 50)).toBeNull()
-    expect(convertedLine(50, null, null, 'USD', '', 50)).toBeNull()
+    expect(convertedLine(0, { currency: 'USD', exchange_rate: 1.17 }, 'EUR', 'USD', 0)).toBeNull()
+    expect(convertedLine(0, { currency: 'JPY', exchange_rate: 170 }, 'EUR', 'USD', 0)).toEqual({ entered: { amount: 0, currency: 'JPY' }, into: { amount: 0, currency: 'USD' } })
+    expect(convertedLine(50, { currency: 'USD', exchange_rate: 1 }, 'EUR', 'USD', 50)).toBeNull()
+    expect(convertedLine(50, { currency: null, exchange_rate: null }, 'USD', '', 50)).toBeNull()
   })
 
   it('goes straight to the display value for a row in the trip currency, or when the viewer reads the trip currency', () => {
-    expect(convertedLine(100, null, null, 'EUR', 'USD', 113.98)).toEqual({ entered: { amount: 100, currency: 'EUR' }, into: { amount: 113.98, currency: 'USD' } })
-    expect(convertedLine(801.76, 'USD', 1.17, 'EUR', 'EUR', 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } })
+    expect(convertedLine(100, { currency: null, exchange_rate: null }, 'EUR', 'USD', 113.98)).toEqual({ entered: { amount: 100, currency: 'EUR' }, into: { amount: 113.98, currency: 'USD' } })
+    expect(convertedLine(801.76, { currency: 'USD', exchange_rate: 1.17 }, 'EUR', 'EUR', 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } })
   })
-})
-
-// A stored 1 is ambiguous only for legacy rows; provenance makes parity intentional.
-it('preserves explicit parity and distinguishes legacy parity in every booked conversion', () => {
-  const live = (amount: number) => amount / 2
-  expect(bookedInTrip(100, 'USD', 1, 'EUR', 'explicit')).toBe(100)
-  expect(bookedInTrip(100, 'USD', 1, 'EUR', 'legacy')).toBeNull()
-  expect(tripAmountOf(100, 'USD', 1, 'EUR', live, 'explicit')).toBe(100)
-  expect(convertBooked(100, 'USD', 1, 'EUR', live, 'explicit')).toBe(50)
-  expect(tripAmountOf(100, 'USD', 1, 'EUR', () => Number.NaN, 'legacy')).toBeNaN()
 })

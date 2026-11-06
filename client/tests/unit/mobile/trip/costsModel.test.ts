@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   baseTotal,
   buildCostsCsv,
@@ -9,7 +9,6 @@ import {
   dayFilterKeys,
   filterBudgetItems,
   filterSettlements,
-  frozenAmountToDisplay,
   groupByDay,
   groupLedgerByDay,
   isUnfinished,
@@ -20,11 +19,11 @@ import {
   tint,
   type CostsCtx,
   type CostsFilterState,
-  type CostsRecordedSettlement,
+  type CostsSettlement,
   type CostsSettlementFlow,
-} from '../../../../src/mobile/screens/trip/tabs/costsModel';
-import type { BudgetItem } from '../../../../src/types';
+} from '../../../../src/components/Budget/costsModel';
 import { buildBudgetItem } from '../../../helpers/factories';
+import type { BudgetItem } from '../../../../src/types';
 
 // FE-MOB-CMOD-001 to FE-MOB-CMOD-027
 
@@ -49,21 +48,13 @@ function payer(user_id: number, amount: number): Payer {
   return { user_id, amount, username: `u${user_id}` };
 }
 
-function settlement(overrides: Partial<CostsRecordedSettlement> = {}): CostsRecordedSettlement {
-  return {
-    trip_id: 1,
-    id: 1,
-    from_user_id: 1,
-    to_user_id: 2,
-    amount: 10,
-    currency: null,
-    created_at: '2026-07-01T10:00:00Z',
-    ...overrides,
-  };
+function settlement(overrides: Partial<CostsSettlement> = {}): CostsSettlement {
+  return { id: 1, from_user_id: 1, to_user_id: 2, amount: 10, currency: null, created_at: '2026-07-01T10:00:00Z', ...overrides };
 }
 
 function expense(overrides: Partial<BudgetItem> = {}): BudgetItem {
-  return buildBudgetItem({ category: 'other', ...overrides });
+  const rate = RATES[overrides.currency?.toUpperCase() ?? ''];
+  return buildBudgetItem({ category: 'other', ...(rate ? { exchange_rate: 1 / rate } : {}), ...overrides });
 }
 
 function filters(overrides: Partial<CostsFilterState> = {}): CostsFilterState {
@@ -81,20 +72,6 @@ describe('costsModel — money maths', () => {
     expect(baseTotal(expense({ total_price: 100, currency: 'USD' }), ctx)).toBe(50);
     expect(baseTotal(expense({ total_price: 100, currency: null }), ctx)).toBe(100);
     expect(baseTotal(expense({ total_price: 0 }), ctx)).toBe(0);
-  });
-
-  it('routes a frozen foreign amount through the Trip currency before Display conversion', () => {
-    const frozen = expense({ total_price: 100, currency: 'USD', exchange_rate: 4 });
-    expect(baseTotal(frozen, ctx)).toBe(25);
-    expect(frozenAmountToDisplay(100, 'USD', 4, ctx)).toBe(25);
-    // A legacy row without a usable frozen rate keeps the historical snapshot fallback.
-    expect(frozenAmountToDisplay(100, 'USD', 1, ctx)).toBe(50);
-    expect(frozenAmountToDisplay(100, 'USD', 1, ctx, 'legacy')).toBe(50);
-    // A known frozen 1:1 rate is not the legacy sentinel; match the server's provenance rule.
-    expect(
-      baseTotal(expense({ total_price: 100, currency: 'USD', exchange_rate: 1, exchange_rate_source: 'explicit' }), ctx)
-    ).toBe(100);
-    expect(frozenAmountToDisplay(-100, 'USD', 1, ctx, 'trip')).toBe(-100);
   });
 
   it('FE-MOB-CMOD-003: myPaidOf only sums my own payer rows, converted', () => {
@@ -242,21 +219,21 @@ describe('costsModel — list filters and grouping', () => {
   });
 
   it('FE-MOB-CMOD-013: "mine" keeps expenses I fronted money on', () => {
-    expect(filterBudgetItems(all, filters({ segment: 'mine' }), ctx).map((e) => e.id)).toEqual([20, 22]);
+    expect(filterBudgetItems(all, filters({ segment: 'mine' }), ctx).map(e => e.id)).toEqual([20, 22]);
   });
 
   it('FE-MOB-CMOD-014: "owed" keeps expenses where I am net owed', () => {
-    expect(filterBudgetItems(all, filters({ segment: 'owed' }), ctx).map((e) => e.id)).toEqual([20]);
+    expect(filterBudgetItems(all, filters({ segment: 'owed' }), ctx).map(e => e.id)).toEqual([20]);
   });
 
   it('FE-MOB-CMOD-015: category, day and search narrow the list and combine', () => {
-    expect(filterBudgetItems(all, filters({ categoryKey: 'food' }), ctx).map((e) => e.id)).toEqual([21]);
-    expect(filterBudgetItems(all, filters({ dayKey: '2026-07-02' }), ctx).map((e) => e.id)).toEqual([21]);
+    expect(filterBudgetItems(all, filters({ categoryKey: 'food' }), ctx).map(e => e.id)).toEqual([21]);
+    expect(filterBudgetItems(all, filters({ dayKey: '2026-07-02' }), ctx).map(e => e.id)).toEqual([21]);
     // search is trimmed and case-insensitive
-    expect(filterBudgetItems(all, filters({ search: '  HOTEL ' }), ctx).map((e) => e.id)).toEqual([20]);
+    expect(filterBudgetItems(all, filters({ search: '  HOTEL ' }), ctx).map(e => e.id)).toEqual([20]);
     expect(filterBudgetItems(all, filters({ search: 'nothing' }), ctx)).toEqual([]);
     expect(
-      filterBudgetItems(all, filters({ segment: 'mine', categoryKey: 'accommodation' }), ctx).map((e) => e.id)
+      filterBudgetItems(all, filters({ segment: 'mine', categoryKey: 'accommodation' }), ctx).map(e => e.id),
     ).toEqual([20]);
   });
 
@@ -279,7 +256,7 @@ describe('costsModel — list filters and grouping', () => {
     const mid = expense({ id: 35, expense_date: '2026-07-02' });
     const late = expense({ id: 36, expense_date: '2026-07-04' });
 
-    expect(groupByDay([undated, mid, late]).map((g) => g.dateKey)).toEqual(['2026-07-04', '2026-07-02', '']);
+    expect(groupByDay([undated, mid, late]).map(g => g.dateKey)).toEqual(['2026-07-04', '2026-07-02', '']);
   });
 
   it('FE-MOB-CMOD-017: categoryFilterKeys lists only used categories, in canonical order', () => {
@@ -315,14 +292,14 @@ describe('costsModel — list filters and grouping', () => {
     const others = settlement({ id: 2, from_user_id: 2, to_user_id: 3 });
     const list = [mine, others];
     expect(filterSettlements(list, filters({ segment: 'owed' }), 1)).toEqual([]);
-    expect(filterSettlements(list, filters({ segment: 'mine' }), 1).map((s) => s.id)).toEqual([1]);
-    expect(filterSettlements(list, filters({ segment: 'all' }), 1).map((s) => s.id)).toEqual([1, 2]);
+    expect(filterSettlements(list, filters({ segment: 'mine' }), 1).map(s => s.id)).toEqual([1]);
+    expect(filterSettlements(list, filters({ segment: 'all' }), 1).map(s => s.id)).toEqual([1, 2]);
   });
 
   it('FE-MOB-CMOD-031: filterSettlements narrows by the recorded day', () => {
     const a = settlement({ id: 1, created_at: '2026-07-01T09:00:00Z' });
     const b = settlement({ id: 2, created_at: '2026-07-02T09:00:00Z' });
-    expect(filterSettlements([a, b], filters({ dayKey: '2026-07-02' }), 1).map((s) => s.id)).toEqual([2]);
+    expect(filterSettlements([a, b], filters({ dayKey: '2026-07-02' }), 1).map(s => s.id)).toEqual([2]);
   });
 
   it('FE-MOB-CMOD-036: filterSettlements narrows by settled_at when set, over the day it was recorded', () => {
@@ -390,7 +367,7 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     const zero = expense({ total_price: 0, currency: 'USD', exchange_rate: 1.17 });
     expect(lineOf(0, zero, usdCtx, 0)).toBeNull();
     const legacy = expense({ total_price: 50, currency: 'USD', exchange_rate: 1 });
-    expect(baseTotal(legacy, usdCtx)).toBe(50);
+    expect(baseTotal(legacy, usdCtx)).toBe(0);
     expect(lineOf(50, legacy, usdCtx, 50)).toBeNull();
     const inEur = { ...usdCtx, displayCurrency: 'EUR', convert: (a: number) => a };
     expect(lineOf(801.76, hotel(), inEur, 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } });
@@ -405,8 +382,8 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     const inUsd = buildCostsCsv(items, { base: 'USD', ctx: usdCtx, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inUsd[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Amount (USD);Note');
     expect(inUsd[1]).toMatch(/;801\.76;USD;685\.26;791\.55;$/);
-    // Never booked, so counted at today's rate, as the server counts it.
-    expect(inUsd[2]).toMatch(/;115\.51;USD;100\.00;115\.51;$/);
+    // Unfrozen foreign rows keep their original amount, with blank accounting amounts.
+    expect(inUsd[2]).toMatch(/;115\.51;USD;;;$/);
     const inEur = buildCostsCsv(items, { base: 'EUR', ctx: { ...usdCtx, displayCurrency: 'EUR' }, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inEur[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Note');
   });
@@ -420,7 +397,7 @@ describe('costsModel — ledger grouping (expenses + settlement payments)', () =
 
     const groups = groupLedgerByDay([e, undatedExpense], [s]);
 
-    expect(groups.map((g) => g.dateKey)).toEqual(['2026-07-03', '2026-07-02', '']);
+    expect(groups.map(g => g.dateKey)).toEqual(['2026-07-03', '2026-07-02', '']);
     expect(groups[0].entries).toEqual([{ kind: 'payment', date: '2026-07-03', settlement: s }]);
     expect(groups[1].entries).toEqual([{ kind: 'expense', date: '2026-07-02', item: e }]);
     expect(groups[2].entries).toEqual([{ kind: 'expense', date: '', item: undatedExpense }]);
@@ -430,22 +407,18 @@ describe('costsModel — ledger grouping (expenses + settlement payments)', () =
     const e = expense({ id: 52, expense_date: '2026-07-05' });
     const s = settlement({ id: 2, created_at: '2026-07-05T08:00:00Z' });
 
-    expect(groupLedgerByDay([e], [s])).toEqual([
-      {
-        dateKey: '2026-07-05',
-        entries: [
-          { kind: 'expense', date: '2026-07-05', item: e },
-          { kind: 'payment', date: '2026-07-05', settlement: s },
-        ],
-      },
-    ]);
+    expect(groupLedgerByDay([e], [s])).toEqual([{
+      dateKey: '2026-07-05',
+      entries: [
+        { kind: 'expense', date: '2026-07-05', item: e },
+        { kind: 'payment', date: '2026-07-05', settlement: s },
+      ],
+    }]);
   });
 
   it('FE-MOB-CMOD-034: a payment on a day with no expense still creates its own day group', () => {
     const s = settlement({ id: 3, created_at: '2026-07-09T08:00:00Z' });
-    expect(groupLedgerByDay([], [s])).toEqual([
-      { dateKey: '2026-07-09', entries: [{ kind: 'payment', date: '2026-07-09', settlement: s }] },
-    ]);
+    expect(groupLedgerByDay([], [s])).toEqual([{ dateKey: '2026-07-09', entries: [{ kind: 'payment', date: '2026-07-09', settlement: s }] }]);
   });
 
   it('FE-MOB-CMOD-037: a payment groups by its own settled_at, not the day it was recorded', () => {
@@ -468,7 +441,7 @@ describe('costsModel — breakdown and presentation', () => {
     ];
     const bars = categoryBreakdown(items, ctx);
 
-    expect(bars.map((b) => b.key)).toEqual(['accommodation', 'food']);
+    expect(bars.map(b => b.key)).toEqual(['accommodation', 'food']);
     expect(bars[0]).toEqual({ key: 'accommodation', amount: 300, widthPct: 100 });
     expect(bars[1].amount).toBe(200);
     expect(bars[1].widthPct).toBeCloseTo(66.667, 3);
@@ -612,7 +585,7 @@ describe('costsModel — CSV export', () => {
   it('FE-MOB-CMOD-024: falls back to the raw ISO date when the locale is unusable', () => {
     const { content } = buildCostsCsv(
       [expense({ id: 44, name: 'Bus', category: 'transport', expense_date: '2026-07-16', total_price: 3 })],
-      { base: 'EUR', ctx, locale: '!!', t }
+      { base: 'EUR', ctx, locale: '!!', t },
     );
     expect(content.split('\r\n')[1].startsWith('2026-07-16;Bus;')).toBe(true);
   });

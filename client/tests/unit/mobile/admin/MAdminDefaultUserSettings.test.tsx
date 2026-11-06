@@ -1,14 +1,14 @@
-// FE-MOB-MDUS-001 to FE-MOB-MDUS-027
+// FE-MOB-MDUS-001 to FE-MOB-MDUS-030
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor, within, fireEvent } from '../../../helpers/render';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { server } from '../../../helpers/msw/server';
+import { resetAllStores, seedStore } from '../../../helpers/store';
+import { buildAdmin } from '../../../helpers/factories';
+import { useAuthStore } from '../../../../src/store/authStore';
 import { ToastContainer } from '../../../../src/components/shared/Toast';
 import MAdminDefaultUserSettings from '../../../../src/mobile/screens/admin/MAdminDefaultUserSettings';
-import { useAuthStore } from '../../../../src/store/authStore';
-import { buildAdmin } from '../../../helpers/factories';
-import { server } from '../../../helpers/msw/server';
-import { fireEvent, render, screen, waitFor, within } from '../../../helpers/render';
-import { resetAllStores, seedStore } from '../../../helpers/store';
 
 // The live tile preview would pull Leaflet into jsdom; the panel only needs it to render.
 vi.mock('../../../../src/components/Map/MapView', () => ({
@@ -25,30 +25,25 @@ function stubDefaults(initial: Record<string, unknown> = {}) {
   server.use(
     http.get('/api/admin/default-user-settings', () => HttpResponse.json(state)),
     http.put('/api/admin/default-user-settings', async ({ request }) => {
-      const body = (await request.json()) as Record<string, unknown>;
+      const body = await request.json() as Record<string, unknown>;
       puts.push(body);
       for (const [key, value] of Object.entries(body)) {
         if (value === null) delete state[key];
         else state[key] = value;
       }
       return HttpResponse.json({ ...state });
-    })
+    }),
   );
   return { puts, state };
 }
 
 function withToast() {
-  return render(
-    <>
-      <ToastContainer />
-      <MAdminDefaultUserSettings />
-    </>
-  );
+  return render(<><ToastContainer /><MAdminDefaultUserSettings /></>);
 }
 
 /** The reset link lives inside the field label next to its caption. */
 function resetLink(label: string): HTMLElement {
-  const holder = screen.getAllByText(label).find((el) => el.querySelector('button'));
+  const holder = screen.getAllByText(label).find(el => el.querySelector('button'));
   if (!holder) throw new Error(`no reset link next to "${label}"`);
   return within(holder).getByRole('button', { name: 'reset' });
 }
@@ -136,18 +131,16 @@ describe('MAdminDefaultUserSettings', () => {
     await screen.findByText('Default User Settings');
 
     await user.click(screen.getByRole('tab', { name: '°F Fahrenheit' }));
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: '°F Fahrenheit' })).toHaveAttribute('aria-selected', 'true')
-    );
+    await waitFor(() => expect(screen.getByRole('tab', { name: '°F Fahrenheit' })).toHaveAttribute('aria-selected', 'true'));
     await user.click(screen.getByRole('tab', { name: 'mi Imperial' }));
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: 'mi Imperial' })).toHaveAttribute('aria-selected', 'true')
-    );
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'mi Imperial' })).toHaveAttribute('aria-selected', 'true'));
     await user.click(screen.getByRole('tab', { name: '12h (2:30 PM)' }));
 
-    await waitFor(() =>
-      expect(puts).toEqual([{ temperature_unit: 'fahrenheit' }, { distance_unit: 'imperial' }, { time_format: '12h' }])
-    );
+    await waitFor(() => expect(puts).toEqual([
+      { temperature_unit: 'fahrenheit' },
+      { distance_unit: 'imperial' },
+      { time_format: '12h' },
+    ]));
   });
 
   it('FE-MOB-MDUS-008: a set default gets a reset link that clears it server-side', async () => {
@@ -162,9 +155,7 @@ describe('MAdminDefaultUserSettings', () => {
     expect(await screen.findByText('Reset to built-in default')).toBeInTheDocument();
     expect(puts).toEqual([{ temperature_unit: null }]);
     expect(state.temperature_unit).toBeUndefined();
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: '°C Celsius' })).toHaveAttribute('aria-selected', 'false')
-    );
+    await waitFor(() => expect(screen.getByRole('tab', { name: '°C Celsius' })).toHaveAttribute('aria-selected', 'false'));
   });
 
   it('FE-MOB-MDUS-009: the currency row shows the symbol and the picker saves the chosen code', async () => {
@@ -175,7 +166,7 @@ describe('MAdminDefaultUserSettings', () => {
 
     await user.click(screen.getByRole('button', { name: 'USD $' }));
     const sheet = await screen.findByRole('dialog');
-    await user.click(within(sheet).getByRole('button', { name: 'EUR — Euro' }));
+    await user.click(within(sheet).getByRole('button', { name: /^EUR/ }));
 
     await waitFor(() => expect(puts).toEqual([{ default_currency: 'EUR' }]));
     await waitFor(() => expect(screen.getByRole('button', { name: 'EUR €' })).toBeInTheDocument());
@@ -192,9 +183,7 @@ describe('MAdminDefaultUserSettings', () => {
     await user.click(toggle);
 
     await waitFor(() => expect(puts).toEqual([{ blur_booking_codes: true }]));
-    await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Blur Booking Codes' })).toHaveAttribute('aria-checked', 'true')
-    );
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Blur Booking Codes' })).toHaveAttribute('aria-checked', 'true'));
   });
 
   it('FE-MOB-MDUS-011: the tile URL is saved on blur and handed to the preview map', async () => {
@@ -237,9 +226,7 @@ describe('MAdminDefaultUserSettings', () => {
     await user.click(resetLink('Map Template'));
 
     await waitFor(() => expect(puts).toEqual([{ map_tile_url: null }]));
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText('https://tile.openstreetmap.org/{z}/{x}/{y}.png')).toHaveValue('')
-    );
+    await waitFor(() => expect(screen.getByPlaceholderText('https://tile.openstreetmap.org/{z}/{x}/{y}.png')).toHaveValue(''));
   });
 
   it('FE-MOB-MDUS-014: leaflet hides the GL-only token and style fields', async () => {
@@ -358,9 +345,7 @@ describe('MAdminDefaultUserSettings', () => {
     await screen.findByText('Map style');
 
     await user.click(screen.getByRole('switch', { name: '3D buildings & terrain' }));
-    await waitFor(() =>
-      expect(screen.getByRole('switch', { name: '3D buildings & terrain' })).toHaveAttribute('aria-checked', 'false')
-    );
+    await waitFor(() => expect(screen.getByRole('switch', { name: '3D buildings & terrain' })).toHaveAttribute('aria-checked', 'false'));
     await user.click(screen.getByRole('switch', { name: 'High-quality mode' }));
 
     await waitFor(() => expect(puts).toEqual([{ mapbox_3d_enabled: false }, { mapbox_quality_mode: true }]));
@@ -370,7 +355,7 @@ describe('MAdminDefaultUserSettings', () => {
     const user = userEvent.setup();
     server.use(
       http.get('/api/admin/default-user-settings', () => HttpResponse.json({})),
-      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 500 }))
+      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 500 })),
     );
     withToast();
     await screen.findByText('Default User Settings');
@@ -385,7 +370,7 @@ describe('MAdminDefaultUserSettings', () => {
     const user = userEvent.setup();
     server.use(
       http.get('/api/admin/default-user-settings', () => HttpResponse.json({ temperature_unit: 'celsius' })),
-      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 503 }))
+      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 503 })),
     );
     withToast();
     await screen.findByText('Default User Settings');
@@ -465,5 +450,53 @@ describe('MAdminDefaultUserSettings', () => {
     await screen.findByText('Map style');
 
     expect(screen.queryByText('Shared Mapbox token')).not.toBeInTheDocument();
+  });
+});
+
+describe('MAdminDefaultUserSettings week start (#2029)', () => {
+  it('FE-MOB-MDUS-028: the week-start segment saves its own key', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults();
+    render(<MAdminDefaultUserSettings />);
+    await screen.findByText('Default User Settings');
+
+    await user.click(screen.getByRole('tab', { name: 'Saturday' }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Saturday' })).toHaveAttribute('aria-selected', 'true'));
+    expect(puts).toEqual([{ week_start: 'saturday' }]);
+  });
+});
+
+describe('MAdminDefaultUserSettings, the routing service', () => {
+  beforeEach(() => {
+    resetAllStores();
+    seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
+  });
+
+  it('FE-MOB-MDUS-029: starts on automatic, saves a chosen service and clears it again', async () => {
+    const { puts } = stubDefaults();
+    render(<MAdminDefaultUserSettings />);
+    const picker = await screen.findByRole('combobox', { name: 'Routing service' });
+    expect(picker).toHaveValue('');
+
+    fireEvent.change(picker, { target: { value: 'trek' } });
+    await waitFor(() => expect(puts).toEqual([{ routing_valhalla_provider: 'trek' }]));
+    await waitFor(() => expect(picker).toHaveValue('trek'));
+    await waitFor(() => expect(picker).toBeEnabled());
+
+    fireEvent.change(picker, { target: { value: '' } });
+    await waitFor(() => expect(puts[1]).toEqual({ routing_valhalla_provider: null }));
+    await waitFor(() => expect(picker).toHaveValue(''));
+  });
+
+  it('FE-MOB-MDUS-030: shows the stored choice and hides it on a managed instance', async () => {
+    stubDefaults({ routing_valhalla_provider: 'fossgis' });
+    const { unmount } = render(<MAdminDefaultUserSettings />);
+    expect(await screen.findByRole('combobox', { name: 'Routing service' })).toHaveValue('fossgis');
+    unmount();
+
+    seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), managed: true });
+    render(<MAdminDefaultUserSettings />);
+    await screen.findByText('Default User Settings');
+    expect(screen.queryByRole('combobox', { name: 'Routing service' })).not.toBeInTheDocument();
   });
 });

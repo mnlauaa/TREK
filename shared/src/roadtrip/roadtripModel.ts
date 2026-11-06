@@ -77,6 +77,8 @@ export function formatClock(minutes: number): string {
 }
 
 export interface ScheduleStop {
+  /** Transport timetables stay fixed even when the incoming visit is late. */
+  timetable?: boolean;
   /**
    * Minute this stop is left at. A time of day is put on a day against the arrival (see
    * `leaveAfter`); past 1440 it is counted from the start of the day the stop is reached
@@ -148,6 +150,9 @@ export interface ScheduleEntry {
   anchored: boolean;
 
   dayOffset: number;
+  departureDayOffset?: number;
+  plannedArrival?: string | null;
+  plannedDeparture?: string | null;
 }
 
 export interface Schedule {
@@ -171,6 +176,7 @@ function resolveArrival(
   cursor: number | null,
   dayOffset: number,
   dated = false,
+  reachable = false,
 ): { arrival: number | null; lateBy: number | null } {
   if (anchor === null) return { arrival: cursor, lateBy: null };
 
@@ -178,7 +184,7 @@ function resolveArrival(
 
   // A dated anchor stays on its day: a flight is not caught by reaching the airport a day
   // late, and one reached at dawn for the afternoon is waited for, not read as yesterday's.
-  const k = dated ? 0 : Math.round((cursor - anchor) / DAY_MINUTES);
+  const k = dated ? 0 : reachable ? Math.floor(cursor / DAY_MINUTES) : Math.round((cursor - anchor) / DAY_MINUTES);
   const anchorAt = anchor + k * DAY_MINUTES;
   return {
     arrival: anchorAt,
@@ -248,6 +254,7 @@ export function scheduleStopOf(
   const leave = parseClock(stop.leaveAt);
   return {
     anchor: stop.time ?? stop.checkInTime ?? null,
+    ...(stop.carrier ? { timetable: true } : {}),
     dwellMinutes: stop.dwellMinutes,
     ...(leave === null ? {} : { departureAt: leave }),
     ...(stop.carrier?.role === 'departure' ? { dated: true } : {}),
@@ -264,7 +271,7 @@ export function scheduleStopOf(
 export function computeSchedule(
   stops: ScheduleStop[],
   legSeconds: (number | undefined)[],
-  opts: { notBefore?: number | null } = {},
+  opts: { notBefore?: number | null; reachable?: boolean; backfill?: boolean } = {},
 ): Schedule {
   const warnings: ScheduleWarning[] = [];
 
@@ -283,12 +290,14 @@ export function computeSchedule(
   for (let i = 0; i < stops.length; i++) {
     const stop = stops[i]!;
     const anchor = parseClock(stop.anchor);
-    const { arrival, lateBy } = resolveArrival(anchor, cursor, dayOffset, stop.dated);
+    const resolved = resolveArrival(anchor, cursor, dayOffset, stop.dated, opts.reachable);
+    const { lateBy } = resolved;
+    const arrival = opts.reachable && !stop.timetable && lateBy !== null ? cursor : resolved.arrival;
     if (lateBy !== null) warnings.push({ index: i, code: 'late', minutes: lateBy });
 
     if (arrival === null) {
       const leg = legSeconds[i];
-      if (stop.departureAt !== undefined) {
+      if (stop.departureAt !== undefined && (opts.backfill !== false || stop.timetable)) {
         const departure = stop.departureAt + dayOffset * DAY_MINUTES;
         departures[i]! = departure;
         if (leg !== undefined) {
@@ -307,7 +316,13 @@ export function computeSchedule(
 
     let departure = arrival + (stop.dwellMinutes ?? 0);
     if (stop.departureAt !== undefined) {
-      const left = leaveAfter(arrival, stop.departureAt, setOut);
+      const left =
+        opts.reachable && stop.dated && !stop.timetable
+          ? {
+              departure: Math.max(arrival, stop.departureAt),
+              missedBy: arrival > stop.departureAt + 1 ? Math.round(arrival - stop.departureAt) : null,
+            }
+          : leaveAfter(arrival, stop.departureAt, setOut);
       departure = left.departure;
       if (left.missedBy !== null) warnings.push({ index: i, code: 'missedLeave', minutes: left.missedBy });
     }
@@ -325,7 +340,7 @@ export function computeSchedule(
   // eight after a twelve hour stay is where the day starts, not a stop reached the evening
   // before, and reading it that way moved everything after it onto tomorrow's card.
   const firstKnown = stops.findIndex((_, i) => arrivals[i] !== null || departures[i] !== null);
-  for (let i = firstKnown; i >= 0; i--) {
+  for (let i = opts.backfill === false ? -1 : firstKnown; i >= 0; i--) {
     if (arrivals[i] !== null) continue;
     const dwell = stops[i]!.dwellMinutes ?? 0;
     const fixed = departures[i]!;
@@ -367,6 +382,13 @@ export function computeSchedule(
       departure: formatClock(left! + shift),
       anchored: anchored[i]!,
       dayOffset: offset,
+      ...(opts.reachable
+        ? {
+            departureDayOffset: Math.floor((left! + shift) / DAY_MINUTES),
+            plannedArrival: stops[i]!.anchor,
+            plannedDeparture: stops[i]!.departureAt === undefined ? null : formatClock(stops[i]!.departureAt!),
+          }
+        : {}),
     });
   }
 

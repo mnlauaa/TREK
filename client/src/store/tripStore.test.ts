@@ -98,6 +98,7 @@ describe('tripStore', () => {
         selectedDayId: 1,
         placesFilter: 'unplanned',
         placesCategoryFilter: new Set(['3']),
+        planMapViewport: { tripId: 1, south: 1, west: 1, north: 2, east: 2 },
         error: 'stale error',
       });
 
@@ -117,6 +118,8 @@ describe('tripStore', () => {
       expect(state.selectedDayId).toBeNull();
       expect(state.placesFilter).toBe('all');
       expect(state.placesCategoryFilter.size).toBe(0);
+      // The next trip's search must not lean on where this trip's map was.
+      expect(state.planMapViewport).toBeNull();
       expect(state.error).toBeNull();
       // Global lookups survive a trip switch.
       expect(state.tags.map(t => t.id)).toEqual([5]);
@@ -313,7 +316,7 @@ describe('tripStore', () => {
 
     it('FE-TSTORE-009: one failing resource does not wipe the others', async () => {
       const stalePlace = buildPlace({ id: 111, trip_id: 1, name: 'Kept' });
-      seedStore(useTripStore, { places: [stalePlace], packingItems: [], todoItems: [] });
+      seedStore(useTripStore, { trip: buildTrip({ id: 1 }), places: [stalePlace], packingItems: [], todoItems: [] });
       vi.spyOn(console, 'error').mockImplementation(() => {});
 
       server.use(
@@ -516,6 +519,19 @@ describe('tripStore', () => {
       window.removeEventListener('accommodations:refresh', listener);
     });
 
+    it('FE-TSTORE-019d: asks the planner to reload accommodations when a place or a stay is deleted elsewhere', () => {
+      // A deleted place takes the night booked at it along, and the stays live in the planner.
+      seedStore(useTripStore, { places: [buildPlace({ id: 500, trip_id: 1 })] });
+      const listener = vi.fn();
+      window.addEventListener('accommodations:refresh', listener);
+
+      useTripStore.getState().handleRemoteEvent({ type: 'place:deleted', placeId: 500 });
+      useTripStore.getState().handleRemoteEvent({ type: 'accommodation:deleted', accommodationId: 70 });
+
+      expect(listener).toHaveBeenCalledTimes(2);
+      window.removeEventListener('accommodations:refresh', listener);
+    });
+
     it('FE-TSTORE-019c: does not reload accommodations for an edit that leaves the image alone', () => {
       const place = buildPlace({ id: 500, trip_id: 1, name: 'Before', image_url: '/uploads/places/a.jpg' });
       seedStore(useTripStore, { places: [place] });
@@ -531,4 +547,19 @@ describe('tripStore', () => {
       window.removeEventListener('accommodations:refresh', listener);
     });
   });
+});
+
+it('receives collaborator visit timing and day preferences without changing place or booking times', async () => {
+  const place = buildPlace({ id: 500, trip_id: 1, place_time: '10:00' });
+  const visit = buildAssignment({ id: 900, day_id: 1, place });
+  const booking = buildReservation({ id: 800, reservation_time: '10:00' });
+  const day = buildDay({ id: 1, trip_id: 1, assignments: [visit] });
+  seedStore(useTripStore, { days: [day], assignments: { '1': [visit] }, places: [place], reservations: [booking] });
+  useTripStore.getState().handleRemoteEvent({ type: 'assignment:updated', assignment: { ...visit, stay_minutes: 0, times_explicit: true, assignment_time: null } });
+  const timing = { enabled: true, start: '09:00', travel: [] };
+  useTripStore.getState().handleRemoteEvent({ type: 'day:updated', day: { ...day, timing } });
+  expect(useTripStore.getState().assignments['1'][0]).toMatchObject({ stay_minutes: 0, times_explicit: true, assignment_time: null });
+  expect(useTripStore.getState().days[0].timing).toEqual(timing);
+  expect(useTripStore.getState().places[0].place_time).toBe('10:00');
+  expect(useTripStore.getState().reservations[0].reservation_time).toBe('10:00');
 });

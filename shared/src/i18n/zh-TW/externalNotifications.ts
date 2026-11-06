@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const zhTW: NotificationLocale = {
   email: {
@@ -25,20 +26,20 @@ const zhTW: NotificationLocale = {
       body: `「${p.trip}」中的「${p.todo}」將於 ${p.due} 到期。`,
     }),
     vacay_invite: (p) => ({
-      title: '假期融合邀請',
+      title: 'Vacay 融合邀請',
       body: `${p.actor} 邀請您合併假期計畫。開啟 TREK 以接受或拒絕。`,
     }),
     vacay_share: (p) => ({
-      title: '已分享假期行事曆',
-      body: `${p.actor} 與您分享了假期行事曆。開啟 TREK 即可查看。`,
+      title: 'Vacay 日曆已共享',
+      body: `${p.actor} 與您共享了假期日曆。開啟 TREK 以檢視。`,
     }),
     collection_invite: (p) => ({
       title: '收藏邀請',
       body: `${p.actor} 邀請您共享收藏。開啟 TREK 以接受或拒絕。`,
     }),
     photos_shared: (p) => ({
-      title: `已分享 ${p.count} 張照片`,
-      body: `${p.actor} 在「${p.trip}」中分享了 ${p.count} 張照片。`,
+      title: pluralForm(p.count, 'zh-TW', { other: `已分享 ${p.count} 張照片` }),
+      body: pluralForm(p.count, 'zh-TW', { other: `${p.actor} 在「${p.trip}」中分享了 ${p.count} 張照片。` }),
     }),
     collab_message: (p) => ({
       title: `「${p.trip}」中的新訊息`,
@@ -53,14 +54,29 @@ const zhTW: NotificationLocale = {
       body: `TREK ${p.version} 現已可用。請前往管理面板進行更新。`,
     }),
     replica_failure: (p) => ({
-      title: '儲存空間複寫失敗',
+      title: '儲存複本故障',
       body:
-        `複寫至「${p.backend}」時失敗：${p.op} ${p.key} — ${p.error}。` +
-        (p.suppressed !== '0' ? ` 自上次通知後另有 ${p.suppressed} 次失敗未逐一通知。` : ''),
+        `寫入複本 '${p.backend}' 失敗：${p.op} / ${p.key} — ${p.error}。` +
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'zh-TW', { other: `自上次通知以來，另有 ${p.suppressed} 次失敗未個別通知。` })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: '划槳區域申請',
+      body: `${p.actor} 正在 ${p.region} 規劃划槳行程。請在管理後台的附加元件中載入或拒絕其水域資料。`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology 工作階段已清除',
       body: '您的 Synology 帳戶或 URL 已變更，您已登出 Synology Photos。',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer 路線: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `「${p.trip}」中的「${p.tour}」已在 wanderer 中變更。開啟行程並檢查其來源即可查看所有變更。旅行中的內容不會自行改變。`
+          : p.state === 'unverifiable'
+            ? `「${p.trip}」中的「${p.tour}」已無法在 wanderer 中檢查。你旅行中的行程保持不變。`
+            : `「${p.trip}」中的「${p.tour}」可能已在 wanderer 中變更。請開啟行程並檢查其來源。旅行中的內容不會自行改變。`,
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

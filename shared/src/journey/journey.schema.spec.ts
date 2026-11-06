@@ -8,6 +8,13 @@ import {
   journeyUpdateRequestSchema,
   journeyPreferencesRequestSchema,
   journeyLinkPhotoRequestSchema,
+  journeyEntriesRangeSchema,
+  journeyEntryProsConsSchema,
+  journeyEntryTypeSchema,
+  journeyEntryVisibilitySchema,
+  journeyCreateToolSchema,
+  journeyUpdateToolSchema,
+  journeyTrackSchema,
 } from './journey.schema';
 
 import { describe, it, expect } from 'vitest';
@@ -87,6 +94,12 @@ describe('journeyShareLinkRequestSchema', () => {
     // The controller coerces with !!; a string flag has always worked.
     expect(journeyShareLinkRequestSchema.safeParse({ share_map: 'true' }).success).toBe(true);
   });
+
+  it('takes the plan and recordings flags as booleans only, being new (JRN-04)', () => {
+    expect(journeyShareLinkRequestSchema.safeParse({ share_plan: true, share_recordings: false }).success).toBe(true);
+    expect(journeyShareLinkRequestSchema.safeParse({ share_plan: 'true' }).success).toBe(false);
+    expect(journeyShareLinkRequestSchema.safeParse({ share_recordings: 1 }).success).toBe(false);
+  });
 });
 
 describe('the free-form bodies keep their unknown keys', () => {
@@ -105,5 +118,61 @@ describe('the free-form bodies keep their unknown keys', () => {
       journey_photo_id: 4,
       extra: true,
     });
+  });
+});
+
+describe('the entry enums and the range of a read', () => {
+  it('JRNSCH-001: names the entry types and visibilities a row can hold, nothing else', () => {
+    expect(journeyEntryTypeSchema.options).toEqual(['entry', 'checkin', 'skeleton']);
+    expect(journeyEntryVisibilitySchema.options).toEqual(['private', 'shared', 'public']);
+    expect(journeyEntryVisibilitySchema.safeParse('friends-only').success).toBe(false);
+  });
+
+  it('JRNSCH-002: a verdict sent half fills the other half with an empty list and refuses extra keys', () => {
+    expect(journeyEntryProsConsSchema.parse({ pros: ['view'] })).toEqual({ pros: ['view'], cons: [] });
+    expect(journeyEntryProsConsSchema.safeParse({ pros: [], cons: [], extra: 1 }).success).toBe(false);
+  });
+
+  it('JRNSCH-003: a range takes calendar days at either end, both optional', () => {
+    expect(journeyEntriesRangeSchema.parse({})).toEqual({});
+    expect(journeyEntriesRangeSchema.parse({ from: '2026-10-21', to: '2026-10-22' })).toEqual({
+      from: '2026-10-21',
+      to: '2026-10-22',
+    });
+    expect(journeyEntriesRangeSchema.safeParse({ from: '2026-02-30' }).success).toBe(false);
+    expect(journeyEntriesRangeSchema.safeParse({ to: 'yesterday' }).success).toBe(false);
+  });
+});
+
+describe('journeyTrackSchema', () => {
+  const track = { place_id: -1, trip_id: 0, name: 'Day', color: null, points: [[48.1, 11.5]], kind: 'day_recording' };
+
+  it('JRNSCH-004: a recorded line may name its calendar day, a GPX track leaves it out', () => {
+    expect(journeyTrackSchema.parse({ ...track, date: '2026-10-29' }).date).toBe('2026-10-29');
+    expect(journeyTrackSchema.parse({ ...track, kind: 'trip_gpx' }).date).toBeUndefined();
+  });
+
+  it('JRNSCH-005: refuses a day that is not a calendar day', () => {
+    expect(journeyTrackSchema.safeParse({ ...track, date: '29. Oktober' }).success).toBe(false);
+    expect(journeyTrackSchema.safeParse({ ...track, date: '2026-02-30' }).success).toBe(false);
+  });
+});
+
+describe('the journey tool arguments', () => {
+  it('JSCHEMA-TOOL-001: a new journey needs a title and refuses what the tool does not take', () => {
+    expect(journeyCreateToolSchema.parse({ title: 'Japan', trip_ids: [5] })).toEqual({ title: 'Japan', trip_ids: [5] });
+    expect(journeyCreateToolSchema.safeParse({ title: '' }).success).toBe(false);
+    expect(journeyCreateToolSchema.safeParse({ title: 'x'.repeat(201) }).success).toBe(false);
+    expect(journeyCreateToolSchema.safeParse({ title: 'Japan', cover: 'x' }).success).toBe(false);
+  });
+
+  it('JSCHEMA-TOOL-002: an update takes the trip tracks and the cover gradient, and null for the subtitle', () => {
+    const update = { show_trip_tracks: true, cover_gradient: null, subtitle: null, status_override: null };
+    expect(journeyUpdateToolSchema.parse(update)).toEqual(update);
+    expect(journeyUpdateToolSchema.safeParse({ status: 'upcoming' }).success).toBe(false);
+    expect(journeyUpdateToolSchema.safeParse({ status_override: 'active' }).success).toBe(false);
+    expect(journeyUpdateToolSchema.safeParse({ title: null }).success).toBe(false);
+    expect(journeyUpdateToolSchema.safeParse({ show_mood: 'yes' }).success).toBe(false);
+    expect(journeyUpdateToolSchema.safeParse({ cover_gradient: 'x'.repeat(201) }).success).toBe(false);
   });
 });

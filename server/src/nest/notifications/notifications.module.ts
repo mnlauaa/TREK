@@ -1,5 +1,11 @@
+import { AppSettings } from '../../db/entities/AppSettings.entity';
+import { NotificationChannelPreferences } from '../../db/entities/NotificationChannelPreferences.entity';
+import { Notifications } from '../../db/entities/Notifications.entity';
+import { Settings } from '../../db/entities/Settings.entity';
+import { TodoItems } from '../../db/entities/TodoItems.entity';
+import { Trips } from '../../db/entities/Trips.entity';
+import { WebPushSubscriptions } from '../../db/entities/WebPushSubscriptions.entity';
 import { AuditModule } from '../audit/audit.module';
-import { AuthModule } from '../auth/auth.module';
 import { SchedulingModule } from '../scheduling/scheduling.module';
 import { StorageModule } from '../storage/storage.module';
 import { MailerModule } from './mailer/mailer.module';
@@ -7,36 +13,45 @@ import { NotificationPreferencesService } from './notification-preferences.servi
 import { AdminNotificationPreferencesController, NotificationsController } from './notifications.controller';
 import { NotificationsMcp } from './notifications.mcp';
 import { NotificationsService } from './notifications.service';
+import { PushController } from './push/push.controller';
+import { VapidKeysService } from './push/vapid-keys.service';
 import { ReminderJobsService } from './reminder-jobs.service';
 import { StorageHealthNotifierService } from './storage-health-notifier.service';
 import { NtfyService } from './transports/ntfy.service';
+import { WebPushService } from './transports/web-push.service';
 import { WebhookService } from './transports/webhook.service';
-import { WebPushService } from './web-push.service';
+import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { Module } from '@nestjs/common';
 
-/** Notifications domain (L6 leaf module). Registered in AppModule.
- *  AuthModule feeds NotificationsMcp's demo gate; MailerModule carries SMTP,
- *  which lives outside this module so AuthService can send the password-reset
- *  mail without AuthModule and NotificationsModule importing each other.
- *  StorageModule feeds StorageHealthNotifierService, which bridges replica
- *  failures into admin notifications — this direction has no cycle (Storage
- *  imports only AppConfig+Audit+Scheduling).
- *  NotificationsService and NotificationPreferencesService are exported for
- *  in-container consumers (AdminController's dev test send and preferences tab,
- *  the plugin RPC surface, HostSurfaceRpc). */
 @Module({
-  imports: [AuthModule, MailerModule, SchedulingModule, StorageModule, AuditModule],
-  controllers: [NotificationsController, AdminNotificationPreferencesController],
+  imports: [
+    MikroOrmModule.forFeature([
+      Notifications,
+      NotificationChannelPreferences,
+      AppSettings,
+      Settings,
+      Trips,
+      TodoItems,
+      WebPushSubscriptions,
+    ]),
+
+    AuditModule,
+    MailerModule,
+    SchedulingModule,
+    StorageModule,
+  ],
+  controllers: [NotificationsController, AdminNotificationPreferencesController, PushController],
   providers: [
     NotificationsService,
     NotificationPreferencesService,
     WebhookService,
     NtfyService,
+    WebPushService,
+    VapidKeysService,
     NotificationsMcp,
     ReminderJobsService,
     StorageHealthNotifierService,
-    WebPushService,
   ],
-  exports: [NotificationsService, NotificationPreferencesService, WebPushService],
+  exports: [NotificationsService, NotificationPreferencesService],
 })
 export class NotificationsModule {}

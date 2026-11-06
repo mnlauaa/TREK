@@ -1,6 +1,21 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': '시간 자동 계산',
+  'timing.fixedStart': '시작 시간 지정',
+  'timing.fixedEnd': '종료 시간 지정',
+  'timing.help': '체류 및 이동 시간을 기준으로 도착과 출발 시간을 계산합니다.',
+  'timing.fixedEndHint': '종료 시간을 지정하면 체류 시간이 결정됩니다. 체류 시간을 수정하려면 종료 시간을 비워 두세요.',
+  'timing.travelMissing': '이동 시간 미설정',
+  'timing.arrival': '예상 도착',
+  'timing.departure': '예상 출발',
+  'timing.fixed': '시간 지정',
+  'timing.unknown': '미정',
+  'timing.bookingConflict': '예상 방문 시간이 이 예약 시간을 포함하지 않습니다.',
+  'timing.booking': '예약 보기',
+  'timing.travel': '이동 시간(분)',
+  'timing.dayOffset': '+{count}일',
+
   'roadtrip.stay.portals': '숙소 찾기',
   'roadtrip.stay.portalHint': '포털에서 목적지, 날짜, 인원을 확인하세요. CHECK24에서는 직접 검색하세요.',
   'roadtrip.charging.available': '이용 가능',
@@ -55,7 +70,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.window.incomplete': '매일 휴식을 계산하려면 모든 연결 경로가 필요합니다.',
   'roadtrip.window.conflict':
     '고정 시간이 이동 및 휴식과 충돌합니다. 수동 시간은 유지되며 자동 계획이 일시 중지됩니다.',
-  'roadtrip.window.tooLong': '이 시간 설정에는 {days}일이 넘는 추가 날짜가 필요합니다. 일일 이동 시간을 늘려 주세요.',
+  'roadtrip.window.tooLong': '이 시간 설정에는 {count}일이 넘는 추가 날짜가 필요합니다. 일일 이동 시간을 늘려 주세요.',
   'roadtrip.mode.roadtrip': '로드트립',
   'roadtrip.mode.days': '일자별',
   'roadtrip.mode.label': '계획 보기',
@@ -68,7 +83,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.poi.scope': '날짜',
   'roadtrip.poi.looking': '찾는 항목',
   'roadtrip.poi.searchingHint': '경로를 검색하는 중…',
-  'roadtrip.poi.found': '경로에 {count}곳',
+  'roadtrip.poi.found': '경로상 {count}곳',
   'roadtrip.poi.fuel': '주유',
   'roadtrip.poi.charging': '충전',
   'roadtrip.stop.offRoad': '도로에서 {distance}',
@@ -101,8 +116,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.limit.minutes': '분',
   'roadtrip.limit.off': '끔',
   'roadtrip.limit.blockNote': '한 블록 = {distance}',
-  'roadtrip.limit.echoOver': '{days}일 중 {over}일이 한도 초과.',
-  'roadtrip.limit.echoNone': '{days}일 모두 한도 안입니다.',
+  'roadtrip.limit.echoOver': '{count}일 중 {over}일이 한도 초과.',
+  'roadtrip.limit.echoNone': '{count}일 모두 한도 안입니다.',
   'roadtrip.limit.echoDry': '도달 가능한 정차지가 없는 구간 {count}곳.',
   'roadtrip.limit.echoEmpty': '로드트립을 열면 효과가 보입니다.',
   'roadtrip.limit.specToggle': '차량 데이터로 계산하기',
@@ -188,7 +203,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.poi.noneMatchFilters': '이 필터에 맞는 곳이 경로에 없습니다.',
   'roadtrip.poi.foundFiltered': '경로상 {total}곳 중 {count}곳',
   'roadtrip.poi.truncated':
-    '{count}개 구간에서 한 번에 반환할 수 있는 수를 넘었습니다. 회랑을 좁히면 나머지를 볼 수 있습니다.',
+    '{count}개 구간은 결과가 너무 많아 한 번에 모두 표시하지 못했습니다. 검색 반경을 줄이면 나머지를 볼 수 있습니다.',
   'roadtrip.poi.search': '검색',
   'roadtrip.poi.searching': '검색 중 {done}/{total}',
   'roadtrip.poi.capped': '경로가 길어 앞부분만 검색했습니다.',
@@ -257,8 +272,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.stop.computed': '주행 시간으로 계산됨',
   'roadtrip.stop.endIsLeave': '로드트립에서는 이 시간에 출발합니다.',
   'roadtrip.via.hint': '끌어서 경로를 바꾸고, 오른쪽 클릭으로 삭제',
-  'roadtrip.warn.late': '지정한 시간보다 {minutes}분 늦게 도착',
-  'roadtrip.warn.missedLeave': '지정한 출발 시간보다 {minutes}분 늦게 도착',
+  'roadtrip.warn.late': '지정한 시간보다 {count}분 늦게 도착',
+  'roadtrip.warn.missedLeave': '지정한 출발 시간보다 {count}분 늦게 도착',
   'roadtrip.warn.overnight': '다음 날',
   'roadtrip.spill.title': '{number}일차에서',
   'roadtrip.spill.departs': '{time} 출발',
@@ -289,7 +304,6 @@ const roadtrip: TranslationStrings = {
   'roadtrip.ride.undated': '{title}은(는) 이 여행의 어느 날에도 속하지 않아 주행에 반영되지 않습니다.',
   'roadtrip.bookings.loose': '이날의 다른 예약',
   'roadtrip.ride.departureFlight': '출발 {time}',
-  'roadtrip.ride.duration': '예약 기준 소요 시간',
   'roadtrip.ride.checkIn': '체크인',
   'roadtrip.ride.boarding': '탑승',
   'roadtrip.ride.missed': '놓침',
@@ -312,5 +326,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.bookend.checkIn': '체크인',
   'roadtrip.bookend.afterCheckOut': '체크아웃 후 출발',
   'roadtrip.bookend.noVia': '숙소를 오가는 구간에는 경유지를 둘 수 없습니다. 대신 그곳에 정차 지점을 추가하세요.',
+  'roadtrip.stay.untilHint':
+    '이 방문에는 종료 시각이 있어 {time}에 출발합니다. 체류 시간을 설정하려면 열어서 종료 시각 삭제를 선택하세요.',
 };
 export default roadtrip;

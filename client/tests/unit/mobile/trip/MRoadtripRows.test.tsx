@@ -112,16 +112,16 @@ describe('RtStopRow', () => {
     render(<RtStopRow row={stopRow({ pinned: true })} chrome={chrome} onOpen={vi.fn()} />)
 
     expect(screen.getByLabelText('roadtrip.stop.pinned')).toBeInTheDocument()
-    expect(screen.getByText('12:40').className).toContain('text-m-ink')
+    expect(screen.getByText('12:40').closest('[dir="ltr"]')?.className).toContain('text-m-ink')
   })
 
   it('FE-MOB-RTROW-006: leaves a computed time unpinned and muted', () => {
     render(<RtStopRow row={stopRow()} chrome={chrome} onOpen={vi.fn()} />)
 
     expect(screen.queryByLabelText('roadtrip.stop.pinned')).toBeNull()
-    const time = screen.getByText('12:40')
-    expect(time.className).toContain('text-m-faint')
-    expect(time.className).not.toContain('text-m-ink')
+    const time = screen.getByText('12:40').closest('[dir="ltr"]')
+    expect(time?.className).toContain('text-m-faint')
+    expect(time?.className).not.toContain('text-m-ink')
   })
 
   it('FE-MOB-RTROW-007: prints no clock for a stop the schedule could not time', () => {
@@ -160,7 +160,7 @@ describe('RtStopRow', () => {
     const { container } = render(<RtStopRow row={stopRow({ warning })} chrome={chrome} onOpen={vi.fn()} />)
 
     expect(screen.getByText('+25 min')).toBeInTheDocument()
-    expect(container.querySelector('.lucide-alert-triangle')).not.toBeNull()
+    expect(container.querySelector('.lucide-triangle-alert')).not.toBeNull()
   })
 
   it('FE-MOB-RTROW-011: writes a range warning as the distance driven since the last fill', () => {
@@ -247,7 +247,7 @@ describe('RtStopRow', () => {
 
     const { container } = render(<RtStopRow row={stopRow({ warning: { index: 1, code: 'missedLeave', minutes: 20 } })} chrome={chrome} onOpen={vi.fn()} />)
     expect(screen.getByText('+20 min')).toBeInTheDocument()
-    expect(container.querySelector('.lucide-alert-triangle')).not.toBeNull()
+    expect(container.querySelector('.lucide-triangle-alert')).not.toBeNull()
     // It used to fall through to the night's word.
     expect(screen.queryByText('roadtrip.warn.overnight')).toBeNull()
   })
@@ -380,7 +380,7 @@ describe('RtRideRow', () => {
     const mark = screen.getByRole('img', { name: 'roadtrip.ride.lateHintFlight:LH 2020,13:20,12:20,Hamburg Airport,21:59' })
     expect(mark).toHaveTextContent('roadtrip.ride.missed')
     expect(within(mark).getByText('roadtrip.ride.reachedAt:21:59')).toBeInTheDocument()
-    expect(mark.querySelector('.lucide-alert-triangle')).not.toBeNull()
+    expect(mark.querySelector('.lucide-triangle-alert')).not.toBeNull()
     expect(screen.getByRole('button').className).toContain('border-[color:var(--m-st-pending)]')
   })
 

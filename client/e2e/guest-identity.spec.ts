@@ -2,7 +2,7 @@ import { devices, expect, test, type APIRequestContext, type APIResponse, type P
 import type { BudgetItem, BudgetSettlement, Trip, TripMember } from '@trek/shared';
 import { randomUUID } from 'node:crypto';
 
-const baseURL = process.env.TREK_TEST_URL ?? 'http://localhost:5173';
+const baseURL = process.env.TREK_TEST_URL ?? `http://localhost:${process.env.E2E_WEB_PORT || 5173}`;
 const password = 'BrowserGuestTest123!';
 const guestName = 'Guest Traveler';
 const expenseName = 'Guest rail fare';
@@ -97,7 +97,7 @@ async function join(page: Page, fixture: Fixture) {
 }
 
 function payment(page: Page, from: string, to: string) {
-  return page.getByText(`${from} → ${to}`, { exact: true });
+  return page.getByText(`${from} → ${to}`, { exact: true }).and(page.locator(':not(.sr-only)'));
 }
 
 const sorted = <T extends { id: number }>(rows: T[]) => [...rows].sort((a, b) => a.id - b.id);
@@ -199,13 +199,15 @@ for (const [viewport, device] of [
       await expect(payment(page, owner.username, guestName)).toHaveCount(0);
       if (viewport === 'desktop') {
         const expense = page.locator('.exp-row').filter({ hasText: expenseName });
-        await expect(expense.getByTitle('You', { exact: true })).toBeVisible();
-        await expect(expense.getByTitle(guestName, { exact: true })).toHaveCount(0);
+        await expense.locator('span.bg-surface-card.border').first().hover();
+        await expect(page.getByRole('tooltip')).toHaveText('You');
+        await expect(expense).not.toContainText(guestName);
         await expect(payment(admin, account.username, 'You')).toBeVisible();
         await expect(payment(admin, 'You', account.username)).toBeVisible();
         const ownerExpense = admin.locator('.exp-row').filter({ hasText: expenseName });
-        await expect(ownerExpense.getByTitle(account.username, { exact: true })).toBeVisible();
-        await expect(ownerExpense.getByTitle(guestName, { exact: true })).toHaveCount(0);
+        await ownerExpense.locator('span.bg-surface-card.border').first().hover();
+        await expect(admin.getByRole('tooltip')).toHaveText(account.username);
+        await expect(ownerExpense).not.toContainText(guestName);
         expect(await admin.evaluate(() => performance.timeOrigin)).toBe(ownerDocument);
       }
       expect(await page.evaluate(() => performance.timeOrigin)).toBe(claimantDocument);

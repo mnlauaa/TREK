@@ -1,7 +1,8 @@
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTripWebSocket } from '../../../src/hooks/useTripWebSocket';
 import { useTripStore } from '../../../src/store/tripStore';
+import { buildTrip } from '../../helpers/factories';
 
 vi.mock('../../../src/api/websocket', () => ({
   connect: vi.fn(),
@@ -71,27 +72,22 @@ describe('useTripWebSocket', () => {
     expect(registeredFunctions).toContain(handler);
   });
 
-  it('FE-HOOK-WS-006b: collab and fork synchronization listeners are registered', () => {
-    const { unmount } = renderHook(() => useTripWebSocket(42));
-    // handleRemoteEvent + collabFileSync + forkSync
-    expect((wsMock.addListener as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
+  it('FE-HOOK-WS-006b: collab file sync and Tours invalidation listeners are registered', () => {
+    const onToursChanged = vi.fn();
+    const { unmount } = renderHook(() => useTripWebSocket(42, onToursChanged));
+    const addListenerCalls = (wsMock.addListener as ReturnType<typeof vi.fn>).mock.calls;
+    // Listener order: handleRemoteEvent, collabFileSync, Tours invalidation.
+    expect(addListenerCalls).toHaveLength(3);
+    const toursInvalidation = addListenerCalls[2]?.[0];
+    expect(toursInvalidation).toBeTypeOf('function');
+
+    act(() => {
+      toursInvalidation({ type: 'tours:changed', tripId: 42, placeIds: [101, 102] });
+      toursInvalidation({ type: 'tours:changed', tripId: 43, placeIds: [201] });
+    });
+    expect(onToursChanged).toHaveBeenCalledExactlyOnceWith({ placeIds: [101, 102] });
     unmount();
-  });
-
-  it('FE-HOOK-WS-006f: fork events refresh their authoritative trip slices', () => {
-    const loadBudgetItems = vi.fn();
-    const refreshAfterGuestTransfer = vi.fn();
-    useTripStore.setState({ loadBudgetItems, refreshAfterGuestTransfer });
-    renderHook(() => useTripWebSocket(42));
-
-    const forkSync = (wsMock.addListener as ReturnType<typeof vi.fn>).mock.calls[2]?.[0];
-    act(() => forkSync({ type: 'budget:exchange-rates-applied' }));
-    act(() => forkSync({ type: 'guest:identity-transferred', tripId: '99' }));
-    expect(refreshAfterGuestTransfer).not.toHaveBeenCalled();
-    act(() => forkSync({ type: 'guest:identity-transferred', tripId: '42' }));
-
-    expect(loadBudgetItems).toHaveBeenCalledWith(42);
-    expect(refreshAfterGuestTransfer).toHaveBeenCalledExactlyOnceWith(42);
+    expect(wsMock.removeListener).toHaveBeenCalledWith(toursInvalidation);
   });
 
   it('FE-HOOK-WS-006c: collab file sync listener reacts to collab:note:deleted events', () => {
@@ -147,5 +143,40 @@ describe('useTripWebSocket', () => {
   it('FE-HOOK-WS-007: no joinTrip call when tripId is undefined', () => {
     renderHook(() => useTripWebSocket(undefined));
     expect(wsMock.joinTrip).not.toHaveBeenCalled();
+  });
+
+  it('refreshes only the active trip for guest transfers and exchange-rate changes', () => {
+    const initial = useTripStore.getState();
+    const hydrateActiveTrip = vi.fn().mockResolvedValue(undefined);
+    const loadBudgetItems = vi.fn().mockResolvedValue(undefined);
+    useTripStore.setState({ trip: buildTrip({ id: 42 }), hydrateActiveTrip, loadBudgetItems });
+    try {
+      renderHook(() => useTripWebSocket(42));
+      const listeners = vi.mocked(wsMock.addListener).mock.calls.map(([listener]) => listener);
+      const emit = (type: string, tripId: number) => {
+        act(() => {
+          for (const listener of listeners) listener({ type, tripId });
+        });
+      };
+
+      emit('guest:identity-transferred', 43);
+      emit('budget:exchange-rates-applied', 43);
+      expect(hydrateActiveTrip).not.toHaveBeenCalled();
+      expect(loadBudgetItems).not.toHaveBeenCalled();
+
+      emit('guest:identity-transferred', 42);
+      expect(hydrateActiveTrip).toHaveBeenCalledExactlyOnceWith(42);
+      expect(useTripStore.getState().guestIdentityRevision).toBe(initial.guestIdentityRevision + 1);
+
+      emit('budget:exchange-rates-updated', 42);
+      expect(useTripStore.getState().exchangeRatesRevision).toBe(initial.exchangeRatesRevision + 1);
+      expect(loadBudgetItems).not.toHaveBeenCalled();
+
+      emit('budget:exchange-rates-applied', 42);
+      expect(loadBudgetItems).toHaveBeenCalledExactlyOnceWith(42);
+      expect(useTripStore.getState().budgetSettlementRevision).toBe(initial.budgetSettlementRevision);
+    } finally {
+      useTripStore.setState(initial, true);
+    }
   });
 });

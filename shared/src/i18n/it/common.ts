@@ -7,6 +7,7 @@ const common: TranslationStrings = {
   'common.cancel': 'Annulla',
   'common.clear': 'Cancella',
   'common.delete': 'Elimina',
+  'common.remove': 'Rimuovi',
   'common.preview': 'Anteprima',
   'common.edit': 'Modifica',
   'common.add': 'Aggiungi',
@@ -28,16 +29,19 @@ const common: TranslationStrings = {
   'common.confirm': 'Conferma',
   'common.ok': 'OK',
   'common.yes': 'Sì',
-  'common.no': 'No',
+  'common.no': 'No', // same-as-en
   'common.or': 'o',
   'common.none': 'Nessuno',
   'common.date': 'Data',
   'common.rename': 'Rinomina',
   'common.discardChanges': 'Scarta modifiche',
   'common.discard': 'Scarta',
+  'common.unsavedTitle': 'Scartare le modifiche?',
+  'common.unsavedMessage': 'Quello che hai inserito qui non è ancora stato salvato.',
+  'common.keepEditing': 'Continua a modificare',
   'common.name': 'Nome',
-  'common.email': 'Email',
-  'common.password': 'Password',
+  'common.email': 'Email', // same-as-en
+  'common.password': 'Password', // same-as-en
   'common.saving': 'Salvataggio...',
   'common.saved': 'Salvato',
   'common.expand': 'Espandi',
@@ -51,7 +55,9 @@ const common: TranslationStrings = {
   'common.copied': 'Copiato',
   'common.justNow': 'proprio ora',
   'common.hoursAgo': '{count}h fa',
+  'common.hoursAgo.one': '{count}h fa',
   'common.daysAgo': '{count}g fa',
+  'common.daysAgo.one': '{count}g fa',
   'common.datepicker.prevMonth': 'Mese precedente',
   'common.datepicker.nextMonth': 'Mese prossimo',
   'common.datepicker.prevYear': 'Anno precedente',
@@ -74,12 +80,6 @@ const common: TranslationStrings = {
   'common.errorUpdateBody':
     'TREK è stato aggiornato mentre questa scheda era aperta. Ricarica per ottenere la nuova versione.',
   'common.errorPluginTitle': 'Impossibile mostrare questo plugin',
-  'legal.title': 'Legal & source',
-  'legal.description': 'License information and the exact source code for this deployed version.',
-  'legal.agpl':
-    'This application is licensed under the GNU Affero General Public License version 3. Remote users may obtain the corresponding source code at no charge.',
-  'legal.license': 'Read the license',
-  'legal.source': 'Corresponding source',
-  'legal.sourceDescription': 'Source code for this deployed build:',
+  'common.needsConnection': 'Serve una connessione. Riprova quando TREK tornerà online.',
 };
 export default common;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useTranslation } from '../../i18n';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -15,19 +15,13 @@ export default function DepartureCountdownBoard({
   const { t, locale } = useTranslation();
   const timeFormat = useSettingsStore((state) => state.settings.time_format);
   const [now, setNow] = useState(() => Date.now());
-  const completedTarget = useRef<number | null>(null);
 
   useEffect(() => {
-    completedTarget.current = null;
-    setNow(Date.now());
     let intervalId: number | undefined;
     const tick = () => {
       const next = Date.now();
       setNow(next);
-      if (next >= departure.departureAt && completedTarget.current !== departure.departureAt) {
-        completedTarget.current = departure.departureAt;
-        if (intervalId !== undefined) window.clearInterval(intervalId);
-      }
+      if (next >= departure.departureAt && intervalId !== undefined) window.clearInterval(intervalId);
     };
     const nowMs = Date.now();
     const timeoutId = window.setTimeout(
@@ -65,15 +59,15 @@ export default function DepartureCountdownBoard({
       aria-live="off"
       data-testid="departure-countdown-board"
       className={
-        compact ? 'mt-2 rounded-xl bg-black/25 px-3 py-2 text-white backdrop-blur-md' : 'departure-countdown-board'
+        compact
+          ? 'mt-2 rounded-xl bg-black/25 px-3 py-2 text-white backdrop-blur-md' // theme-lint-disable — fixed dark glass on the cover photo
+          : 'departure-countdown-board'
       }
     >
       <div
-        className={
-          compact ? 'mb-1 flex items-center justify-between gap-2 text-[0.625rem]' : 'departure-countdown-head'
-        }
+        className={compact ? 'mb-1 flex items-center justify-between gap-2 text-caption' : 'departure-countdown-head'}
       >
-        <span className={compact ? 'font-bold uppercase tracking-wider' : 'departure-countdown-title'}>
+        <span className={compact ? 'shrink-0 font-bold uppercase tracking-wider' : 'departure-countdown-title'}>
           {t('dashboard.hero.departureIn')}
         </span>
         <span className={compact ? 'truncate opacity-80' : 'departure-countdown-transport'}>
@@ -86,10 +80,10 @@ export default function DepartureCountdownBoard({
       >
         {values.map((value, index) => (
           <span key={labels[index]} className={compact ? 'flex flex-col' : 'departure-countdown-unit'}>
-            <span className={compact ? 'font-mono text-base font-bold' : 'departure-countdown-number mono'}>
+            <span className={compact ? 'font-mono text-body font-bold' : 'departure-countdown-number mono'}>
               {value}
             </span>
-            <span className={compact ? 'text-[0.5rem] uppercase opacity-70' : 'departure-countdown-label'}>
+            <span className={compact ? 'text-caption uppercase opacity-70' : 'departure-countdown-label'}>
               {labels[index]}
             </span>
           </span>

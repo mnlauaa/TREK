@@ -7,6 +7,7 @@ const common: TranslationStrings = {
   'common.cancel': 'Abbrechen',
   'common.clear': 'Löschen',
   'common.delete': 'Löschen',
+  'common.remove': 'Entfernen',
   'common.preview': 'Vorschau',
   'common.edit': 'Bearbeiten',
   'common.add': 'Hinzufügen',
@@ -35,7 +36,10 @@ const common: TranslationStrings = {
   'common.rename': 'Umbenennen',
   'common.discardChanges': 'Änderungen verwerfen',
   'common.discard': 'Verwerfen',
-  'common.name': 'Name',
+  'common.unsavedTitle': 'Änderungen verwerfen?',
+  'common.unsavedMessage': 'Was du hier eingegeben hast, ist noch nicht gespeichert.',
+  'common.keepEditing': 'Weiter bearbeiten',
+  'common.name': 'Name', // same-as-en
   'common.email': 'E-Mail',
   'common.password': 'Passwort',
   'common.saving': 'Speichern...',
@@ -43,7 +47,9 @@ const common: TranslationStrings = {
   'common.collapse': 'Einklappen',
   'common.justNow': 'gerade eben',
   'common.hoursAgo': 'vor {count}h',
+  'common.hoursAgo.one': 'vor {count}h',
   'common.daysAgo': 'vor {count}T',
+  'common.daysAgo.one': 'vor {count}T',
   'common.saved': 'Gespeichert',
   'common.update': 'Aktualisieren',
   'common.change': 'Ändern',
@@ -74,12 +80,6 @@ const common: TranslationStrings = {
   'common.errorUpdateBody':
     'TREK wurde aktualisiert, während dieser Tab offen war. Lade neu, um die neue Version zu erhalten.',
   'common.errorPluginTitle': 'Dieses Plugin konnte nicht angezeigt werden',
-  'legal.title': 'Legal & source',
-  'legal.description': 'License information and the exact source code for this deployed version.',
-  'legal.agpl':
-    'This application is licensed under the GNU Affero General Public License version 3. Remote users may obtain the corresponding source code at no charge.',
-  'legal.license': 'Read the license',
-  'legal.source': 'Corresponding source',
-  'legal.sourceDescription': 'Source code for this deployed build:',
+  'common.needsConnection': 'Dafür braucht es eine Verbindung. Versuch es noch einmal, sobald TREK wieder online ist.',
 };
 export default common;

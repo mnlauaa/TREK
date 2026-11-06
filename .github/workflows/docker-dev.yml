@@ -1,5 +1,18 @@
 name: Build & Push Docker Image (Prerelease)
 
+# The canary. Dispatched by hand, usually on dev, it builds the dispatched
+# commit as <next minor or major>-pre.N, publishes :VERSION, :MAJOR-pre and
+# :latest-pre, and tags the commit. Nothing moves :latest. Like the stable
+# release it refuses a commit whose ci-ok is not green. docker.yml with
+# bump=auto later finalizes the line once main carries it.
+#
+# A prerelease asks the TREK services issuer for a registration dialect of its
+# own -pre.N version (registration-dialect.yml, as the stable release does)
+# and builds it into the image; nothing of it is committed, dev keeps the
+# module of the last stable release, which it gets when main is merged back
+# into dev. Without one the image carries dev's module, with a warning when
+# that is the original one or old.
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +24,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
 
 concurrency:
   group: prerelease-build
@@ -19,23 +33,41 @@ concurrency:
 jobs:
   version-bump:
     if: github.repository == 'liketrek/TREK'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     outputs:
       version: ${{ steps.bump.outputs.VERSION }}
       sha: ${{ steps.bump.outputs.SHA }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The dev push, the main push and any manual run each leave a ci-ok on
+      # this commit. scripts/ci/ci-ok-verdict.mjs counts the newest attempt of
+      # each, refuses while one is still going, and requires the one that
+      # finished last to be green, so a later green run supersedes a flaky or
+      # cancelled one. It prints the link of every run it counted.
+      - name: Require a green ci-ok on the commit being built
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          runs="$RUNNER_TEMP/ci-ok-runs.json"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?check_name=ci-ok&filter=all&per_page=100" > "$runs"
+          node scripts/ci/ci-ok-verdict.mjs "$runs" "$sha"
+
       - name: Determine prerelease version
         id: bump
+        env:
+          BUMP_INPUT: ${{ inputs.bump || 'auto' }}
         run: |
           git fetch --tags
 
           # Capture the exact commit we're building so build/merge jobs are pinned to it
-          echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           # Get latest stable tag (exclude prerelease tags)
           STABLE_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -v '\-pre\.' | sort -V | tail -1)
@@ -43,13 +75,11 @@ jobs:
           STABLE="${STABLE:-0.0.0}"
           echo "Latest stable: $STABLE"
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$STABLE"
+          IFS='.' read -r MAJOR MINOR _ <<< "$STABLE"
 
           # Detect any in-flight major prerelease (v(MAJOR+1).0.0-pre.*). Stay on that line if found.
           NEXT_MAJOR="$((MAJOR + 1)).0.0"
           MAJOR_PRE_EXISTS=$(git tag -l "v${NEXT_MAJOR}-pre.*" | head -1)
-
-          BUMP_INPUT="${{ github.event.inputs.bump || 'auto' }}"
 
           if [ "$BUMP_INPUT" = "major" ] || { [ "$BUMP_INPUT" = "auto" ] && [ -n "$MAJOR_PRE_EXISTS" ]; }; then
             TARGET="$NEXT_MAJOR"
@@ -63,38 +93,102 @@ jobs:
           N=$(( ${LAST_N:-0} + 1 ))
 
           NEW_VERSION="${TARGET}-pre.${N}"
-          echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "$STABLE → $NEW_VERSION"
+          echo "VERSION=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "$STABLE to $NEW_VERSION"
+
+  # The registration dialect of this prerelease, fetched and checked in a job
+  # without write access. It never fails the build.
+  dialect:
+    needs: version-bump
+    uses: ./.github/workflows/registration-dialect.yml
+    with:
+      version: ${{ needs.version-bump.outputs.version }}
+      ref: ${{ needs.version-bump.outputs.sha }}
+    secrets:
+      TREK_DIALECT_TOKEN: ${{ secrets.TREK_DIALECT_TOKEN }}
 
   build:
     runs-on: ${{ matrix.runner }}
-    needs: version-bump
+    timeout-minutes: 120
+    needs: [version-bump, dialect]
+    # Whatever became of the dialect job: without its artifact the image carries dev's module.
+    if: ${{ !cancelled() && needs.version-bump.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
       - name: Prepare platform tag-safe name
-        run: echo "PLATFORM_PAIR=$(echo ${{ matrix.platform }} | sed 's|/|-|g')" >> $GITHUB_ENV
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.version-bump.outputs.sha }}
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Take over the prerelease's dialect
+        id: take
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: registration-dialect
+          path: ${{ runner.temp }}/dialect
 
-      - uses: docker/login-action@v3
+      # Into the build context only; the commit stays as it is. Without a
+      # dialect of its own the image speaks dev's module, which the issuer
+      # takes for new installations for 180 days after it was made (longer
+      # while it is the newest stable release's). That is warned about, never
+      # stopped on, and a date that cannot be read only warns as well.
+      - name: Place the dialect
+        env:
+          VERSION: ${{ needs.version-bump.outputs.version }}
+          TAKEN: ${{ steps.take.outcome }}
+          REPORT: ${{ matrix.platform == 'linux/amd64' }}
+        run: |
+          set -u
+          target=server/src/nest/service-identity/registration-dialect.ts
+          fetched="$RUNNER_TEMP/dialect/registration-dialect.ts"
+          if [ "$TAKEN" = success ] && [ -f "$fetched" ]; then
+            cp "$fetched" "$target"
+            echo "$VERSION registers in dialect $(sed -n "s/^const DIALECT = '\(.*\)';$/\1/p" "$target") of its own."
+            exit 0
+          fi
+          [ "$REPORT" = true ] || exit 0
+          id="$(sed -n "s/^const DIALECT = '\(.*\)';$/\1/p" "$target")"
+          created="$(sed -n "s/^  createdAt: '\(.*\)',$/\1/p" "$target")"
+          if [ "$id" = 0 ]; then
+            message="$VERSION got no dialect of its own and registers in the original one, which the issuer accepts only for a transition period."
+          elif made="$(date -u -d "$created" +%s 2>/dev/null)"; then
+            age=$(( ($(date -u +%s) - made) / 86400 ))
+            message="$VERSION got no dialect of its own and registers in dev's dialect $id from $created, $age days old."
+            [ "$age" -gt 150 ] || { echo "$message"; exit 0; }
+          else
+            message="$VERSION got no dialect of its own, and the date of dev's dialect cannot be read from $target."
+          fi
+          echo "::warning::$message"
+          printf '### Registration dialect\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Image metadata
+        id: meta
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -102,7 +196,10 @@ jobs:
           no-cache: true
           build-args: |
             APP_VERSION=${{ needs.version-bump.outputs.version }}
-            SOURCE_CODE_URL=https://github.com/mnlauaa/TREK/tree/${{ github.sha }}
+            SOURCE_CODE_URL=${{ github.server_url }}/${{ github.repository }}/tree/${{ steps.meta.outputs.revision }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
 
       - name: Export digest
         run: |
@@ -111,7 +208,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: digests-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -119,26 +216,28 @@ jobs:
           retention-days: 1
 
   merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     needs: [version-bump, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.version-bump.outputs.sha }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download build digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests
           pattern: digests-*
           # Deliberately NOT merged: the per-platform folder names are what lets
           # the manifest below be assembled in a fixed order.
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -164,7 +263,12 @@ jobs:
               digests+=("mauriceboe/trek@sha256:$(basename "$f")")
             done
           done
+          # The labels live on each platform image; the index gets the ones a
+          # client reads before it picks a platform (#1498).
           docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=https://github.com/liketrek/TREK" \
+            --annotation "index:org.opencontainers.image.version=$VERSION" \
+            --annotation "index:org.opencontainers.image.licenses=AGPL-3.0-only" \
             -t "mauriceboe/trek:latest-pre" \
             -t "mauriceboe/trek:$MAJOR_TAG" \
             -t "mauriceboe/trek:$VERSION" \
@@ -187,7 +291,7 @@ jobs:
         run: |
           KEEP=20
           VERSION="${{ needs.version-bump.outputs.version }}"
-          BASE_VERSION="$(echo "$VERSION" | sed 's/-pre\..*//')"
+          BASE_VERSION="${VERSION%%-pre.*}"
           git fetch --tags
           # Sort by numeric prerelease N (field after -pre.) to get correct ascending order
           mapfile -t ALL_TAGS < <(git tag -l "v${BASE_VERSION}-pre.*" | awk -F'-pre\\.' '{print $2" "$0}' | sort -n | awk '{print $2}')

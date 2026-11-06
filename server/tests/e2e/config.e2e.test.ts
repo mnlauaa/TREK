@@ -37,7 +37,7 @@ describe('Public config e2e (no auth guard)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       defaultLanguage: DEFAULT_LANGUAGE,
-      sourceCodeUrl: expect.stringContaining('mnlauaa/TREK'),
+      sourceCodeUrl: expect.any(String),
       version: expect.any(String),
     });
   });

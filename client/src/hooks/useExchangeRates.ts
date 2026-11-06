@@ -11,8 +11,6 @@ import { currencyDecimals } from '../utils/formatters'
  */
 
 const TTL_MS = 6 * 60 * 60 * 1000 // 6h
-// A hung request would otherwise hold every caller, the freeze-rates heal included,
-// for as long as the browser keeps the socket open.
 const FETCH_TIMEOUT_MS = 10_000
 const mem = new Map<string, { rates: Record<string, number>; ts: number }>()
 
@@ -23,9 +21,14 @@ function readCache(base: string): { rates: Record<string, number>; ts: number } 
     const raw = localStorage.getItem('trek_fx_' + base)
     if (raw) {
       const parsed = JSON.parse(raw) as { rates: Record<string, number>; ts: number }
-      if (parsed?.rates) { mem.set(base, parsed); return parsed }
+      if (parsed?.rates) {
+        mem.set(base, parsed)
+        return parsed
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null
 }
 
@@ -44,8 +47,9 @@ export async function fetchExchangeRates(base: string): Promise<Record<string, n
   const stop = new AbortController()
   const timer = setTimeout(() => stop.abort(), FETCH_TIMEOUT_MS)
   try {
-    const d = await fetch(`https://api.frankfurter.dev/v2/rates?base=${encodeURIComponent(upper)}`, { signal: stop.signal })
-      .then(r => r.json()) as Array<{ quote?: string; rate?: number }>
+    const d = (await fetch(`https://api.frankfurter.dev/v2/rates?base=${encodeURIComponent(upper)}`, {
+      signal: stop.signal,
+    }).then((r) => r.json())) as Array<{ quote?: string; rate?: number }>
     if (!Array.isArray(d)) return cached?.rates ?? null
     // Frankfurter omits the base's own self-rate, so seed it with `base = 1`.
     const rates: Record<string, number> = { [upper]: 1 }
@@ -54,7 +58,11 @@ export async function fetchExchangeRates(base: string): Promise<Record<string, n
     }
     const entry = { rates, ts: Date.now() }
     mem.set(upper, entry)
-    try { localStorage.setItem('trek_fx_' + upper, JSON.stringify(entry)) } catch { /* ignore */ }
+    try {
+      localStorage.setItem('trek_fx_' + upper, JSON.stringify(entry))
+    } catch {
+      /* ignore */
+    }
     return rates
   } catch {
     return cached?.rates ?? null // offline → stale beats nothing
@@ -86,7 +94,7 @@ const CURRENCY_CODE = /^[A-Z]{3}$/
  * 1e-9 to 1e9, for a lent `fallback_fx` rate as for the settlement's `base_rate`. Anything
  * else fails the whole request with a 400, so the client leaves it out instead.
  */
-export function isSendableRate(rate: number | null | undefined): rate is number {
+function isSendableRate(rate: number | null | undefined): rate is number {
   return rate != null && Number.isFinite(rate) && rate >= 1e-9 && rate <= 1e9
 }
 
@@ -100,7 +108,7 @@ export function isSendableRate(rate: number | null | undefined): rate is number 
  */
 export function withFallbackFx<T extends { currency?: string | null; exchange_rate?: number | null }>(
   data: T,
-  tripCurrency: string | null | undefined,
+  tripCurrency: string | null | undefined
 ): T & { fallback_fx?: BudgetFallbackFx } {
   const trip = (tripCurrency || '').toUpperCase()
   const cur = (data.currency || '').toUpperCase()
@@ -108,6 +116,12 @@ export function withFallbackFx<T extends { currency?: string | null; exchange_ra
   const rate = freshRates(trip)?.[cur]
   if (!isSendableRate(rate)) return data
   return { ...data, fallback_fx: { base: trip, rates: { [cur]: rate } } }
+}
+
+type BookedRateRow = {
+  currency?: string | null;
+  exchange_rate?: number | null;
+  exchange_rate_source?: string | null;
 }
 
 /**
@@ -129,24 +143,21 @@ export function withFallbackFx<T extends { currency?: string | null; exchange_ra
  */
 export function convertBooked(
   amount: number,
-  rowCurrency: string | null | undefined,
-  frozenRate: number | null | undefined,
+  row: BookedRateRow,
   tripCurrency: string,
-  convertLive: (amount: number, from: string | null | undefined) => number,
-  source?: string | null,
+  convertLive: (amount: number, from: string | null | undefined) => number
 ): number {
   const trip = (tripCurrency || 'EUR').toUpperCase()
-  const inTrip = bookedInTrip(amount, rowCurrency, frozenRate, trip, source)
+  const inTrip = bookedInTrip(amount, row.currency, row.exchange_rate, trip, row.exchange_rate_source)
   if (inTrip != null) return convertLive(inTrip, trip)
-  // A NULL currency means the trip's own, and then there was never anything to freeze.
-  return convertLive(amount, (rowCurrency || trip).toUpperCase())
+  return !row.currency || row.currency.toUpperCase() === trip ? convertLive(amount, trip) : Number.NaN
 }
 
 /**
  * The amount a row was booked at in the trip currency, when it was booked through one: a
  * foreign currency with a frozen rate. Null for a row in the trip currency, and for one
  * written before the freeze existed. A rate of exactly 1 is frozen only when its source records an intentional rate;
- * legacy/default 1 still converts live.
+ * legacy/default 1 remains unfrozen.
  *
  * The lists print it between the amount entered and the amount shown, so a row whose value
  * moved with the rate shows where the move came from instead of a figure nobody typed.
@@ -156,40 +167,46 @@ export function bookedInTrip(
   rowCurrency: string | null | undefined,
   frozenRate: number | null | undefined,
   tripCurrency: string,
-  source?: string | null,
+  source?: string | null
 ): number | null {
   const trip = (tripCurrency || 'EUR').toUpperCase()
   const cur = (rowCurrency || trip).toUpperCase()
   if (cur === trip) return null
-  if (frozenRate != null && Number.isFinite(frozenRate) && frozenRate > 0 && (frozenRate !== 1 || ['identity', 'explicit', 'trip', 'global'].includes(source ?? ''))) return amount / frozenRate
+  if (
+    frozenRate != null &&
+    Number.isFinite(frozenRate) &&
+    frozenRate > 0 &&
+    (frozenRate !== 1 || ['identity', 'explicit', 'trip', 'global'].includes(source ?? ''))
+  )
+    return amount / frozenRate
   return null
 }
 
 /**
  * What an amount of a row counts as in the trip currency, the figure the settlement nets:
- * the booked amount for a row booked through the trip currency, the amount itself for one
- * in it, and today's rate for a foreign row that never froze one, the way the server
- * counts that row too.
+ * the booked amount for a row with a frozen rate, the amount itself for a row in the trip
+ * currency, or NaN for an unfrozen foreign row.
  */
 export function tripAmountOf(
   amount: number,
   rowCurrency: string | null | undefined,
   frozenRate: number | null | undefined,
   tripCurrency: string,
-  convertLive: (amount: number, from: string | null | undefined) => number,
-  source?: string | null,
+  source?: string | null
 ): number {
   const trip = (tripCurrency || 'EUR').toUpperCase()
   const inTrip = bookedInTrip(amount, rowCurrency, frozenRate, trip, source)
   if (inTrip != null) return inTrip
   const cur = (rowCurrency || trip).toUpperCase()
   if (cur === trip) return amount
-  const perTrip = convertLive(1, trip)
-  return perTrip > 0 ? convertLive(amount, cur) / perTrip : Number.NaN
+  return Number.NaN
 }
 
 /** An amount and the currency it is in. */
-export interface MoneyPart { amount: number; currency: string }
+export interface MoneyPart {
+  amount: number
+  currency: string
+}
 
 /**
  * The line under an amount the lists show converted (#2525): what was entered, then where
@@ -204,18 +221,18 @@ export interface MoneyPart { amount: number; currency: string }
  */
 export function convertedLine(
   amount: number,
-  rowCurrency: string | null | undefined,
-  frozenRate: number | null | undefined,
+  row: BookedRateRow,
   tripCurrency: string,
   displayCurrency: string,
-  shown: number,
-  source?: string | null,
+  shown: number
 ): { entered: MoneyPart; into: MoneyPart } | null {
   const trip = (tripCurrency || 'EUR').toUpperCase()
   const display = (displayCurrency || trip).toUpperCase()
-  const cur = (rowCurrency || trip).toUpperCase()
+  const cur = (row.currency || trip).toUpperCase()
   const entered = { amount, currency: cur }
-  const inTrip = display !== trip && amount !== 0 ? bookedInTrip(amount, cur, frozenRate, trip, source) : null
+  const inTrip = display !== trip && amount !== 0
+    ? bookedInTrip(amount, cur, row.exchange_rate, trip, row.exchange_rate_source)
+    : null
   if (inTrip != null) {
     const unit = 10 ** currencyDecimals(display)
     if (cur === display && Math.round(shown * unit) === Math.round(amount * unit)) return null
@@ -231,23 +248,32 @@ export function clearExchangeRateCache(): void {
     for (const k of Object.keys(localStorage)) {
       if (k.startsWith('trek_fx_')) localStorage.removeItem(k)
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Rates for one base, from the cache first and then the network; null for no base. */
 function useRatesFor(base: string | null): Record<string, number> | null {
-  const [rates, setRates] = useState<Record<string, number> | null>(() => (base ? readCache(base)?.rates ?? null : null))
+  const [rates, setRates] = useState<Record<string, number> | null>(() =>
+    base ? (readCache(base)?.rates ?? null) : null
+  )
 
   useEffect(() => {
-    if (!base) { setRates(null); return }
+    if (!base) {
+      setRates(null)
+      return
+    }
     const cached = readCache(base)
     if (cached) setRates(cached.rates)
     if (cached && Date.now() - cached.ts < TTL_MS) return
     let cancelled = false
-    void fetchExchangeRates(base).then(r => {
+    void fetchExchangeRates(base).then((r) => {
       if (!cancelled && r) setRates(r)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [base])
 
   return rates
@@ -285,9 +311,9 @@ export function useExchangeRates(base: string, tripCurrency?: string | null) {
       const viaAnchor = crossRate(anchorRates, upper, f)
       if (viaAnchor != null) return amount * viaAnchor
       const r = rates?.[f]
-      return r && r > 0 ? amount / r : Number.NaN
+      return r && r > 0 ? amount / r : amount
     },
-    [rates, anchorRates, upper],
+    [rates, anchorRates, upper]
   )
 
   // Units of the display currency per 1 trip currency, from the same quotes `convert` uses.
@@ -296,9 +322,8 @@ export function useExchangeRates(base: string, tripCurrency?: string | null) {
   // figure the settlement query refuses (a trip in XAU shown in IRR runs past 1e9): sent
   // along, it would fail the whole read with a 400, healthy server or not.
   const perTrip = rates?.[anchor]
-  const quoted = anchor === upper
-    ? 1
-    : crossRate(anchorRates, upper, anchor) ?? (perTrip && perTrip > 0 ? 1 / perTrip : null)
+  const quoted =
+    anchor === upper ? 1 : (crossRate(anchorRates, upper, anchor) ?? (perTrip && perTrip > 0 ? 1 / perTrip : null))
   const displayPerTrip = isSendableRate(quoted) ? quoted : null
 
   return { rates, convert, displayPerTrip }

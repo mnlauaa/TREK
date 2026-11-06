@@ -19,7 +19,11 @@ interface EditedExpense {
  * trip's own, which is how the lists read it; opening it in the display currency relabelled
  * the amount, and a save then stored it in that currency.
  */
-export function editingCurrencyOf(editing: EditedExpense | null | undefined, tripCurrency: string | null | undefined, base: string): string {
+export function editingCurrencyOf(
+  editing: EditedExpense | null | undefined,
+  tripCurrency: string | null | undefined,
+  base: string
+): string {
   return ((editing && (editing.currency || tripCurrency)) || base).toUpperCase()
 }
 
@@ -48,7 +52,10 @@ export function expenseFxPreview(args: {
 }): ExpenseFx | null {
   const { total, currency, editing, editingCurrency, tripCurrency, base, convert } = args
   if (total === 0) return null
-  const inTrip = editing && currency === editingCurrency ? bookedInTrip(total, currency, editing.exchange_rate, tripCurrency, editing.exchange_rate_source) : null
+  const inTrip =
+    editing && currency === editingCurrency
+      ? bookedInTrip(total, currency, editing.exchange_rate, tripCurrency, editing.exchange_rate_source)
+      : null
   if (currency === base && inTrip == null) return null
   const shown = inTrip == null ? convert(total, currency) : convert(inTrip, tripCurrency)
   const unit = 10 ** currencyDecimals(base)
@@ -67,10 +74,9 @@ export function splitShareLabel(
   fx: ExpenseFx | null,
   participants: number,
   base: string,
-  sym: (currency: string) => string,
-  locale: string,
+  locale: string
 ): string {
-  const entered = sym(currency) + each.toFixed(2)
+  const entered = formatMoney(each, currency, locale)
   const whole = fx ? (fx.shown ?? fx.inTrip) : null
   if (whole == null || participants <= 0) return entered
   return `${entered} → ${formatMoney(whole / participants, base, locale)}`
@@ -78,13 +84,19 @@ export function splitShareLabel(
 
 /** Everything an expense editor needs to preview a conversion, from the trip in the store. */
 export function useExpenseFx(base: string, editing: EditedExpense | null | undefined) {
-  const storedTripCurrency = useTripStore(s => s.trip?.currency)
+  const storedTripCurrency = useTripStore((s) => s.trip?.currency)
   const tripCurrency = (storedTripCurrency || base).toUpperCase()
   const { convert } = useExchangeRates(base, tripCurrency)
   const editingCurrency = editingCurrencyOf(editing, storedTripCurrency, base)
   const preview = (total: number, currency: string, draftRate?: number | null) =>
-    expenseFxPreview({ total, currency,
+    expenseFxPreview({
+      total,
+      currency,
       editing: draftRate == null ? editing : { currency, exchange_rate: draftRate, exchange_rate_source: 'explicit' },
-      editingCurrency: draftRate == null ? editingCurrency : currency, tripCurrency, base, convert })
+      editingCurrency: draftRate == null ? editingCurrency : currency,
+      tripCurrency,
+      base,
+      convert,
+    })
   return { tripCurrency, editingCurrency, preview }
 }

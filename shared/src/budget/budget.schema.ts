@@ -118,7 +118,7 @@ export type BudgetItemReceipt = z.infer<typeof budgetItemReceiptSchema>;
  * that to the trip base currency (NULL currency + rate 1 = base currency).
  * On a foreign row, rate 1 without recognized provenance is the legacy unfrozen
  * default. Explicit/trip/global/identity provenance makes 1 an intentional freeze.
- * Unfrozen rows use live quotes or appear under `unconverted` when none exists.
+ * Unfrozen rows appear under `unconverted` until a rate is applied.
  */
 export const budgetItemSchema = z.object({
   id: z.number(),
@@ -235,6 +235,10 @@ export const budgetUpdateItemRequestSchema = z.object({
   ticket_json: z.string().nullable().optional(),
   expense_date: z.string().nullable().optional(),
   receipt_file_ids: z.array(z.number()).optional(),
+  // Link an existing expense to a booking or a place on the same trip (#2084);
+  // null lets go of the link and keeps the expense. Omitted leaves it as is.
+  reservation_id: z.number().int().positive().nullable().optional(),
+  place_id: z.number().int().positive().nullable().optional(),
   fallback_fx: budgetFallbackFxSchema.optional(),
 });
 export type BudgetUpdateItemRequest = z.infer<typeof budgetUpdateItemRequestSchema>;
@@ -252,7 +256,7 @@ export type BudgetUpdatePayersRequest = z.infer<typeof budgetUpdatePayersRequest
  * a settled position stays balanced when live rates drift (#1445). Legacy rows
  * have currency = null / exchange_rate = 1 and convert with live rates. A row in
  * another currency with rate 1 and legacy/missing provenance was never frozen:
- * without a live rate it is excluded and listed under `unconverted`. Intentional
+ * it is excluded and listed under `unconverted` until a rate is applied. Intentional
  * parity is recognized by provenance. New foreign writes require a rate. Creating
  * one marks a suggested flow as paid; deleting it (undo) brings the flow back.
  */
@@ -277,6 +281,8 @@ export const budgetSettlementSchema = z.object({
   // vs. created_at. Null/absent on rows recorded before this column existed; the
   // ledger falls back to `created_at`'s date for those.
   settled_at: z.string().nullable().optional(),
+  // A free-text note on the payment (#2340). Null when none was written.
+  note: z.string().nullable().optional(),
   created_by_user_id: z.number().nullable().optional(),
   from_username: z.string().optional(),
   from_avatar_url: z.string().nullable().optional(),
@@ -296,6 +302,8 @@ export const budgetCreateSettlementRequestSchema = z.object({
   // The day the transfer happened. Null when the caller sets none; the ledger then
   // uses the day it was recorded, which is where every older payment already sits.
   settled_at: z.string().nullable().optional(),
+  // A free-text note on the payment (#2340); blank stores none.
+  note: z.string().max(500).nullable().optional(),
   // Rates to freeze `currency` with when the server has none of its own.
   fallback_fx: budgetFallbackFxSchema.optional(),
 });
@@ -310,6 +318,8 @@ export const budgetUpdateSettlementRequestSchema = z.object({
   exchange_rate: z.number().positive().finite().optional(),
   exchange_rate_note: z.string().max(500).nullable().optional(),
   settled_at: z.string().nullable().optional(),
+  // Omitted leaves the note as it is; null or blank clears it (#2340).
+  note: z.string().max(500).nullable().optional(),
   fallback_fx: budgetFallbackFxSchema.optional(),
 });
 export type BudgetUpdateSettlementRequest = z.infer<typeof budgetUpdateSettlementRequestSchema>;
@@ -433,3 +443,30 @@ export const budgetReorderCategoriesRequestSchema = z.object({
   orderedCategories: z.array(z.string()),
 });
 export type BudgetReorderCategoriesRequest = z.infer<typeof budgetReorderCategoriesRequestSchema>;
+
+/** How many expenses one page of the MCP expense list holds when the caller does not say. */
+export const BUDGET_ITEMS_PAGE_DEFAULT = 50;
+const BUDGET_ITEMS_PAGE_MAX = 100;
+
+/**
+ * One page of the expense list an MCP client reads (list_budget_items): the
+ * expenses in their list order from `offset`, at most `limit` of them. A
+ * budget of a few hundred rows is too long for one answer to a model, so it
+ * pages; the totals next to the page always cover the whole trip.
+ */
+export const budgetItemsPageSchema = z.object({
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('How many expenses to skip: the next_offset of the page before (default 0)'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(BUDGET_ITEMS_PAGE_MAX)
+    .optional()
+    .describe(`How many expenses at most (default ${BUDGET_ITEMS_PAGE_DEFAULT}, at most ${BUDGET_ITEMS_PAGE_MAX})`),
+});
+export type BudgetItemsPage = z.infer<typeof budgetItemsPageSchema>;

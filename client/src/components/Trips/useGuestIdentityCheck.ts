@@ -1,9 +1,12 @@
 import type { GuestIdentityTransferCandidate } from '@trek/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { guestIdentityRepo, type GuestIdentityDecision, type GuestIdentitySource } from '../../repo/guestIdentityRepo';
+import { tripRepo } from '../../repo/tripRepo';
 import { useAuthStore } from '../../store/authStore';
 import { useTripStore } from '../../store/tripStore';
 import { isEffectivelyOnline, onNetworkModeChange } from '../../sync/networkMode';
+
+type GuestIdentitySource = 'manual' | 'new-member';
+type GuestIdentityDecision = { kind: 'claim'; guestUserId: number } | { kind: 'decline' };
 
 type Candidates = readonly GuestIdentityTransferCandidate[];
 
@@ -34,23 +37,26 @@ export function useGuestIdentityCheck({
       ? { phase: 'choosing', candidates: initialCandidates }
       : { phase: 'checking', visible: source === 'manual' }
   );
-  const request = useRef(0);
+  const request = useRef<symbol>(Symbol());
   const submitting = useRef(false);
 
-  const check = useCallback(
-    async (visible = source === 'manual') => {
-      const id = ++request.current;
-      setState({ phase: 'checking', visible });
-      try {
-        const candidates = await guestIdentityRepo.read(tripId, source);
+  const check = useCallback(() => {
+    const id = Symbol();
+    request.current = id;
+    const result =
+      source === 'manual'
+        ? tripRepo.guestIdentityTransferCandidates(tripId)
+        : tripRepo.runNewMemberIdentityCheck(tripId);
+    return result
+      .then((result) => {
+        const candidates = 'required' in result && !result.required ? null : result.candidates;
         if (id !== request.current) return;
         setState(candidates ? { phase: 'choosing', candidates } : { phase: 'hidden' });
-      } catch (error) {
+      })
+      .catch((error: unknown) => {
         if (id === request.current) setState({ phase: 'check-error', error });
-      }
-    },
-    [tripId, source]
-  );
+      });
+  }, [tripId, source]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -67,25 +73,27 @@ export function useGuestIdentityCheck({
     }
     return () => {
       unsubscribe?.();
-      request.current++;
+      request.current = Symbol();
     };
   }, [check, initialCandidates, source]);
 
   const close = () => {
     if (submitting.current) return;
-    request.current++;
+    request.current = Symbol();
     setState({ phase: 'hidden' });
     onClose?.();
   };
 
   const decide = async (decision: GuestIdentityDecision) => {
     if (state.phase !== 'choosing' || submitting.current) return;
-    const id = ++request.current;
+    const id = Symbol();
+    request.current = id;
     const { candidates } = state;
     submitting.current = true;
     setState({ phase: 'submitting', candidates, decision });
     try {
-      await guestIdentityRepo.decide(tripId, decision);
+      if (decision.kind === 'claim') await tripRepo.transferGuestIdentity(tripId, decision.guestUserId);
+      else await tripRepo.declineNewMemberIdentityCheck(tripId);
     } catch (error) {
       if (id === request.current) setState({ phase: 'choosing', candidates, error });
       return;
@@ -94,12 +102,17 @@ export function useGuestIdentityCheck({
     }
     const auth = useAuthStore.getState();
     if (decision.kind === 'claim' && auth.isAuthenticated && auth.user?.id === accountId) {
-      useTripStore.getState().refreshAfterGuestTransfer(tripId);
+      useTripStore.getState().refreshTransferredGuest(tripId);
     }
     if (id !== request.current) return;
     close();
     if (decision.kind === 'claim') onTransferred?.();
   };
 
-  return { state, check, close, decide };
+  const retry = (visible = true) => {
+    setState({ phase: 'checking', visible });
+    return check();
+  };
+
+  return { state, check: retry, close, decide };
 }

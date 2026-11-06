@@ -1,4 +1,5 @@
 import type { RuntimeEnvService } from '../../../src/nest/app-config/runtime-env.service';
+import type { SettingsWritesService } from '../../../src/nest/settings/settings-writes.service';
 import { SettingsController } from '../../../src/nest/settings/settings.controller';
 import type { SettingsService } from '../../../src/nest/settings/settings.service';
 import type { User } from '../../../src/types';
@@ -11,16 +12,16 @@ const user = { id: 1, role: 'user', email: 'u@example.test' } as User;
 function svc(o: Partial<SettingsService> = {}): SettingsService {
   return {
     getUserSettings: vi.fn(),
+    resetSetting: vi.fn(),
     upsertSetting: vi.fn(),
     bulkUpsertSettings: vi.fn(),
-    deleteSetting: vi.fn(),
     ...o,
   } as unknown as SettingsService;
 }
 
-function thrown(fn: () => unknown): { status: number; body: unknown } {
+async function thrown(fn: () => unknown): Promise<{ status: number; body: unknown }> {
   try {
-    fn();
+    await fn();
   } catch (err) {
     expect(err).toBeInstanceOf(HttpException);
     const e = err as HttpException;
@@ -31,12 +32,37 @@ function thrown(fn: () => unknown): { status: number; body: unknown } {
 
 beforeEach(() => vi.clearAllMocks());
 
+/**
+ * SettingsWritesService over the stubbed service: the writes go through it, so
+ * it hands each on and records the socket the route read. The settings:updated
+ * it sends is held by tools-settings.test.ts and the broadcast parity suite.
+ */
+function writesFor(s: SettingsService) {
+  return {
+    resetOne: vi.fn((userId: number, key: 'common_currencies', _socketId: string | undefined) =>
+      s.resetSetting(userId, key),
+    ),
+    saveOne: vi.fn((userId: number, key: string, value: unknown, _socketId: string | undefined) =>
+      s.upsertSetting(userId, key, value),
+    ),
+    saveMany: vi.fn((userId: number, values: Record<string, unknown>, _socketId: string | undefined) =>
+      s.bulkUpsertSettings(userId, values),
+    ),
+  };
+}
+let writes: ReturnType<typeof writesFor>;
+
+function controller(s: SettingsService) {
+  writes = writesFor(s);
+  const env = { isManaged: () => false } as unknown as RuntimeEnvService;
+  return new SettingsController(s, env, writes as unknown as SettingsWritesService);
+}
+
 describe('SettingsController', () => {
-  it('GET / returns the settings', () => {
+  it('GET / returns the settings', async () => {
     expect(
-      new SettingsController(
+      await controller(
         svc({ getUserSettings: vi.fn().mockReturnValue({ theme: 'dark' }) } as Partial<SettingsService>),
-        { isManaged: () => false } as unknown as RuntimeEnvService,
       ).list(user),
     ).toEqual({ settings: { theme: 'dark' } });
   });
@@ -44,76 +70,74 @@ describe('SettingsController', () => {
   // The 400-without-a-key path moved to the global ZodValidationPipe (via
   // SettingUpsertDto) — pinned by the settings e2e, not reachable here.
 
-  it('PUT / no-ops on the masked sentinel without writing', () => {
+  it('PUT / no-ops on the masked sentinel without writing', async () => {
     const upsertSetting = vi.fn();
-    const c = new SettingsController(svc({ upsertSetting } as Partial<SettingsService>), {
-      isManaged: () => false,
-    } as unknown as RuntimeEnvService);
-    expect(c.upsert(user, { key: 'immich_api_key', value: '••••••••' })).toEqual({
+    const c = controller(svc({ upsertSetting } as Partial<SettingsService>));
+    expect(await c.upsert(user, { key: 'immich_api_key', value: '••••••••' })).toEqual({
       success: true,
       key: 'immich_api_key',
       unchanged: true,
     });
     expect(upsertSetting).not.toHaveBeenCalled();
+    expect(writes.saveOne).not.toHaveBeenCalled();
   });
 
-  it('PUT / writes a real value', () => {
+  it('PUT / writes a real value', async () => {
     const upsertSetting = vi.fn();
-    const c = new SettingsController(svc({ upsertSetting } as Partial<SettingsService>), {
-      isManaged: () => false,
-    } as unknown as RuntimeEnvService);
-    expect(c.upsert(user, { key: 'theme', value: 'dark' })).toEqual({ success: true, key: 'theme', value: 'dark' });
+    const c = controller(svc({ upsertSetting } as Partial<SettingsService>));
+    expect(await c.upsert(user, { key: 'theme', value: 'dark' }, 'sock')).toEqual({
+      success: true,
+      key: 'theme',
+      value: 'dark',
+    });
     expect(upsertSetting).toHaveBeenCalledWith(1, 'theme', 'dark');
+    // Through the writes, which tell the user's other tabs and leave out this one.
+    expect(writes.saveOne).toHaveBeenCalledWith(1, 'theme', 'dark', 'sock');
   });
 
-  it('PUT / normalizes a common currency list and rejects unsupported values', () => {
-    const upsertSetting = vi.fn();
-    const c = new SettingsController(svc({ upsertSetting }), {
-      isManaged: () => false,
-    } as unknown as RuntimeEnvService);
-    expect(c.upsert(user, { key: 'common_currencies', value: ['usd', 'JPY'] })).toEqual({
-      success: true,
-      key: 'common_currencies',
-      value: ['USD', 'JPY'],
-    });
-    expect(upsertSetting).toHaveBeenCalledWith(1, 'common_currencies', ['USD', 'JPY']);
-    expect(thrown(() => c.upsert(user, { key: 'common_currencies', value: ['ZZZ'] }))).toMatchObject({ status: 400 });
-  });
-
-  it('DELETE /common_currencies removes the personal override and returns the inherited value', () => {
-    const deleteSetting = vi.fn().mockReturnValue(['USD']);
-    const c = new SettingsController(svc({ deleteSetting }), {
-      isManaged: () => false,
-    } as unknown as RuntimeEnvService);
-    expect(c.delete(user, 'common_currencies')).toEqual({
-      success: true,
-      key: 'common_currencies',
-      value: ['USD'],
-    });
-    expect(deleteSetting).toHaveBeenCalledWith(1, 'common_currencies');
-    expect(thrown(() => c.delete(user, 'theme'))).toMatchObject({ status: 400 });
-  });
-
-  it('POST /bulk 500 on a write error, else returns the count', () => {
+  it('POST /bulk 500 on a write error, else returns the count', async () => {
     // The 400-without-an-object path moved to the global ZodValidationPipe
     // (via SettingsBulkDto) — pinned by the settings e2e, not reachable here.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(
-      thrown(() =>
-        new SettingsController(
+      await thrown(() =>
+        controller(
           svc({
             bulkUpsertSettings: vi.fn(() => {
               throw new Error('db');
             }),
           } as Partial<SettingsService>),
-          { isManaged: () => false } as unknown as RuntimeEnvService,
         ).bulk(user, { settings: { a: 1 } }),
       ),
     ).toEqual({ status: 500, body: { error: 'Error saving settings' } });
     expect(
-      new SettingsController(svc({ bulkUpsertSettings: vi.fn().mockReturnValue(3) } as Partial<SettingsService>), {
-        isManaged: () => false,
-      } as unknown as RuntimeEnvService).bulk(user, { settings: { a: 1, b: 2, c: 3 } }),
+      await controller(svc({ bulkUpsertSettings: vi.fn().mockReturnValue(3) } as Partial<SettingsService>)).bulk(
+        user,
+        { settings: { a: 1, b: 2, c: 3 } },
+        'sock',
+      ),
     ).toEqual({ success: true, updated: 3 });
+    expect(writes.saveMany).toHaveBeenCalledWith(1, { a: 1, b: 2, c: 3 }, 'sock');
   });
+});
+
+it('DELETE resets supported settings and returns the inherited value', async () => {
+  const resetSetting = vi.fn().mockResolvedValue(['USD']);
+  const c = controller(svc({ resetSetting }));
+  expect(await c.reset(user, 'common_currencies', 'sock-reset')).toEqual({
+    success: true,
+    key: 'common_currencies',
+    value: ['USD'],
+  });
+  expect(writes.resetOne).toHaveBeenCalledWith(1, 'common_currencies', 'sock-reset');
+  expect(resetSetting).toHaveBeenCalledWith(1, 'common_currencies');
+});
+
+it('DELETE rejects unsupported keys without writing', async () => {
+  const c = controller(svc());
+  expect(await thrown(() => c.reset(user, 'theme'))).toEqual({
+    status: 400,
+    body: { error: 'Setting cannot be reset' },
+  });
+  expect(writes.resetOne).not.toHaveBeenCalled();
 });

@@ -7,16 +7,16 @@ The repository includes the [TREK Upstream Upgrade skill](../../.agents/skills/t
 ## Release integration workflow
 
 1. Resolve the requested official release and full commit SHA; record the signature status and current fork tips. Use a read-only merge simulation for planning.
-2. For compatible 4.x upgrades, create a persistent `codex/upgrade-trek-vX` worktree from the latest `origin/dev` and incrementally merge the pinned release. Validate an independent, unmodified upstream worktree.
+2. Validate an independent, unmodified upstream worktree. For a compatible upgrade, merge the pinned release into a persistent `codex/upgrade-trek-vX` worktree from `origin/dev`. For an incompatible upgrade, start from the pinned release and port the fork contracts.
 3. Resolve by feature contract, including automatically merged overlapping files. Preserve custom commit ancestry and save implementation checkpoints.
 4. Test real migration prefixes, old fork lineages, partial/repeated upgrades and an isolated data copy. Do not relabel a current database as an old schema.
 5. Deliver validation evidence in a PR to `dev`. A fresh production-backup restore and live-plugin checks gate later promotion/deployment, not independently testable PR work.
 
-This upgrade branch adopts v4.3.4 (`d80577480c672799154ea9912918d906d16c0a75`) incrementally from the delivered v4.3.3 baseline (`1c05ee4b3ac9523c41ccdd3baad989ba48a7409a`). The user explicitly accepted the unsigned tag and commit on 2026-10-23 based on official release provenance and that pinned SHA. See [v4.3.4 evidence and remaining gates](upgrades/v4.3.4.md). This release changes version metadata only; its security benefit requires a freshly built image running patched Node 24.22.1 or later in the 24.x line.
+The previous upgrade adopted v4.3.4 (`d80577480c672799154ea9912918d906d16c0a75`) incrementally from the delivered v4.3.3 baseline (`1c05ee4b3ac9523c41ccdd3baad989ba48a7409a`). The user explicitly accepted the unsigned tag and commit on 2026-10-23 based on official release provenance and that pinned SHA. See [v4.3.4 evidence and remaining gates](upgrades/v4.3.4.md). That release changed version metadata only. Its security fix required a fresh image running Node 24.22.1 or later in the 24.x line.
 
 The earlier v4.3.3 upgrade came directly from the fork's v4.2.1 baseline (`515398f8ee3000b36a5f5b80365d6214f3f1a723`). See [the v4.3.3 ledger](upgrades/v4.3.3.md) and [the preceding v4.2.1 ledger](upgrades/v4.2.1.md). The unsubmitted v4.3.0 attempt is not a delivered baseline.
 
-Use the release-baseline port described by the project skill only for incompatible architecture/lineage changes or an unprovable merge. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
+The v5.1.0 upgrade starts from upstream `dc36c21c08f681fd2806764fad8e17b270f6f175` and ports the contracts in fork tip `0b970eac7aad7ccc38d5a505c1c0d5866f919dd1`. Upstream replaced the positional SQLite migration runner with MikroORM, so merging the old implementations would obscure which schema changes had already run. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
 
 ## Customization inventory
 
@@ -36,6 +36,8 @@ Superseded: the Mapbox reservation-source teardown patch, which is already prese
 
 ## Migration lineages
 
-The old fork used migrations 176–180 for different schemas than upstream v4, then used 199–202 while upstream v4.1 assigned 199–200 to other changes. `schema_version` now tracks only the official upstream chain; named rows in `fork_schema_migrations` track the crosswalk, enhanced FX, Guest identity, and Web Push schemas. The historical normalization bridge still ends at 200. The official runner subsequently applies migrations 201–205; never normalize a legacy database directly to 205. Startup and the read-only audit share artifact-based lineage classification and reject mixed or unknown histories.
+The old fork used migrations 176–180 and 199–202 for different schemas than upstream. The historical normalization bridge ends at upstream step 200. Do not move that endpoint when later migrations are added. The v4.3.4 fork tracked the official chain through step 244 in `schema_version`, with separate named rows in `fork_schema_migrations` for the crosswalk, enhanced FX, Guest identity, and Web Push.
 
-Never boot an unmodified upstream image against a fork database. Run `npm run audit:v4-upgrade --workspace=server -- --db <copy>` before migration and add `--require-current` afterward to require schema 244, all fork migrations, and clean integrity/foreign-key checks. Rehearse against an isolated restored backup. If no production backup is available, a tested PR can still be prepared, but production rehearsal remains a merge/deployment gate. Roll back only by restoring the complete pre-upgrade database, uploads, encryption material, plugin data, configuration, and old image.
+Upstream v5 maps the proven legacy steps into the MikroORM migration history before running pending migrations. Step 258 is the last official positional step that v5.1.0 knows how to map. It is not the v5.1.0 migration head. Keep the fork ledger separate and use the actual schema to classify a legacy database before mapping its history.
+
+Never boot an unmodified upstream image against a fork database. For the historical v4 audit command, see [v4.3.4 evidence and remaining gates](upgrades/v4.3.4.md). Rehearse the v5 upgrade against an isolated restored backup. If no production backup is available, a tested PR can still be prepared, but production rehearsal remains a merge/deployment gate. Roll back only by restoring the complete pre-upgrade database, uploads, encryption material, plugin data, configuration, and old image.

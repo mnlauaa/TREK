@@ -1,14 +1,13 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'Reis delen',
   'members.inviteUser': 'Gebruiker uitnodigen',
   'members.selectUser': 'Selecteer gebruiker…',
   'members.invite': 'Uitnodigen',
   'members.allHaveAccess': 'Alle gebruikers hebben al toegang.',
   'members.access': 'Toegang',
-  'members.person': 'persoon',
   'members.persons': 'personen',
+  'members.persons.one': 'persoon',
   'members.you': 'jij',
   'members.owner': 'Eigenaar',
   'members.leaveTrip': 'Reis verlaten',
@@ -33,23 +32,9 @@ const members: TranslationStrings = {
   'members.guestAddError': 'Kan gast niet toevoegen',
   'members.guestRenameError': 'Kan gast niet hernoemen',
   'members.guestRemoved': 'Gast verwijderd',
-  'members.confirmRemoveGuest': 'Deze gast verwijderen? Hun toewijzingen en kostenaandelen worden ook verwijderd.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'Deze gast verwijderen? Hun toewijzingen worden verwijderd en hun aandeel in elke uitgave wordt verdeeld over de andere deelnemers.',
+  'members.guestHasPayments':
+    'Deze gast heeft een uitgave betaald of maakt deel uit van een geregistreerde betaling. Wijzig eerst de betaler of verwijder de betaling.',
 };
 export default members;

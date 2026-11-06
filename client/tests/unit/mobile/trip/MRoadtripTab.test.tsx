@@ -1,4 +1,3 @@
-import { localIsoDate } from '../../../../src/utils/localDate'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '../../../helpers/render'
 import { buildPlanner, buildShell } from '../../../helpers/mobileTrip'
@@ -153,7 +152,7 @@ function renderTab(p: TripPlanner = planner(), shell: MTripShellApi = buildShell
 function freezeAt(hour: number, minute: number): string {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2026, 4, 2, hour, minute))
-  return localIsoDate()
+  return new Date().toISOString().slice(0, 10)
 }
 
 function today(date: string): Partial<TripPlanner> {
@@ -273,7 +272,7 @@ describe('MRoadtripTab', () => {
       renderTab(planner({ roadtripRoutes: routes({ days: [] }) }))
 
       expect(screen.getByText('roadtrip.empty.title')).toBeInTheDocument()
-      expect(screen.getByText('mobileTrip.rtPlanOnDesktop')).toBeInTheDocument()
+      expect(screen.getByText('mobileTrip.rtDriveOnTwoPlaces')).toBeInTheDocument()
       expect(screen.queryByText('mobileTrip.rtStart')).toBeNull()
       expect(screen.queryByText(/roadtrip\.day\.stopCount/)).toBeNull()
     })
@@ -283,7 +282,7 @@ describe('MRoadtripTab', () => {
 
       expect(screen.getByText('roadtrip.summary.partial')).toBeInTheDocument()
       expect(screen.queryByText('roadtrip.empty.title')).toBeNull()
-      expect(screen.queryByText('mobileTrip.rtPlanOnDesktop')).toBeNull()
+      expect(screen.queryByText('mobileTrip.rtDriveOnTwoPlaces')).toBeNull()
     })
 
     it('FE-MOB-RTTAB-053: with the drive routed and no day picked it asks for a day, not for a route', () => {
@@ -295,7 +294,7 @@ describe('MRoadtripTab', () => {
       expect(screen.getByText('mobileTrip.rtNoDay')).toBeInTheDocument()
       expect(screen.getByText('mobileTrip.rtNoDayHint')).toBeInTheDocument()
       expect(screen.queryByText('roadtrip.empty.title')).toBeNull()
-      expect(screen.queryByText('mobileTrip.rtPlanOnDesktop')).toBeNull()
+      expect(screen.queryByText('mobileTrip.rtDriveOnTwoPlaces')).toBeNull()
       expect(screen.queryByText('mobileTrip.rtStart')).toBeNull()
 
       // A picked day the routing has nothing for is still the empty stage: that one is

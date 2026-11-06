@@ -1,27 +1,23 @@
 // FE-COMP-NAVBAR-001 to FE-COMP-NAVBAR-028
+import { act, fireEvent, render, screen, waitFor } from '../../../tests/helpers/render';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { buildSettings, buildUser } from '../../../tests/helpers/factories';
 import { server } from '../../../tests/helpers/msw/server';
-import { act, fireEvent, render, screen, waitFor } from '../../../tests/helpers/render';
-import { resetAllStores, seedStore } from '../../../tests/helpers/store';
-import { useAddonStore } from '../../store/addonStore';
 import { useAuthStore } from '../../store/authStore';
-import { usePluginStore } from '../../store/pluginStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useAddonStore } from '../../store/addonStore';
+import { usePluginStore } from '../../store/pluginStore';
+import { resetAllStores, seedStore } from '../../../tests/helpers/store';
+import { buildUser, buildSettings } from '../../../tests/helpers/factories';
 import Navbar from './Navbar';
 
 beforeEach(() => {
   resetAllStores();
   server.use(
     http.get('/api/auth/app-config', () => HttpResponse.json({ version: '2.9.10' })),
-    http.get('/api/addons', () => HttpResponse.json({ addons: [] }))
+    http.get('/api/addons', () => HttpResponse.json({ addons: [] })),
   );
-  seedStore(useAuthStore, {
-    user: buildUser({ username: 'testuser', role: 'user' }),
-    isAuthenticated: true,
-    appVersion: '2.9.10',
-  });
+  seedStore(useAuthStore, { user: buildUser({ username: 'testuser', role: 'user' }), isAuthenticated: true, appVersion: '2.9.10' });
   seedStore(useSettingsStore, { settings: buildSettings() });
 });
 
@@ -110,6 +106,17 @@ describe('Navbar', () => {
     expect(backBtns.length).toBeGreaterThan(0);
   });
 
+  it('FE-COMP-NAVBAR-012b: in a trip the back arrow and the trip name are one pill', async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    render(<Navbar tripTitle="Paris 2026" showBack onBack={onBack} />);
+    const pill = screen.getByRole('button', { name: 'Back: Paris 2026' });
+    expect(pill).toHaveTextContent('Paris 2026');
+    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+    await user.click(pill);
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it('FE-COMP-NAVBAR-013: clicking back button calls onBack', async () => {
     const user = userEvent.setup();
     const onBack = vi.fn();
@@ -162,23 +169,24 @@ describe('Navbar', () => {
     expect(adminLink).toHaveAttribute('href', '/admin');
   });
 
-  it('FE-COMP-NAVBAR-019: share button rendered when onShare prop provided', () => {
-    render(<Navbar onShare={vi.fn()} />);
-    const shareBtn = screen.getByRole('button', { name: /share/i });
-    expect(shareBtn).toBeInTheDocument();
+  it('FE-COMP-NAVBAR-019: the trip settings button sits beside the back pill when onSettings is given', () => {
+    render(<Navbar tripTitle="Japan" showBack onBack={vi.fn()} onSettings={vi.fn()} />);
+    const back = screen.getByRole('button', { name: /back/i });
+    const settings = screen.getByRole('button', { name: 'Trip settings' });
+    expect(back.parentElement).toBe(settings.closest('div'));
   });
 
-  it('FE-COMP-NAVBAR-020: share button click calls onShare', async () => {
+  it('FE-COMP-NAVBAR-020: the trip settings button calls onSettings', async () => {
     const user = userEvent.setup();
-    const onShare = vi.fn();
-    render(<Navbar onShare={onShare} />);
-    const shareBtn = screen.getByRole('button', { name: /share/i });
-    await user.click(shareBtn);
-    expect(onShare).toHaveBeenCalled();
+    const onSettings = vi.fn();
+    render(<Navbar onSettings={onSettings} />);
+    await user.click(screen.getByRole('button', { name: 'Trip settings' }));
+    expect(onSettings).toHaveBeenCalled();
   });
 
-  it('FE-COMP-NAVBAR-021: share button NOT rendered when onShare prop omitted', () => {
+  it('FE-COMP-NAVBAR-021: no trip settings button without onSettings, and no share button any more', () => {
     render(<Navbar />);
+    expect(screen.queryByRole('button', { name: 'Trip settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /share/i })).not.toBeInTheDocument();
   });
 
@@ -201,8 +209,9 @@ describe('Navbar', () => {
     const updateSetting = vi.fn().mockResolvedValue(undefined);
     seedStore(useSettingsStore, { settings: buildSettings({ dark_mode: false }), updateSetting });
     render(<Navbar />);
-    // Find the dark mode toggle button by title attribute
-    const toggleBtn = document.querySelector('button[title]') as HTMLElement;
+    // Find the dark mode toggle button by title attribute. The help button
+    // before it carries a title too, hence the exclusion.
+    const toggleBtn = document.querySelector('button[title]:not([data-help-button])') as HTMLElement;
     expect(toggleBtn).toBeTruthy();
     await user.click(toggleBtn);
     expect(updateSetting).toHaveBeenCalledWith('dark_mode', 'dark');
@@ -210,11 +219,9 @@ describe('Navbar', () => {
 
   it('FE-COMP-NAVBAR-024: global addon nav links appear when addons enabled', () => {
     server.use(
-      http.get('/api/addons', () =>
-        HttpResponse.json({
-          addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
-        })
-      )
+      http.get('/api/addons', () => HttpResponse.json({
+        addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
+      })),
     );
     seedStore(useAddonStore, {
       addons: [{ id: 'vacay', name: 'Vacay', icon: 'CalendarDays', type: 'global', enabled: true }],
@@ -284,7 +291,7 @@ describe('Navbar', () => {
     const updateSetting = vi.fn().mockResolvedValue(undefined);
     seedStore(useSettingsStore, { settings: buildSettings({ dark_mode: 'dark' }), updateSetting });
     render(<Navbar />);
-    const toggleBtn = document.querySelector('button[title]') as HTMLElement;
+    const toggleBtn = document.querySelector('button[title]:not([data-help-button])') as HTMLElement;
     expect(toggleBtn).toBeTruthy();
     await user.click(toggleBtn);
     expect(updateSetting).toHaveBeenCalledWith('dark_mode', 'light');
@@ -447,8 +454,8 @@ describe('Navbar styling and menu details', () => {
     expect(screen.queryByText('3.5.0-rc1')).not.toBeInTheDocument();
   });
 
-  it('FE-W5NAV-009: the back, share and theme buttons reset their hover background', () => {
-    render(<Navbar showBack onBack={vi.fn()} onShare={vi.fn()} />);
+  it('FE-W5NAV-009: the back and theme buttons reset their hover background', () => {
+    render(<Navbar showBack onBack={vi.fn()} onSettings={vi.fn()} />);
 
     const back = screen.getByRole('button', { name: /back/i });
     fireEvent.mouseEnter(back);
@@ -456,13 +463,8 @@ describe('Navbar styling and menu details', () => {
     fireEvent.mouseLeave(back);
     expect(back.style.background).toBe('transparent');
 
-    const share = screen.getByRole('button', { name: /share/i });
-    fireEvent.mouseEnter(share);
-    expect(share.style.background).toBe('var(--bg-hover)');
-    fireEvent.mouseLeave(share);
-    expect(share.style.background).toBe('var(--bg-card)');
 
-    const theme = document.querySelector('button[title]') as HTMLElement;
+    const theme = document.querySelector('button[title]:not([data-help-button])') as HTMLElement;
     fireEvent.mouseEnter(theme);
     expect(theme.style.background).toBe('var(--bg-hover)');
     fireEvent.mouseLeave(theme);
@@ -473,25 +475,19 @@ describe('Navbar styling and menu details', () => {
     const updateSetting = vi.fn(async () => {});
     seedStore(useSettingsStore, { settings: buildSettings({ dark_mode: false }), updateSetting });
     render(<Navbar />);
-    const theme = document.querySelector('button[title]') as HTMLElement;
+    const theme = document.querySelector('button[title]:not([data-help-button])') as HTMLElement;
 
     vi.useFakeTimers();
     try {
       fireEvent.click(theme);
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(true);
 
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
+      act(() => { vi.advanceTimersByTime(200); });
       fireEvent.click(theme); // restarts the pending timer
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
+      act(() => { vi.advanceTimersByTime(200); });
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(true);
 
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
+      act(() => { vi.advanceTimersByTime(200); });
       expect(document.documentElement.classList.contains('trek-theme-transitioning')).toBe(false);
     } finally {
       vi.useRealTimers();
@@ -502,7 +498,7 @@ describe('Navbar styling and menu details', () => {
     const updateSetting = vi.fn(async () => {});
     seedStore(useSettingsStore, { settings: buildSettings({ dark_mode: false }), updateSetting });
     const { unmount } = render(<Navbar />);
-    const theme = document.querySelector('button[title]') as HTMLElement;
+    const theme = document.querySelector('button[title]:not([data-help-button])') as HTMLElement;
 
     vi.useFakeTimers();
     try {
@@ -528,7 +524,7 @@ describe('Navbar styling and menu details', () => {
     render(<Navbar />);
     await user.click(screen.getByText('adminuser'));
 
-    for (const name of [/^Settings$/, /^Legal & source$/, /^Admin$/]) {
+    for (const name of [/^Settings$/, /^Help$/, /legal/i, /^Admin$/]) {
       const link = screen.getByRole('link', { name });
       fireEvent.mouseEnter(link);
       expect(link.style.background).toBe('var(--bg-hover)');
@@ -537,6 +533,7 @@ describe('Navbar styling and menu details', () => {
     }
 
     expect(screen.queryByTitle('Discord')).not.toBeInTheDocument();
+
     expect(document.querySelector('img[src="/text-light.svg"]')).not.toBeNull();
   });
 
@@ -548,7 +545,7 @@ describe('Navbar styling and menu details', () => {
     });
     render(<Navbar />);
 
-    for (const name of [/^Settings$/, /^Legal & source$/, /^Admin$/]) {
+    for (const name of [/^Settings$/, /^Help$/, /legal/i, /^Admin$/]) {
       await user.click(screen.getByText('adminuser'));
       await user.click(screen.getByRole('link', { name }));
       expect(screen.queryByRole('link', { name: /^Settings$/ })).not.toBeInTheDocument();
@@ -560,7 +557,7 @@ describe('Navbar styling and menu details', () => {
     seedStore(useSettingsStore, { settings: buildSettings({ dark_mode: false }), updateSetting });
     render(<Navbar />);
 
-    fireEvent.click(document.querySelector('button[title]') as HTMLElement);
+    fireEvent.click(document.querySelector('button[title]:not([data-help-button])') as HTMLElement);
 
     await waitFor(() => expect(updateSetting).toHaveBeenCalledWith('dark_mode', 'dark'));
     document.documentElement.classList.remove('trek-theme-transitioning');
@@ -585,11 +582,7 @@ describe('Navbar styling and menu details', () => {
 describe('Navbar layout (#1983)', () => {
   const withAddons = (n: number) => {
     const addons = Array.from({ length: n }, (_, i) => ({
-      id: `addon${i}`,
-      name: `Addon ${i}`,
-      icon: 'CalendarDays',
-      type: 'global' as const,
-      enabled: true,
+      id: `addon${i}`, name: `Addon ${i}`, icon: 'CalendarDays', type: 'global' as const, enabled: true,
     }));
     server.use(http.get('/api/addons', () => HttpResponse.json({ addons })));
     seedStore(useAddonStore, { addons });
@@ -608,7 +601,7 @@ describe('Navbar layout (#1983)', () => {
     withAddons(4);
     const { container } = render(<Navbar />);
     const nav = container.querySelector('nav') as HTMLElement;
-    const columns = Array.from(nav.children).filter((c) => c.classList.contains('flex-1'));
+    const columns = Array.from(nav.children).filter(c => c.classList.contains('flex-1'));
     // Left brand column and right action cluster, both flex-1 basis-0.
     expect(columns).toHaveLength(2);
     for (const c of columns) expect(c.classList.contains('basis-0')).toBe(true);
@@ -620,6 +613,27 @@ describe('Navbar layout (#1983)', () => {
     const pill = container.querySelector('.trek-nav-pill') as HTMLElement;
     expect(pill.classList.contains('min-w-0')).toBe(true);
     expect(pill.style.overflowX).toBe('auto');
+  });
+
+  it('keeps both columns at their content width, so the actions never spill over the pill', () => {
+    withAddons(8);
+    const { container } = render(<Navbar />);
+    const nav = container.querySelector('nav') as HTMLElement;
+    const columns = Array.from(nav.children).filter(c => c.classList.contains('flex-1'));
+    // A min-w-0 column shrinks below its content and its justify-end children
+    // overflow leftwards across the pill (5.0.0-pre.1 feedback).
+    for (const c of columns) {
+      expect(c.classList.contains('min-w-0')).toBe(false);
+      expect(c.classList.contains('min-w-max')).toBe(true);
+    }
+  });
+
+  it('shows the prerelease badge in the brand column, beside the logo', () => {
+    seedStore(useAuthStore, { isPrerelease: true, appVersion: '5.0.0-pre.1' });
+    const { container } = render(<Navbar />);
+    const nav = container.querySelector('nav') as HTMLElement;
+    const brandColumn = nav.children[0] as HTMLElement;
+    expect(brandColumn.contains(screen.getByText('5.0.0-pre.1'))).toBe(true);
   });
 
   it('still renders every addon as a reachable link, however many there are', () => {

@@ -4,7 +4,7 @@ const dawarich: TranslationStrings = {
   // ── Connection ─────────────────────────────────────────────────────────────
   'dawarich.title': 'Dawarich',
   'dawarich.intro':
-    '连接你自己的 Dawarich 实例，看看你实际去过哪些地方。TREK 会读取它，并据此推荐日志条目、地点和国家——在你确认之前不会添加任何内容，也不会向 Dawarich 回写任何数据。',
+    '连接你自己的 Dawarich 实例，看看你实际去过哪些地方。TREK 会读取它，并据此推荐日志条目、地点和国家；在你确认之前不会添加任何内容，也不会向 Dawarich 回写任何数据。',
   'dawarich.url': '实例地址',
   'dawarich.apiKey': 'API 密钥',
   'dawarich.apiKeyPlaceholder': '粘贴你的 Dawarich API 密钥',
@@ -112,7 +112,7 @@ const dawarich: TranslationStrings = {
   'dawarich.accept.confirm.journal': '添加条目',
   'dawarich.accept.confirm.bucket_list': '勾掉它',
   'dawarich.accept.recorded': '记录时间：{from} 至 {to}',
-  'dawarich.accept.duration': '{minutes} 分钟',
+  'dawarich.accept.duration': '{count} 分钟',
   'dawarich.accept.name': '名称',
   'dawarich.accept.date': '日期',
   'dawarich.accept.from': '到达',
@@ -154,7 +154,6 @@ const dawarich: TranslationStrings = {
   'dawarich.atlas.loading': '正在读取你的记录…',
   'dawarich.atlas.empty': '你的记录中没有出现 TREK 尚未收录的国家。',
   'dawarich.atlas.cities': '{count} 座城市',
-  'dawarich.atlas.citiesOne': '1 座城市',
   'dawarich.atlas.accept': '添加 {count} 个国家',
   'dawarich.atlas.accepted': '已添加 {count} 个国家',
   'dawarich.atlas.unresolved': 'TREK 无法把这些匹配到某个国家：{names}。',
@@ -170,10 +169,8 @@ const dawarich: TranslationStrings = {
   'dawarich.again': '再查一次',
   'dawarich.bucket.metersAway': '{meters} 米外',
   'dawarich.bucket.kilometersAway': '{km} 公里外',
-  'dawarich.bucket.rule': '在 {meters} 米以内停留 {minutes} 分钟以上，才算实现心愿。',
-
-  'dawarich.journey.dayStays.one': '来自 Dawarich 的 1 个停留',
-  'dawarich.journey.dayStays.other': '来自 Dawarich 的 {count} 个停留',
+  'dawarich.bucket.rule': '在 {meters} 米以内停留 {count} 分钟以上，才算实现心愿。',
+  'dawarich.journey.dayStays.other': '来自 Dawarich 的 {count} 条停留记录',
 };
 
 export default dawarich;
