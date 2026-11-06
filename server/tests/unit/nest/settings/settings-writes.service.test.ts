@@ -20,6 +20,7 @@ let t: TestModule;
 let writes: SettingsWritesService;
 
 const settings = {
+  resetSetting: vi.fn(async (_userId: number, _key: string) => ['EUR']),
   upsertSetting: vi.fn(async (_userId: number, _key: string, _value: unknown) => undefined),
   bulkUpsertSettings: vi.fn(async (_userId: number, values: Record<string, unknown>) => {
     return Object.values(values).filter((value) => value !== MASKED_SETTING_VALUE).length;
@@ -85,4 +86,20 @@ describe('SettingsWritesService', () => {
       undefined,
     );
   });
+});
+
+it('resetOne returns inherited values and tells the other tabs which setting changed', async () => {
+  expect(await writes.resetOne(7, 'common_currencies', 'sock-reset')).toEqual(['EUR']);
+  expect(settings.resetSetting).toHaveBeenCalledWith(7, 'common_currencies');
+  expect(t.realtime.broadcastToUserMock).toHaveBeenCalledExactlyOnceWith(
+    7,
+    { type: 'settings:updated', keys: ['common_currencies'] },
+    'sock-reset',
+  );
+});
+
+it('a failed reset does not announce a setting change', async () => {
+  settings.resetSetting.mockRejectedValueOnce(new Error('write failed'));
+  await expect(writes.resetOne(7, 'common_currencies', undefined)).rejects.toThrow('write failed');
+  expect(t.realtime.broadcastToUserMock).not.toHaveBeenCalled();
 });

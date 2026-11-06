@@ -730,4 +730,58 @@ describe('Guest identity transfer', () => {
     expect(await readUser(t, guest.id)).not.toBeNull();
     expect(await memberRow(trip.id, member.id)).toMatchObject({ new_member_identity_check_completed_at: null });
   });
+  it('declines persistently and auto-completes a check when no guest remains', async () => {
+    const { trip, member, guest } = await membership();
+    await expect(roster.completeNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({ success: true });
+    await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({ required: false, candidates: [] });
+    expect(await readUser(await orm(), guest.id)).not.toBeNull();
+    await updateRows(await orm(), TripMembers, { trip: trip.id, user: member.id }, { new_member_identity_check_completed_at: null });
+    await roster.deleteGuest(trip.id, guest.id);
+    await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({ required: false, candidates: [] });
+    expect(await memberRow(trip.id, member.id)).toMatchObject({ new_member_identity_check_completed_at: expect.any(String) });
+  });
+
+  it('rejects invalid trip/guest ids, strangers and guests from another or multiple trips', async () => {
+    const { trip, member, guest } = await membership();
+    await expect(roster.runNewMemberIdentityCheck('not-a-trip', member.id)).rejects.toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' });
+    await expect(roster.runNewMemberIdentityCheck(trip.id, guest.id)).rejects.toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' });
+    await expect(roster.transferGuestIdentity(trip.id, NaN, member.id)).rejects.toMatchObject({ code: 'GUEST_ALREADY_TRANSFERRED' });
+    await expect(roster.transferGuestIdentity(trip.id, member.id, member.id)).rejects.toMatchObject({ code: 'GUEST_ALREADY_TRANSFERRED' });
+    const { user: otherOwner } = createUser(testDb);
+    const otherTrip = createTrip(testDb, otherOwner.id);
+    const otherGuest = (await roster.createGuest(otherTrip.id, 'Other', otherOwner.id)).member;
+    await expect(roster.transferGuestIdentity(trip.id, otherGuest.id, member.id)).rejects.toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' });
+    addTripMember(testDb, otherTrip.id, guest.id);
+    await expect(roster.transferGuestIdentity(trip.id, guest.id, member.id)).rejects.toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN' });
+    expect(await readUser(await orm(), guest.id)).not.toBeNull();
+  });
+
+  it.each(['{broken', '{}'])('refuses malformed ticket %s without mutating money or identity', async (ticket_json) => {
+    const { trip, member, guest } = await membership();
+    const expense = await makeBudgetItem(await orm(), trip.id, { paidByUser: guest.id, ticket_json });
+    await expect(roster.transferGuestIdentity(trip.id, guest.id, member.id)).rejects.toMatchObject({ code: 'GUEST_IDENTITY_TRANSFER_CONFLICT', conflicts: [{ type: 'invalid_ticket_json', record_id: expense.id }] });
+    expect(await findRow(await orm(), BudgetItems, { id: expense.id })).toMatchObject({ ticket_json, paid_by_user_id: guest.id });
+  });
+
+  it('detects ticket participant overlap and self-payments in the same preview', async () => {
+    const { trip, member, guest } = await membership();
+    const t = await orm();
+    const expense = await makeBudgetItem(t, trip.id, { ticket_json: JSON.stringify({ items: [{ name: 'Train', price: 15, parts: [guest.id, member.id], extra: true }] }) });
+    const payment = await insertRow(t, BudgetSettlements, { trip: trip.id, fromUser: guest.id, toUser: member.id, amount: 5, currency: 'EUR', exchange_rate: 1 });
+    const candidates = await roster.listGuestIdentityTransferCandidates(trip.id, member.id);
+    expect(candidates[0].conflicts).toEqual([{ type: 'ticket_participant_overlap', record_id: expense.id }, { type: 'settlement_self_payment', record_id: payment }]);
+  });
+
+  it('rewrites legacy note tickets while preserving other participants and username fallback', async () => {
+    const { trip, owner, member, guest } = await membership();
+    const t = await orm();
+    await updateRows(t, Users, { id: guest.id }, { display_name: null });
+    const ticket = { items: [{ name: 'Train', price: 15, parts: [guest.id, owner.id], extra: true }] };
+    const expense = await makeBudgetItem(t, trip.id, { note: 'TICKETJSON:' + JSON.stringify(ticket) });
+    const preview = await roster.listGuestIdentityTransferCandidates(trip.id, member.id);
+    expect(preview[0].name).toBe((await readUser(t, guest.id))?.username);
+    await roster.transferGuestIdentity(trip.id, guest.id, member.id);
+    expect((await findRow(t, BudgetItems, { id: expense.id }))?.note).toBe('TICKETJSON:' + JSON.stringify({ items: [{ ...ticket.items[0], parts: [member.id, owner.id] }] }));
+  });
+
 });
