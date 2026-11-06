@@ -166,7 +166,7 @@ describe('useTripWebSocket', () => {
 
       emit('guest:identity-transferred', 42);
       expect(hydrateActiveTrip).toHaveBeenCalledExactlyOnceWith(42);
-      expect(useTripStore.getState().guestIdentityRevision).toBe(initial.guestIdentityRevision);
+      expect(useTripStore.getState().guestIdentityRevision).toBe(initial.guestIdentityRevision + 1);
 
       emit('budget:exchange-rates-updated', 42);
       expect(useTripStore.getState().exchangeRatesRevision).toBe(initial.exchangeRatesRevision + 1);

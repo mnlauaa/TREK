@@ -20,8 +20,10 @@ export interface ReservationsSlice {
 
 export const createReservationsSlice = (set: SetState, get: GetState): ReservationsSlice => ({
   loadReservations: async (tripId) => {
+    const identityRevision = get().guestIdentityRevision
     try {
       const data = await reservationRepo.list(tripId)
+      if (get().guestIdentityRevision !== identityRevision) return
       set({ reservations: data.reservations })
     } catch (err: unknown) {
       console.error('Failed to load reservations:', err)

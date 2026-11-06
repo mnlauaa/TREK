@@ -82,16 +82,24 @@ export function usePackingList({ tripId, items, openImportSignal = 0, addCategor
   // Trip members & category assignees
   const [tripMembers, setTripMembers] = useState<TripMember[]>([])
 
-  const readMembers = useCallback(() => tripsApi.getMembers(tripId).then(data => {
+  const identityRevision = useTripStore(s => Number(s.trip?.id) === Number(tripId) ? s.guestIdentityRevision : 0)
+  const membersRequest = useRef<symbol>(Symbol())
+  const readMembers = useCallback(() => {
+    const request = Symbol()
+    membersRequest.current = request
+    return tripsApi.getMembers(tripId).then(data => {
+    if (request !== membersRequest.current) return
     const all: TripMember[] = []
     if (data.owner) all.push({ id: data.owner.id, username: data.owner.username, avatar: data.owner.avatar_url, is_guest: false })
     if (data.members) all.push(...data.members.map((m: any) => ({ id: m.id, username: m.username, avatar: m.avatar_url, is_guest: !!m.is_guest })))
     setTripMembers(all)
-  }).catch(() => {}), [tripId])
+  }).catch(() => {})
+  }, [tripId])
 
   useEffect(() => {
     void readMembers()
-  }, [readMembers])
+    return () => { membersRequest.current = Symbol() }
+  }, [readMembers, identityRevision])
   // A traveller or guest added, renamed or removed elsewhere: the pickers read the
   // roster again, once per burst (the phone list reads the planner's roster).
   useServerPing(MEMBER_EVENTS, true, readMembers)

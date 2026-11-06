@@ -35,147 +35,153 @@ function openTripCurrency(get: GetState, tripId: number | string): string | null
   return trip && String(trip.id) === String(tripId) ? trip.currency : null
 }
 
-export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => ({
-  exchangeRatesRevision: 0,
-  budgetSettlementRevision: 0,
+export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => {
+  let budgetRequest = 0
+  return {
+    exchangeRatesRevision: 0,
+    budgetSettlementRevision: 0,
 
-  refreshExchangeRates: (tripId, reloadItems, origin = 'local') => {
-    if (String(get().trip?.id) !== String(tripId)) return
-    set(state => ({
-      exchangeRatesRevision: state.exchangeRatesRevision + 1,
-      ...(reloadItems && origin === 'local' && { budgetSettlementRevision: state.budgetSettlementRevision + 1 }),
-    }))
-    if (reloadItems) void get().loadBudgetItems(tripId)
-  },
-
-  loadBudgetItems: async (tripId) => {
-    try {
-      const data = await budgetRepo.list(tripId)
-      set({ budgetItems: data.items })
-    } catch (err: unknown) {
-      console.error('Failed to load budget items:', err)
-    }
-  },
-
-  addBudgetItem: async (tripId, data) => {
-    try {
-      // A foreign currency goes out with the rate the browser holds for it, so the server
-      // can freeze one even when its own fetch fails.
-      const result = await budgetRepo.create(tripId, withFallbackFx(data, openTripCurrency(get, tripId)))
-      set(state => ({ budgetItems: [...state.budgetItems, result.item] }))
-      // The booking mirrors its expenses' total (#2084), so a new one on it changes its card.
-      if (result.item.reservation_id) get().loadReservations(tripId)
-      return result.item
-    } catch (err: unknown) {
-      throw new Error(getApiErrorMessage(err, 'Error adding budget item'))
-    }
-  },
-
-  updateBudgetItem: async (tripId, id, data) => {
-    try {
-      const result = await budgetRepo.update(tripId, id, withFallbackFx(data, openTripCurrency(get, tripId)))
+    refreshExchangeRates: (tripId, reloadItems, origin = 'local') => {
+      if (String(get().trip?.id) !== String(tripId)) return
       set(state => ({
-        budgetItems: state.budgetItems.map(item => item.id === id ? result.item : item)
+        exchangeRatesRevision: state.exchangeRatesRevision + 1,
+        ...(reloadItems && origin === 'local' && { budgetSettlementRevision: state.budgetSettlementRevision + 1 }),
       }))
-      // The booking mirrors its expenses' total, so any edit of an expense on one
-      // (total, currency, payers) or a link that moved (#2084) changes its card.
-      if (result.item.reservation_id || data.reservation_id !== undefined) {
-        get().loadReservations(tripId)
+      if (reloadItems) void get().loadBudgetItems(tripId)
+    },
+
+    loadBudgetItems: async (tripId) => {
+      try {
+        const request = ++budgetRequest
+        const identityRevision = get().guestIdentityRevision
+        const isCurrent = () => request === budgetRequest && get().guestIdentityRevision === identityRevision
+        const data = await budgetRepo.list(tripId, isCurrent)
+        if (isCurrent()) set({ budgetItems: data.items })
+      } catch (err: unknown) {
+        console.error('Failed to load budget items:', err)
       }
-      return result.item
-    } catch (err: unknown) {
-      throw new Error(getApiErrorMessage(err, 'Error updating budget item'))
-    }
-  },
+    },
 
-  deleteBudgetItem: async (tripId, id) => {
-    const prev = get().budgetItems
-    set(state => ({ budgetItems: state.budgetItems.filter(item => item.id !== id) }))
-    try {
-      await budgetRepo.delete(tripId, id)
-    } catch (err: unknown) {
-      set({ budgetItems: prev })
-      throw new Error(getApiErrorMessage(err, 'Error deleting budget item'))
-    }
-  },
-
-  setBudgetItemMembers: async (tripId, itemId, userIds) => {
-    const result = await budgetRepo.setMembers(tripId, itemId, userIds);
-    set(state => ({
-      budgetItems: state.budgetItems.map(item =>
-        item.id === itemId ? { ...item, members: result.members, persons: result.item.persons } : item
-      )
-    }));
-    return result;
-  },
-
-  toggleBudgetMemberPaid: async (tripId, itemId, userId, paid) => {
-    await budgetRepo.togglePaid(tripId, itemId, userId, paid);
-    set(state => ({
-      budgetItems: state.budgetItems.map(item =>
-        item.id === itemId
-          // The server persists `paid` as 0/1 and broadcasts the same 0/1 over
-          // WebSocket, so the optimistic write normalises the boolean toggle to
-          // that numeric contract instead of parking a boolean under a cast.
-          ? { ...item, members: (item.members || []).map(m => m.user_id === userId ? { ...m, paid: paid ? 1 : 0 } : m) }
-          : item
-      )
-    }));
-  },
-
-  reorderBudgetItems: async (tripId, orderedIds) => {
-    // Optimistic: reorder locally
-    set(state => {
-      const byId = new Map(state.budgetItems.map(i => [i.id, i]))
-      // Drop unknown ids before reindexing, otherwise a stale id leaves a gap
-      // in the local sort_order sequence.
-      const reordered = orderedIds
-        .map(id => byId.get(id))
-        .filter((i): i is BudgetItem => i !== undefined)
-        .map((item, idx): BudgetItem => ({ ...item, sort_order: idx }))
-      // Keep items not in orderedIds at the end
-      const remaining = state.budgetItems.filter(i => !orderedIds.includes(i.id))
-      return { budgetItems: [...reordered, ...remaining] }
-    })
-    try {
-      await budgetRepo.reorderItems(tripId, orderedIds)
-    } catch (err: unknown) {
-      // Reload on failure to restore the server's ordering, and tell the user
-      // their reorder didn't stick (the caller fires this without awaiting, so
-      // a failing reload must not escape as an unhandled rejection).
+    addBudgetItem: async (tripId, data) => {
       try {
-        const data = await budgetRepo.list(tripId)
-        set({ budgetItems: data.items })
-      } catch { /* offline too — the next successful load restores the order */ }
-      notify(getApiErrorMessage(err, 'Error reordering budget items'), 'error')
-    }
-  },
+        // A foreign currency goes out with the rate the browser holds for it, so the server
+        // can freeze one even when its own fetch fails.
+        const result = await budgetRepo.create(tripId, withFallbackFx(data, openTripCurrency(get, tripId)))
+        set(state => ({ budgetItems: [...state.budgetItems, result.item] }))
+        // The booking mirrors its expenses' total (#2084), so a new one on it changes its card.
+        if (result.item.reservation_id) get().loadReservations(tripId)
+        return result.item
+      } catch (err: unknown) {
+        throw new Error(getApiErrorMessage(err, 'Error adding budget item'))
+      }
+    },
 
-  reorderBudgetCategories: async (tripId, orderedCategories) => {
-    // Optimistic: reorder items by new category order (Map preserves insertion order for numeric keys)
-    set(state => ({ budgetItems: orderBudgetByCategories(state.budgetItems, orderedCategories) }))
-    try {
-      await budgetRepo.reorderCategories(tripId, orderedCategories)
-    } catch (err: unknown) {
-      // Reload on failure to restore the server's ordering, and tell the user
-      // their reorder didn't stick (the caller fires this without awaiting, so
-      // a failing reload must not escape as an unhandled rejection).
+    updateBudgetItem: async (tripId, id, data) => {
       try {
-        const data = await budgetRepo.list(tripId)
-        set({ budgetItems: data.items })
-      } catch { /* offline too — the next successful load restores the order */ }
-      notify(getApiErrorMessage(err, 'Error reordering budget items'), 'error')
-    }
-  },
+        const result = await budgetRepo.update(tripId, id, withFallbackFx(data, openTripCurrency(get, tripId)))
+        set(state => ({
+          budgetItems: state.budgetItems.map(item => item.id === id ? result.item : item)
+        }))
+        // The booking mirrors its expenses' total, so any edit of an expense on one
+        // (total, currency, payers) or a link that moved (#2084) changes its card.
+        if (result.item.reservation_id || data.reservation_id !== undefined) {
+          get().loadReservations(tripId)
+        }
+        return result.item
+      } catch (err: unknown) {
+        throw new Error(getApiErrorMessage(err, 'Error updating budget item'))
+      }
+    },
 
-  // Compatibility endpoint for callers that explicitly request a freeze.
-  // Not optimistic: nothing changes locally until the server says which rows it froze.
-  freezeMissingRates: async (tripId, fallback) => {
-    const result = await budgetRepo.freezeRates(tripId, fallback ? { fallback_fx: fallback } : {})
-    if (result.items.length > 0) {
-      const healed = new Map(result.items.map(item => [item.id, item]))
-      set(state => ({ budgetItems: state.budgetItems.map(item => healed.get(item.id) ?? item) }))
-    }
-    return result
-  },
-})
+    deleteBudgetItem: async (tripId, id) => {
+      const prev = get().budgetItems
+      set(state => ({ budgetItems: state.budgetItems.filter(item => item.id !== id) }))
+      try {
+        await budgetRepo.delete(tripId, id)
+      } catch (err: unknown) {
+        set({ budgetItems: prev })
+        throw new Error(getApiErrorMessage(err, 'Error deleting budget item'))
+      }
+    },
+
+    setBudgetItemMembers: async (tripId, itemId, userIds) => {
+      const result = await budgetRepo.setMembers(tripId, itemId, userIds);
+      set(state => ({
+        budgetItems: state.budgetItems.map(item =>
+          item.id === itemId ? { ...item, members: result.members, persons: result.item.persons } : item
+        )
+      }));
+      return result;
+    },
+
+    toggleBudgetMemberPaid: async (tripId, itemId, userId, paid) => {
+      await budgetRepo.togglePaid(tripId, itemId, userId, paid);
+      set(state => ({
+        budgetItems: state.budgetItems.map(item =>
+          item.id === itemId
+            // The server persists `paid` as 0/1 and broadcasts the same 0/1 over
+            // WebSocket, so the optimistic write normalises the boolean toggle to
+            // that numeric contract instead of parking a boolean under a cast.
+            ? { ...item, members: (item.members || []).map(m => m.user_id === userId ? { ...m, paid: paid ? 1 : 0 } : m) }
+            : item
+        )
+      }));
+    },
+
+    reorderBudgetItems: async (tripId, orderedIds) => {
+      // Optimistic: reorder locally
+      set(state => {
+        const byId = new Map(state.budgetItems.map(i => [i.id, i]))
+        // Drop unknown ids before reindexing, otherwise a stale id leaves a gap
+        // in the local sort_order sequence.
+        const reordered = orderedIds
+          .map(id => byId.get(id))
+          .filter((i): i is BudgetItem => i !== undefined)
+          .map((item, idx): BudgetItem => ({ ...item, sort_order: idx }))
+        // Keep items not in orderedIds at the end
+        const remaining = state.budgetItems.filter(i => !orderedIds.includes(i.id))
+        return { budgetItems: [...reordered, ...remaining] }
+      })
+      try {
+        await budgetRepo.reorderItems(tripId, orderedIds)
+      } catch (err: unknown) {
+        // Reload on failure to restore the server's ordering, and tell the user
+        // their reorder didn't stick (the caller fires this without awaiting, so
+        // a failing reload must not escape as an unhandled rejection).
+        try {
+          const data = await budgetRepo.list(tripId)
+          set({ budgetItems: data.items })
+        } catch { /* offline too — the next successful load restores the order */ }
+        notify(getApiErrorMessage(err, 'Error reordering budget items'), 'error')
+      }
+    },
+
+    reorderBudgetCategories: async (tripId, orderedCategories) => {
+      // Optimistic: reorder items by new category order (Map preserves insertion order for numeric keys)
+      set(state => ({ budgetItems: orderBudgetByCategories(state.budgetItems, orderedCategories) }))
+      try {
+        await budgetRepo.reorderCategories(tripId, orderedCategories)
+      } catch (err: unknown) {
+        // Reload on failure to restore the server's ordering, and tell the user
+        // their reorder didn't stick (the caller fires this without awaiting, so
+        // a failing reload must not escape as an unhandled rejection).
+        try {
+          const data = await budgetRepo.list(tripId)
+          set({ budgetItems: data.items })
+        } catch { /* offline too — the next successful load restores the order */ }
+        notify(getApiErrorMessage(err, 'Error reordering budget items'), 'error')
+      }
+    },
+
+    // Compatibility endpoint for callers that explicitly request a freeze.
+    // Not optimistic: nothing changes locally until the server says which rows it froze.
+    freezeMissingRates: async (tripId, fallback) => {
+      const result = await budgetRepo.freezeRates(tripId, fallback ? { fallback_fx: fallback } : {})
+      if (result.items.length > 0) {
+        const healed = new Map(result.items.map(item => [item.id, item]))
+        set(state => ({ budgetItems: state.budgetItems.map(item => healed.get(item.id) ?? item) }))
+      }
+      return result
+    },
+  }
+}

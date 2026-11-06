@@ -1,3 +1,4 @@
+import { budgetApi } from '../api/client'
 // FE-REPO-BUDGET-001 to FE-REPO-BUDGET-004
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
@@ -52,4 +53,30 @@ describe('budgetRepo.list', () => {
     server.use(http.get('/api/trips/12/budget', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
     await expect(budgetRepo.list(12)).rejects.toThrow()
   })
+})
+
+it('keeps the transferred identity in the offline ledger when an older request finishes last', async () => {
+  const before = buildBudgetItem({ id: 61, trip_id: 12, paid_by_user_id: 3 })
+  const after = { ...before, paid_by_user_id: 2 }
+  let release!: (value: { items: typeof before[] }) => void
+  let current = true
+  vi.spyOn(budgetApi, 'list')
+    .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    .mockResolvedValueOnce({ items: [after] })
+  const oldRead = budgetRepo.list(12, () => current)
+  current = false
+  await budgetRepo.list(12)
+  release({ items: [before] })
+  await oldRead
+  setOnline(false)
+  expect((await budgetRepo.list(12)).items).toEqual([after])
+})
+
+
+it('returns the online ledger when the offline cache cannot be written', async () => {
+  const item = buildBudgetItem({ id: 61, trip_id: 12 })
+  vi.spyOn(budgetApi, 'list').mockResolvedValueOnce({ items: [item] })
+  const write = vi.spyOn(offlineDb.budgetItems, 'bulkPut').mockRejectedValueOnce(new Error('Storage unavailable'))
+  await expect(budgetRepo.list(12)).resolves.toEqual({ items: [item] })
+  expect(write).toHaveBeenCalled()
 })

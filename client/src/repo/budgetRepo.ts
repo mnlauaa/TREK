@@ -124,11 +124,16 @@ export const exchangeRateRepo = {
 };
 
 export const budgetRepo = {
-  async list(tripId: number | string): Promise<{ items: BudgetItem[] }> {
+  async list(tripId: number | string, isCurrent: () => boolean = () => true): Promise<{ items: BudgetItem[] }> {
     return onlineThenCache(
       async () => {
         const result = await budgetApi.list(tripId)
-        void replaceTripRows('budgetItems', Number(tripId), result.items)
+        await offlineDb.transaction('rw', offlineDb.budgetItems, async () => {
+          if (isCurrent()) await replaceTripRows('budgetItems', Number(tripId), result.items)
+        }).catch(() => {
+          // The server response remains usable when local storage is unavailable.
+          return undefined
+        })
         return result
       },
       async () => ({
