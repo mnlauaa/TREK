@@ -1,6 +1,3 @@
-import { BudgetSettlements } from '../../../src/db/entities/BudgetSettlements.entity';
-import { BudgetItemPayers } from '../../../src/db/entities/BudgetItemPayers.entity';
-import { BudgetItemMembers } from '../../../src/db/entities/BudgetItemMembers.entity';
 /**
  * Unit tests for TripMembersService — MEMBERS-SVC-001 through MEMBERS-SVC-018
  * (016-018 added by the Task 6 review's M1/L2 items: transferOwnership/
@@ -15,7 +12,10 @@ import { BudgetItemMembers } from '../../../src/db/entities/BudgetItemMembers.en
  * SQLite harness, so the SQL is exercised for real.
  */
 import { db as testDb } from '../../../src/db/database';
+import { BudgetItemMembers } from '../../../src/db/entities/BudgetItemMembers.entity';
+import { BudgetItemPayers } from '../../../src/db/entities/BudgetItemPayers.entity';
 import { BudgetItems } from '../../../src/db/entities/BudgetItems.entity';
+import { BudgetSettlements } from '../../../src/db/entities/BudgetSettlements.entity';
 import { PlaceRatings } from '../../../src/db/entities/PlaceRatings.entity';
 import { PluginUserConfig } from '../../../src/db/entities/PluginUserConfig.entity';
 import { PluginUserErasureQueue } from '../../../src/db/entities/PluginUserErasureQueue.entity';
@@ -584,18 +584,31 @@ describe('Guest identity transfer', () => {
     const { trip, owner, member, guest } = await membership();
     const t = await orm();
     const expense = await makeBudgetItem(t, trip.id, {
-      paidByUser: guest.id, total_price: 123.45, currency: 'USD', exchange_rate: 0.9,
+      paidByUser: guest.id,
+      total_price: 123.45,
+      currency: 'USD',
+      exchange_rate: 0.9,
     });
     await addBudgetItemMember(t, expense.id, guest.id, { amount: 73.45, paid: 1 });
     await addBudgetItemMember(t, expense.id, owner.id, { amount: 50, paid: 0 });
     await addBudgetItemPayer(t, expense.id, guest.id, 100);
     await addBudgetItemPayer(t, expense.id, owner.id, 23.45);
-    await Promise.all([[guest.id, owner.id, 12.34], [owner.id, guest.id, 5.67]].map(([from, to, amount]) =>
-      insertRow(t, BudgetSettlements, {
-        trip: trip.id, fromUser: from, toUser: to, amount,
-        currency: 'USD', exchange_rate: 0.9, settled_at: '2026-11-01',
-      }),
-    ));
+    await Promise.all(
+      [
+        [guest.id, owner.id, 12.34],
+        [owner.id, guest.id, 5.67],
+      ].map(([from, to, amount]) =>
+        insertRow(t, BudgetSettlements, {
+          trip: trip.id,
+          fromUser: from,
+          toUser: to,
+          amount,
+          currency: 'USD',
+          exchange_rate: 0.9,
+          settled_at: '2026-11-01',
+        }),
+      ),
+    );
     const before = {
       expense: await findRow(t, BudgetItems, { id: expense.id }),
       shares: await findRows(t, BudgetItemMembers, { budgetItem: expense.id }),
@@ -603,21 +616,32 @@ describe('Guest identity transfer', () => {
       payments: await findRows(t, BudgetSettlements, { trip: trip.id }),
     };
     await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toMatchObject({
-      required: true, candidates: [{ guest_user_id: guest.id, impact: { expenses: 1, payments: 2 } }],
+      required: true,
+      candidates: [{ guest_user_id: guest.id, impact: { expenses: 1, payments: 2 } }],
     });
     await roster.transferGuestIdentity(trip.id, guest.id, member.id);
-    const replace = (id: number) => id === guest.id ? member.id : id;
-    expect(await findRow(t, BudgetItems, { id: expense.id })).toEqual({ ...before.expense, paid_by_user_id: member.id });
+    const replace = (id: number) => (id === guest.id ? member.id : id);
+    expect(await findRow(t, BudgetItems, { id: expense.id })).toEqual({
+      ...before.expense,
+      paid_by_user_id: member.id,
+    });
     expect(await findRows(t, BudgetItemMembers, { budgetItem: expense.id })).toEqual(
-      before.shares.map(row => ({ ...row, user_id: replace(row.user_id) })),
+      before.shares.map((row) => ({ ...row, user_id: replace(row.user_id) })),
     );
     expect(await findRows(t, BudgetItemPayers, { budgetItem: expense.id })).toEqual(
-      before.payers.map(row => ({ ...row, user_id: replace(row.user_id) })),
+      before.payers.map((row) => ({ ...row, user_id: replace(row.user_id) })),
     );
     expect(await findRows(t, BudgetSettlements, { trip: trip.id })).toEqual(
-      before.payments.map(row => ({ ...row, from_user_id: replace(row.from_user_id), to_user_id: replace(row.to_user_id) })),
+      before.payments.map((row) => ({
+        ...row,
+        from_user_id: replace(row.from_user_id),
+        to_user_id: replace(row.to_user_id),
+      })),
     );
-    await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({ required: false, candidates: [] });
+    await expect(roster.runNewMemberIdentityCheck(trip.id, member.id)).resolves.toEqual({
+      required: false,
+      candidates: [],
+    });
     expect(await findRow(t, Users, { id: guest.id })).toBeNull();
   });
 
