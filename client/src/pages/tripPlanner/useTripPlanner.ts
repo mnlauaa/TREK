@@ -193,9 +193,12 @@ export function useTripPlanner() {
 
   // Re-fetch the trip roster so consumers (Costs participants, Collab, …) pick up a
   // just-added guest or member without a full page reload.
+  const rosterRequest = useRef<symbol>(Symbol())
   const refreshMembers = useCallback(async () => {
+    const request = Symbol()
+    rosterRequest.current = request
     const roster = await fetchRoster(tripId)
-    if (roster) setTripMembers(roster)
+    if (roster && request === rosterRequest.current) setTripMembers(roster)
   }, [tripId])
   // A member added, removed or renamed elsewhere, and the trip going away under us.
   useTripRosterSync(tripId, refreshMembers)
@@ -445,9 +448,10 @@ export function useTripPlanner() {
           .catch(() => {})
       } else {
         // The roster lands from the read's callback, never synchronously inside the effect.
-        void fetchRoster(tripId).then(roster => { if (roster) setTripMembers(roster) })
+        void refreshMembers()
       }
     }
+    return () => { rosterRequest.current = Symbol() }
   }, [tripId])
 
   useTripWebSocket(tripId, invalidateTourPlaceIds)

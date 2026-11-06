@@ -183,6 +183,8 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
 
   loadTrip: async (tripId: number | string) => {
     get().resetTrip()
+    const identityRevision = get().guestIdentityRevision
+    const isCurrentIdentity = () => get().guestIdentityRevision === identityRevision
     set({ isLoading: true, error: null })
     try {
       const [tripData, daysData, placesData, packingData, todoData, budgetData, reservationsData, filesData, tagsData, categoriesData] = await Promise.all([
@@ -194,7 +196,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         // Budget / reservations / files are hydrated here too so the offline
         // path is uniform (no separate tab-gated effects). Non-fatal: a failure
         // in any of these must not blank the whole trip.
-        budgetRepo.list(tripId).catch(() => ({ items: [] as BudgetItem[] })),
+        budgetRepo.list(tripId, isCurrentIdentity).catch(() => ({ items: [] as BudgetItem[] })),
         reservationRepo.list(tripId).catch(() => ({ reservations: [] as Reservation[] })),
         fileRepo.list(tripId).catch(() => ({ files: [] as TripFile[] })),
         isEffectivelyOnline()
@@ -220,7 +222,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         dayNotes: dayNotesMap,
         packingItems: packingData.items,
         todoItems: todoData.items,
-        budgetItems: budgetData.items,
+        ...(isCurrentIdentity() && { budgetItems: budgetData.items }),
         reservations: reservationsData.reservations,
         files: filesData.files,
         tags: tagsData.tags,
@@ -239,11 +241,13 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   // offline appear in place — no splash, no resetTrip. Each resource is
   // best-effort; a failure on one must not wipe the others.
   hydrateActiveTrip: async (tripId: number | string) => {
+    const identityRevision = get().guestIdentityRevision
+    const isCurrent = () => String(get().trip?.id) === String(tripId) && get().guestIdentityRevision === identityRevision
     await Promise.all([
       get().refreshDays(tripId),
-      placeRepo.list(tripId).then(d => set({ places: d.places })).catch(() => {}),
-      packingRepo.list(tripId).then(d => set({ packingItems: d.items })).catch(() => {}),
-      todoRepo.list(tripId).then(d => set({ todoItems: d.items })).catch(() => {}),
+      placeRepo.list(tripId).then(d => { if (isCurrent()) set({ places: d.places }) }).catch(() => {}),
+      packingRepo.list(tripId).then(d => { if (isCurrent()) set({ packingItems: d.items }) }).catch(() => {}),
+      todoRepo.list(tripId).then(d => { if (isCurrent()) set({ todoItems: d.items }) }).catch(() => {}),
       get().loadBudgetItems(tripId),
       get().loadReservations(tripId),
       get().loadFiles(tripId),
@@ -255,12 +259,10 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
 
   refreshTransferredGuest: (tripId, origin = 'local') => {
     if (String(get().trip?.id) !== String(tripId)) return
-    if (origin === 'local') {
-      set(state => ({
-        guestIdentityRevision: state.guestIdentityRevision + 1,
-        budgetSettlementRevision: state.budgetSettlementRevision + 1,
-      }))
-    }
+    set(state => ({
+      guestIdentityRevision: state.guestIdentityRevision + 1,
+      ...(origin === 'local' && { budgetSettlementRevision: state.budgetSettlementRevision + 1 }),
+    }))
     void get().hydrateActiveTrip(tripId).catch(error => {
       console.warn('Could not refresh the trip after guest identity transfer', error)
     })

@@ -9,7 +9,7 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': '예상 방문 시간이 이 예약 시간을 포함하지 않습니다.',
   'timing.booking': '예약 보기',
   'timing.travel': '이동 시간(분)',
-  'timing.dayOffset': '+{days}일',
+  'timing.dayOffset': '+{count}일',
 
   'roadtrip.stay.portals': '숙소 찾기',
   'roadtrip.stay.portalHint': '포털에서 목적지, 날짜, 인원을 확인하세요. CHECK24에서는 직접 검색하세요.',

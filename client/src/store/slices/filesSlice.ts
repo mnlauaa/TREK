@@ -21,8 +21,10 @@ export interface FilesSlice {
 
 export const createFilesSlice = (set: SetState, get: GetState): FilesSlice => ({
   loadFiles: async (tripId) => {
+    const identityRevision = get().guestIdentityRevision
     try {
       const data = await fileRepo.list(tripId)
+      if (get().guestIdentityRevision !== identityRevision) return
       set({ files: data.files })
     } catch (err: unknown) {
       console.error('Failed to load files:', err)

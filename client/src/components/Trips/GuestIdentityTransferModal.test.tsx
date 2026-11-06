@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { tripRepo } from '../../repo/tripRepo';
-import GuestIdentityTransferModal from './GuestIdentityTransferModal';
+import { useAuthStore } from '../../store/authStore';
+import { useTripStore } from '../../store/tripStore';
+import GuestIdentityTransferModal, { NewMemberIdentityCheck } from './GuestIdentityTransferModal';
 
 const impact = {
   expenses: 1,
@@ -54,4 +56,34 @@ describe('GuestIdentityTransferModal', () => {
     expect(transfer).toHaveBeenCalledExactlyOnceWith(42, guest.guest_user_id);
     expect(onClose).toHaveBeenCalledOnce();
   });
+});
+
+it('retries failed candidate reads without reopening the dialog', async () => {
+  vi.spyOn(tripRepo, 'guestIdentityTransferCandidates')
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ candidates: [guest] });
+  render(<GuestIdentityTransferModal open tripId={42} onClose={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'common.errorRetry' }));
+  await screen.findByText('Alex');
+});
+
+it('retries the automatic check and leaves a failed decline open', async () => {
+  useAuthStore.setState({ user: { id: 2 } as never, isAuthenticated: true });
+  useTripStore.setState({ trip: { id: 42, user_id: 1 } as never });
+  vi.spyOn(tripRepo, 'runNewMemberIdentityCheck')
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ required: true, candidates: [guest] });
+  const decline = vi
+    .spyOn(tripRepo, 'declineNewMemberIdentityCheck')
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ success: true });
+  render(<NewMemberIdentityCheck tripId={42} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'common.errorRetry' }));
+  const none = await screen.findByRole('button', { name: 'members.identityTransfer.noneOfThese' });
+  await act(async () => fireEvent.click(none));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  expect(none).toBeEnabled();
+  await act(async () => fireEvent.click(none));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(decline).toHaveBeenCalledTimes(2);
 });

@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'L’horari de la visita no cobreix aquesta reserva.',
   'timing.booking': 'Veure reserva',
   'timing.travel': 'Trajecte en minuts',
-  'timing.dayOffset': '+{days} dia/es',
+  'timing.dayOffset': '+{count} dies',
+  'timing.dayOffset.one': '+{count} dia',
 
   'roadtrip.stay.portals': 'Troba allotjament',
   'roadtrip.stay.portalHint': 'Comprova la destinació, les dates i els hostes al portal. A CHECK24, cerca manualment.',

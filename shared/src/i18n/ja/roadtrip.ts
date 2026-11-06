@@ -9,7 +9,7 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': '予定の滞在時間がこの予約時間をカバーしていません。',
   'timing.booking': '予約を表示',
   'timing.travel': '移動時間（分）',
-  'timing.dayOffset': '+{days}日',
+  'timing.dayOffset': '+{count} 日',
 
   'roadtrip.stay.portals': '宿泊施設を探す',
   'roadtrip.stay.portalHint':

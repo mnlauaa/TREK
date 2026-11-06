@@ -511,6 +511,7 @@ export const PLUGIN_ENTITY_FIELDS = {
     'default_transport_mode',
     'assignments',
     'notes_items',
+    'timing',
   ],
   reservation: [
     'id',
@@ -665,6 +666,8 @@ export const PLUGIN_ENTITY_FIELDS = {
     'notes',
     'assignment_time',
     'assignment_end_time',
+    'stay_minutes',
+    'times_explicit',
     'end_day',
     'leg_transport_mode',
     'incoming_leg_transport_mode',

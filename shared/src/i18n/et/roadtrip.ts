@@ -1,15 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
-  'timing.enabled': 'Automatic timing',
-  'timing.arrival': 'Estimated arrival',
-  'timing.departure': 'Estimated departure',
-  'timing.fixed': 'Set fixed times',
-  'timing.unknown': 'Unknown',
-  'timing.bookingConflict': 'Visit times do not cover this booking.',
-  'timing.booking': 'View booking',
-  'timing.travel': 'Travel minutes',
-  'timing.dayOffset': '+{days} day(s)',
+  'timing.enabled': 'Automaatne ajastus',
+  'timing.arrival': 'Eeldatav saabumine',
+  'timing.departure': 'Eeldatav lahkumine',
+  'timing.fixed': 'Määra kindlad kellaajad',
+  'timing.unknown': 'Teadmata',
+  'timing.bookingConflict': 'Külastusajad ei kata selle broneeringu ajavahemikku.',
+  'timing.booking': 'Vaata broneeringut',
+  'timing.travel': 'Sõiduaeg minutites',
+  'timing.dayOffset': '+{count} päeva',
+  'timing.dayOffset.one': '+{count} päev',
 
   'roadtrip.stay.portals': 'Otsi majutust',
   'roadtrip.stay.portalHint': 'Kontrolli portaalis sihtkohta, kuupäevi ja külalisi. CHECK24 nõuab käsitsi otsingut.',

@@ -169,24 +169,34 @@ export function useTripMembers({ isOpen, tripId, onClose, onMembersChanged }: {
   const trip = useTripStore(s => s.trip)
   const loadBudgetItems = useTripStore(s => s.loadBudgetItems)
 
+  const identityRevision = useTripStore(s => Number(s.trip?.id) === Number(tripId) ? s.guestIdentityRevision : 0)
+  const rosterRequest = useRef<symbol>(Symbol())
   const loadMembers = async (notify = false) => {
+    const request = Symbol()
+    rosterRequest.current = request
     setLoading(true)
     try {
-      setData(await tripsApi.getMembers(tripId))
+      const data = await tripsApi.getMembers(tripId)
+      if (request !== rosterRequest.current) return
+      setData(data)
       // Only after an actual change: the load on opening would be a redundant re-sync.
       if (notify) onMembersChanged?.()
     } catch {
-      toast.error(t('members.loadError'))
+      if (request === rosterRequest.current) toast.error(t('members.loadError'))
     } finally {
-      setLoading(false)
+      if (request === rosterRequest.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     if (!isOpen || !tripId) return
     void loadMembers()
-    authApi.listUsers().then(d => setAllUsers(d.users)).catch(() => {})
-  }, [isOpen, tripId])
+    return () => { rosterRequest.current = Symbol() }
+  }, [isOpen, tripId, identityRevision])
+
+  useEffect(() => {
+    if (isOpen) authApi.listUsers().then(d => setAllUsers(d.users)).catch(() => {})
+  }, [isOpen])
 
   const add = async () => {
     const target = allUsers.find(u => String(u.id) === String(selectedUserId))

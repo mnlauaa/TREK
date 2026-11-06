@@ -14,7 +14,6 @@
   },
   "uncovered": [
     "BucketListRepository.update",
-    "BudgetItemsRepository.update",
     "PackingBagsRepository.update",
     "TodoItemsRepository.update"
   ]

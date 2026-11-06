@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { packingApi } from '../../api/client';
+import { useTripStore } from '../../store/tripStore';
 import { useServerPing } from '../../sync/useServerPing';
 import { offlineOr } from '../../utils/needsConnection';
 
@@ -24,20 +25,27 @@ export interface CategoryAssignee {
 export function usePackingCategoryAssignees({ tripId, t, toast }: { tripId: number; t: Translate; toast: Toaster }) {
   const [categoryAssignees, setCategoryAssignees] = useState<Record<string, CategoryAssignee[]>>({});
 
-  const reload = useCallback(
-    () =>
-      packingApi
-        .getCategoryAssignees(tripId)
-        .then((data) => setCategoryAssignees(data.assignees || {}))
-        .catch(() => {
-          // A failed read leaves the last answer standing; there is nothing to undo.
-        }),
-    [tripId]
-  );
+  const identityRevision = useTripStore((s) => (Number(s.trip?.id) === tripId ? s.guestIdentityRevision : 0));
+  const request = useRef<symbol>(Symbol());
+  const reload = useCallback(() => {
+    const id = Symbol();
+    request.current = id;
+    return packingApi
+      .getCategoryAssignees(tripId)
+      .then((data) => {
+        if (id === request.current) setCategoryAssignees(data.assignees || {});
+      })
+      .catch(() => {
+        // A failed read leaves the last answer standing; there is nothing to undo.
+      });
+  }, [tripId]);
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+    return () => {
+      request.current = Symbol();
+    };
+  }, [reload, identityRevision]);
 
   // Assignees set elsewhere (a fellow traveller, the assistant) are read back,
   // one read per burst, rather than patched in from the event.

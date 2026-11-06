@@ -435,3 +435,23 @@ describe('budgetSlice: lent rates', () => {
     expect(useTripStore.getState().budgetItems.map(i => [i.id, i.exchange_rate])).toEqual([[60, 18241.3], [61, 1]]);
   });
 });
+
+it('keeps transferred expense identities when an older load completes last', async () => {
+  const { budgetRepo } = await import('../../repo/budgetRepo');
+  const before = buildBudgetItem({ id: 61, trip_id: 42, paid_by_user_id: 3 });
+  const after = { ...before, paid_by_user_id: 2 };
+  let release!: (result: { items: typeof before[] }) => void;
+  const list = vi.spyOn(budgetRepo, 'list')
+    .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+    .mockResolvedValueOnce({ items: [after] });
+  try {
+    const pending = useTripStore.getState().loadBudgetItems(42);
+    useTripStore.setState(state => ({ guestIdentityRevision: state.guestIdentityRevision + 1 }));
+    await useTripStore.getState().loadBudgetItems(42);
+    release({ items: [before] });
+    await pending;
+    expect(useTripStore.getState().budgetItems).toEqual([after]);
+  } finally {
+    list.mockRestore();
+  }
+});

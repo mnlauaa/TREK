@@ -9,7 +9,7 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Thời gian ghé thăm không bao trùm thời gian đặt chỗ này.',
   'timing.booking': 'Xem đặt chỗ',
   'timing.travel': 'Thời gian di chuyển (phút)',
-  'timing.dayOffset': '+{days} ngày',
+  'timing.dayOffset': '+{count} ngày',
 
   'roadtrip.stay.portals': 'Tìm chỗ ở',
   'roadtrip.stay.portalHint': 'Kiểm tra điểm đến, ngày và khách trên cổng đặt chỗ. Tìm thủ công trên CHECK24.',
