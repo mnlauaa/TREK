@@ -2,11 +2,12 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Automatikus időzítés',
-  'timing.fixedStart': 'Fixed start',
-  'timing.fixedEnd': 'Fixed end',
-  'timing.help': 'Arrival and departure follow stay and travel times.',
-  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
-  'timing.travelMissing': 'Travel time not set',
+  'timing.fixedStart': 'Rögzített kezdés',
+  'timing.fixedEnd': 'Rögzített befejezés',
+  'timing.help': 'Az érkezést és indulást a tartózkodási és utazási idő határozza meg.',
+  'timing.fixedEndHint':
+    'A befejezés megadása meghatározza a tartózkodást. Az időtartam szerkesztéséhez hagyja üresen a befejezést.',
+  'timing.travelMissing': 'Az utazási idő nincs megadva',
   'timing.arrival': 'Várható érkezés',
   'timing.departure': 'Várható indulás',
   'timing.fixed': 'Rögzített időpontok',

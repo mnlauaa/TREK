@@ -2,11 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Tự động tính thời gian',
-  'timing.fixedStart': 'Fixed start',
-  'timing.fixedEnd': 'Fixed end',
-  'timing.help': 'Arrival and departure follow stay and travel times.',
-  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
-  'timing.travelMissing': 'Travel time not set',
+  'timing.fixedStart': 'Giờ bắt đầu cố định',
+  'timing.fixedEnd': 'Giờ kết thúc cố định',
+  'timing.help': 'Giờ đến và đi được tính theo thời gian lưu lại và di chuyển.',
+  'timing.fixedEndHint': 'Giờ kết thúc quyết định thời gian lưu lại. Để trống giờ kết thúc để sửa thời lượng.',
+  'timing.travelMissing': 'Chưa đặt thời gian di chuyển',
   'timing.arrival': 'Dự kiến đến',
   'timing.departure': 'Dự kiến rời đi',
   'timing.fixed': 'Đặt giờ cố định',

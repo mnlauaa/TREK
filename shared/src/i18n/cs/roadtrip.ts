@@ -2,11 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Automatické časy',
-  'timing.fixedStart': 'Fixed start',
-  'timing.fixedEnd': 'Fixed end',
-  'timing.help': 'Arrival and departure follow stay and travel times.',
-  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
-  'timing.travelMissing': 'Travel time not set',
+  'timing.fixedStart': 'Pevný začátek',
+  'timing.fixedEnd': 'Pevný konec',
+  'timing.help': 'Příjezd a odjezd se počítají podle délky pobytu a cesty.',
+  'timing.fixedEndHint': 'Nastavení konce určuje délku pobytu. Pro úpravu délky ponechte konec prázdný.',
+  'timing.travelMissing': 'Doba cesty není nastavena',
   'timing.arrival': 'Odhadovaný příjezd',
   'timing.departure': 'Odhadovaný odjezd',
   'timing.fixed': 'Nastavit pevné časy',

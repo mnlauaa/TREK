@@ -2,11 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'תזמון אוטומטי',
-  'timing.fixedStart': 'Fixed start',
-  'timing.fixedEnd': 'Fixed end',
-  'timing.help': 'Arrival and departure follow stay and travel times.',
-  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
-  'timing.travelMissing': 'Travel time not set',
+  'timing.fixedStart': 'התחלה קבועה',
+  'timing.fixedEnd': 'סיום קבוע',
+  'timing.help': 'ההגעה והיציאה מחושבות לפי משך השהייה והנסיעה.',
+  'timing.fixedEndHint': 'הגדרת הסיום קובעת את משך השהייה. השאירו את הסיום ריק כדי לערוך את המשך.',
+  'timing.travelMissing': 'זמן הנסיעה לא הוגדר',
   'timing.arrival': 'הגעה משוערת',
   'timing.departure': 'יציאה משוערת',
   'timing.fixed': 'הגדרת שעות קבועות',

@@ -2,11 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Automaatne ajastus',
-  'timing.fixedStart': 'Fixed start',
-  'timing.fixedEnd': 'Fixed end',
-  'timing.help': 'Arrival and departure follow stay and travel times.',
-  'timing.fixedEndHint': 'Setting End determines the stay. Leave End empty to edit the duration.',
-  'timing.travelMissing': 'Travel time not set',
+  'timing.fixedStart': 'Kindel algus',
+  'timing.fixedEnd': 'Kindel lõpp',
+  'timing.help': 'Saabumine ja lahkumine arvutatakse peatumis- ja sõiduaja järgi.',
+  'timing.fixedEndHint': 'Lõpuaeg määrab peatumise kestuse. Kestuse muutmiseks jäta lõpuaeg tühjaks.',
+  'timing.travelMissing': 'Sõiduaeg määramata',
   'timing.arrival': 'Eeldatav saabumine',
   'timing.departure': 'Eeldatav lahkumine',
   'timing.fixed': 'Määra kindlad kellaajad',
