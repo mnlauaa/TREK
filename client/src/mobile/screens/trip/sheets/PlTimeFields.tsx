@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Eyebrow } from './PlSheetChrome'
 import CustomTimePicker from '../../../../components/shared/CustomTimePicker'
@@ -31,9 +31,8 @@ export default function PlTimeFields({
   planner, startTime, endTime, onChange, assignmentId, dayAssignments, hasTimeError,
 }: PlTimeFieldsProps) {
   const { t } = planner
-  const [showFixed, setShowFixed] = useState(false)
   // Opened from the road trip tab, where the End of a visit is when the drive leaves it.
-  // Both views preserve the same fixed times and derive the stay until End.
+  // The plan tab reads the day as Days does, and there End stays a plain label.
   const endIsLeave = planner.activeTab === 'roadtrip'
 
   // The other visits of the same day whose times overlap this one's, as the desktop form warns.
@@ -45,8 +44,6 @@ export default function PlTimeFields({
   const assignment = dayAssignments.find(a => a.id === assignmentId)
   const tour = assignment ? planner.tours.find(item => item.place_id === assignment.place_id) : undefined
 
-  if (!showFixed && !startTime && !endTime) return <button type="button" className="rounded px-2 py-2 text-caption text-accent-on focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setShowFixed(true)}>{t('timing.fixed')}</button>
-
   return (
     <div className="mt-3">
       <div className="flex gap-2">
@@ -57,8 +54,8 @@ export default function PlTimeFields({
         <div className="min-w-0 flex-1">
           <Eyebrow className="mb-[5px] uppercase">{t('places.endTime')}</Eyebrow>
           <CustomTimePicker value={endTime} onChange={v => onChange('end_time', v)} />
-          {endIsLeave && (
-            <div className="mt-[5px] font-geist text-[0.65625rem] leading-snug text-m-faint">{t('roadtrip.stop.endIsLeave')}</div>
+          {(endIsLeave || !tour) && (
+            <div className="mt-[5px] font-geist text-[0.65625rem] leading-snug text-m-faint">{t(endIsLeave ? 'roadtrip.stop.endIsLeave' : 'timing.fixedEndHint')}</div>
           )}
         </div>
       </div>

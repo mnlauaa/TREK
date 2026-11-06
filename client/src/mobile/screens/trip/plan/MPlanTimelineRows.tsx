@@ -126,7 +126,8 @@ const ROW_CODE = 'flex-none whitespace-nowrap font-geist text-[0.71875rem] text-
 
 // ── b3) Place row ────────────────────────────────────────────────────────────
 
-export function PlaceRow({ assignment, fullPlace, tour, linkedReservations, chrome, reorder, drag, onOpen, onEdit, onRemove, overrun }: {
+export function PlaceRow({ assignment, fullPlace, tour, linkedReservations, chrome, reorder, drag, onOpen, onEdit, onRemove, overrun, timing }: {
+  timing?: ReactNode
   assignment: Assignment
   fullPlace: Place | undefined
   tour?: TourListItem
@@ -143,7 +144,7 @@ export function PlaceRow({ assignment, fullPlace, tour, linkedReservations, chro
   const { t } = chrome
   const place = assignment.place
   const CatIcon = getCategoryIcon(place?.category?.icon)
-  const time = fmtTime(place?.place_time, chrome)
+  const time = timing ? '' : fmtTime(place?.place_time, chrome)
   const blurCodes = useBlurBookingCodes()
   // One line per booking on the stop (#2201). A single one keeps the bare
   // status line it always had; once there are several, the title tells them
@@ -207,6 +208,7 @@ export function PlaceRow({ assignment, fullPlace, tour, linkedReservations, chro
           )}
         </div>
         {tour && <div className="mt-[2px]"><TourDayRowFacts tour={tour} assignmentId={assignment.id} mobile /></div>}
+        {timing}
         {(time || sub) && (
           <div className="mt-[2px] flex min-w-0 items-center gap-1.5">
             {time && <span className={TIME_CHIP}>{tour ? <TourDayTimeText entry={tourDayEntryOf(assignment)} tour={tour} mobile /> : time}</span>}

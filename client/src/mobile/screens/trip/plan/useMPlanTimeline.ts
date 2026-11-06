@@ -113,7 +113,13 @@ export function useMPlanTimeline(planner: TripPlanner) {
   )
 
   // ── Up next (go mode) — a real countdown, re-evaluated every half minute ──
-  const timingPlan = useMemo(() => day?.timing?.enabled ? buildItineraryTiming({ items: merged, dayId: day.id, timing: day.timing, routeContext: { toursEnabled: planner.toursEnabled, places: planner.places, tourStageStops: planner.tourStageStops }, segments: connSegments, profile: day.default_transport_mode ?? routeProfile, initialSeconds: itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations: tripAccommodations, optimizeFromAccommodation: settings.optimize_from_accommodation }, connSegments, routeProfile) }) : undefined, [day, merged, connSegments, routeProfile, days, assignments, reservations, tripAccommodations, settings.optimize_from_accommodation, planner.toursEnabled, planner.places, planner.tourStageStops])
+  const timingPlan = useMemo(() => day?.timing?.enabled ? buildItineraryTiming({ items: merged, dayId: day.id, timing: day.timing,
+    routeContext: { tours: planner.tours, toursEnabled: planner.toursEnabled, places: planner.places, tourStageStops: planner.tourStageStops },
+    segments: connSegments, profile: day.default_transport_mode ?? routeProfile,
+    initialSeconds: itineraryInitialTravel(day.id, { days, assignments, reservations, accommodations: tripAccommodations,
+      optimizeFromAccommodation: settings.optimize_from_accommodation }, connSegments, routeProfile),
+  }) : undefined, [day, merged, connSegments, routeProfile, days, assignments, reservations, tripAccommodations,
+    settings.optimize_from_accommodation, planner.toursEnabled, planner.places, planner.tourStageStops, planner.tours])
 
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {

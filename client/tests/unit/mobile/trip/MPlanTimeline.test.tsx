@@ -779,3 +779,15 @@ describe('MPlanTimeline', () => {
     })
   })
 })
+
+it('keeps one manual travel time when a booking moves the place connector below its row', () => {
+  renderTimeline({
+    upNext: null,
+    rows: [ROWS[0], ROWS[2], ROWS[1], ROWS[5]],
+    timingPlan: { nodes: [], schedule: { entries: [], warnings: [] }, legs: [
+      { from: 'assignment:11', to: 'assignment:12', mode: 'walking', manual: 20, seconds: 1200 },
+    ] },
+  });
+  expect(screen.getAllByText('20 min')).toHaveLength(1);
+  expect(screen.queryByText('7 min')).not.toBeInTheDocument();
+});
