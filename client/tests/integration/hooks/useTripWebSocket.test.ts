@@ -80,16 +80,18 @@ describe('useTripWebSocket', () => {
 
   it('FE-HOOK-WS-006f: fork events refresh their authoritative trip slices', () => {
     const loadBudgetItems = vi.fn();
-    const hydrateActiveTrip = vi.fn();
-    useTripStore.setState({ loadBudgetItems, hydrateActiveTrip } as any);
+    const refreshAfterGuestTransfer = vi.fn();
+    useTripStore.setState({ loadBudgetItems, refreshAfterGuestTransfer });
     renderHook(() => useTripWebSocket(42));
 
     const forkSync = (wsMock.addListener as ReturnType<typeof vi.fn>).mock.calls[2]?.[0];
     act(() => forkSync({ type: 'budget:exchange-rates-applied' }));
-    act(() => forkSync({ type: 'guest:identity-transferred' }));
+    act(() => forkSync({ type: 'guest:identity-transferred', tripId: '99' }));
+    expect(refreshAfterGuestTransfer).not.toHaveBeenCalled();
+    act(() => forkSync({ type: 'guest:identity-transferred', tripId: '42' }));
 
     expect(loadBudgetItems).toHaveBeenCalledWith(42);
-    expect(hydrateActiveTrip).toHaveBeenCalledWith(42);
+    expect(refreshAfterGuestTransfer).toHaveBeenCalledExactlyOnceWith(42);
   });
 
   it('FE-HOOK-WS-006c: collab file sync listener reacts to collab:note:deleted events', () => {

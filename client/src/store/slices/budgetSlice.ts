@@ -12,7 +12,7 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface BudgetSlice {
-  loadBudgetItems: (tripId: number | string) => Promise<void>
+  loadBudgetItems: (tripId: number | string, isCurrent?: () => boolean) => Promise<void>
   addBudgetItem: (tripId: number | string, data: BudgetCreateItemRequest) => Promise<BudgetItem>
   updateBudgetItem: (tripId: number | string, id: number, data: BudgetUpdateItemRequest) => Promise<BudgetItem>
   deleteBudgetItem: (tripId: number | string, id: number) => Promise<void>
@@ -33,9 +33,12 @@ function openTripCurrency(get: GetState, tripId: number | string): string | null
 }
 
 export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => ({
-  loadBudgetItems: async (tripId) => {
+  loadBudgetItems: async (tripId, isCurrent) => {
+    const { guestIdentityRevision } = get()
+    const canPublish = () => isCurrent?.() !== false && get().guestIdentityRevision === guestIdentityRevision
     try {
-      const data = await budgetRepo.list(tripId)
+      const data = await budgetRepo.list(tripId, canPublish)
+      if (!canPublish()) return
       set({ budgetItems: data.items })
     } catch (err: unknown) {
       console.error('Failed to load budget items:', err)

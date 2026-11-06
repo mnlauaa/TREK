@@ -9,7 +9,7 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface ReservationsSlice {
-  loadReservations: (tripId: number | string) => Promise<void>
+  loadReservations: (tripId: number | string, isCurrent?: () => boolean) => Promise<void>
   addReservation: (tripId: number | string, data: Partial<Reservation> & { title: string }) => Promise<Reservation>
   updateReservation: (tripId: number | string, id: number, data: Partial<Reservation>) => Promise<Reservation>
   toggleReservationStatus: (tripId: number | string, id: number) => Promise<void>
@@ -18,9 +18,11 @@ export interface ReservationsSlice {
 }
 
 export const createReservationsSlice = (set: SetState, get: GetState): ReservationsSlice => ({
-  loadReservations: async (tripId) => {
+  loadReservations: async (tripId, isCurrent) => {
+    const { guestIdentityRevision } = get()
     try {
       const data = await reservationRepo.list(tripId)
+      if (isCurrent?.() === false || get().guestIdentityRevision !== guestIdentityRevision) return
       set({ reservations: data.reservations })
     } catch (err: unknown) {
       console.error('Failed to load reservations:', err)

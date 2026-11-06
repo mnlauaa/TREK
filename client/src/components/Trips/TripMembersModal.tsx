@@ -15,9 +15,10 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { authApi, shareApi, tripInviteApi, tripsApi } from '../../api/client';
 import { useTranslation } from '../../i18n';
+import { tripRepo } from '../../repo/tripRepo';
 import { useAuthStore } from '../../store/authStore';
 import { useCanDo } from '../../store/permissionsStore';
-import { useTripStore } from '../../store/tripStore';
+import { useGuestIdentityRevision, useTripStore } from '../../store/tripStore';
 import { getApiErrorMessage } from '../../types';
 import { copyText } from '../../utils/clipboard';
 import CustomSelect from '../shared/CustomSelect';
@@ -556,25 +557,32 @@ export default function TripMembersModal({
   const canManageMembers = can('member_manage', trip);
   const canManageShare = can('share_manage', trip);
 
+  const identityRevision = useGuestIdentityRevision(tripId);
+  const rosterRequest = useRef(0);
   useEffect(() => {
-    if (isOpen && tripId) {
-      loadMembers();
-      loadAllUsers();
-    }
+    if (isOpen && tripId) void loadMembers();
+    return () => { rosterRequest.current++; };
+  }, [isOpen, tripId, user?.id, identityRevision]);
+
+  useEffect(() => {
+    if (isOpen && tripId) void loadAllUsers();
   }, [isOpen, tripId]);
 
   const loadMembers = async (notify = false) => {
+    const id = ++rosterRequest.current;
+    const isCurrent = () => id === rosterRequest.current;
     setLoading(true);
     try {
-      const d = await tripsApi.getMembers(tripId);
+      const d = await tripRepo.members(tripId, isCurrent);
+      if (!isCurrent()) return;
       setData(d);
       // Notify the planner to re-sync (Costs participants etc.) only after an actual
       // roster mutation — not on the initial open load, which would be a redundant fetch.
       if (notify) onMembersChanged?.();
     } catch {
-      toast.error(t('members.loadError'));
+      if (isCurrent()) toast.error(t('members.loadError'));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -1146,9 +1154,8 @@ export default function TripMembersModal({
       </Modal>
       <GuestIdentityTransferModal
         tripId={tripId}
-        open={identityTransferOpen}
+        open={isOpen && identityTransferOpen}
         onClose={() => setIdentityTransferOpen(false)}
-        onTransferred={() => loadMembers(true)}
       />
     </>
   );

@@ -1,11 +1,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import type { ChangeEvent } from 'react'
-import { useTripStore } from '../../store/tripStore'
+import { useGuestIdentityRevision, useTripStore } from '../../store/tripStore'
 import { useCanDo } from '../../store/permissionsStore'
 import { useAuthStore } from '../../store/authStore'
 import { useToast } from '../shared/Toast'
 import { useTranslation } from '../../i18n'
-import { packingApi, tripsApi } from '../../api/client'
+import { packingApi } from '../../api/client'
+import { tripRepo } from '../../repo/tripRepo'
 import { useAddonStore } from '../../store/addonStore'
 import { useNetworkMode } from '../../hooks/useNetworkMode'
 import { useBagTotalsPing } from './useBagTotalsPing'
@@ -70,17 +71,21 @@ export function usePackingList({ tripId, items, openImportSignal = 0, clearCheck
   const [tripMembers, setTripMembers] = useState<TripMember[]>([])
   const [categoryAssignees, setCategoryAssignees] = useState<Record<string, CategoryAssignee[]>>({})
 
+  const identityRevision = useGuestIdentityRevision(tripId)
   useEffect(() => {
-    tripsApi.getMembers(tripId).then(data => {
+    let active = true
+    tripRepo.members(tripId, () => active).then(data => {
+      if (!active) return
       const all: TripMember[] = []
       if (data.owner) all.push({ id: data.owner.id, username: data.owner.username, avatar: data.owner.avatar_url, is_guest: false })
-      if (data.members) all.push(...data.members.map((m: any) => ({ id: m.id, username: m.username, avatar: m.avatar_url, is_guest: !!m.is_guest })))
+      if (data.members) all.push(...data.members.map(m => ({ id: m.id, username: m.username, avatar: m.avatar_url, is_guest: !!m.is_guest })))
       setTripMembers(all)
     }).catch(() => {})
     packingApi.getCategoryAssignees(tripId).then(data => {
-      setCategoryAssignees(data.assignees || {})
+      if (active) setCategoryAssignees(data.assignees || {})
     }).catch(() => {})
-  }, [tripId])
+    return () => { active = false }
+  }, [tripId, identityRevision])
 
   const handleSetAssignees = async (category: string, userIds: number[]) => {
     try {

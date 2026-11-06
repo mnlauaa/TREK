@@ -67,6 +67,7 @@ export interface TripStoreState
   placesCategoryFilter: Set<string>
   isLoading: boolean
   error: string | null
+  guestIdentityRevision: { tripId: number; version: number } | null
 
   setSelectedDay: (dayId: number | null) => void
   setPlacesFilter: (filter: string) => void
@@ -75,7 +76,8 @@ export interface TripStoreState
   resetTrip: () => void
   loadTrip: (tripId: number | string) => Promise<void>
   hydrateActiveTrip: (tripId: number | string) => Promise<void>
-  refreshDays: (tripId: number | string) => Promise<void>
+  refreshDays: (tripId: number | string, isCurrent?: () => boolean) => Promise<void>
+  refreshAfterGuestTransfer: (tripId: number) => void
   updateTrip: (tripId: number | string, data: Partial<Trip> & { date_shift_mode?: 'keep_bookings' | 'shift_all' }) => Promise<Trip>
   addTag: (data: Partial<Tag> & { name: string }) => Promise<Tag>
   addCategory: (data: Partial<Category> & { name: string }) => Promise<Category>
@@ -99,6 +101,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   placesCategoryFilter: new Set<string>(),
   isLoading: false,
   error: null,
+  guestIdentityRevision: null,
 
   setSelectedDay: (dayId: number | null) => set({ selectedDayId: dayId }),
   setPlacesFilter: (filter: string) => set({ placesFilter: filter }),
@@ -124,6 +127,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     placesFilter: 'all',
     placesCategoryFilter: new Set<string>(),
     error: null,
+    guestIdentityRevision: null,
   }),
 
   loadTrip: async (tripId: number | string) => {
@@ -184,23 +188,39 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   // offline appear in place — no splash, no resetTrip. Each resource is
   // best-effort; a failure on one must not wipe the others.
   hydrateActiveTrip: async (tripId: number | string) => {
+    const { trip, guestIdentityRevision } = get()
+    const activeId = trip?.id
+    const isCurrent = () => get().trip?.id === activeId && get().guestIdentityRevision === guestIdentityRevision
+    const publish = (data: Partial<TripStoreState>) => {
+      if (isCurrent()) set(data)
+    }
     await Promise.all([
-      get().refreshDays(tripId),
-      placeRepo.list(tripId).then(d => set({ places: d.places })).catch(() => {}),
-      packingRepo.list(tripId).then(d => set({ packingItems: d.items })).catch(() => {}),
-      todoRepo.list(tripId).then(d => set({ todoItems: d.items })).catch(() => {}),
-      get().loadBudgetItems(tripId),
-      get().loadReservations(tripId),
-      get().loadFiles(tripId),
+      get().refreshDays(tripId, isCurrent),
+      placeRepo.list(tripId).then(d => publish({ places: d.places })).catch(() => {}),
+      packingRepo.list(tripId).then(d => publish({ packingItems: d.items })).catch(() => {}),
+      todoRepo.list(tripId).then(d => publish({ todoItems: d.items })).catch(() => {}),
+      get().loadBudgetItems(tripId, isCurrent),
+      get().loadReservations(tripId, isCurrent),
+      get().loadFiles(tripId, isCurrent),
     ])
     // Accommodations live in planner-local state, not this store — nudge the
     // planner to reload them too (e.g. a trip date change made while offline).
-    window.dispatchEvent(new CustomEvent('accommodations:refresh'))
+    if (isCurrent()) window.dispatchEvent(new CustomEvent('accommodations:refresh'))
   },
 
-  refreshDays: async (tripId: number | string) => {
+  refreshAfterGuestTransfer: (tripId) => {
+    if (get().trip?.id !== tripId) return
+    set(state => ({
+      guestIdentityRevision: { tripId, version: (state.guestIdentityRevision?.version ?? 0) + 1 },
+    }))
+    void get().hydrateActiveTrip(tripId).catch(error => console.error('Failed to refresh after Guest transfer:', error))
+  },
+
+  refreshDays: async (tripId, isCurrent) => {
+    const { guestIdentityRevision } = get()
     try {
       const daysData = await dayRepo.list(tripId)
+      if (isCurrent?.() === false || get().guestIdentityRevision !== guestIdentityRevision) return
       const assignmentsMap: AssignmentsMap = {}
       const dayNotesMap: DayNotesMap = {}
       for (const day of daysData.days) {
@@ -273,3 +293,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   ...createReservationsSlice(set, get),
   ...createFilesSlice(set, get),
 }))
+
+export function useGuestIdentityRevision(tripId: number) {
+  return useTripStore(state => state.guestIdentityRevision?.tripId === tripId ? state.guestIdentityRevision.version : 0)
+}

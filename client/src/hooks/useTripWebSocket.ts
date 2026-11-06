@@ -22,9 +22,8 @@ export function useTripWebSocket(tripId: number | string | undefined) {
         useTripStore.getState().loadBudgetItems(tripId);
         window.dispatchEvent(new CustomEvent('budget:exchange-rates-changed'));
       }
-      if (event?.type === 'guest:identity-transferred') {
-        useTripStore.getState().hydrateActiveTrip(tripId);
-        window.dispatchEvent(new CustomEvent('guest:identity-transferred'));
+      if (event?.type === 'guest:identity-transferred' && Number(event.tripId) === Number(tripId)) {
+        useTripStore.getState().refreshAfterGuestTransfer(Number(tripId));
       }
     };
     addListener(forkSync);

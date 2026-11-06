@@ -1,52 +1,85 @@
 import type { GuestIdentityTransferCandidate } from '@trek/shared';
-import React, { useEffect, useState } from 'react';
-
-import { tripsApi } from '../../api/client';
+import { isAxiosError } from 'axios';
+import type { ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from '../../i18n';
+import type { GuestIdentitySource } from '../../repo/guestIdentityRepo';
+import { useAuthStore } from '../../store/authStore';
+import { useTripStore } from '../../store/tripStore';
+import { getApiErrorMessage } from '../../types';
 import { useToast } from '../shared/Toast';
+import { useGuestIdentityCheck } from './useGuestIdentityCheck';
 
-export default function GuestIdentityTransferModal({
-  tripId,
-  open,
-  candidates: initialCandidates,
-  onClose,
-  onTransferred,
-}: {
+type ManualProps = {
   tripId: number | string;
   open: boolean;
   candidates?: GuestIdentityTransferCandidate[];
   onClose: () => void;
   onTransferred?: () => void;
-}): React.ReactElement | null {
+};
+
+export default function GuestIdentityTransferModal({
+  tripId,
+  open,
+  candidates,
+  ...callbacks
+}: ManualProps): ReactElement | null {
+  const accountId = useAuthStore((state) => state.user?.id);
+  return open ? (
+    <GuestIdentityPopup
+      key={`${tripId}:${accountId}`}
+      tripId={Number(tripId)}
+      accountId={accountId}
+      source="manual"
+      initialCandidates={candidates}
+      {...callbacks}
+    />
+  ) : null;
+}
+
+export function NewMemberIdentityCheck({ tripId }: { tripId: number | string }): ReactElement | null {
+  const accountId = useAuthStore((state) => state.user?.id);
+  const trip = useTripStore((state) => state.trip);
+  if (!accountId || trip?.id !== Number(tripId) || trip.user_id === accountId) return null;
+
+  return (
+    <GuestIdentityPopup key={`${tripId}:${accountId}`} tripId={trip.id} accountId={accountId} source="new-member" />
+  );
+}
+
+function GuestIdentityPopup({
+  tripId,
+  accountId,
+  source,
+  initialCandidates,
+  onClose,
+  onTransferred,
+}: Pick<ManualProps, 'onTransferred'> & {
+  tripId: number;
+  accountId: number | undefined;
+  source: GuestIdentitySource;
+  initialCandidates?: GuestIdentityTransferCandidate[];
+  onClose?: () => void;
+}): ReactElement | null {
   const { t } = useTranslation();
   const toast = useToast();
-  const [candidates, setCandidates] = useState<GuestIdentityTransferCandidate[]>(initialCandidates ?? []);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!open || initialCandidates) return;
-    tripsApi
-      .guestIdentityTransferCandidates(tripId)
-      .then((result) => setCandidates(result.candidates))
-      .catch(() => setCandidates([]));
-  }, [initialCandidates, open, tripId]);
-  if (!open) return null;
-
-  const transfer = async (candidate: GuestIdentityTransferCandidate) => {
-    if (candidate.conflicts.length > 0) return;
-    setBusy(true);
-    try {
-      await tripsApi.transferGuestIdentity(tripId, candidate.guest_user_id);
+  const { state, check, close, decide } = useGuestIdentityCheck({
+    tripId,
+    accountId,
+    source,
+    initialCandidates,
+    onClose,
+    onTransferred: () => {
       toast.success(t('members.identityTransfer.success'));
-      window.dispatchEvent(new CustomEvent('guest:identity-transferred'));
       onTransferred?.();
-      onClose();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('members.identityTransfer.error'));
-    } finally {
-      setBusy(false);
-    }
-  };
+    },
+  });
+  if (state.phase === 'hidden' || (state.phase === 'checking' && !state.visible)) return null;
+
+  const busy = state.phase === 'submitting';
+  const candidates = 'candidates' in state ? state.candidates : null;
+  const hasError = 'error' in state;
+  const error = hasError ? state.error : undefined;
 
   const impacts = (candidate: GuestIdentityTransferCandidate) =>
     [
@@ -59,9 +92,9 @@ export default function GuestIdentityTransferModal({
       ['ratings', candidate.impact.ratings],
     ] as const;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={t('members.identityTransfer.title')}
@@ -72,19 +105,42 @@ export default function GuestIdentityTransferModal({
             <h2 className="text-lg font-semibold text-content">{t('members.identityTransfer.title')}</h2>
             <p className="mt-1 text-sm text-content-muted">{t('members.identityTransfer.description')}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-xl text-content-muted">
+          <button
+            type="button"
+            onClick={close}
+            disabled={busy}
+            aria-label={t('common.close')}
+            className="text-xl text-content-muted disabled:opacity-40"
+          >
             ×
           </button>
         </div>
         <div className="mt-4 space-y-3">
-          {candidates.map((candidate) => (
+          {hasError && (
+            <p role="alert" className="text-sm text-danger">
+              {isAxiosError(error) && error.response
+                ? getApiErrorMessage(error, t('members.identityTransfer.error'))
+                : t('members.identityTransfer.error')}
+            </p>
+          )}
+          {state.phase === 'checking' && <p role="status">{t('common.loading')}</p>}
+          {state.phase === 'check-error' && (
+            <button
+              type="button"
+              onClick={() => check(true)}
+              className="rounded-lg border border-edge px-3 py-2 text-sm"
+            >
+              {t('common.errorRetry')}
+            </button>
+          )}
+          {candidates?.map((candidate) => (
             <div key={candidate.guest_user_id} className="bg-surface-subtle rounded-xl border border-edge p-4">
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-content">{candidate.name}</strong>
                 <button
                   type="button"
                   disabled={busy || candidate.conflicts.length > 0}
-                  onClick={() => transfer(candidate)}
+                  onClick={() => decide({ kind: 'claim', guestUserId: candidate.guest_user_id })}
                   className="rounded-lg bg-content px-3 py-2 text-xs font-semibold text-surface disabled:opacity-40"
                 >
                   {t('members.identityTransfer.thisIsMe')}
@@ -121,50 +177,22 @@ export default function GuestIdentityTransferModal({
               )}
             </div>
           ))}
-          {candidates.length === 0 && (
+          {candidates?.length === 0 && (
             <p className="text-sm text-content-muted">{t('members.identityTransfer.none')}</p>
           )}
         </div>
+        {source === 'new-member' && candidates && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => decide({ kind: 'decline' })}
+            className="mt-4 text-sm text-content-muted underline disabled:opacity-40"
+          >
+            {t('members.identityTransfer.noneOfThese')}
+          </button>
+        )}
       </div>
-    </div>
-  );
-}
-
-export function NewMemberIdentityCheck({ tripId }: { tripId: number | string }): React.ReactElement | null {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [candidates, setCandidates] = useState<GuestIdentityTransferCandidate[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    tripsApi
-      .runNewMemberIdentityCheck(tripId)
-      .then((result) => {
-        if (active && result.required) {
-          setCandidates(result.candidates);
-          setOpen(true);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [tripId]);
-
-  if (!open) return null;
-  return (
-    <>
-      <GuestIdentityTransferModal tripId={tripId} open candidates={candidates} onClose={() => setOpen(false)} />
-      <button
-        type="button"
-        onClick={async () => {
-          await tripsApi.declineNewMemberIdentityCheck(tripId).catch(() => {});
-          setOpen(false);
-        }}
-        className="fixed bottom-3 left-1/2 z-[91] -translate-x-1/2 text-xs text-white underline"
-      >
-        {t('members.identityTransfer.noneOfThese')}
-      </button>
-    </>
+    </div>,
+    document.body
   );
 }
