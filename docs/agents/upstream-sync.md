@@ -12,7 +12,9 @@ The repository includes the [TREK Upstream Upgrade skill](../../.agents/skills/t
 4. Test real migration prefixes, old fork lineages, partial/repeated upgrades and an isolated data copy. Do not relabel a current database as an old schema.
 5. Deliver validation evidence in a PR to `dev`. A fresh production-backup restore and live-plugin checks gate later promotion/deployment, not independently testable PR work.
 
-This upgrade branch adopts v4.3.3 (`1c05ee4b3ac9523c41ccdd3baad989ba48a7409a`) directly from the fork's v4.2.1 baseline (`515398f8ee3000b36a5f5b80365d6214f3f1a723`). Its unsigned tag and commit are accepted on official release provenance plus the pinned SHA. See [v4.3.3 evidence and remaining gates](upgrades/v4.3.3.md) and [the preceding v4.2.1 ledger](upgrades/v4.2.1.md). The unsubmitted v4.3.0 attempt is not a delivered baseline.
+This upgrade branch adopts v4.3.4 (`d80577480c672799154ea9912918d906d16c0a75`) incrementally from the delivered v4.3.3 baseline (`1c05ee4b3ac9523c41ccdd3baad989ba48a7409a`). The user explicitly accepted the unsigned tag and commit on 2026-10-23 based on official release provenance and that pinned SHA. See [v4.3.4 evidence and remaining gates](upgrades/v4.3.4.md). This release changes version metadata only; its security benefit requires a freshly built image running patched Node 24.22.1 or later in the 24.x line.
+
+The earlier v4.3.3 upgrade came directly from the fork's v4.2.1 baseline (`515398f8ee3000b36a5f5b80365d6214f3f1a723`). See [the v4.3.3 ledger](upgrades/v4.3.3.md) and [the preceding v4.2.1 ledger](upgrades/v4.2.1.md). The unsubmitted v4.3.0 attempt is not a delivered baseline.
 
 Use the release-baseline port described by the project skill only for incompatible architecture/lineage changes or an unprovable merge. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
 
