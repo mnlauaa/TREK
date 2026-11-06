@@ -1,7 +1,7 @@
-import { assignmentSchema, dayTimingRequestSchema } from '@trek/shared';
+import { assignmentSchema, dayTimingRequestSchema, type TourListItem } from '@trek/shared';
 import { describe, expect, it } from 'vitest';
 import type { MergedItem } from '../../../utils/dayMerge';
-import { buildItineraryTiming } from './itineraryTimingModel';
+import { buildItineraryTiming, withTimingTravel } from './itineraryTimingModel';
 
 const visit = (id: number, stay = 60): MergedItem => ({
   type: 'place',
@@ -250,4 +250,51 @@ it('leaves route-excluded visits out of the predicted chain', () => {
     profile: 'walking',
   });
   expect(plan.nodes).toEqual([]);
+});
+
+it('uses the manual travel estimate in the original route connector without mutating route data', () => {
+  const segment = {
+    from: [1, 1],
+    to: [2, 2],
+    duration: 600,
+    durationText: '10 min',
+    distanceText: '1 km',
+    mode: 'walking',
+  } as import('../../../types').RouteSegment;
+  const leg = { from: 'assignment:1', to: 'assignment:2', mode: 'walking', manual: 20, seconds: 1200 };
+  expect(withTimingTravel(segment, leg)).toMatchObject({
+    duration: 1200,
+    durationText: '20 min',
+    distanceText: '1 km',
+  });
+  expect(segment.duration).toBe(600);
+  expect(withTimingTravel(segment)).toBe(segment);
+});
+
+it('uses upstream tour duration and keeps an unknown stage duration unknown', () => {
+  const tour = {
+    place_id: 1,
+    duration: 180,
+    planned_duration_minutes: null,
+    break_additional_minutes: 0,
+  } as TourListItem;
+  const first = visit(1);
+  const build = () =>
+    buildItineraryTiming({
+      items: [first, visit(2)],
+      dayId: 1,
+      timing,
+      segments: [],
+      profile: 'walking',
+      routeContext: { tours: [tour] },
+    });
+  expect(build().schedule.entries.map((e) => [e.arrival, e.departure])).toEqual([
+    ['09:00', '12:00'],
+    ['12:30', '13:30'],
+  ]);
+  first.data.tour_stage_key = 'unknown-stage';
+  expect(build().schedule.entries.map((e) => [e.arrival, e.departure])).toEqual([
+    ['09:00', null],
+    [null, null],
+  ]);
 });

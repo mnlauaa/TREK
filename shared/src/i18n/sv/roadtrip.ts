@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Automatisk tidsplanering',
+  'timing.fixedStart': 'Fast starttid',
+  'timing.fixedEnd': 'Fast sluttid',
+  'timing.help': 'Ankomst och avresa beräknas utifrån vistelse- och restid.',
+  'timing.fixedEndHint': 'Sluttiden bestämmer vistelsens längd. Lämna sluttiden tom för att ändra längden.',
+  'timing.travelMissing': 'Restid inte angiven',
   'timing.arrival': 'Beräknad ankomst',
   'timing.departure': 'Beräknad avresa',
   'timing.fixed': 'Ange fasta tider',

@@ -12,7 +12,6 @@ import { type buildItineraryTiming } from './itineraryTimingModel';
 import { button, useTimingSave, validClock } from './useTimingSave';
 
 export type TimingPlan = ReturnType<typeof buildItineraryTiming>;
-export { DayTimingControls, TravelTimingControl } from './TimingControls';
 
 export function VisitTiming({
   assignment,

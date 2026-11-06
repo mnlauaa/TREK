@@ -2,6 +2,12 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Automatische Zeitplanung',
+  'timing.fixedStart': 'Fester Beginn',
+  'timing.fixedEnd': 'Festes Ende',
+  'timing.help': 'Ankunft und Abfahrt ergeben sich aus Aufenthalts- und Reisezeit.',
+  'timing.fixedEndHint':
+    'Das Ende bestimmt die Aufenthaltsdauer. Lassen Sie das Ende leer, um die Dauer zu bearbeiten.',
+  'timing.travelMissing': 'Reisezeit nicht festgelegt',
   'timing.arrival': 'Voraussichtliche Ankunft',
   'timing.departure': 'Voraussichtliche Abfahrt',
   'timing.fixed': 'Feste Zeiten setzen',

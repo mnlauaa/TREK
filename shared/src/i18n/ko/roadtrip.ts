@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': '시간 자동 계산',
+  'timing.fixedStart': '시작 시간 지정',
+  'timing.fixedEnd': '종료 시간 지정',
+  'timing.help': '체류 및 이동 시간을 기준으로 도착과 출발 시간을 계산합니다.',
+  'timing.fixedEndHint': '종료 시간을 지정하면 체류 시간이 결정됩니다. 체류 시간을 수정하려면 종료 시간을 비워 두세요.',
+  'timing.travelMissing': '이동 시간 미설정',
   'timing.arrival': '예상 도착',
   'timing.departure': '예상 출발',
   'timing.fixed': '시간 지정',

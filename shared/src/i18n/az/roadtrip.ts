@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Avtomatik vaxt hesablaması',
+  'timing.fixedStart': 'Sabit başlanğıc',
+  'timing.fixedEnd': 'Sabit bitmə',
+  'timing.help': 'Gəliş və gediş qalma və yol vaxtına əsasən hesablanır.',
+  'timing.fixedEndHint': 'Bitmə vaxtı qalma müddətini müəyyən edir. Müddəti dəyişmək üçün bitmə vaxtını boş saxlayın.',
+  'timing.travelMissing': 'Yol vaxtı təyin edilməyib',
   'timing.arrival': 'Təxmini çatma vaxtı',
   'timing.departure': 'Təxmini yola düşmə vaxtı',
   'timing.fixed': 'Sabit vaxtları təyin et',

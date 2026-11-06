@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Waktu otomatis',
+  'timing.fixedStart': 'Mulai tetap',
+  'timing.fixedEnd': 'Selesai tetap',
+  'timing.help': 'Kedatangan dan keberangkatan dihitung dari durasi kunjungan dan perjalanan.',
+  'timing.fixedEndHint': 'Waktu selesai menentukan durasi kunjungan. Kosongkan waktu selesai untuk mengedit durasi.',
+  'timing.travelMissing': 'Waktu perjalanan belum diatur',
   'timing.arrival': 'Perkiraan tiba',
   'timing.departure': 'Perkiraan berangkat',
   'timing.fixed': 'Tetapkan waktu',

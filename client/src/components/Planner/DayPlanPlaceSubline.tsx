@@ -1,4 +1,5 @@
 import type { TourListItem } from '@trek/shared';
+import type { ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslation } from '../../i18n';
@@ -18,6 +19,7 @@ import { TimePill } from './planParts';
 type DayRowTourTimes = TourPlannedTimes & { tour?: TourListItem };
 
 interface DayPlanPlaceSublineProps {
+  timing?: ReactNode;
   place: Place;
   cat: Category | undefined;
   tourTimes: DayRowTourTimes | undefined;
@@ -105,6 +107,7 @@ function SublineDescription({ text, isTourPlace }: { text: string; isTourPlace: 
 // Second line of a place row in the day plan: time, tour facts or planned
 // tour durations, then the clamped description.
 export function DayPlanPlaceSubline({
+  timing,
   place,
   cat,
   tourTimes,
@@ -116,25 +119,26 @@ export function DayPlanPlaceSubline({
   const { locale } = useTranslation();
   const dayRowTour = tourTimes?.tour;
   const description = place.description || place.address || cat?.name;
-  if (!(dayRowTour || place.place_time || hasPlannedTimes(tourTimes) || description)) return null;
+  if (!(timing || dayRowTour || place.place_time || hasPlannedTimes(tourTimes) || description)) return null;
   return (
     // The description stays on one line and gives way first. The pills wrap rather
     // than run out of the row: a tour carries a time, its duration and its distance,
     // and in the narrow day column the last of them used to be cut off unseen.
     <div className="trek-fade-end mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 overflow-hidden">
-      {place.place_time && dayRowTour && (
-        // TIME-02: a tour's end, typed or worked out from its start and its time.
+      {timing}
+      {!timing && place.place_time && (
         <TimePill quiet>
-          <TourDayTimeText
-            entry={{ start: place.place_time, end: place.end_time, stageKey: tourStageKey }}
-            tour={dayRowTour}
-          />
-        </TimePill>
-      )}
-      {place.place_time && !dayRowTour && (
-        <TimePill quiet>
-          {formatTime(place.place_time, locale, timeFormat)}
-          {place.end_time ? ` – ${formatTime(place.end_time, locale, timeFormat)}` : ''}
+          {dayRowTour ? (
+            <TourDayTimeText
+              entry={{ start: place.place_time, end: place.end_time, stageKey: tourStageKey }}
+              tour={dayRowTour}
+            />
+          ) : (
+            <>
+              {formatTime(place.place_time, locale, timeFormat)}
+              {place.end_time ? ` – ${formatTime(place.end_time, locale, timeFormat)}` : ''}
+            </>
+          )}
         </TimePill>
       )}
       {dayRowTour ? (

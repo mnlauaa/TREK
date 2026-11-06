@@ -2,6 +2,11 @@ import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
   'timing.enabled': 'Horaris automàtics',
+  'timing.fixedStart': 'Inici fix',
+  'timing.fixedEnd': 'Final fix',
+  'timing.help': 'L’arribada i la sortida es calculen segons l’estada i el trajecte.',
+  'timing.fixedEndHint': 'Definir el final determina l’estada. Deixa el final buit per editar la durada.',
+  'timing.travelMissing': 'Temps de trajecte no definit',
   'timing.arrival': 'Arribada prevista',
   'timing.departure': 'Sortida prevista',
   'timing.fixed': 'Fixar horaris',
