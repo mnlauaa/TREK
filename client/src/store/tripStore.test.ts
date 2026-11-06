@@ -316,7 +316,7 @@ describe('tripStore', () => {
 
     it('FE-TSTORE-009: one failing resource does not wipe the others', async () => {
       const stalePlace = buildPlace({ id: 111, trip_id: 1, name: 'Kept' });
-      seedStore(useTripStore, { places: [stalePlace], packingItems: [], todoItems: [] });
+      seedStore(useTripStore, { trip: buildTrip({ id: 1 }), places: [stalePlace], packingItems: [], todoItems: [] });
       vi.spyOn(console, 'error').mockImplementation(() => {});
 
       server.use(

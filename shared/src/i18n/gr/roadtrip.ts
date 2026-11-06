@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Οι ώρες επίσκεψης δεν καλύπτουν αυτή την κράτηση.',
   'timing.booking': 'Προβολή κράτησης',
   'timing.travel': 'Διαδρομή σε λεπτά',
-  'timing.dayOffset': '+{days} ημέρες',
+  'timing.dayOffset': '+{count} ημέρες',
+  'timing.dayOffset.one': '+{count} ημέρα',
 
   'roadtrip.stay.portals': 'Βρείτε κατάλυμα',
   'roadtrip.stay.portalHint':

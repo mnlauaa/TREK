@@ -9,7 +9,10 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Godziny wizyty nie obejmują tej rezerwacji.',
   'timing.booking': 'Zobacz rezerwację',
   'timing.travel': 'Podróż w minutach',
-  'timing.dayOffset': '+{days} dni',
+  'timing.dayOffset': '+{count} dnia',
+  'timing.dayOffset.one': '+{count} dzień',
+  'timing.dayOffset.few': '+{count} dni',
+  'timing.dayOffset.many': '+{count} dni',
 
   'roadtrip.stay.portals': 'Znajdź nocleg',
   'roadtrip.stay.portalHint': 'Sprawdź cel, daty i gości na portalu. W CHECK24 wyszukaj ręcznie.',

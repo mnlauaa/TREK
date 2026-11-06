@@ -119,3 +119,43 @@ describe('BudgetItemsRepository — reservations.service.ts RS49 delete', () => 
     expect(await findRow(orm, BudgetItems, { id: kept.id })).toMatchObject({ id: kept.id });
   });
 });
+
+describe('BudgetItemsRepository — exchange-rate detection and reservation linking', () => {
+  it('detects unfrozen foreign rates without mistaking explicit parity rates or another trip for missing rates', async () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    const other = createTrip(testDb, user.id);
+    const item = createBudgetItem(testDb, trip.id);
+    const elsewhere = createBudgetItem(testDb, other.id);
+    await updateRows(orm, BudgetItems, { id: elsewhere.id }, { currency: 'USD', exchange_rate: 0 });
+    await updateRows(orm, BudgetItems, { id: item.id }, { currency: 'EUR', exchange_rate: 0 });
+    expect(await budgetItemsRepo.hasUnfrozenForeign(trip.id, 'EUR')).toBe(false);
+    await updateRows(
+      orm,
+      BudgetItems,
+      { id: item.id },
+      { currency: 'usd', exchange_rate: 1, exchange_rate_source: 'explicit' },
+    );
+    expect(await budgetItemsRepo.hasUnfrozenForeign(trip.id, 'EUR')).toBe(false);
+    await updateRows(orm, BudgetItems, { id: item.id }, { exchange_rate_source: 'legacy' });
+    expect(await budgetItemsRepo.hasUnfrozenForeign(trip.id, 'EUR')).toBe(true);
+    await updateRows(orm, BudgetItems, { id: item.id }, { exchange_rate: 0.9 });
+    expect(await budgetItemsRepo.hasUnfrozenForeign(trip.id, 'EUR')).toBe(false);
+    await updateRows(orm, BudgetItems, { id: item.id }, { exchange_rate: 0 });
+    expect(await budgetItemsRepo.hasUnfrozenForeign(trip.id, 'EUR')).toBe(true);
+  });
+
+  it('links only the requested expense to the reservation while preserving its amount', async () => {
+    const { user } = createUser(testDb);
+    const trip = createTrip(testDb, user.id);
+    const reservation = createReservation(testDb, trip.id);
+    const item = createBudgetItem(testDb, trip.id, { total_price: 12 });
+    const other = createBudgetItem(testDb, trip.id);
+    await budgetItemsRepo.setReservationId(String(item.id), String(reservation.id));
+    expect(await findRow(orm, BudgetItems, { id: item.id })).toMatchObject({
+      reservation_id: reservation.id,
+      total_price: 12,
+    });
+    expect(await findRow(orm, BudgetItems, { id: other.id })).toMatchObject({ reservation_id: null });
+  });
+});

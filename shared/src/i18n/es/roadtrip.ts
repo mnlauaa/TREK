@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'El horario de la visita no cubre esta reserva.',
   'timing.booking': 'Ver reserva',
   'timing.travel': 'Trayecto en minutos',
-  'timing.dayOffset': '+{days} día(s)',
+  'timing.dayOffset': '+{count} días',
+  'timing.dayOffset.one': '+{count} día',
 
   'roadtrip.stay.portals': 'Buscar alojamiento',
   'roadtrip.stay.portalHint':

@@ -491,3 +491,33 @@ describe('planner_trip_views', () => {
     expect(await readUserSetting(t, user.id, 'planner_trip_views')).toBe('');
   });
 });
+
+describe('resetSetting', () => {
+  it('normalizes legacy inherited currency values when resetting an override', async () => {
+    const { user } = createUser(testDb);
+    await setAppSetting(
+      t,
+      'default_user_setting_common_currencies',
+      JSON.stringify([' usd ', 'EUR', 'usd', 42, null, 'not-a-currency', 'jpy']),
+    );
+    await svc.upsertSetting(user.id, 'common_currencies', ['GBP']);
+
+    expect(await svc.resetSetting(user.id, 'common_currencies')).toEqual(['USD', 'EUR', 'JPY']);
+    expect(await readUserSetting(t, user.id, 'common_currencies')).toBeNull();
+  });
+
+  it('removes only the selected user override and returns the inherited currencies', async () => {
+    const { user } = createUser(testDb);
+    const { user: other } = createUser(testDb);
+    await svc.setAdminUserDefaults({ common_currencies: ['USD', 'EUR'] });
+    await svc.upsertSetting(user.id, 'common_currencies', ['JPY']);
+    await svc.upsertSetting(other.id, 'common_currencies', ['GBP']);
+    await svc.upsertSetting(user.id, 'theme', 'dark');
+
+    expect(await svc.resetSetting(user.id, 'common_currencies')).toEqual(['USD', 'EUR']);
+    expect(await readUserSetting(t, user.id, 'common_currencies')).toBeNull();
+    expect(await readUserSetting(t, other.id, 'common_currencies')).toBe('["GBP"]');
+    expect(await readUserSetting(t, user.id, 'theme')).toBe('dark');
+    expect(await svc.getUserSettings(user.id)).toMatchObject({ common_currencies: ['USD', 'EUR'] });
+  });
+});

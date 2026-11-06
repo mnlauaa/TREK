@@ -1,15 +1,15 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
-  'timing.enabled': 'Automatic timing',
-  'timing.arrival': 'Estimated arrival',
-  'timing.departure': 'Estimated departure',
-  'timing.fixed': 'Set fixed times',
-  'timing.unknown': 'Unknown',
-  'timing.bookingConflict': 'Visit times do not cover this booking.',
-  'timing.booking': 'View booking',
-  'timing.travel': 'Travel minutes',
-  'timing.dayOffset': '+{days} day(s)',
+  'timing.enabled': 'กำหนดเวลาอัตโนมัติ',
+  'timing.arrival': 'เวลาถึงโดยประมาณ',
+  'timing.departure': 'เวลาออกเดินทางโดยประมาณ',
+  'timing.fixed': 'กำหนดเวลาที่แน่นอน',
+  'timing.unknown': 'ไม่ทราบ',
+  'timing.bookingConflict': 'ช่วงเวลาเข้าชมไม่ครอบคลุมช่วงเวลาของการจองนี้',
+  'timing.booking': 'ดูการจอง',
+  'timing.travel': 'เวลาเดินทางเป็นนาที',
+  'timing.dayOffset': '+{count} วัน',
 
   'roadtrip.stay.portals': 'ค้นหาที่พัก',
   'roadtrip.stay.portalHint': 'ตรวจสอบปลายทาง วันที่ และผู้เข้าพักในพอร์ทัล CHECK24 ต้องค้นหาด้วยตนเอง',

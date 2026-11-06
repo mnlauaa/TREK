@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Besökstiderna täcker inte denna bokning.',
   'timing.booking': 'Visa bokning',
   'timing.travel': 'Restid i minuter',
-  'timing.dayOffset': '+{days} dag(ar)',
+  'timing.dayOffset': '+{count} dagar',
+  'timing.dayOffset.one': '+{count} dag',
 
   'roadtrip.stay.portals': 'Hitta boende',
   'roadtrip.stay.portalHint': 'Kontrollera resmål, datum och gäster på portalen. Sök manuellt på CHECK24.',

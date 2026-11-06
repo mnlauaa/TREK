@@ -44,7 +44,7 @@ export function VisitTiming({
   const { entry, conflicts, warnings, stay } = visitReading(assignment, plan, bookings, day.date);
   const display = (clock: string | null | undefined, offset = 0) =>
     clock
-      ? `${formatClockTime(clock, is12h)}${offset ? ` ${t('timing.dayOffset', { days: offset })}` : ''}`
+      ? `${formatClockTime(clock, is12h)}${offset ? ` ${t('timing.dayOffset', { count: offset })}` : ''}`
       : t('timing.unknown');
   const fixed = !!times.start || !!times.end;
   const editStay = () => {

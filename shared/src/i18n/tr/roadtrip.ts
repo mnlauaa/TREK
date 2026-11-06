@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Ziyaret saatleri bu rezervasyonu kapsamıyor.',
   'timing.booking': 'Rezervasyonu görüntüle',
   'timing.travel': 'Yolculuk süresi (dakika)',
-  'timing.dayOffset': '+{days} gün',
+  'timing.dayOffset': '+{count} gün',
+  'timing.dayOffset.one': '+{count} gün',
 
   'roadtrip.stay.portals': 'Konaklama bul',
   'roadtrip.stay.portalHint':

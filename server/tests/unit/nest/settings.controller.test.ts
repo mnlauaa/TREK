@@ -12,6 +12,7 @@ const user = { id: 1, role: 'user', email: 'u@example.test' } as User;
 function svc(o: Partial<SettingsService> = {}): SettingsService {
   return {
     getUserSettings: vi.fn(),
+    resetSetting: vi.fn(),
     upsertSetting: vi.fn(),
     bulkUpsertSettings: vi.fn(),
     ...o,
@@ -38,6 +39,9 @@ beforeEach(() => vi.clearAllMocks());
  */
 function writesFor(s: SettingsService) {
   return {
+    resetOne: vi.fn((userId: number, key: 'common_currencies', _socketId: string | undefined) =>
+      s.resetSetting(userId, key),
+    ),
     saveOne: vi.fn((userId: number, key: string, value: unknown, _socketId: string | undefined) =>
       s.upsertSetting(userId, key, value),
     ),
@@ -115,4 +119,25 @@ describe('SettingsController', () => {
     ).toEqual({ success: true, updated: 3 });
     expect(writes.saveMany).toHaveBeenCalledWith(1, { a: 1, b: 2, c: 3 }, 'sock');
   });
+});
+
+it('DELETE resets supported settings and returns the inherited value', async () => {
+  const resetSetting = vi.fn().mockResolvedValue(['USD']);
+  const c = controller(svc({ resetSetting }));
+  expect(await c.reset(user, 'common_currencies', 'sock-reset')).toEqual({
+    success: true,
+    key: 'common_currencies',
+    value: ['USD'],
+  });
+  expect(writes.resetOne).toHaveBeenCalledWith(1, 'common_currencies', 'sock-reset');
+  expect(resetSetting).toHaveBeenCalledWith(1, 'common_currencies');
+});
+
+it('DELETE rejects unsupported keys without writing', async () => {
+  const c = controller(svc());
+  expect(await thrown(() => c.reset(user, 'theme'))).toEqual({
+    status: 400,
+    body: { error: 'Setting cannot be reset' },
+  });
+  expect(writes.resetOne).not.toHaveBeenCalled();
 });

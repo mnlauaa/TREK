@@ -306,3 +306,72 @@ describe('TripMembersController', () => {
     expect(Reflect.getMetadata('path', TripMembersController)).toBe('api/trips');
   });
 });
+
+describe('guest identity route contracts', () => {
+  it('returns checks and candidates, persists decline, and audits/broadcasts a successful claim', async () => {
+    const candidates = [{ guest_user_id: 7, name: 'Sam', impact: {}, conflicts: [] }];
+    const result = { success: true, transferred_guest_user_id: 7, impact: { expenses: 2 } };
+    const s = svc({
+      runNewMemberIdentityCheck: vi.fn().mockResolvedValue({ required: true, candidates }),
+      completeNewMemberIdentityCheck: vi.fn().mockResolvedValue({ success: true }),
+      listGuestIdentityTransferCandidates: vi.fn().mockResolvedValue(candidates),
+      transferGuestIdentity: vi.fn().mockResolvedValue(result),
+    });
+    const controller = tc(s);
+    expect(await controller.newMemberIdentityCheck(user, '9')).toEqual({ required: true, candidates });
+    expect(await controller.guestIdentityTransferCandidates(user, '9')).toEqual({ candidates });
+    expect(await controller.declineNewMemberIdentityCheck(user, '9')).toEqual({ success: true });
+    expect(s.completeNewMemberIdentityCheck).toHaveBeenCalledWith('9', user.id);
+    expect(await controller.transferGuestIdentity(user, '9', '7', req, 'socket')).toEqual(result);
+    expect(s.transferGuestIdentity).toHaveBeenCalledWith('9', 7, user.id);
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'trip.guest_identity_transfer',
+        details: { tripId: 9, guestUserId: 7, accountMemberUserId: 1, impact: result.impact },
+      }),
+    );
+    expect(s.broadcast).toHaveBeenCalledWith(
+      '9',
+      'guest:identity-transferred',
+      { guestUserId: 7, transferredByUserId: 1 },
+      'socket',
+    );
+  });
+
+  it.each(['check', 'decline', 'candidates', 'transfer'] as const)(
+    '%s preserves refusal codes and unexpected failures',
+    async (route) => {
+      const invoke = (error: Error) => {
+        const fail = vi.fn().mockRejectedValue(error);
+        const controller = tc(
+          svc({
+            runNewMemberIdentityCheck: fail,
+            completeNewMemberIdentityCheck: fail,
+            listGuestIdentityTransferCandidates: fail,
+            transferGuestIdentity: fail,
+          }),
+        );
+        if (route === 'check') return controller.newMemberIdentityCheck(user, '9');
+        if (route === 'decline') return controller.declineNewMemberIdentityCheck(user, '9');
+        if (route === 'candidates') return controller.guestIdentityTransferCandidates(user, '9');
+        return controller.transferGuestIdentity(user, '9', '7', req);
+      };
+      const { GuestIdentityTransferError } = await import('../../../src/nest/trip-members/guest-identity-transfer');
+      const conflicts = [{ type: 'expense_share_overlap' as const, record_id: 8 }];
+      expect(
+        await thrown(() => invoke(new GuestIdentityTransferError('GUEST_IDENTITY_TRANSFER_FORBIDDEN', 'Forbidden'))),
+      ).toEqual({
+        status: 403,
+        body: { error: 'Forbidden', code: 'GUEST_IDENTITY_TRANSFER_FORBIDDEN', conflicts: [] },
+      });
+      expect(
+        await thrown(() =>
+          invoke(new GuestIdentityTransferError('GUEST_IDENTITY_TRANSFER_CONFLICT', 'Conflict', conflicts)),
+        ),
+      ).toEqual({ status: 409, body: { error: 'Conflict', code: 'GUEST_IDENTITY_TRANSFER_CONFLICT', conflicts } });
+      const failure = new Error('database unavailable');
+      await expect(invoke(failure)).rejects.toBe(failure);
+      expect(writeAudit).not.toHaveBeenCalled();
+    },
+  );
+});

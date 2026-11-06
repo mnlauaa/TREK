@@ -9,7 +9,10 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Час відвідування не охоплює це бронювання.',
   'timing.booking': 'Переглянути бронювання',
   'timing.travel': 'Час у дорозі, хв',
-  'timing.dayOffset': '+{days} дн.',
+  'timing.dayOffset': '+{count} дня',
+  'timing.dayOffset.one': '+{count} день',
+  'timing.dayOffset.few': '+{count} дні',
+  'timing.dayOffset.many': '+{count} днів',
 
   'roadtrip.stay.portals': 'Знайти житло',
   'roadtrip.stay.portalHint': 'Перевірте місце, дати та гостей на порталі. У CHECK24 шукайте вручну.',
