@@ -14,6 +14,6 @@ export function pdfTimingChip(
   if (!entry) return '';
   const { clock, translate: t, escape } = format;
   const time = (value: string | null, offset: number) =>
-    value ? `${clock(value)}${offset ? ` ${t('timing.dayOffset', { days: offset })}` : ''}` : t('timing.unknown');
+    value ? `${clock(value)}${offset ? ` ${t('timing.dayOffset', { count: offset })}` : ''}` : t('timing.unknown');
   return `<span class="chip">${escape(t('timing.arrival'))} ${escape(time(entry.arrival, entry.dayOffset))} · ${escape(t('timing.departure'))} ${escape(time(entry.departure, entry.departureDayOffset ?? entry.dayOffset))}</span>`;
 }

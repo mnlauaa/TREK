@@ -9,9 +9,11 @@
  */
 import { buildApp } from '../../src/bootstrap';
 import { db as testDb } from '../../src/db/database';
+import { TripFiles } from '../../src/db/entities/TripFiles.entity';
 import { authCookie, generateToken } from '../helpers/auth';
 import { createUser, createTrip, createReservation, createPlace, addTripMember } from '../helpers/factories';
 import type { FactoryOrm } from '../helpers/factories/context';
+import { findRows } from '../helpers/factories/rows';
 import { setAppSetting } from '../helpers/factories/settings';
 import { resetTestDb, resetRateLimits } from '../helpers/test-db';
 import { MikroORM } from '@mikro-orm/core';
@@ -21,7 +23,7 @@ import type { Application } from 'express';
 import fs from 'fs';
 import path from 'path';
 import request from 'supertest';
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 
 vi.mock('../../src/db/database', async () => {
   const { createSnapshotTestDb, buildDbMock } = await import('../helpers/db-mock');
@@ -35,6 +37,7 @@ const FIXTURE_PDF = path.join(__dirname, '../fixtures/test.pdf');
 const FIXTURE_IMG = path.join(__dirname, '../fixtures/small-image.jpg');
 
 // Ensure uploads/files dir exists
+const createdFiles = new Set<string>();
 const uploadsDir = path.join(__dirname, '../../uploads/files');
 
 beforeAll(async () => {
@@ -53,10 +56,15 @@ beforeEach(async () => {
   await setAppSetting(orm, 'allowed_file_types', '*');
 });
 
+afterEach(async () => {
+  for (const file of await findRows(orm, TripFiles, {})) createdFiles.add(file.filename);
+});
+
 afterAll(async () => {
   await nestApp.close();
   testDb.close();
-  fs.rmSync(uploadsDir, { recursive: true, force: true });
+  // Other suites share this storage root; remove only this suite's uploads.
+  for (const filename of createdFiles) fs.rmSync(path.join(uploadsDir, filename), { force: true });
 });
 
 // Helper to upload a file and return the file object

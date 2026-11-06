@@ -1,15 +1,17 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
-  'timing.enabled': 'Automatic timing',
-  'timing.arrival': 'Estimated arrival',
-  'timing.departure': 'Estimated departure',
-  'timing.fixed': 'Set fixed times',
-  'timing.unknown': 'Unknown',
-  'timing.bookingConflict': 'Visit times do not cover this booking.',
-  'timing.booking': 'View booking',
-  'timing.travel': 'Travel minutes',
-  'timing.dayOffset': '+{days} day(s)',
+  'timing.enabled': 'Automatické časovanie',
+  'timing.arrival': 'Odhadovaný príchod',
+  'timing.departure': 'Odhadovaný odchod',
+  'timing.fixed': 'Nastaviť pevné časy',
+  'timing.unknown': 'Neznáme',
+  'timing.bookingConflict': 'Časy návštevy nepokrývajú čas tejto rezervácie.',
+  'timing.booking': 'Zobraziť rezerváciu',
+  'timing.travel': 'Čas presunu v minútach',
+  'timing.dayOffset': '+{count} dní',
+  'timing.dayOffset.one': '+{count} deň',
+  'timing.dayOffset.few': '+{count} dni',
 
   'roadtrip.stay.portals': 'Nájsť ubytovanie',
   'roadtrip.stay.portalHint': 'Na portáli overte cieľ, termín a hostí. CHECK24 vyžaduje ručné hľadanie.',

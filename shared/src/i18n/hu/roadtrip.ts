@@ -9,7 +9,8 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'A látogatás ideje nem fedi le ezt a foglalást.',
   'timing.booking': 'Foglalás megtekintése',
   'timing.travel': 'Utazási idő percben',
-  'timing.dayOffset': '+{days} nap',
+  'timing.dayOffset': '+{count} nap',
+  'timing.dayOffset.one': '+{count} nap',
 
   'roadtrip.stay.portals': 'Szállás keresése',
   'roadtrip.stay.portalHint':

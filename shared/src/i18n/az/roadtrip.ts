@@ -1,15 +1,16 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
-  'timing.enabled': 'Automatic timing',
-  'timing.arrival': 'Estimated arrival',
-  'timing.departure': 'Estimated departure',
-  'timing.fixed': 'Set fixed times',
-  'timing.unknown': 'Unknown',
-  'timing.bookingConflict': 'Visit times do not cover this booking.',
-  'timing.booking': 'View booking',
-  'timing.travel': 'Travel minutes',
-  'timing.dayOffset': '+{days} day(s)',
+  'timing.enabled': 'Avtomatik vaxt hesablaması',
+  'timing.arrival': 'Təxmini çatma vaxtı',
+  'timing.departure': 'Təxmini yola düşmə vaxtı',
+  'timing.fixed': 'Sabit vaxtları təyin et',
+  'timing.unknown': 'Naməlum',
+  'timing.bookingConflict': 'Ziyarət vaxtları bu rezervasiyanın müddətini əhatə etmir.',
+  'timing.booking': 'Rezervasiyaya bax',
+  'timing.travel': 'Yol müddəti (dəqiqə)',
+  'timing.dayOffset': '+{count} gün',
+  'timing.dayOffset.one': '+{count} gün',
 
   'roadtrip.stay.portals': 'Yaşayış yeri tap',
   'roadtrip.stay.portalHint':

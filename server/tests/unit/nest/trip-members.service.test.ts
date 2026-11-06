@@ -590,12 +590,12 @@ describe('Guest identity transfer', () => {
     await addBudgetItemMember(t, expense.id, owner.id, { amount: 50, paid: 0 });
     await addBudgetItemPayer(t, expense.id, guest.id, 100);
     await addBudgetItemPayer(t, expense.id, owner.id, 23.45);
-    for (const [from, to, amount] of [[guest.id, owner.id, 12.34], [owner.id, guest.id, 5.67]]) {
-      await insertRow(t, BudgetSettlements, {
+    await Promise.all([[guest.id, owner.id, 12.34], [owner.id, guest.id, 5.67]].map(([from, to, amount]) =>
+      insertRow(t, BudgetSettlements, {
         trip: trip.id, fromUser: from, toUser: to, amount,
         currency: 'USD', exchange_rate: 0.9, settled_at: '2026-11-01',
-      });
-    }
+      }),
+    ));
     const before = {
       expense: await findRow(t, BudgetItems, { id: expense.id }),
       shares: await findRows(t, BudgetItemMembers, { budgetItem: expense.id }),

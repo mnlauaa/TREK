@@ -9,7 +9,7 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': '预计停留时段未涵盖此预订时间。',
   'timing.booking': '查看预订',
   'timing.travel': '交通时间（分钟）',
-  'timing.dayOffset': '+{days} 天',
+  'timing.dayOffset': '+{count} 天',
 
   'roadtrip.stay.portals': '查找住宿',
   'roadtrip.stay.portalHint': '请在平台核对目的地、日期和入住人数。CHECK24需手动搜索。',

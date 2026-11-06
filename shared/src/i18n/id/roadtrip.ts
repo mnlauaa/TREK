@@ -9,7 +9,7 @@ const roadtrip: TranslationStrings = {
   'timing.bookingConflict': 'Waktu kunjungan tidak mencakup waktu reservasi ini.',
   'timing.booking': 'Lihat reservasi',
   'timing.travel': 'Perjalanan dalam menit',
-  'timing.dayOffset': '+{days} hari',
+  'timing.dayOffset': '+{count} hari',
 
   'roadtrip.stay.portals': 'Cari penginapan',
   'roadtrip.stay.portalHint': 'Periksa tujuan, tanggal, dan tamu di portal. Cari secara manual di CHECK24.',
