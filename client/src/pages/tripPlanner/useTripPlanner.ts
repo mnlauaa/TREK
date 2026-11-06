@@ -3,7 +3,7 @@ import { roadtripPreferencesRepo } from '../../repo/roadtripPreferencesRepo'
 import { publishRoadtripPreferences } from '../../store/roadtripPreferencesStore'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router'
-import { useTripStore } from '../../store/tripStore'
+import { useGuestIdentityRevision, useTripStore } from '../../store/tripStore'
 import { useCanDo } from '../../store/permissionsStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { dayColor } from '../../components/Roadtrip/dayColors'
@@ -12,14 +12,15 @@ import { useToast } from '../../components/shared/Toast'
 import { Map, Ticket, PackageCheck, Wallet, FolderOpen, Users, Train, Route } from 'lucide-react'
 import { resolvePluginIcon } from '../../components/shared/PluginIcon'
 import { useTranslation, translateApiError } from '../../i18n'
-import { addonsApi, accommodationsApi, authApi, tripsApi, assignmentsApi, healthApi, airtrailApi, mapsApi, placesApi } from '../../api/client'
+import { addonsApi, accommodationsApi, authApi, assignmentsApi, healthApi, airtrailApi, mapsApi, placesApi } from '../../api/client'
 import { getDayOrder } from '../../utils/dayOrder'
 import { TRANSPORT_TYPES, timedSlot } from '../../utils/dayMerge'
 import { isOvernightCategory } from '../../components/Roadtrip/stopKinds'
 import { parsedItemToDraft, isTransportItem, isUnplaceableItem, type BookingReviewDraft } from '../../components/Planner/parsedItemToDraft'
 import type { BookingImportPreviewItem } from '@trek/shared'
 import { accommodationRepo } from '../../repo/accommodationRepo'
-import { offlineDb, getImportFiles, deleteImportFiles } from '../../db/offlineDb'
+import { tripRepo } from '../../repo/tripRepo'
+import { getImportFiles, deleteImportFiles } from '../../db/offlineDb'
 import { isEffectivelyOffline } from '../../sync/networkMode'
 import { useBackgroundTasksStore } from '../../store/backgroundTasksStore'
 import { useAuthStore } from '../../store/authStore'
@@ -199,17 +200,30 @@ export function useTripPlanner() {
 
   // Re-fetch the trip roster so consumers (Costs participants, Collab, …) pick up a
   // just-added guest or member without a full page reload.
-  const refreshMembers = useCallback(() => {
-    if (!tripId || isEffectivelyOffline()) return
-    tripsApi.getMembers(tripId).then(d => {
-      const all = [d.owner, ...(d.members || [])].filter(Boolean)
-      setTripMembers(all)
+  const identityRevision = useGuestIdentityRevision(tripId)
+  const rosterRequest = useRef(0)
+  const loadMembers = useCallback((allowCache = false) => {
+    if (!tripId) return
+    const offline = isEffectivelyOffline()
+    if (offline && !allowCache) return
+    const id = ++rosterRequest.current
+    const isCurrent = () => id === rosterRequest.current
+    const members = offline
+      ? tripRepo.cachedMembers(tripId)
+      : tripRepo.members(tripId, isCurrent).then(d => d.owner ? [d.owner, ...d.members] : d.members)
+    members.then(rows => {
+      if (isCurrent()) setTripMembers(rows)
     }).catch(() => {})
   }, [tripId])
+  const refreshMembers = useCallback(() => loadMembers(), [loadMembers])
 
+  const accommodationsRequest = useRef(0)
   const loadAccommodations = useCallback(() => {
     if (tripId) {
-      accommodationRepo.list(tripId).then(d => setTripAccommodations(d.accommodations || [])).catch(() => {})
+      const id = ++accommodationsRequest.current
+      accommodationRepo.list(tripId).then(d => {
+        if (id === accommodationsRequest.current) setTripAccommodations(d.accommodations || [])
+      }).catch(() => {})
       tripActions.loadReservations(tripId)
     }
   }, [tripId])
@@ -624,15 +638,14 @@ export function useTripPlanner() {
     if (tripId) {
       tripActions.loadTrip(tripId).catch(() => { toast.error(t('trip.toast.loadError')); navigate('/dashboard') })
       loadAccommodations()
-      if (isEffectivelyOffline()) {
-        offlineDb.tripMembers.where('tripId').equals(Number(tripId)).toArray()
-          .then(rows => setTripMembers(rows))
-          .catch(() => {})
-      } else {
-        refreshMembers()
-      }
     }
+    return () => { accommodationsRequest.current++ }
   }, [tripId])
+
+  useEffect(() => {
+    loadMembers(true)
+    return () => { rosterRequest.current++ }
+  }, [identityRevision, loadMembers])
 
   // Accommodations live in this hook's local state, so store-level refreshes
   // (remote trip date change, reconnect hydration) nudge us via this event (#1288).

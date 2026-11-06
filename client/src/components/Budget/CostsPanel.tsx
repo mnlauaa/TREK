@@ -17,7 +17,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { budgetApi } from '../../api/client';
 import {
@@ -32,7 +32,7 @@ import { useTranslation } from '../../i18n';
 import { useAuthStore } from '../../store/authStore';
 import { useCanDo } from '../../store/permissionsStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { useTripStore } from '../../store/tripStore';
+import { useGuestIdentityRevision, useTripStore } from '../../store/tripStore';
 import type { BudgetItem, BudgetItemReceipt } from '../../types';
 import { downloadBlob } from '../../utils/fileDownload';
 import {
@@ -200,23 +200,29 @@ export default function CostsPanel({ tripId, tripMembers = [] }: CostsPanelProps
 
   // The browser's own figure for the display currency goes along, for the server to
   // answer in it when it cannot fetch a quote itself.
+  const identityRevision = useGuestIdentityRevision(tripId);
+  const settlementRequest = useRef(0);
   const loadSettlement = useCallback(() => {
+    const id = ++settlementRequest.current;
     budgetApi
       .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
       .then((s) => {
+        if (id !== settlementRequest.current) return;
         setSettlement(s);
         setSettlementError(false);
       })
-      .catch(() => setSettlementError(true));
+      .catch(() => {
+        if (id === settlementRequest.current) setSettlementError(true);
+      });
   }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
 
   useEffect(() => {
     loadBudgetItems(tripId);
-    loadSettlement();
   }, [tripId]);
   useEffect(() => {
     loadSettlement();
-  }, [budgetItems.length, loadSettlement]);
+    return () => { settlementRequest.current++; };
+  }, [budgetItems.length, identityRevision, loadSettlement]);
 
   // Missing rates are repaired only through the explicit preview/apply flow.
 

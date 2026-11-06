@@ -1,7 +1,7 @@
 import { tripsApi } from '../api/client'
-import { offlineDb, upsertTrip } from '../db/offlineDb'
+import { offlineDb, upsertTrip, upsertTripMembers } from '../db/offlineDb'
 import { onlineThenCache } from './withOfflineFallback'
-import type { Trip } from '../types'
+import type { Trip, TripMember } from '../types'
 import type { ActiveTripResponse } from '@trek/shared'
 
 /**
@@ -29,7 +29,27 @@ function pickActive(trips: Trip[]): Trip | null {
   return ranked[0] ?? null
 }
 
+interface TripRoster {
+  owner: TripMember | null
+  members: TripMember[]
+  current_user_id: number
+}
+
 export const tripRepo = {
+  async members(tripId: number, isCurrent: () => boolean): Promise<TripRoster> {
+    const roster: TripRoster = await tripsApi.getMembers(tripId)
+    await offlineDb.transaction('rw', offlineDb.tripMembers, async () => {
+      if (!isCurrent()) return
+      await offlineDb.tripMembers.where('tripId').equals(tripId).delete()
+      await upsertTripMembers(tripId, roster.owner ? [roster.owner, ...roster.members] : roster.members)
+    }).catch(error => console.warn('Failed to cache trip members:', error))
+    return roster
+  },
+
+  cachedMembers(tripId: number): Promise<TripMember[]> {
+    return offlineDb.tripMembers.where('tripId').equals(tripId).toArray()
+  },
+
   async list(): Promise<{ trips: Trip[]; archivedTrips: Trip[] }> {
     return onlineThenCache(
       async () => {

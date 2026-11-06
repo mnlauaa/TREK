@@ -110,6 +110,86 @@ describe('TripMembersService Guest identity transfer', () => {
     expect(erasePluginUserData).not.toHaveBeenCalled();
   });
 
+  it('preserves expense shares, payer amounts and both payment directions when a new member replaces a guest', () => {
+    const { trip, owner, member, guest } = ids();
+    const expenseId = Number(
+      db
+        .prepare(
+          `INSERT INTO budget_items
+       (trip_id,category,name,total_price,currency,exchange_rate,paid_by_user_id)
+       VALUES (?, 'food', 'Guest dinner', 123.45, 'USD', 0.9, ?)`,
+        )
+        .run(trip, guest).lastInsertRowid,
+    );
+    db.prepare('INSERT INTO budget_item_members (budget_item_id,user_id,paid,amount) VALUES (?,?,1,?)').run(
+      expenseId,
+      guest,
+      73.45,
+    );
+    db.prepare('INSERT INTO budget_item_members (budget_item_id,user_id,paid,amount) VALUES (?,?,0,?)').run(
+      expenseId,
+      owner,
+      50,
+    );
+    db.prepare('INSERT INTO budget_item_payers (budget_item_id,user_id,amount) VALUES (?,?,?)').run(
+      expenseId,
+      guest,
+      100,
+    );
+    db.prepare('INSERT INTO budget_item_payers (budget_item_id,user_id,amount) VALUES (?,?,?)').run(
+      expenseId,
+      owner,
+      23.45,
+    );
+    const insertPayment = db.prepare(
+      `INSERT INTO budget_settlements
+       (trip_id,from_user_id,to_user_id,amount,currency,exchange_rate,settled_at)
+       VALUES (?,?,?,?, 'USD', 0.9, '2026-11-01')`,
+    );
+    insertPayment.run(trip, guest, owner, 12.34);
+    insertPayment.run(trip, owner, guest, 5.67);
+    const expenseBefore = db.prepare('SELECT * FROM budget_items WHERE id=?').get(expenseId) as Record<string, unknown>;
+    const sharesBefore = db
+      .prepare('SELECT * FROM budget_item_members WHERE budget_item_id=? ORDER BY rowid')
+      .all(expenseId) as Array<Record<string, unknown>>;
+    const payersBefore = db
+      .prepare('SELECT * FROM budget_item_payers WHERE budget_item_id=? ORDER BY rowid')
+      .all(expenseId) as Array<Record<string, unknown>>;
+    const paymentsBefore = db
+      .prepare('SELECT * FROM budget_settlements WHERE trip_id=? ORDER BY id')
+      .all(trip) as Array<Record<string, unknown>>;
+
+    expect(service.runNewMemberIdentityCheck(trip, member)).toMatchObject({
+      required: true,
+      candidates: [{ guest_user_id: guest, impact: { expenses: 1, payments: 2 }, conflicts: [] }],
+    });
+    service.transferGuestIdentity(trip, guest, member);
+
+    expect(db.prepare('SELECT * FROM budget_items WHERE id=?').get(expenseId)).toEqual({
+      ...expenseBefore,
+      paid_by_user_id: member,
+    });
+    const replaceUser = (row: Record<string, unknown>) => ({
+      ...row,
+      user_id: row.user_id === guest ? member : row.user_id,
+    });
+    expect(
+      db.prepare('SELECT * FROM budget_item_members WHERE budget_item_id=? ORDER BY rowid').all(expenseId),
+    ).toEqual(sharesBefore.map(replaceUser));
+    expect(db.prepare('SELECT * FROM budget_item_payers WHERE budget_item_id=? ORDER BY rowid').all(expenseId)).toEqual(
+      payersBefore.map(replaceUser),
+    );
+    expect(db.prepare('SELECT * FROM budget_settlements WHERE trip_id=? ORDER BY id').all(trip)).toEqual(
+      paymentsBefore.map((row) => ({
+        ...row,
+        from_user_id: row.from_user_id === guest ? member : row.from_user_id,
+        to_user_id: row.to_user_id === guest ? member : row.to_user_id,
+      })),
+    );
+    expect(service.runNewMemberIdentityCheck(trip, member)).toEqual({ required: false, candidates: [] });
+    expect(db.prepare('SELECT id FROM users WHERE id=?').get(guest)).toBeUndefined();
+  });
+
   it('allows only a non-owner account member to inspect or transfer Guest identities', () => {
     const { trip, owner, member, guest } = ids();
     expect(() => service.listGuestIdentityTransferCandidates(trip, owner)).toThrowError(

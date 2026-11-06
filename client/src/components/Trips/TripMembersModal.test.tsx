@@ -851,7 +851,7 @@ describe('TripMembersModal', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => expect(createdName).toBe('Grandpa'));
-    expect(addToast).toHaveBeenCalledWith('Guest added', 'success', undefined);
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Guest added', 'success', undefined));
     await waitFor(() => expect(onMembersChanged).toHaveBeenCalled());
   });
 

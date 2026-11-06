@@ -9,15 +9,17 @@ type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
 
 export interface FilesSlice {
-  loadFiles: (tripId: number | string) => Promise<void>
+  loadFiles: (tripId: number | string, isCurrent?: () => boolean) => Promise<void>
   addFile: (tripId: number | string, formData: FormData) => Promise<TripFile>
   deleteFile: (tripId: number | string, id: number) => Promise<void>
 }
 
 export const createFilesSlice = (set: SetState, get: GetState): FilesSlice => ({
-  loadFiles: async (tripId) => {
+  loadFiles: async (tripId, isCurrent) => {
+    const { guestIdentityRevision } = get()
     try {
       const data = await fileRepo.list(tripId)
+      if (isCurrent?.() === false || get().guestIdentityRevision !== guestIdentityRevision) return
       set({ files: data.files })
     } catch (err: unknown) {
       console.error('Failed to load files:', err)

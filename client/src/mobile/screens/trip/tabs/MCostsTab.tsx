@@ -38,6 +38,7 @@ import CurrencySelect from '../../../../components/shared/CurrencySelect';
 import { useTranslation } from '../../../../i18n';
 import { useAuthStore } from '../../../../store/authStore';
 import { useSettingsStore } from '../../../../store/settingsStore';
+import { useGuestIdentityRevision } from '../../../../store/tripStore';
 import type { BudgetItem, BudgetItemReceipt, TripMember } from '../../../../types';
 import { downloadBlob } from '../../../../utils/fileDownload';
 import { amountToInputString, formatMoney } from '../../../../utils/formatters';
@@ -104,14 +105,20 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   // read that as "the trip cost nobody anything", a claim we cannot make.
   const [settlementError, setSettlementError] = useState(false);
   // Sends the browser's own figure for the display currency, as CostsPanel.tsx does.
+  const identityRevision = useGuestIdentityRevision(tripId);
+  const settlementRequest = useRef(0);
   const loadSettlement = useCallback(() => {
+    const id = ++settlementRequest.current;
     budgetApi
       .settlement(tripId, requestedBase, requestedBase !== tripCurrency ? displayPerTrip : null)
       .then((s) => {
+        if (id !== settlementRequest.current) return;
         setSettlement(s);
         setSettlementError(false);
       })
-      .catch(() => setSettlementError(true));
+      .catch(() => {
+        if (id === settlementRequest.current) setSettlementError(true);
+      });
   }, [tripId, requestedBase, tripCurrency, displayPerTrip]);
 
   // Mirrors CostsPanel.tsx: items reload on trip change, settlement reloads on
@@ -123,7 +130,8 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
   }, [tripId, planner.tripActions]);
   useEffect(() => {
     loadSettlement();
-  }, [loadSettlement]);
+    return () => { settlementRequest.current++; };
+  }, [identityRevision, loadSettlement]);
 
 
   const [search, setSearch] = useState('');
