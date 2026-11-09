@@ -1,9 +1,10 @@
-import { useEffect, useRef, useImperativeHandle, useCallback, type Ref } from 'react'
+import { useEffect, useLayoutEffect, useRef, useImperativeHandle, useCallback, type Ref } from 'react'
 import type mapboxgl from 'mapbox-gl'
 import { useSettingsStore } from '../../store/settingsStore'
 import { isStandardFamily, supportsCustom3d, wantsTerrain, addCustom3dBuildings, addTerrainAndSky } from '../Map/mapboxSetup'
 import { MAPBOX_DEFAULT_STYLE, styleForActiveProvider, basemapLanguage, type GlMapProvider } from '../Map/glProviders'
-import { buildGlMap } from '../Map/glSupport'
+import { buildGlMap, initialMapStyle } from '../Map/glSupport'
+import { mapboxTileCacheRequest, tileCacheActive } from '../../native/tileCache'
 import type { JourneyTrack } from '@trek/shared'
 import { SHOT_INDEX_ATTR, ensureJourneyPopupStyle, formatMarkerDate, journeyPopupHtml } from './journeyMapPopup'
 import { clusterPhotos, photoMarkerHtml, type MapPhoto } from './journeyPhotoLayer'
@@ -56,6 +57,12 @@ interface Props {
   photos?: MapPhoto[]
   onPhotoClick?: (photoIds: string[]) => void
   paddingBottom?: number
+  /**
+   * How much of the map's leading edge a bar laid over it covers (the touch
+   * shell's rail), in px: framing keeps the journey clear of it. Read when the
+   * map frames, so a change alone does not rebuild the map.
+   */
+  paddingStart?: number
   /** See the Leaflet twin (JRN-04): hidden layers go off the map in place. */
   layerVisibility?: JourneyMapLayerVisibility
   marks?: JourneyMapMark[]
@@ -184,9 +191,10 @@ function markBounds(gl: Props['gl'], marks: JourneyMapMark[], points: [number, n
   return bounds
 }
 
-function fitOptions(paddingBottom: number | undefined, tilted: boolean | undefined) {
+function fitOptions(paddingBottom: number | undefined, tilted: boolean | undefined, paddingStart = 0) {
+  const rtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl'
   return {
-    padding: { top: 50, bottom: paddingBottom || 50, left: 50, right: 50 },
+    padding: { top: 50, bottom: paddingBottom || 50, left: 50 + (rtl ? 0 : paddingStart), right: 50 + (rtl ? paddingStart : 0) },
     maxZoom: 16,
     pitch: tilted ? 45 : 0,
     duration: 0,
@@ -194,8 +202,13 @@ function fitOptions(paddingBottom: number | undefined, tilted: boolean | undefin
 }
 
 function JourneyMapGL(
-  { entries, trail, tracks, height = 220, dark, activeMarkerId, onMarkerClick, fullScreen, paddingBottom, glProvider = 'mapbox-gl', gl, onMarkerCardClick, onMarkerPhotoClick, photos, onPhotoClick, layerVisibility = EVERY_LAYER, marks, onMarksPick, plannedEntryIds = NO_PLANNED, ref }: Props,
+  { entries, trail, tracks, height = 220, dark, activeMarkerId, onMarkerClick, fullScreen, paddingBottom, paddingStart = 0, glProvider = 'mapbox-gl', gl, onMarkerCardClick, onMarkerPhotoClick, photos, onPhotoClick, layerVisibility = EVERY_LAYER, marks, onMarksPick, plannedEntryIds = NO_PLANNED, ref }: Props,
 ) {
+  // The leading inset is read when the map frames, not a reason to rebuild it.
+  const paddingStartRef = useRef(paddingStart)
+  useLayoutEffect(() => {
+    paddingStartRef.current = paddingStart
+  })
   const onMarkerCardClickRef = useRef(onMarkerCardClick)
   onMarkerCardClickRef.current = onMarkerCardClick
   const onMarkerPhotoClickRef = useRef(onMarkerPhotoClick)
@@ -384,7 +397,7 @@ function JourneyMapGL(
 
     const mapOptions: Record<string, unknown> = {
       container: containerRef.current,
-      style: glStyle,
+      style: initialMapStyle(glProvider, glStyle),
       center: hasPoints ? bounds.getCenter() : [0, 30],
       zoom: hasPoints ? 2 : 1,
       pitch: enableMapbox3d && fullScreen ? 45 : 0,
@@ -395,6 +408,9 @@ function JourneyMapGL(
       antialias: mapboxQuality,
     }
     if (!isMapLibre) mapOptions.projection = mapboxQuality ? 'globe' : 'mercator'
+    // In the iOS app, Mapbox's own resources go through the app's tile store, so
+    // what was viewed stays on the device for up to 30 days (native/tileCache.ts).
+    if (!isMapLibre && tileCacheActive()) mapOptions.transformRequest = mapboxTileCacheRequest
     // MapLibre's around-center mouse rotate ping-pongs near mid-screen (#1545)
     // — see MapViewGL. Keep the plain dx-based rotate everywhere.
     if (isMapLibre) mapOptions.aroundCenter = false
@@ -522,7 +538,7 @@ function JourneyMapGL(
       known.forEach(mark => bounds.extend([mark.lng, mark.lat]))
       if (hasPoints || known.length > 0) {
         try {
-          map.fitBounds(bounds, fitOptions(paddingBottom, enableMapbox3d && fullScreen))
+          map.fitBounds(bounds, fitOptions(paddingBottom, enableMapbox3d && fullScreen, paddingStartRef.current))
         } catch { /* empty bounds */ }
       }
     })
@@ -627,7 +643,7 @@ function JourneyMapGL(
         marksFramedRef.current = true
         if (!readerMovedRef.current) {
           try {
-            map.fitBounds(markBounds(gl, marks, entryPointsRef.current), fitOptions(paddingBottom, enableMapbox3d && fullScreen))
+            map.fitBounds(markBounds(gl, marks, entryPointsRef.current), fitOptions(paddingBottom, enableMapbox3d && fullScreen, paddingStartRef.current))
           } catch { /* empty bounds */ }
         }
       }

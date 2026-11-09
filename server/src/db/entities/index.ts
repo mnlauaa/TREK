@@ -121,6 +121,8 @@ import { SchoolHolidayPeriodsSchema } from './SchoolHolidayPeriods.entity';
 import { SchoolHolidayRegionsSchema } from './SchoolHolidayRegions.entity';
 import { SettingsSchema } from './Settings.entity';
 import { ShareTokensSchema } from './ShareTokens.entity';
+import { StorageReclaimMarksSchema } from './StorageReclaimMarks.entity';
+import { StorageReleaseQueueSchema } from './StorageReleaseQueue.entity';
 import { TagsSchema } from './Tags.entity';
 import { TodoCategoryAssigneesSchema } from './TodoCategoryAssignees.entity';
 import { TodoItemsSchema } from './TodoItems.entity';
@@ -166,7 +168,6 @@ import { VacayYearsSchema } from './VacayYears.entity';
 import { VisitedCountriesSchema } from './VisitedCountries.entity';
 import { VisitedRegionsSchema } from './VisitedRegions.entity';
 import { WandererConnectionsSchema } from './WandererConnections.entity';
-import { WebPushSubscriptionsSchema } from './WebPushSubscriptions.entity';
 import { WebauthnChallengesSchema } from './WebauthnChallenges.entity';
 import { WebauthnCredentialsSchema } from './WebauthnCredentials.entity';
 
@@ -293,6 +294,8 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   SchoolHolidayRegionsSchema,
   SettingsSchema,
   ShareTokensSchema,
+  StorageReclaimMarksSchema,
+  StorageReleaseQueueSchema,
   TagsSchema,
   TodoCategoryAssigneesSchema,
   TodoItemsSchema,
@@ -338,7 +341,6 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   VisitedCountriesSchema,
   VisitedRegionsSchema,
   WandererConnectionsSchema,
-  WebPushSubscriptionsSchema,
   WebauthnChallengesSchema,
   WebauthnCredentialsSchema,
 ];

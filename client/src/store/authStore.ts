@@ -17,7 +17,7 @@ import { forgetStartDestination } from '../utils/startDestination'
 import { forgetServerLanguage } from './settingsStore'
 import { forgetResumeRoute } from '../utils/resumeRoute'
 import { markSignedOut, clearSignedOut } from '../utils/signedOut'
-import { forgetWebPushOnLogout, reconcileWebPush, setActivePushUser, updateAppBadge } from '../services/webPush'
+import { forgetPushDeviceOnLogout, resyncPushSubscription } from '../push/webPush'
 import { browserTimeZone } from '../utils/localDate'
 
 /** How long a logout waits for the queued changes to go out. */
@@ -133,15 +133,7 @@ async function onAuthSuccess(userId: number): Promise<void> {
   // an SPA session, so a second login in the same tab would leave the mutation
   // queue without a flush trigger. Re-registering is a no-op while they are up.
   registerSyncTriggers()
-  const setupPush = async () => {
-    try {
-      await setActivePushUser(userId)
-      await reconcileWebPush()
-    } catch {
-      // Push setup can retry on the next sign-in or subscription change.
-    }
-  }
-  void setupPush()
+  void resyncPushSubscription()
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -302,17 +294,13 @@ export const useAuthStore = create<AuthState>()(
     // and the next account would come up believing it is offline over a working
     // connection, with nothing cached to answer from.
     setForcedOffline(false)
-    await setActivePushUser(null)
-    try {
-      await forgetWebPushOnLogout()
-    } catch {
-      // The active push user was cleared above, so previews stay private.
-    }
-    void updateAppBadge(0)
+    await forgetPushDeviceOnLogout()
     // 4. Tell server to clear the httpOnly cookie (best-effort).
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(err => {
-      console.warn('[auth] failed to clear the session cookie during logout', err)
-    })
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } catch {
+      // Local sign-out still completes when the server cannot be reached.
+    }
     // 5. Clear service worker caches containing sensitive data.
     if ('caches' in window) {
       await Promise.allSettled([

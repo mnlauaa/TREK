@@ -45,6 +45,8 @@ afterAll(async () => {
  * rather than silently leaving a stale entry behind.
  */
 const ENTITIES_STILL_MISSING: string[] = [];
+// Historical fork receipts still require this table; no runtime delivery entity owns it.
+const RETIRED_TABLES = new Set(['web_push_subscriptions']);
 
 interface DbColumn {
   cid: number;
@@ -292,7 +294,7 @@ describe('entity ↔ migrated-schema parity', () => {
     const stillMissing = new Set(ENTITIES_STILL_MISSING);
     const failures: string[] = [];
     for (const table of tables) {
-      if (table === 'mikro_orm_migrations') continue;
+      if (table === 'mikro_orm_migrations' || RETIRED_TABLES.has(table)) continue;
       if (entityTables.has(table)) continue;
       if (pivots.has(table)) continue;
       if (stillMissing.has(table)) continue; // reported separately below

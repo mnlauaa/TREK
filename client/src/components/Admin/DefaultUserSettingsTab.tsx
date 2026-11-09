@@ -12,9 +12,10 @@ import { MapView } from '../Map/MapView'
 import { currenciesWith } from '../Budget/BudgetPanel.constants'
 import type { DistanceUnit, WeekStart } from '../../types'
 import { weekStartOptions } from '../../utils/calendarWeek'
+import { dateFormatOptions } from '../../utils/dateFormat'
 import { withTileApiKey } from '../../utils/tileUrl'
 import { defaultStyleForProvider } from '../Map/glProviders'
-import { MAP_PRESETS, type MapProvider } from '../Settings/mapSettingsModel'
+import type { MapProvider } from '../Settings/mapSettingsModel'
 import RoutingInstanceFields from './RoutingInstanceFields'
 import { useDefaultUserSettings, type Defaults } from './useDefaultUserSettings'
 
@@ -70,26 +71,40 @@ function errorText(err: unknown, fallback: string): string {
 
 const EMPTY_CURRENCIES: readonly string[] = []
 
+interface ResetProps {
+  shown: boolean
+  onReset: () => void
+  label: string
+}
+
+// Inside the row's own <label>, after the name: the link only shows once the
+// default is set, and the name stays the label's text.
+function ResetButton({ shown, onReset, label }: ResetProps): React.ReactElement | null {
+  if (!shown) return null
+  return (
+    <button type="button"
+      onClick={onReset}
+      className="ms-2 align-baseline font-geist font-medium normal-case tracking-normal text-content-muted underline decoration-edge underline-offset-2 hover:text-content"
+      style={fs(11)}
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function DefaultUserSettingsTab(): React.ReactElement {
   const { t, locale } = useTranslation()
   const {
-    defaults, loaded, managed, isSet, save, saveCommonCurrencies, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
+    defaults, loaded, managed, presets, canMapbox, isSet, save, saveCommonCurrencies, reset, mapTileUrl, setMapTileUrl, mapboxToken, setMapboxToken,
     cartoKey, setCartoKey, mapboxStyle, setMapboxStyle, mapPreviewPlaces, mapProvider, glStylePresets, styleKey,
     saveMapProvider, pickTilePreset, pickStylePreset, commitStyle,
   } = useDefaultUserSettings({ errorMessage: errorText, previewCreatedAt: () => String(new Date()) })
 
-  // Inside the row's own <label>, after the name: the link only shows once the
-  // default is set, and the name stays the label's text.
-  const renderResetButton = (field: keyof Defaults) =>
-    isSet(field) ? (
-      <button type="button"
-        onClick={() => void reset(field)}
-        className="ms-2 align-baseline font-geist font-medium normal-case tracking-normal text-content-muted underline decoration-edge underline-offset-2 hover:text-content"
-        style={fs(11)}
-      >
-        {t('admin.defaultSettings.resetToBuiltIn')}
-      </button>
-    ) : null
+  const resetOf = (field: keyof Defaults): ResetProps => ({
+    shown: isSet(field),
+    onReset: () => reset(field),
+    label: t('admin.defaultSettings.resetToBuiltIn'),
+  })
 
   if (!loaded) {
     return (
@@ -122,7 +137,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       <Section title={t('admin.defaultSettings.title')} icon={Settings2}>
       <SettingRows>
       {/* Color Mode */}
-      <ChoiceRow label={<>{t('settings.colorMode')} {renderResetButton('dark_mode')}</>}>
+      <ChoiceRow label={<>{t('settings.colorMode')} <ResetButton {...resetOf('dark_mode')} /></>}>
         <Segmented<string>
           label={t('settings.colorMode')}
           value={colorModeValue(darkMode)}
@@ -136,7 +151,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       </ChoiceRow>
 
       {/* Temperature */}
-      <ChoiceRow label={<>{t('settings.temperature')} {renderResetButton('temperature_unit')}</>}>
+      <ChoiceRow label={<>{t('settings.temperature')} <ResetButton {...resetOf('temperature_unit')} /></>}>
         <Segmented<string>
           label={t('settings.temperature')}
           value={defaults.temperature_unit ?? ''}
@@ -149,7 +164,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       </ChoiceRow>
 
       {/* Distance */}
-      <ChoiceRow label={<>{t('settings.distance')} {renderResetButton('distance_unit')}</>}>
+      <ChoiceRow label={<>{t('settings.distance')} <ResetButton {...resetOf('distance_unit')} /></>}>
         <Segmented<DistanceUnit | ''>
           label={t('settings.distance')}
           value={defaults.distance_unit ?? ''}
@@ -162,7 +177,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       </ChoiceRow>
 
       {/* Time Format */}
-      <ChoiceRow label={<>{t('settings.timeFormat')} {renderResetButton('time_format')}</>}>
+      <ChoiceRow label={<>{t('settings.timeFormat')} <ResetButton {...resetOf('time_format')} /></>}>
         <Segmented<string>
           label={t('settings.timeFormat')}
           value={defaults.time_format ?? ''}
@@ -175,7 +190,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       </ChoiceRow>
 
       {/* Week start: the first column of every date picker (#2029) */}
-      <ChoiceRow label={<>{t('settings.weekStart')} {renderResetButton('week_start')}</>}>
+      <ChoiceRow label={<>{t('settings.weekStart')} <ResetButton {...resetOf('week_start')} /></>}>
         <Segmented<WeekStart | ''>
           label={t('settings.weekStart')}
           value={defaults.week_start ?? ''}
@@ -184,8 +199,19 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
         />
       </ChoiceRow>
 
+      {/* Date format: every date field and numeric date (#2971) */}
+      <ChoiceRow label={<>{t('settings.dateFormat')} <ResetButton {...resetOf('date_format')} /></>}>
+        <div className="w-[220px] max-w-full">
+          <CustomSelect
+            value={defaults.date_format ?? ''}
+            onChange={value => { if (value) void save({ date_format: String(value) as Defaults['date_format'] }) }}
+            options={dateFormatOptions(locale, t('settings.dateFormatAuto'))}
+          />
+        </div>
+      </ChoiceRow>
+
       {/* Default Currency */}
-      <ChoiceRow label={<>{t('settings.currency')} {renderResetButton('default_currency')}</>}>
+      <ChoiceRow label={<>{t('settings.currency')} <ResetButton {...resetOf('default_currency')} /></>}>
         <div className="w-[220px] max-w-full">
           <CurrencySelect
             value={defaults.default_currency || ''}
@@ -198,14 +224,14 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
         </div>
       </ChoiceRow>
 
-      <ChoiceRow label={<>{t('settings.commonCurrencies.title')} {renderResetButton('common_currencies')}</>}
+      <ChoiceRow label={<>{t('settings.commonCurrencies.title')} <ResetButton {...resetOf('common_currencies')} /></>}
         hint={t('settings.commonCurrencies.adminHint')} stacked>
         <CommonCurrenciesEditor value={defaults.common_currencies ?? EMPTY_CURRENCIES}
           onSave={saveCommonCurrencies} />
       </ChoiceRow>
 
       {/* Blur Booking Codes */}
-      <ChoiceRow label={<>{t('settings.blurBookingCodes')} {renderResetButton('blur_booking_codes')}</>}>
+      <ChoiceRow label={<>{t('settings.blurBookingCodes')} <ResetButton {...resetOf('blur_booking_codes')} /></>}>
         <Segmented<string>
           label={t('settings.blurBookingCodes')}
           value={onOffValue(defaults.blur_booking_codes)}
@@ -222,13 +248,13 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
 
       <Section title={t('settings.map')} icon={MapIcon}>
       {/* Map Tile URL */}
-      <EditorField label={<>{t('settings.mapTemplate')}{renderResetButton('map_tile_url')}</>} hint={t('settings.mapDefaultHint')}>
+      <EditorField label={<>{t('settings.mapTemplate')}<ResetButton {...resetOf('map_tile_url')} /></>} hint={t('settings.mapDefaultHint')}>
         <div className="flex flex-col gap-2">
           <CustomSelect
             value={mapTileUrl}
             onChange={pickTilePreset}
             placeholder={t('settings.mapTemplatePlaceholder.select')}
-            options={MAP_PRESETS.map(p => ({ value: p.url, label: p.name }))}
+            options={presets.map(p => ({ value: p.url, label: p.name }))}
           />
           <input
             type="text"
@@ -243,7 +269,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       {/* The key comes with the instance on a managed install, injected when the
           settings are read. A field here would only let somebody save a worse one. */}
       {!managed && (
-        <EditorField label={<>{t('admin.defaultSettings.cartoKey')}{renderResetButton('carto_api_key')}</>} hint={t('admin.defaultSettings.cartoKeyHint')}>
+        <EditorField label={<>{t('admin.defaultSettings.cartoKey')}<ResetButton {...resetOf('carto_api_key')} /></>} hint={t('admin.defaultSettings.cartoKeyHint')}>
           <input
             type="text"
             value={cartoKey}
@@ -284,7 +310,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
       <SettingRows>
         <ChoiceRow
           stacked
-          label={<>{t('admin.defaultSettings.mapProvider')} {renderResetButton('map_provider')}</>}
+          label={<>{t('admin.defaultSettings.mapProvider')} <ResetButton {...resetOf('map_provider')} /></>}
           hint={t('admin.defaultSettings.mapProviderHint')}
         >
           <Segmented<MapProvider>
@@ -294,7 +320,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
             onChange={saveMapProvider}
             options={[
               { value: 'leaflet', label: t('admin.defaultSettings.providerLeaflet') },
-              { value: 'mapbox-gl', label: t('admin.defaultSettings.providerMapbox') },
+              ...(canMapbox ? [{ value: 'mapbox-gl' as const, label: t('admin.defaultSettings.providerMapbox') }] : []),
               { value: 'maplibre-gl', label: t('admin.defaultSettings.providerMapLibre') },
             ]}
           />
@@ -304,7 +330,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
           settings are read. A field here would only let somebody save a worse one. */}
         {mapProvider === 'mapbox-gl' && !managed && (
           <div className={FIELD_ROW}>
-            <EditorField label={<>{t('admin.defaultSettings.mapboxToken')}{renderResetButton('mapbox_access_token')}</>} hint={t('admin.defaultSettings.mapboxTokenHint')}>
+            <EditorField label={<>{t('admin.defaultSettings.mapboxToken')}<ResetButton {...resetOf('mapbox_access_token')} /></>} hint={t('admin.defaultSettings.mapboxTokenHint')}>
               <input
                 type="text"
                 value={mapboxToken}
@@ -321,7 +347,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
 
         {mapProvider !== 'leaflet' && (
           <div className={FIELD_ROW}>
-            <EditorField label={<>{t('admin.defaultSettings.mapboxStyle')}{renderResetButton(styleKey)}</>}>
+            <EditorField label={<>{t('admin.defaultSettings.mapboxStyle')}<ResetButton {...resetOf(styleKey)} /></>}>
               <div className="flex flex-col gap-2">
                 <CustomSelect
                   value={mapboxStyle}
@@ -344,7 +370,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
 
         {mapProvider === 'mapbox-gl' && (
           <>
-          <ChoiceRow label={<>{t('admin.defaultSettings.mapbox3d')} {renderResetButton('mapbox_3d_enabled')}</>}>
+          <ChoiceRow label={<>{t('admin.defaultSettings.mapbox3d')} <ResetButton {...resetOf('mapbox_3d_enabled')} /></>}>
             <Segmented<string>
               label={t('admin.defaultSettings.mapbox3d')}
               value={onOffValue(defaults.mapbox_3d_enabled ?? true)}
@@ -356,7 +382,7 @@ export default function DefaultUserSettingsTab(): React.ReactElement {
             />
           </ChoiceRow>
 
-          <ChoiceRow label={<>{t('admin.defaultSettings.mapboxQuality')} {renderResetButton('mapbox_quality_mode')}</>}>
+          <ChoiceRow label={<>{t('admin.defaultSettings.mapboxQuality')} <ResetButton {...resetOf('mapbox_quality_mode')} /></>}>
             <Segmented<string>
               label={t('admin.defaultSettings.mapboxQuality')}
               value={onOffValue(defaults.mapbox_quality_mode ?? false)}

@@ -94,6 +94,10 @@ const settings: TranslationStrings = {
   'settings.timeFormat': 'פורמט שעה',
   'settings.weekStart': 'השבוע מתחיל ביום',
   'settings.weekStartHint': 'היום הראשון בשבוע בכל בוחר תאריכים. ל-Vacay יש הגדרה משלו.',
+  'settings.dateFormat': 'פורמט תאריך',
+  'settings.dateFormatHint':
+    'איך תאריכים נכתבים בכל שדה תאריך וברשימות. תאריכים עם שם חודש שומרים על הניסוח של השפה שלך.',
+  'settings.dateFormatAuto': 'אוטומטי',
   'settings.preferredNavApp': 'פתיחת מקומות ב-',
   'settings.preferredNavAppAsk': 'לשאול בכל פעם',
   'settings.preferredNavAppHint': 'כשנבחרה אפליקציה, כפתור הניווט פותח אותה מיד במקום להציע את כל אפליקציות המפות.',
@@ -138,6 +142,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'הבדיקה נכשלה.',
   'settings.notificationPreferences.pluginConfigured': 'מוגדר. נהלו את פרטי הגישה בעמוד ההגדרות של התוסף.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'פוש',
   'settings.webPush.title': 'התראות פוש במכשיר הזה',
   'settings.webPush.hint': 'מציג התראות של TREK במכשיר הזה גם כש-TREK סגור. אילו אירועים יגיעו נקבע לפי עמודת הפוש.',
   'settings.webPush.enable': 'הפעלה במכשיר הזה',
@@ -639,6 +644,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': 'סיום',
   'settings.mcp.deprecated': 'מיושן',
   'settings.offline.cache.dateRange': '{start} עד {end}',
+  'settings.offline.tileStore.title': 'אריחי מפה שנצפו',
+  'settings.offline.tileStore.usage': '{used} מתוך {limit} במכשיר הזה, נשמרים עד 30 יום',
+  'settings.offline.tileStore.clear': 'ניקוי',
 };
 
 export default settings;

@@ -92,6 +92,10 @@ const settings: TranslationStrings = {
   'settings.timeFormat': 'Μορφή Ώρας',
   'settings.weekStart': 'Η εβδομάδα ξεκινά την',
   'settings.weekStartHint': 'Πρώτη ημέρα της εβδομάδας σε κάθε επιλογέα ημερομηνίας. Το Vacay έχει δική του ρύθμιση.',
+  'settings.dateFormat': 'Μορφή Ημερομηνίας',
+  'settings.dateFormatHint':
+    'Πώς γράφονται οι ημερομηνίες σε κάθε πεδίο ημερομηνίας και λίστα. Οι ημερομηνίες με όνομα μήνα διατηρούν τη διατύπωση της γλώσσας σας.',
+  'settings.dateFormatAuto': 'Αυτόματο',
   'settings.preferredNavApp': 'Άνοιγμα τοποθεσιών σε',
   'settings.preferredNavAppAsk': 'Ερώτηση κάθε φορά',
   'settings.preferredNavAppHint':
@@ -139,6 +143,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Ρυθμίστηκε. Διαχειριστείτε τα διαπιστευτήρια στη σελίδα ρυθμίσεων του πρόσθετου.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push',
   'settings.webPush.title': 'Push ειδοποιήσεις σε αυτή τη συσκευή',
   'settings.webPush.hint':
     'Εμφανίζει τις ειδοποιήσεις του TREK σε αυτή τη συσκευή ακόμη και όταν το TREK είναι κλειστό. Ποια συμβάντα φτάνουν καθορίζεται από τη στήλη Push.',
@@ -687,6 +692,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': 'Έτοιμο',
   'settings.mcp.deprecated': 'Απαρχαιωμένο',
   'settings.offline.cache.dateRange': 'από {start} έως {end}',
+  'settings.offline.tileStore.title': 'Πλακίδια χάρτη που προβλήθηκαν',
+  'settings.offline.tileStore.usage': '{used} από {limit} σε αυτή τη συσκευή, φυλάσσονται έως 30 ημέρες',
+  'settings.offline.tileStore.clear': 'Εκκαθάριση',
 };
 
 export default settings;

@@ -60,10 +60,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // + assistant_attachments: id, thread_id, user_id, trip_id, name, mime, size, sha256, storage_key, text_status
 //   (an attached file is only ever written whole, by the turn it was attached in).
 // + global_exchange_rate_snapshots rates_json, source_version, fetched_at; trip_exchange_rates trip_id,
-//   currency, exchange_rate, source_version; web_push_subscriptions id, user_id, installation_id,
-//   endpoint_hash, subscription_encrypted, origin, vapid_key_fingerprint, label.
+//   currency, exchange_rate, source_version.
 // + exchange_rate_batch_previews trip_id, currency, exchange_rate, state_token, preview_json.
-const KNOWN_UNINITIALISED_NOT_NULL_SCALARS = 624;
+// + storage_reclaim_marks: category, key, first_seen_at, size (a mark is only ever written whole, by the reclaim pass).
+// + storage_release_queue: category, key, due_at (a queued release is only ever written whole, by the release queue).
+const KNOWN_UNINITIALISED_NOT_NULL_SCALARS = 623;
 
 describe('entity class fields never carry a NaN initialiser (task-4-review-shape.md, Important 1)', () => {
   it('CLASSFIELD-001: new X() has no own property whose value is NaN, across all 133 entities', () => {

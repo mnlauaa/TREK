@@ -577,7 +577,7 @@ describe('MAdminNotificationsSection', () => {
     await user.click(screen.getByRole('switch', { name: 'Web Push' }));
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ notification_channels: 'webhook,webpush,pushover' });
+    expect(bodies[0]).toEqual({ notification_channels: 'webhook,push,pushover' });
     expect(screen.getByRole('switch', { name: 'Web Push' })).toHaveAttribute('aria-checked', 'true');
   });
 

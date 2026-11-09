@@ -97,6 +97,10 @@ const settings: TranslationStrings = {
   'settings.timeFormat': 'Ajavorming',
   'settings.weekStart': 'Nädala alguspäev',
   'settings.weekStartHint': 'Nädala esimene päev kõigis kuupäevavalijates. Vacayl on oma seade.',
+  'settings.dateFormat': 'Kuupäevavorming',
+  'settings.dateFormatHint':
+    'Kuidas kuupäevi kõigis kuupäevaväljades ja loendites kirjutatakse. Kuu nimega kuupäevad järgivad sinu keele sõnastust.',
+  'settings.dateFormatAuto': 'Automaatne',
   'settings.preferredNavApp': 'Ava kohad rakenduses',
   'settings.preferredNavAppAsk': 'Küsi iga kord',
   'settings.preferredNavAppHint':
@@ -145,6 +149,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'Test ebaõnnestus.',
   'settings.notificationPreferences.pluginConfigured': 'Seadistatud. Halda kasutajaandmeid plugina seadete lehel.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Tõuketeavitus',
   'settings.webPush.title': 'Tõuketeavitused selles seadmes',
   'settings.webPush.hint':
     'Näitab TREKi teavitusi selles seadmes ka siis, kui TREK on suletud. Milliseid sündmusi saabub, määrab veerg Tõuketeavitus.',
@@ -664,6 +669,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': 'Valmis',
   'settings.mcp.deprecated': 'Aegunud',
   'settings.offline.cache.dateRange': '{start} kuni {end}',
+  'settings.offline.tileStore.title': 'Vaadatud kaardiruudud',
+  'settings.offline.tileStore.usage': '{used} / {limit} selles seadmes, hoitakse kuni 30 päeva',
+  'settings.offline.tileStore.clear': 'Tühjenda',
 };
 
 export default settings;

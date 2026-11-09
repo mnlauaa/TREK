@@ -7,13 +7,8 @@ import type {
   GuestIdentityTransferResponse,
   NewMemberIdentityCheckResponse,
   TripExchangeRate,
-  WebPushCurrentRequest,
-  WebPushCurrentResult,
-  WebPushDeviceListResult,
 } from '@trek/shared';
-import { webPushConfigResultSchema, webPushCurrentResultSchema, webPushDeviceListResultSchema } from '@trek/shared';
 import type { AxiosInstance } from 'axios';
-import type { parseInDev } from './contractChecks';
 
 export const createGuestIdentityApi = (apiClient: AxiosInstance) => ({
   runNewMemberIdentityCheck: (id: number | string): Promise<NewMemberIdentityCheckResponse> =>
@@ -60,24 +55,4 @@ export const createExchangeRateApi = (apiClient: AxiosInstance) => ({
 export const createExchangeRateSnapshotApi = (apiClient: AxiosInstance) => ({
   snapshot: (base = 'EUR'): Promise<ExchangeRateSnapshot> =>
     apiClient.get('/exchange-rates', { params: { base } }).then((r) => r.data),
-});
-
-export const createWebPushApi = (apiClient: AxiosInstance, validate: typeof parseInDev) => ({
-  webPushConfig: () =>
-    apiClient
-      .get('/notifications/web-push/config')
-      .then((r) => validate(webPushConfigResultSchema, r.data, 'notifications.webPushConfig')),
-  webPushDevices: (signal?: AbortSignal): Promise<WebPushDeviceListResult> =>
-    apiClient
-      .get('/notifications/web-push/devices', { signal })
-      .then((r) => validate(webPushDeviceListResultSchema, r.data, 'notifications.webPushDevices')),
-  webPushCurrent: (payload: WebPushCurrentRequest): Promise<WebPushCurrentResult> =>
-    apiClient
-      .put('/notifications/web-push/current', payload)
-      .then((r) => validate(webPushCurrentResultSchema, r.data, 'notifications.webPushCurrent')),
-  renameWebPushDevice: (id: number, label: string) =>
-    apiClient.patch(`/notifications/web-push/devices/${id}`, { label }).then((r) => r.data),
-  revokeWebPushDevice: (id: number, signal?: AbortSignal) =>
-    apiClient.delete(`/notifications/web-push/devices/${id}`, { signal }).then((r) => r.data),
-  testWebPushDevice: (id: number) => apiClient.post(`/notifications/web-push/devices/${id}/test`).then((r) => r.data),
 });

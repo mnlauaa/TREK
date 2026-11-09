@@ -18,12 +18,14 @@ The earlier v4.3.3 upgrade came directly from the fork's v4.2.1 baseline (`51539
 
 The v5.1.0 upgrade starts from upstream `dc36c21c08f681fd2806764fad8e17b270f6f175` and ports the contracts in fork tip `0b970eac7aad7ccc38d5a505c1c0d5866f919dd1`. Upstream replaced the positional SQLite migration runner with MikroORM, so merging the old implementations would obscure which schema changes had already run. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
 
+The v5.1.1 integration merges official `95d62b7a02f3209d927504f5d21b3efe5065d2bc` into dev `020a51a00968052f1bf1de16c9533b8727a8edcd`. See [the v5.1.1 evidence ledger](../upgrades/v5.1.1.md) for retained contracts, unsigned-release acceptance, migration checks and remaining rollout gates. This records a local upgrade branch, not promotion or deployment.
+
 ## Customization inventory
 
 - Layered frozen exchange rates with provenance across REST, MCP, plugins, desktop, and mobile.
 - Ordered Common currency shortcuts with administrator inheritance and personal empty/reset semantics.
 - Guest identity transfer and the New-member identity check.
-- TREK-managed Direct Web Push.
+- Upstream browser/native push. The custom Direct Web Push implementation is superseded; preserve its historical migration receipts and the one-time cutover protections described in the v5.1.1 ledger.
 - Exact departure-transport countdown on desktop and mobile spotlights.
 - Mobile timeline day selection recovers after reload, a cleared selection, or a stale day id. The map permits an intentional All days selection; returning to the timeline restores the previous valid day or the closest valid focus day.
 - Recorded mobile payments use the upstream date-grouped ledger with frozen FX and the fork's edit/delete actions.

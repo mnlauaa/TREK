@@ -85,6 +85,9 @@ const settings: TranslationStrings = {
   'settings.timeFormat': '時刻形式',
   'settings.weekStart': '週の開始',
   'settings.weekStartHint': 'すべての日付選択で週の最初の曜日になります。Vacay には専用の設定があります。',
+  'settings.dateFormat': '日付形式',
+  'settings.dateFormatHint': 'すべての日付欄と一覧での日付の書き方です。月名を含む日付は言語の表記のままです。',
+  'settings.dateFormatAuto': '自動',
   'settings.preferredNavApp': '場所を開くアプリ',
   'settings.preferredNavAppAsk': '毎回確認する',
   'settings.preferredNavAppHint':
@@ -128,6 +131,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'テストに失敗しました。',
   'settings.notificationPreferences.pluginConfigured': '設定済みです。認証情報はプラグインの設定ページで管理します。',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'プッシュ',
   'settings.webPush.title': 'このデバイスのプッシュ通知',
   'settings.webPush.hint':
     'TREKを閉じている間も、このデバイスにTREKの通知を表示します。届くイベントは「プッシュ」列の設定に従います。',
@@ -632,6 +636,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': '完了',
   'settings.mcp.deprecated': '非推奨',
   'settings.offline.cache.dateRange': '{start}から{end}',
+  'settings.offline.tileStore.title': '表示した地図タイル',
+  'settings.offline.tileStore.usage': 'この端末で {limit} 中 {used}、最長30日間保存',
+  'settings.offline.tileStore.clear': '消去',
 };
 
 export default settings;

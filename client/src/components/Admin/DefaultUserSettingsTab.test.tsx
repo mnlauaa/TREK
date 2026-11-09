@@ -1,4 +1,4 @@
-// FE-ADMIN-DUS-001 to FE-ADMIN-DUS-029
+// FE-ADMIN-DUS-001 to FE-ADMIN-DUS-031
 import { render, screen, waitFor, within, fireEvent } from '../../../tests/helpers/render';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -479,5 +479,36 @@ describe('DefaultUserSettingsTab week start (#2029)', () => {
     await user.click(resetLink('Week starts on'));
 
     await waitFor(() => expect(puts).toEqual([{ week_start: 'sunday' }, { week_start: null }]));
+  });
+});
+
+describe('DefaultUserSettingsTab date format (#2971)', () => {
+  beforeEach(() => {
+    resetAllStores();
+    seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
+  });
+
+  it('FE-ADMIN-DUS-030: the date-format default saves its own key', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults({ date_format: 'YYYY-MM-DD' });
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    // The choices are labelled by how they write 31 December.
+    await pickFromSelect(user, '2026-12-31', '31.12.2026');
+
+    await waitFor(() => expect(puts).toEqual([{ date_format: 'DD.MM.YYYY' }]));
+    await waitFor(() => expect(screen.getByRole('button', { name: '31.12.2026' })).toBeInTheDocument());
+  });
+
+  it('FE-ADMIN-DUS-031: auto is offered with the example of the interface language', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults({ date_format: 'DD/MM/YYYY' });
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    await pickFromSelect(user, '31/12/2026', /\(12\/31\/2026\)/);
+
+    await waitFor(() => expect(puts).toEqual([{ date_format: 'auto' }]));
   });
 });

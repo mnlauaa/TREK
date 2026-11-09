@@ -144,24 +144,24 @@ describe('upgrading a populated legacy fork', () => {
       const preferences = () =>
         sourceStatement(
           db,
-          "SELECT event_type, enabled FROM notification_channel_preferences WHERE user_id = 1 AND channel = 'webpush' ORDER BY event_type",
+          "SELECT event_type, enabled FROM notification_channel_preferences WHERE user_id = 1 AND channel = 'push' ORDER BY event_type",
         ).all();
       const defaults = () =>
         sourceStatement(
           db,
-          "SELECT key, value FROM app_settings WHERE key GLOB 'notif_default_*_webpush' ORDER BY key",
+          "SELECT key, value FROM app_settings WHERE key GLOB 'notif_default_*_push' ORDER BY key",
         ).all();
       expect(preferences()).toEqual([
         { event_type: 'collab_message', enabled: 1 },
         { event_type: 'trip_invite', enabled: 0 },
       ]);
       expect(defaults()).toEqual([
-        { key: 'notif_default_collab_message_webpush', value: 'on' },
-        { key: 'notif_default_trip_invite_webpush', value: 'blocked' },
+        { key: 'notif_default_collab_message_push', value: 'on' },
+        { key: 'notif_default_trip_invite_push', value: 'blocked' },
       ]);
-      sourceStatement(db, "DELETE FROM app_settings WHERE key = 'notif_default_trip_invite_webpush'").run();
+      sourceStatement(db, "DELETE FROM app_settings WHERE key = 'notif_default_trip_invite_push'").run();
       await boot();
-      expect(defaults()).toEqual([{ key: 'notif_default_collab_message_webpush', value: 'on' }]);
+      expect(defaults()).toEqual([{ key: 'notif_default_collab_message_push', value: 'on' }]);
     } finally {
       await orm.close(true);
     }
@@ -234,13 +234,13 @@ describe('upgrading a populated legacy fork', () => {
     }
   });
 
-  it('adopts the actual upstream 258 endpoint and preserves native Push rows for re-registration', async () => {
+  it('adopts the actual upstream 258 endpoint and retires old Push rows for explicit re-registration', async () => {
     const { orm, db, boot } = await openFixture(258);
     try {
       const nativePush = sourceStatement(db, 'SELECT * FROM push_subscriptions').all();
       expect(nativePush).toHaveLength(1);
       await boot();
-      expect(sourceStatement(db, 'SELECT * FROM push_subscriptions').all()).toEqual(nativePush);
+      expect(sourceStatement(db, 'SELECT * FROM push_subscriptions').all()).toEqual([]);
       expect(sourceStatement(db, 'SELECT * FROM web_push_subscriptions').all()).toEqual([]);
       expect(sourceStatement(db, 'SELECT version FROM schema_version').pluck().get()).toBe(258);
       expect(db.pragma('foreign_key_check')).toEqual([]);

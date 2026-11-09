@@ -282,12 +282,13 @@ export async function createPluginRpcHostParts(
     await createTestPlacesRepo(db),
     await createTestDayAssignmentsRepo(db),
     await createTestBudgetItemsRepo(db),
+    { releaseValues: async () => [] } as never, // StorageReleaseService
   );
   const collab = new CollabService(
     permissions,
     realtime,
     notificationsStub(),
-    generalStorage,
+    { releaseValues: async () => [] } as never, // StorageReleaseService
     new RateLimitService(),
     await createTestUnitOfWork(db),
     await createTestCollabMessageReactionsRepo(db),
@@ -359,6 +360,7 @@ export async function createPluginRpcHostParts(
     await createTestJourneyPhotosRepo(db),
     await createTestJourneyEntryPhotosRepo(db),
     await createTestPlacesRepo(db),
+    { releaseValues: async () => 0 } as never, // StorageReleaseService
   );
   const atlas = new AtlasService(
     await createTestBucketListRepo(db),
@@ -459,7 +461,7 @@ export async function createPluginRpcHostParts(
     await createTestCategoriesRepo(db),
     await createTestTripsRepo(db),
     await createTestBudgetItemsRepo(db),
-    await createTestCollectionPlacesRepo(db),
+    { releaseValues: async () => [] } as never, // StorageReleaseService
     buildPlaceImportService(),
   );
   // After places: copying saved places into a trip runs the places journey hook.
@@ -467,7 +469,7 @@ export async function createPluginRpcHostParts(
     permissions,
     realtime,
     notificationsStub(),
-    generalStorage,
+    { releaseValues: async () => [] } as never, // StorageReleaseService
     await createTestUnitOfWork(db),
     // Plan 3h Task 1, the constructor-ripple fix: collections part A's own
     // repositories, first cut (`CollectionMembersRepository` extended by
@@ -526,7 +528,8 @@ export async function createPluginRpcHostParts(
     vacay,
     realtime,
     unsplash,
-    generalStorage,
+    // StorageReleaseService: a replaced cover's release has its own suites; nothing is released here.
+    { releaseValues: async () => [] } as never,
     await createTestUnitOfWork(db),
     (await sharedTestOrm(db)).em,
     new SettingsService(await createTestUnitOfWork(db), appSettings, await createTestSettingsRepo(db), membership),
@@ -550,6 +553,7 @@ export async function createPluginRpcHostParts(
       await createTestShareTokensRepo(db),
       await createTestPluginsRepo(db),
       await createTestPluginUserErasureQueueRepo(db),
+      { releaseValues: async () => [] } as never,
     ),
     permissions,
     realtime,

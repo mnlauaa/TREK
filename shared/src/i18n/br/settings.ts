@@ -89,6 +89,10 @@ const settings: TranslationStrings = {
   'settings.weekStart': 'Semana começa em',
   'settings.weekStartHint':
     'Primeiro dia da semana em todos os seletores de data. O Vacay tem sua própria configuração.',
+  'settings.dateFormat': 'Formato de data',
+  'settings.dateFormatHint':
+    'Como as datas são escritas em todos os campos de data e listas. Datas com o nome do mês mantêm a escrita do seu idioma.',
+  'settings.dateFormatAuto': 'Automático',
   'settings.preferredNavApp': 'Abrir lugares em',
   'settings.preferredNavAppAsk': 'Perguntar sempre',
   'settings.preferredNavAppHint':
@@ -353,6 +357,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.webhook': 'Webhook',
   'settings.notificationPreferences.email': 'E-mail',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Notificações push neste dispositivo',
   'settings.webPush.hint':
     'Mostra as notificações do TREK neste dispositivo mesmo com o TREK fechado. Os eventos que chegam seguem a coluna Push.',
@@ -670,6 +675,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': 'Concluído',
   'settings.mcp.deprecated': 'Obsoleto',
   'settings.offline.cache.dateRange': '{start} a {end}',
+  'settings.offline.tileStore.title': 'Blocos de mapa vistos',
+  'settings.offline.tileStore.usage': '{used} de {limit} neste aparelho, guardados por até 30 dias',
+  'settings.offline.tileStore.clear': 'Limpar',
 };
 
 export default settings;

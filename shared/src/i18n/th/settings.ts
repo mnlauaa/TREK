@@ -82,6 +82,9 @@ const settings: TranslationStrings = {
   'settings.timeFormat': 'รูปแบบเวลา',
   'settings.weekStart': 'สัปดาห์เริ่มต้นในวัน',
   'settings.weekStartHint': 'วันแรกของสัปดาห์ในตัวเลือกวันที่ทั้งหมด Vacay มีการตั้งค่าของตัวเอง',
+  'settings.dateFormat': 'รูปแบบวันที่',
+  'settings.dateFormatHint': 'วิธีเขียนวันที่ในทุกช่องวันที่และทุกรายการ วันที่ที่มีชื่อเดือนจะใช้ถ้อยคำตามภาษาของคุณ',
+  'settings.dateFormatAuto': 'อัตโนมัติ',
   'settings.preferredNavApp': 'เปิดสถานที่ด้วย',
   'settings.preferredNavAppAsk': 'ถามทุกครั้ง',
   'settings.preferredNavAppHint': 'เมื่อเลือกแอปไว้ ปุ่มนำทางจะเปิดแอปนั้นทันที แทนการแสดงแอปแผนที่ทั้งหมด',
@@ -122,6 +125,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'การทดสอบล้มเหลว',
   'settings.notificationPreferences.pluginConfigured': 'กำหนดค่าแล้ว จัดการข้อมูลประจำตัวในหน้าการตั้งค่าปลั๊กอิน',
   'settings.notificationPreferences.ntfy': 'เอ็นทีฟี่',
+  'settings.notificationPreferences.push': 'พุช',
   'settings.webPush.title': 'การแจ้งเตือนแบบพุชบนอุปกรณ์นี้',
   'settings.webPush.hint':
     'แสดงการแจ้งเตือนของ TREK บนอุปกรณ์นี้แม้ในขณะที่ปิด TREK อยู่ เหตุการณ์ที่จะได้รับเป็นไปตามคอลัมน์ พุช',
@@ -644,6 +648,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.copyFailed': 'ไม่สามารถคัดลอกได้ เลือกข้อความและคัดลอกด้วยตนเอง',
   'settings.mcp.deprecated': 'เลิกใช้แล้ว',
   'settings.offline.cache.dateRange': '{start} ถึง {end}',
+  'settings.offline.tileStore.title': 'ไทล์แผนที่ที่ดูแล้ว',
+  'settings.offline.tileStore.usage': '{used} จาก {limit} บนอุปกรณ์นี้ เก็บไว้สูงสุด 30 วัน',
+  'settings.offline.tileStore.clear': 'ล้าง',
 };
 
 export default settings;

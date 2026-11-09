@@ -1,16 +1,18 @@
-import { AuditLog } from '../../src/db/entities/AuditLog.entity';
-import { Users } from '../../src/db/entities/Users.entity';
-import { WebPushSubscriptions } from '../../src/db/entities/WebPushSubscriptions.entity';
-import { AuditService } from '../../src/nest/audit/audit.service';
+import type { AddonsService } from '../../src/nest/addons/addons.service';
 import { MailerService } from '../../src/nest/notifications/mailer/mailer.service';
 import { NotificationPreferencesService } from '../../src/nest/notifications/notification-preferences.service';
 import { NotificationsService } from '../../src/nest/notifications/notifications.service';
+import { PushSubscriptionsService } from '../../src/nest/notifications/push/push-subscriptions.service';
 import { VapidKeysService } from '../../src/nest/notifications/push/vapid-keys.service';
 import { NtfyService } from '../../src/nest/notifications/transports/ntfy.service';
 import { WebPushService } from '../../src/nest/notifications/transports/web-push.service';
 import { WebhookService } from '../../src/nest/notifications/transports/webhook.service';
 import { RealtimeService } from '../../src/nest/realtime/realtime.service';
-import { createTestNotificationsRepo, createTestNotificationChannelPreferencesRepo } from './notifications-repos';
+import {
+  createTestNotificationsRepo,
+  createTestNotificationChannelPreferencesRepo,
+  createTestPushSubscriptionsRepo,
+} from './notifications-repos';
 import {
   createTestUnitOfWork,
   createTestAppSettingsRepo,
@@ -61,7 +63,7 @@ export async function makeNotificationsService(
     mailer,
     new WebhookService(settingsRepo, appSettings),
     new NtfyService(settingsRepo, appSettings),
-    new NotificationPreferencesService(mailer, uow, appSettings, channelPrefsRepo),
+    new NotificationPreferencesService(mailer, uow, appSettings, channelPrefsRepo, everyFeatureOn()),
     uow,
     notificationsRepo,
     await makeWebPushService(db),
@@ -74,16 +76,14 @@ export async function makeVapidKeysService(db: Database.Database): Promise<Vapid
   return new VapidKeysService(await createTestAppSettingsRepo(db), await createTestUnitOfWork(db), t.orm);
 }
 
+/** The push_subscriptions table, on the suite's own handle. */
+export async function makePushSubscriptionsService(db: Database.Database): Promise<PushSubscriptionsService> {
+  return new PushSubscriptionsService(await createTestPushSubscriptionsRepo(db), await createTestUnitOfWork(db));
+}
+
+/** The Web Push transport over its two providers, on the same connection. */
 export async function makeWebPushService(db: Database.Database): Promise<WebPushService> {
-  const t = await sharedTestOrm(db);
-  return new WebPushService(
-    await makeVapidKeysService(db),
-    await makeNotificationPreferencesService(db),
-    new AuditService(t.repo(AuditLog), t.repo(Users)),
-    await createTestUnitOfWork(db),
-    t.repo(WebPushSubscriptions),
-    await createTestNotificationsRepo(db),
-  );
+  return new WebPushService(await makeVapidKeysService(db), await makePushSubscriptionsService(db));
 }
 
 /** The preferences half on its own, over the same connection. */
@@ -99,7 +99,23 @@ export async function makeNotificationPreferencesService(
     await createTestUnitOfWork(db),
     appSettings,
     channelPrefsRepo,
+    everyFeatureOn(),
   );
+}
+
+/**
+ * The addon answers for the preference matrices with every feature on, so a
+ * suite sees every event row unless it is about the narrowing itself.
+ */
+export function everyFeatureOn(
+  overrides: Partial<Pick<AddonsService, 'isAddonEnabled' | 'isWandererAvailable' | 'enabledPhotoProviderIds'>> = {},
+): AddonsService {
+  return {
+    isAddonEnabled: async () => true,
+    isWandererAvailable: async () => true,
+    enabledPhotoProviderIds: async () => ['immich', 'synologyphotos'],
+    ...overrides,
+  } as unknown as AddonsService;
 }
 
 /**
