@@ -25,7 +25,7 @@ The v5.1.1 integration merges official `95d62b7a02f3209d927504f5d21b3efe5065d2bc
 - Layered frozen exchange rates with provenance across REST, MCP, plugins, desktop, and mobile.
 - Ordered Common currency shortcuts with administrator inheritance and personal empty/reset semantics.
 - Guest identity transfer and the New-member identity check.
-- Upstream browser/native push. The custom Direct Web Push implementation is superseded; preserve its historical migration receipts and the one-time cutover protections described in the v5.1.1 ledger.
+- Upstream browser/native push. The custom Direct Web Push implementation is superseded; preserve its historical migration receipts. Push runtime code follows upstream v5.1.1 without fork enrollment or renewal guards.
 - Exact departure-transport countdown on desktop and mobile spotlights.
 - Mobile timeline day selection recovers after reload, a cleared selection, or a stale day id. The map permits an intentional All days selection; returning to the timeline restores the previous valid day or the closest valid focus day.
 - Recorded mobile payments use the upstream date-grouped ledger with frozen FX and the fork's edit/delete actions.

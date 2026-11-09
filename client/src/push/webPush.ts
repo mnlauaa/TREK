@@ -1,5 +1,3 @@
-import { isEnrolledPushEndpoint, rememberPushEndpoint } from './pushCutoverState'
-import { retireForkPush } from './retireForkPush'
 import { WEB_PUSH_CHANNEL_ID, type PushSubscriptionInput, type PushUnsubscribeRequest } from '@trek/shared'
 import { notificationsApi } from '../api/client'
 import { pushApi } from '../api/push'
@@ -199,9 +197,8 @@ export async function readWebPushDeviceState(): Promise<WebPushDeviceState> {
   const { reason } = getWebPushSupport()
   if (reason) return reason
   if (getPushPermission() === 'denied') return 'denied'
-  if (!(await retireForkPush())) return 'off'
   const subscription = await bestEffort('reading the subscription', () => currentPushSubscription())
-  return subscription && await isEnrolledPushEndpoint(subscription.endpoint) ? 'on' : 'off'
+  return subscription ? 'on' : 'off'
 }
 
 /** Both halves of dropping a subscription, each best effort: the server's row and the browser's own. */
@@ -242,7 +239,6 @@ export async function enableWebPush(publicKey: string, registration?: ServiceWor
     Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
   if (permission === 'denied') throw new WebPushError('denied')
   if (permission !== 'granted') throw new WebPushError('dismissed')
-  if (!(await retireForkPush())) throw new WebPushError('failed', 'previous push registration could not be retired')
 
   let subscription: PushSubscription
   try {
@@ -255,7 +251,6 @@ export async function enableWebPush(publicKey: string, registration?: ServiceWor
 
   try {
     await pushApi.subscribe(toSubscriptionInput(subscription))
-    await rememberPushEndpoint(subscription.endpoint)
   } catch (err) {
     // The server never took this subscription, so it must not outlive the
     // failure: the card reads the browser's record, and would claim push works
@@ -303,11 +298,10 @@ export async function resyncPushSubscription(): Promise<void> {
     return
   }
   if (!getWebPushSupport().supported || getPushPermission() !== 'granted' || isEffectivelyOffline()) return
-  if (!(await retireForkPush())) return
   await bestEffort('re-registering this device', async () => {
     const registration = await existingRegistration()
     const subscription = await registration?.pushManager?.getSubscription()
-    if (!registration || !subscription || !(await isEnrolledPushEndpoint(subscription.endpoint))) return
+    if (!registration || !subscription) return
     const { publicKey } = await pushApi.getPublicKey()
     const key = base64UrlToUint8Array(publicKey)
     let current = subscription
@@ -316,7 +310,6 @@ export async function resyncPushSubscription(): Promise<void> {
       current = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
     }
     await pushApi.subscribe(toSubscriptionInput(current))
-    await rememberPushEndpoint(current.endpoint)
   })
 }
 
