@@ -243,7 +243,7 @@
       "NODE_ENV": "production",
       "PORT": "3000",
       "SESSION_DURATION": "7d",
-      "SESSION_DURATION_REMEMBER": "30d",
+      "SESSION_DURATION_REMEMBER": "7d",
       "TRUST_PROXY": "1",
       "TZ": "Asia/Hong_Kong"
     },
