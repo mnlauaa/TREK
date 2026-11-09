@@ -300,12 +300,6 @@
       "mobile": ["src/mobile/screens/trip/tabs/MCostsTab.tsx"]
     },
     {
-      "feature": "Costs/budget settle-up payment: useSettlementForm",
-      "hooks": ["src/components/Budget/useSettlementForm.ts"],
-      "desktop": ["src/components/Budget/CostsPanel.tsx"],
-      "mobile": ["src/mobile/screens/trip/tabs/MCostsPayment.tsx"]
-    },
-    {
       "feature": "Create/edit trip form",
       "hooks": ["src/components/Trips/tripFormModel.ts", "src/components/Trips/useTripCoverPicker.ts"],
       "desktop": ["src/components/Trips/TripFormModal.tsx"],

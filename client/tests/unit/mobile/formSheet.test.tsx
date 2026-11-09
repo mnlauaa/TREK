@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { sizeClassOf } from '../../../src/hooks/sizeClass';
 import { useAutoGrow } from '../../../src/hooks/useAutoGrow';
+import MemberAvatar from '../../../src/mobile/components/MCostMemberAvatar';
 import MSheet from '../../../src/mobile/components/MSheet';
 import { edgeFadeClass, useEdgeFade } from '../../../src/mobile/components/useEdgeFade';
 import {
@@ -13,7 +14,6 @@ import {
   FormSheetHeader,
   SheetDateField,
 } from '../../../src/mobile/screens/trip/sheets/PlSheetChrome';
-import { MemberAvatar } from '../../../src/mobile/screens/trip/tabs/MCostsPayment';
 import { fireEvent, render, screen } from '../../helpers/render';
 
 // FE-MOB-FORMSHEET-001 onwards: the form sheet the touch shell presents every

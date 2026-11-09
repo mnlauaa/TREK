@@ -82,10 +82,8 @@ export default function MCostPaymentSheet({
               <MCostMemberAvatar
                 name={p.username}
                 avatarUrl={p.avatar_url}
-                isMe={p.id === me}
                 variant={fromId === p.id ? 'accent' : 'neutral'}
                 size={16}
-                t={t}
               />
               {p.id === me ? t('costs.you') : p.username}
             </MChip>
@@ -99,10 +97,8 @@ export default function MCostPaymentSheet({
               <MCostMemberAvatar
                 name={p.username}
                 avatarUrl={p.avatar_url}
-                isMe={p.id === me}
                 variant={toId === p.id ? 'accent' : 'neutral'}
                 size={16}
-                t={t}
               />
               {p.id === me ? t('costs.you') : p.username}
             </MChip>

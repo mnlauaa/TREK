@@ -258,7 +258,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
               const neg = balance < -0.01
               return (
                 <div key={p.id} className="flex items-center gap-[9px] border-b border-[color:var(--m-rowbr)] py-[7px] last:border-b-0">
-                  <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} isMe={p.id === me} variant="neutral" size={24} t={t} />
+                  <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} variant="neutral" size={24} />
                   <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{p.id === me ? t('costs.you') : p.username}</span>
                   <span dir="ltr" className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums" style={{ color: pos ? STATUS_COLOR.confirmed : neg ? STATUS_COLOR.danger : 'var(--m-faint)' }}>
                     {pos ? '+' : neg ? '−' : ''}
@@ -287,8 +287,8 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
                 onClick={() => setExpandedFinalId(open ? null : p.id)}
                 className="flex w-full items-center gap-[9px] py-[7px] text-start font-[inherit]"
               >
-                <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} isMe={p.id === me} variant="neutral" size={24} t={t} />
-                <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(p.id)}</span>
+                <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} variant="neutral" size={24} />
+                <span dir="auto" className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(p.id)}</span>
                 <span dir="ltr" className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">{formatMoney(row.final, base, locale)}</span>
                 {open
                   ? <ChevronUp size={13} strokeWidth={2.2} className="flex-none text-m-faint" />
@@ -652,7 +652,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
                       m.paid ? 'border-2 border-[color:var(--m-st-confirmed)]' : 'border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)]'
                     }`}
                   >
-                    <MCostMemberAvatar name={m.username} avatarUrl={m.avatar_url} isMe={m.user_id === ctx.me} variant="accent" size={14} t={t} />
+                    <MCostMemberAvatar name={m.username} avatarUrl={m.avatar_url} variant="accent" size={14} />
                     <span dir="ltr" className="font-geist text-[0.5625rem] font-bold tabular-nums text-m-ink">
                       {formatMoney(memberShareOf(item, m.user_id, ctx), base, locale)}
                     </span>
