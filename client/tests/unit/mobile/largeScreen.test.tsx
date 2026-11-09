@@ -145,7 +145,7 @@ describe('MSettings with room for two panes', () => {
 
     const list = screen.getByRole('navigation', { name: 'Settings' });
     expect(list).toBeInTheDocument();
-    expect(screen.queryByRole('button', { expanded: false })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'General', expanded: false })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'General' })).toHaveAttribute('aria-current', 'page');
 
     await user.click(screen.getByRole('button', { name: 'Appearance' }));

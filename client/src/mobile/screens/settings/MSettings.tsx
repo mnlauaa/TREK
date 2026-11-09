@@ -118,7 +118,7 @@ export default function MSettings() {
       {active.id === 'notifications' && <MSettingsNotifications />}
       {active.id === 'integrations' && hasIntegrations && <MSettingsIntegrations />}
       {/* Per-plugin settings still reuse the existing responsive tab. */}
-      {active.id === 'plugins' && hasPlugins && !managed && <MSettingsPlugins />}
+      {active.id === 'plugins' && <MSettingsPlugins />}
       {active.id === 'offline' && <MSettingsOffline />}
       {active.id === 'account' && <MSettingsServer />}
       {active.id === 'account' && <MSettingsAccount />}

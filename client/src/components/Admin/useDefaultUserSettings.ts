@@ -17,6 +17,7 @@ import {
   mapboxOffered,
   mapPresetsFor,
   normalizeProvider,
+  slotStyle,
   styleForProvider,
 } from '../Settings/mapSettingsModel';
 import { useToast } from '../shared/Toast';
@@ -79,9 +80,7 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
         setMapboxToken(data.mapbox_access_token || '');
         setCartoKey(data.carto_api_key || '');
         setMapboxStyle(
-          provider === 'leaflet'
-            ? data.mapbox_style || ''
-            : styleForProvider(provider, provider === 'maplibre-gl' ? data.maplibre_style : data.mapbox_style)
+          provider === 'leaflet' ? data.mapbox_style || '' : styleForProvider(provider, slotStyle(provider, data))
         );
         setLoaded(true);
       })

@@ -326,6 +326,14 @@ function TripPlannerRoute() {
   )
 }
 
+async function reconcileWebPushSubscription() {
+  try {
+    await reconcileWebPush()
+  } catch {
+    // Reconciliation can run again on the next subscription change or sign-in.
+  }
+}
+
 export default function App() {
   const { loadUser, isAuthenticated, demoMode, setManaged, setDemoMode, setDevMode, setIsPrerelease, setAppVersion, setHasMapsKey, setHasAmapKey, setPlacesProvider, setServerTimezone, setAppRequireMfa, setTripRemindersEnabled, setPlacesPhotosEnabled, setPlacesAutocompleteEnabled, setPlacesDetailsEnabled, setPlacesEnrichEnabled, setPlaceShadowEnabled } = useAuthStore()
   const { loadSettings } = useSettingsStore()
@@ -449,15 +457,8 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return
     const worker = navigator.serviceWorker
-    const reconcileSubscription = async () => {
-      try {
-        await reconcileWebPush()
-      } catch {
-        // Reconciliation can run again on the next subscription change or sign-in.
-      }
-    }
     const refresh = (event: MessageEvent) => {
-      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileSubscription()
+      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileWebPushSubscription()
     }
     worker?.addEventListener?.('message', refresh)
     const unsubscribe = useInAppNotificationStore.subscribe((state, previous) => {
