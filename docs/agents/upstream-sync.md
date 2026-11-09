@@ -18,6 +18,8 @@ The earlier v4.3.3 upgrade came directly from the fork's v4.2.1 baseline (`51539
 
 The v5.1.0 upgrade starts from upstream `dc36c21c08f681fd2806764fad8e17b270f6f175` and ports the contracts in fork tip `0b970eac7aad7ccc38d5a505c1c0d5866f919dd1`. Upstream replaced the positional SQLite migration runner with MikroORM, so merging the old implementations would obscure which schema changes had already run. A history bridge with `ours` requires an inventory proving every diverged change was retained or deliberately retired; an unchanged tree hash alone proves only that the bridge did not change its chosen tree.
 
+The v5.1.1 integration merges official `95d62b7a02f3209d927504f5d21b3efe5065d2bc` into dev `020a51a00968052f1bf1de16c9533b8727a8edcd`. See [the v5.1.1 evidence ledger](../upgrades/v5.1.1.md) for retained contracts, unsigned-release acceptance, migration checks and remaining rollout gates. This records a local upgrade branch, not promotion or deployment.
+
 ## Customization inventory
 
 - Layered frozen exchange rates with provenance across REST, MCP, plugins, desktop, and mobile.
