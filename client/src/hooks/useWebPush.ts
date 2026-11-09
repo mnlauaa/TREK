@@ -42,6 +42,14 @@ export interface WebPushCardState {
   sendTest: () => void
 }
 
+const STATE_TEXT_KEYS: Partial<Record<WebPushDeviceState, string>> = {
+  unsupported: 'settings.webPush.unsupported',
+  insecure: 'settings.webPush.insecure',
+  'ios-install': 'settings.webPush.iosInstall',
+  denied: 'settings.webPush.denied',
+  on: 'settings.webPush.enabled',
+}
+
 export function useWebPush(): WebPushCardState {
   const { t } = useTranslation()
   const toast = useToast()
@@ -112,6 +120,7 @@ export function useWebPush(): WebPushCardState {
         // A block or a dismissed prompt is the user's answer, and the card
         // shows the first on its own; only a real failure deserves a toast.
         if (err instanceof WebPushError && (err.code === 'denied' || err.code === 'dismissed')) return
+        console.warn('[push] switching this device failed', err)
         toast.error(turningOn ? t('settings.webPush.failed') : t('common.error'))
       })
       .finally(() => void settle())
@@ -132,16 +141,10 @@ export function useWebPush(): WebPushCardState {
       })
   }
 
-  const stateTexts: Partial<Record<WebPushDeviceState, string>> = {
-    unsupported: t('settings.webPush.unsupported'),
-    insecure: t('settings.webPush.insecure'),
-    'ios-install': t('settings.webPush.iosInstall'),
-    denied: t('settings.webPush.denied'),
-    on: t('settings.webPush.enabled'),
-  }
+  const textKey = state ? STATE_TEXT_KEYS[state] : undefined
   return {
     state,
-    stateText: state ? stateTexts[state] ?? null : null,
+    stateText: textKey ? t(textKey) : null,
     canSwitch: state === 'on' || state === 'off',
     on: state === 'on',
     switchLabel: state === 'on' ? t('settings.webPush.disable') : t('settings.webPush.enable'),

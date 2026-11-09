@@ -24,8 +24,6 @@ const api = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }))
 vi.mock('../api/push', () => ({ pushApi: api }))
-vi.mock('./retireForkPush', () => ({ retireForkPush: async () => true }))
-vi.mock('./pushCutoverState', () => ({ isEnrolledPushEndpoint: async () => true, rememberPushEndpoint: async () => undefined }))
 
 const network = vi.hoisted(() => ({ offline: false }))
 vi.mock('../sync/networkMode', () => ({ isEffectivelyOffline: () => network.offline }))

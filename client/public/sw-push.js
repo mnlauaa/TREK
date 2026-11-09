@@ -109,15 +109,7 @@
    * same-origin fetch carries the session cookie; when the session is gone this
    * fails, and the re-sync after the next sign-in is the backstop.
    */
-  async function resubscribe(event) {
-    var state;
-    try {
-      var receipt = await caches.match('/__trek_push_upstream511', { cacheName: 'trek-push-cutover' });
-      state = receipt ? await receipt.json() : null;
-    } catch (_) {
-      return;
-    }
-    if (!state || !state.retired || !event.oldSubscription || state.endpoint !== event.oldSubscription.endpoint) return;
+  function resubscribe(event) {
     var old = event.oldSubscription;
     var key = old && old.options ? old.options.applicationServerKey : null;
     var next = event.newSubscription
@@ -133,11 +125,7 @@
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription: subscription.toJSON() }),
-        }).then(async function (response) {
-          if (response.ok) {
-            var cache = await caches.open('trek-push-cutover');
-            await cache.put('/__trek_push_upstream511', new Response(JSON.stringify({ retired: true, endpoint: subscription.endpoint })));
-          }
+        }).then(function (response) {
           // The old endpoint is dead either way; forgetting it only tidies the
           // server's device list, and only once the new one is safely stored.
           if (!response.ok || !old || old.endpoint === subscription.endpoint) return undefined;
@@ -155,8 +143,6 @@
   }
 
   self.addEventListener('pushsubscriptionchange', function (event) {
-    event.waitUntil(self.navigator.locks
-      ? self.navigator.locks.request('trek-push-cutover', function () { return resubscribe(event); })
-      : Promise.resolve());
+    event.waitUntil(resubscribe(event));
   });
 })();
