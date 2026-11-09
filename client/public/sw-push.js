@@ -1,111 +1,162 @@
+/*
+ * Web Push handlers for the generated service worker.
+ *
+ * vite-plugin-pwa builds sw.js with Workbox (generateSW), and Workbox pulls
+ * this file in through `workbox.importScripts` in vite.config.js, ahead of its
+ * own precaching. A CLASSIC, dependency-free script on purpose, in the style of
+ * theme-boot.js: importScripts cannot load a module, and switching the whole
+ * worker to injectManifest to get TypeScript here would mean rewriting every
+ * runtime caching rule by hand. The behaviour is pinned by
+ * tests/unit/pwa/swPush.test.ts, which runs this file against a fake worker.
+ *
+ * What arrives is the shared pushPayloadSchema: { title, body, url?, tag? },
+ * rendered on the server in the recipient's language, because a worker has no
+ * translations of its own. Only chat messages carry a tag, so one trip's chat
+ * collapses into one notification; everything else stands on its own.
+ */
 (function () {
-  const STATE_DB = 'trek-push-state';
-  const STATE_STORE = 'state';
+  'use strict';
 
-  function readActiveUserId() {
-    return new Promise((resolve) => {
-      try {
-        const open = indexedDB.open(STATE_DB, 1);
-        open.onupgradeneeded = () => {
-          if (!open.result.objectStoreNames.contains(STATE_STORE)) open.result.createObjectStore(STATE_STORE);
-        };
-        open.onerror = () => resolve(undefined);
-        open.onsuccess = () => {
-          const stateDb = open.result;
-          try {
-            const get = stateDb.transaction(STATE_STORE, 'readonly').objectStore(STATE_STORE).get('activeUserId');
-            get.onerror = () => {
-              stateDb.close();
-              resolve(undefined);
-            };
-            get.onsuccess = () => {
-              stateDb.close();
-              resolve(get.result);
-            };
-          } catch {
-            stateDb.close();
-            resolve(undefined);
-          }
-        };
-      } catch {
-        resolve(undefined);
-      }
-    });
-  }
+  var FALLBACK_TITLE = 'TREK';
+  var ICON = '/icons/icon-192x192.png';
+  var SUBSCRIPTIONS_URL = '/api/notifications/push/subscriptions';
 
-  function safePayload(event) {
+  /** The payload as an object; a push that is not JSON still shows, with its text as the body. */
+  function readPayload(data) {
+    if (!data) return {};
     try {
-      const data = event.data && event.data.json();
-      return data && data.v === 1 ? data : null;
-    } catch {
-      return null;
+      var parsed = data.json();
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+      try {
+        return { body: data.text() };
+      } catch (e2) {
+        return {};
+      }
     }
   }
 
-  self.addEventListener('push', (event) => {
-    event.waitUntil(
-      (async () => {
-        const payload = safePayload(event);
-        const activeUserId = await readActiveUserId();
-        const showFull = payload && Number(payload.recipientUserId) === Number(activeUserId);
-        const title = showFull && typeof payload.title === 'string' ? payload.title : 'TREK';
-        const body = showFull && typeof payload.body === 'string' ? payload.body : 'Sign in to view your notification.';
-        const path = showFull && typeof payload.path === 'string' && payload.path.startsWith('/') ? payload.path : '/';
-        const unreadCount =
-          showFull && Number.isFinite(Number(payload.unreadCount))
-            ? Math.max(0, Math.floor(Number(payload.unreadCount)))
-            : 0;
-        const tasks = [
-          self.registration.showNotification(title, {
-            body,
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/icon-192x192.png',
-            data: { path },
-            ...(showFull && typeof payload.tag === 'string' && payload.tag ? { tag: payload.tag, renotify: true } : {}),
-          }),
-        ];
-        if (unreadCount > 0 && self.navigator && typeof self.navigator.setAppBadge === 'function') {
-          tasks.push(self.navigator.setAppBadge(unreadCount));
-        } else if (showFull && self.navigator && typeof self.navigator.clearAppBadge === 'function') {
-          tasks.push(self.navigator.clearAppBadge());
-        }
-        await Promise.allSettled(tasks);
-      })()
-    );
+  function text(value) {
+    return typeof value === 'string' ? value : '';
+  }
+
+  /**
+   * A path on this origin, or '/'. The url comes from the server, but a click
+   * must never be able to open another site in the installed app's window.
+   */
+  function sameOriginPath(value) {
+    if (typeof value !== 'string' || !value) return '/';
+    try {
+      var resolved = new URL(value, self.location.origin);
+      if (resolved.origin !== self.location.origin) return '/';
+      return resolved.pathname + resolved.search + resolved.hash;
+    } catch (e) {
+      return '/';
+    }
+  }
+
+  self.addEventListener('push', function (event) {
+    var payload = readPayload(event.data);
+    var options = {
+      body: text(payload.body),
+      icon: ICON,
+      data: { url: sameOriginPath(payload.url) },
+    };
+    // A tag makes this notification replace an earlier one with the same tag
+    // (the server only sets one for chat, per trip). renotify goes with it, or
+    // the replacement would arrive without sound or vibration.
+    if (text(payload.tag)) {
+      options.tag = payload.tag;
+      options.renotify = true;
+    }
+    // Always show something. Chrome requires a visible notification for every
+    // push (userVisibleOnly), and WebKit revokes the subscription after a few
+    // silent ones, even while a TREK window has the focus.
+    event.waitUntil(self.registration.showNotification(text(payload.title) || FALLBACK_TITLE, options));
   });
 
-  self.addEventListener('pushsubscriptionchange', (event) => {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        for (const client of clients) client.postMessage({ type: 'trek:web-push-subscription-changed' });
-      })
-    );
-  });
+  /** Focus a TREK window and take it to `path`, or open one there when none is left. */
+  function openPath(path) {
+    var target = self.location.origin + path;
+    return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (windows) {
+      var client = windows[0];
+      for (var i = 0; i < windows.length; i++) {
+        if (windows[i].focused) client = windows[i];
+      }
+      if (!client) return self.clients.openWindow(target);
+      return client
+        .focus()
+        .then(function (focused) {
+          // navigate() is only allowed on a window this worker controls.
+          var win = focused || client;
+          return typeof win.navigate === 'function' ? win.navigate(target) : win;
+        })
+        .catch(function () {
+          return self.clients.openWindow(target);
+        });
+    });
+  }
 
-  self.addEventListener('notificationclick', (event) => {
+  self.addEventListener('notificationclick', function (event) {
     event.notification.close();
-    event.waitUntil(
-      (async () => {
-        const rawPath = event.notification.data && event.notification.data.path;
-        const path =
-          typeof rawPath === 'string' && rawPath.startsWith('/') && !rawPath.startsWith('//') ? rawPath : '/';
-        const target = new URL(path, self.location.origin);
-        if (target.origin !== self.location.origin) return;
-        const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        const exact = windows.find((client) => client.url === target.href);
-        const candidate = exact || windows.find((client) => new URL(client.url).origin === target.origin);
-        if (candidate) {
-          try {
-            if (!exact && typeof candidate.navigate === 'function') await candidate.navigate(target.href);
-            await candidate.focus();
-            return;
-          } catch {
-            await self.clients.openWindow(target.href);
-            return;
+    var data = event.notification.data || {};
+    event.waitUntil(openPath(sameOriginPath(data.url)));
+  });
+
+  /**
+   * The browser replaced or dropped the subscription (Firefox does this now and
+   * then). Subscribe again with the same server key and tell the server. The
+   * same-origin fetch carries the session cookie; when the session is gone this
+   * fails, and the re-sync after the next sign-in is the backstop.
+   */
+  async function resubscribe(event) {
+    var state;
+    try {
+      var receipt = await caches.match('/__trek_push_upstream511', { cacheName: 'trek-push-cutover' });
+      state = receipt ? await receipt.json() : null;
+    } catch (_) {
+      return;
+    }
+    if (!state || !state.retired || !event.oldSubscription || state.endpoint !== event.oldSubscription.endpoint) return;
+    var old = event.oldSubscription;
+    var key = old && old.options ? old.options.applicationServerKey : null;
+    var next = event.newSubscription
+      ? Promise.resolve(event.newSubscription)
+      : key
+        ? self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
+        : Promise.resolve(null);
+    return next
+      .then(function (subscription) {
+        if (!subscription) return undefined;
+        return fetch(SUBSCRIPTIONS_URL, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: subscription.toJSON() }),
+        }).then(async function (response) {
+          if (response.ok) {
+            var cache = await caches.open('trek-push-cutover');
+            await cache.put('/__trek_push_upstream511', new Response(JSON.stringify({ retired: true, endpoint: subscription.endpoint })));
           }
-        }
-        await self.clients.openWindow(target.href);
-      })()
-    );
+          // The old endpoint is dead either way; forgetting it only tidies the
+          // server's device list, and only once the new one is safely stored.
+          if (!response.ok || !old || old.endpoint === subscription.endpoint) return undefined;
+          return fetch(SUBSCRIPTIONS_URL, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: old.endpoint }),
+          });
+        });
+      })
+      .catch(function (err) {
+        console.warn('[push] could not renew the subscription', err);
+      });
+  }
+
+  self.addEventListener('pushsubscriptionchange', function (event) {
+    event.waitUntil(self.navigator.locks
+      ? self.navigator.locks.request('trek-push-cutover', function () { return resubscribe(event); })
+      : Promise.resolve());
   });
 })();

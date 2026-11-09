@@ -1,4 +1,4 @@
-import { decodeBase64Url, isVapidSubject, readEnv } from '../../../app-config';
+import { decodeBase64Url, isVapidSubject, readEnv, stripTrailingSlashes } from '../../../app-config';
 import { AppSettings } from '../../../db/entities/AppSettings.entity';
 import type { AppSettingsRepository } from '../../../db/repositories/AppSettings.repository';
 import { logError, logInfo } from '../../audit/audit-log.logger';
@@ -16,6 +16,9 @@ export const VAPID_PRIVATE_KEY_SETTING = 'web_push_vapid_private_key';
 
 /** The VAPID contact when nothing better is configured: a real https URL every push service accepts. */
 export const FALLBACK_VAPID_SUBJECT = 'https://github.com/liketrek/TREK';
+
+/** What the push routes answer while the key pair cannot be used. */
+export const PUSH_UNAVAILABLE_ERROR = 'Web Push is currently unavailable on this server';
 
 export interface ResolvedVapidKeys extends VapidKeyPair {
   source: 'env' | 'database';
@@ -65,6 +68,16 @@ function canonical(value: string): string {
   return decodeBase64Url(value)?.toString('base64url') ?? value;
 }
 
+/** An https URL on a host other than localhost: what APP_URL has to be to serve as the VAPID contact. */
+function isPublicHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname !== 'localhost';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The server's VAPID identity: the key pair every subscription is bound to, and
  * the contact (`sub`) sent with each request.
@@ -112,23 +125,7 @@ export class VapidKeysService implements OnApplicationBootstrap {
    * request context (the StorageHealthNotifierService shape).
    */
   async onApplicationBootstrap(): Promise<void> {
-    await withRequestContext(this.orm, () =>
-      this.succeeds(async () => {
-        const keys = await this.getKeys();
-        if (keys.source !== 'env' || !readEnv().push.usesForkKeys) return;
-        await this.uow.transactional(async () => {
-          const stored = await this.readStored();
-          if (
-            stored.state === 'usable' &&
-            stored.keys.publicKey === keys.publicKey &&
-            stored.keys.privateKey === keys.privateKey
-          )
-            return;
-          await this.writeSetting(VAPID_PUBLIC_KEY_SETTING, keys.publicKey);
-          await this.writeSetting(VAPID_PRIVATE_KEY_SETTING, encrypt_api_key(keys.privateKey));
-        });
-      }),
-    );
+    await withRequestContext(this.orm, () => this.succeeds(() => this.getKeys()));
   }
 
   /**
@@ -145,7 +142,6 @@ export class VapidKeysService implements OnApplicationBootstrap {
   /**
    * The pair to sign with, creating the stored one first while neither row
    * exists. Throws PushUnavailableError while the pair it would use cannot be.
-   * @txStandalone The instance identity is provisioned once, independently of any device registration.
    */
   async getKeys(): Promise<ResolvedVapidKeys> {
     const fromEnv = this.envKeys();
@@ -155,13 +151,6 @@ export class VapidKeysService implements OnApplicationBootstrap {
 
   async getPublicKey(): Promise<string> {
     return (await this.getKeys()).publicKey;
-  }
-
-  async peekPublicKey(): Promise<string | null> {
-    const fromEnv = this.envKeys();
-    if (fromEnv) return fromEnv.publicKey;
-    const stored = await this.readStored();
-    return stored.state === 'absent' ? null : this.usableStored(stored).publicKey;
   }
 
   /**
@@ -176,13 +165,8 @@ export class VapidKeysService implements OnApplicationBootstrap {
     const env = readEnv();
     const configured = env.push.vapidSubject;
     if (configured && isVapidSubject(configured)) return configured;
-    try {
-      const url = new URL(env.app.appUrl?.trim() ?? '');
-      if (url.protocol === 'https:' && url.hostname !== 'localhost') return url.origin;
-    } catch {
-      // APP_URL may be absent before an instance is set up.
-    }
-    return FALLBACK_VAPID_SUBJECT;
+    const appUrl = env.app.appUrl?.trim();
+    return appUrl && isPublicHttpsUrl(appUrl) ? stripTrailingSlashes(appUrl) : FALLBACK_VAPID_SUBJECT;
   }
 
   /** getKeys() without the create: the same refusals, and a missing stored pair counts as usable. */
@@ -231,10 +215,7 @@ export class VapidKeysService implements OnApplicationBootstrap {
 
   /** What the VAPID_* variables hold. The fingerprint only tells one broken state from the next. */
   private readEnvPair(): EnvPair {
-    const { vapidPublicKey, vapidPrivateKey, vapidSubject } = readEnv().push;
-    if (vapidSubject && !isVapidSubject(vapidSubject)) {
-      return { state: 'unusable', fingerprint: 'subject', problem: 'The VAPID subject is invalid' };
-    }
+    const { vapidPublicKey, vapidPrivateKey } = readEnv().push;
     if (!vapidPublicKey && !vapidPrivateKey) return { state: 'unset' };
     if (!vapidPublicKey || !vapidPrivateKey) {
       return {

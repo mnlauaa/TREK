@@ -88,6 +88,10 @@ const settings: TranslationStrings = {
   'settings.timeFormat': 'Định dạng thời gian',
   'settings.weekStart': 'Tuần bắt đầu vào',
   'settings.weekStartHint': 'Ngày đầu tuần trong mọi bộ chọn ngày. Vacay có cài đặt riêng.',
+  'settings.dateFormat': 'Định dạng ngày',
+  'settings.dateFormatHint':
+    'Cách viết ngày trong mọi trường ngày và danh sách. Ngày có tên tháng vẫn giữ cách viết theo ngôn ngữ của bạn.',
+  'settings.dateFormatAuto': 'Tự động',
   'settings.preferredNavApp': 'Mở địa điểm bằng',
   'settings.preferredNavAppAsk': 'Hỏi mỗi lần',
   'settings.preferredNavAppHint':
@@ -136,6 +140,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Đã cấu hình. Quản lý thông tin đăng nhập ở trang cài đặt của plugin.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Thông báo đẩy',
   'settings.webPush.title': 'Thông báo đẩy trên thiết bị này',
   'settings.webPush.hint':
     'Hiển thị thông báo của TREK trên thiết bị này ngay cả khi TREK đang đóng. Những sự kiện nào được gửi đến tuân theo cột Thông báo đẩy.',
@@ -660,6 +665,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': 'Xong',
   'settings.mcp.deprecated': 'Không còn được khuyến nghị',
   'settings.offline.cache.dateRange': '{start} đến {end}',
+  'settings.offline.tileStore.title': 'Ô bản đồ đã xem',
+  'settings.offline.tileStore.usage': '{used} trên {limit} trên thiết bị này, lưu tối đa 30 ngày',
+  'settings.offline.tileStore.clear': 'Xóa',
 };
 
 export default settings;

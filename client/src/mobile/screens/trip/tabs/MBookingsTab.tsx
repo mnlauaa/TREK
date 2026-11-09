@@ -5,9 +5,9 @@ import { formatTime, formatPriceText } from '../../../../utils/formatters'
 import { useTranslation } from '../../../../i18n'
 import type { Reservation } from '../../../../types'
 import { CardActions, CardDeleteSheet, CardFiles, CardNotes, CardTitleButton, CardWhenAndCode } from './MReservationCardParts'
-import { Field, ReservationPluginSlots, SectionHeader, StatusDot, TabScroller, TravelerAvatars, TravelerFilterRow } from './tabChrome'
+import { CardGrid, Field, ReservationPluginSlots, SectionHeader, StatusDot, TabScroller, TravelerAvatars, TravelerFilterRow } from './tabChrome'
 import { STATUS_COLOR, type MTabScreenProps } from './tabModel'
-import { cardWhen, parseTransportMeta } from './transportsModel'
+import { cardWhen, parseTransportMeta, timeRange } from './transportsModel'
 import { BOOKING_TYPE_COLOR } from '../../../../components/Planner/bookings/bookingsModel'
 import { useReservationListFilter } from '../../../../components/Planner/bookings/useReservationListFilter'
 import { useReservationCard } from '../../../../components/Planner/bookings/useReservationCard'
@@ -36,7 +36,7 @@ export default function MBookingsTab({ planner, shell }: MTabScreenProps) {
   ].filter(s => s.rows.length > 0)
 
   return (
-    <TabScroller>
+    <TabScroller wide="full">
       {showTravelerFilter && (
         <TravelerFilterRow
           members={planner.tripMembers}
@@ -60,8 +60,9 @@ export default function MBookingsTab({ planner, shell }: MTabScreenProps) {
             open={!collapsed[section.id]}
             onToggle={() => toggle(section.id)}
           />
-          {!collapsed[section.id] &&
-            section.rows.map(res => (
+          {!collapsed[section.id] && (
+            <CardGrid>
+              {section.rows.map(res => (
               <BookingCard
                 key={res.id}
                 res={res}
@@ -69,7 +70,9 @@ export default function MBookingsTab({ planner, shell }: MTabScreenProps) {
                 canEdit={canEdit}
                 compact={shell.bookingsCompact}
               />
-            ))}
+              ))}
+            </CardGrid>
+          )}
         </div>
       ))}
     </TabScroller>
@@ -116,7 +119,7 @@ function BookingCard({ res, planner, canEdit, compact }: {
   if (meta.check_in_time) {
     metaCells.push({
       label: t('reservations.meta.checkIn'),
-      value: formatTime(meta.check_in_time, locale, timeFormat) + (meta.check_in_end_time ? ` – ${formatTime(meta.check_in_end_time, locale, timeFormat)}` : ''),
+      value: timeRange(meta.check_in_time, meta.check_in_end_time ?? null, locale, timeFormat),
     })
   }
   if (meta.check_out_time) metaCells.push({ label: t('reservations.meta.checkOut'), value: formatTime(meta.check_out_time, locale, timeFormat) })
@@ -169,7 +172,7 @@ function BookingCard({ res, planner, canEdit, compact }: {
             {res.location && (
               <div className="mt-2 flex items-center gap-[6px] rounded-[10px] border border-[color:var(--m-rowbr)] bg-m-card px-[10px] py-[7px]">
                 <MapPin size={12} strokeWidth={2} className="flex-none text-m-muted" />
-                <span className="truncate text-[0.71875rem] font-semibold text-m-ink">{res.location}</span>
+                <span dir="auto" className="truncate text-[0.71875rem] font-semibold text-m-ink">{res.location}</span>
               </div>
             )}
 

@@ -1,5 +1,5 @@
 import type { PublicConfig, SettingResetKey, SettingResetResponse } from '@trek/shared'
-import { createExchangeRateApi, createGuestIdentityApi, createWebPushApi, createExchangeRateSnapshotApi } from './retainedRoutes'
+import { createExchangeRateApi, createGuestIdentityApi, createExchangeRateSnapshotApi } from './retainedRoutes'
 import { isEffectivelyOffline } from '../sync/networkMode'
 import axios, { AxiosInstance } from 'axios'
 import { checkInDev, parseInDev } from './contractChecks'
@@ -73,13 +73,13 @@ import {
   RoadtripVia,
   RoadtripViaBatchRequest,
   RoadtripViaCreateRequest,
-  RoadtripViaReanchorRequest,
-  RoadtripViaUpdateRequest,
+  RoadtripViaReanchorRequest, RoadtripViaUpdateRequest,
 } from '@trek/shared'
 import { getSocketId } from './websocket'
 import { probeNow } from '../sync/connectivity'
 import { downloadBlob } from '../utils/fileDownload'
 import { translateRateLimit } from './rateLimitMessage'
+import { hardNavigate } from './hardNavigate'
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: '/api',
@@ -185,7 +185,7 @@ apiClient.interceptors.response.use(
         const { pathname } = window.location
         if (!isAuthPublicPath(pathname)) {
           const currentPath = pathname + window.location.search + window.location.hash
-          window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+          hardNavigate('/login?redirect=' + encodeURIComponent(currentPath))
         }
       }
       if (
@@ -193,7 +193,7 @@ apiClient.interceptors.response.use(
           (error.response?.data as { code?: string } | undefined)?.code === 'MFA_REQUIRED' &&
           !window.location.pathname.startsWith('/settings')
       ) {
-        window.location.href = '/settings?mfa=required'
+        hardNavigate('/settings?mfa=required')
       }
       if (error.response?.status === 429) {
         const translated = translateRateLimit()
@@ -1582,7 +1582,6 @@ export const tripInviteApi = {
 const CHANNEL_TEST_TIMEOUT = 40000
 
 export const notificationsApi = {
-  ...createWebPushApi(apiClient, parseInDev),
   getPreferences: () => apiClient.get('/notifications/preferences').then(r => r.data),
   updatePreferences: (prefs: Record<string, Record<string, boolean>>) => apiClient.put('/notifications/preferences', prefs).then(r => r.data),
   testSmtp: (email?: string) => apiClient.post('/notifications/test-smtp', { email }, { timeout: CHANNEL_TEST_TIMEOUT }).then(r => checkInDev(channelTestResultSchema, r.data, 'notifications.testSmtp')),

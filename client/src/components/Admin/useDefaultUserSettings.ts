@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { adminApi } from '../../api/client';
 import { useTranslation } from '../../i18n';
 import { useAuthStore } from '../../store/authStore';
-import type { DistanceUnit, Place, WeekStart } from '../../types';
+import { useSettingsStore } from '../../store/settingsStore';
+import type { DateFormat, DistanceUnit, Place, WeekStart } from '../../types';
 import { normalizeTileUrl } from '../../utils/tileUrl';
 import {
   defaultStyleForProvider,
@@ -11,7 +12,14 @@ import {
   normalizeStyleForProvider,
   styleSettingKey,
 } from '../Map/glProviders';
-import { type MapProvider, normalizeProvider, styleForProvider } from '../Settings/mapSettingsModel';
+import {
+  type MapProvider,
+  mapboxOffered,
+  mapPresetsFor,
+  normalizeProvider,
+  slotStyle,
+  styleForProvider,
+} from '../Settings/mapSettingsModel';
 import { useToast } from '../shared/Toast';
 import type { RoutingDefaults } from './RoutingInstanceFields';
 
@@ -21,6 +29,7 @@ export type Defaults = RoutingDefaults & {
   dark_mode?: string | boolean;
   time_format?: string;
   week_start?: WeekStart;
+  date_format?: DateFormat;
   default_currency?: string;
   common_currencies?: string[];
   blur_booking_codes?: boolean;
@@ -54,6 +63,9 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
   const [loaded, setLoaded] = useState(false);
   const [mapTileUrl, setMapTileUrl] = useState('');
   const managed = useAuthStore((s) => s.managed);
+  const hasAmapKey = useAuthStore((s) => s.hasAmapKey);
+  // The operator's token reaches the admin's own settings the same way it reaches everybody's.
+  const operatorMapboxToken = useSettingsStore((s) => s.settings.mapbox_access_token);
   const [mapboxToken, setMapboxToken] = useState('');
   const [cartoKey, setCartoKey] = useState('');
   const [mapboxStyle, setMapboxStyle] = useState('');
@@ -68,9 +80,7 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
         setMapboxToken(data.mapbox_access_token || '');
         setCartoKey(data.carto_api_key || '');
         setMapboxStyle(
-          provider === 'leaflet'
-            ? data.mapbox_style || ''
-            : styleForProvider(provider, provider === 'maplibre-gl' ? data.maplibre_style : data.mapbox_style)
+          provider === 'leaflet' ? data.mapbox_style || '' : styleForProvider(provider, slotStyle(provider, data))
         );
         setLoaded(true);
       })
@@ -160,6 +170,8 @@ export function useDefaultUserSettings({ errorMessage, previewCreatedAt }: Defau
     defaults,
     loaded,
     managed,
+    presets: mapPresetsFor(managed, hasAmapKey),
+    canMapbox: mapboxOffered(managed, operatorMapboxToken),
     isSet,
     save,
     saveCommonCurrencies,

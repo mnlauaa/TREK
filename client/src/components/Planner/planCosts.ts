@@ -22,7 +22,7 @@ export interface PlanCosts {
  * An expense counts on the day its booking starts, else the first day its place is
  * planned on, else the day of its date. One that belongs to no day still counts in
  * the total. A foreign amount booked at a frozen rate counts at that rate, as Costs
- * counts it.
+ * counts it. Display currency does not change the frozen trip value.
  *
  * With Costs off there are no expenses, and a place's own price (set through the
  * API) still counts, once, on the first day the place is planned on.
@@ -34,6 +34,7 @@ export function planCosts({ days, assignments, reservations, budgetItems, costsE
   budgetItems: BudgetItem[]
   costsEnabled: boolean
   tripCurrency: string
+  displayCurrency?: string | null
 }): PlanCosts {
   const trip = (tripCurrency || 'EUR').toUpperCase()
   const firstDayOfPlace = new Map<number, number>()

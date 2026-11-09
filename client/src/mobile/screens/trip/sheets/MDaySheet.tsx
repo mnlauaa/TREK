@@ -210,6 +210,28 @@ export default function MDaySheet({ planner, shell }: MTripSheetsProps) {
   // A day_number of 0 is as unusable as a missing one — both fall back to the row position.
   const dayLabel = day?.title || t('planner.dayN', { n: day ? day.day_number || dayIndex + 1 : '?' })
   const heading = dayHeadingParts(dayLabel, formattedDate, dateFirst)
+  // The input takes the size of the line it edits: the heading, or the line under the date.
+  const titleInput = (lead: boolean) => (
+    <input
+      ref={titleInputRef}
+      value={titleDraft}
+      onChange={e => setTitleDraft(e.target.value)}
+      onBlur={commitRename}
+      onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditingTitle(false) }}
+      placeholder={t('planner.dayN', { n: dayIndex + 1 })}
+      className={`w-full border-b-[1.5px] border-[color:var(--m-ink)] bg-transparent p-0 font-[inherit] outline-none ${lead ? 'text-[1.0625rem] font-bold' : ''}`}
+    />
+  )
+  const renamePencil = canEditDays && day && (
+    <button
+      type="button"
+      onClick={() => startRename(day.title || '')}
+      aria-label={t('mobileTrip.renameDay')}
+      className="flex flex-none p-[3px] text-m-faint"
+    >
+      <Pencil size={12} strokeWidth={1.8} />
+    </button>
+  )
   const WeatherIcon = weatherIconFor(weather?.main)
 
   const stayBadge = (acc: (typeof dayAccommodations)[number]) => {
@@ -224,40 +246,31 @@ export default function MDaySheet({ planner, shell }: MTripSheetsProps) {
       {day && (
         <>
           <div className="flex-none px-[18px] pt-4">
+            {/* The pencil and the input go with the name: under the date when it leads (#2921). */}
             <TileHeader
               icon={<CalendarDays size={19} strokeWidth={1.8} />}
-              title={editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  value={titleDraft}
-                  onChange={e => setTitleDraft(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditingTitle(false) }}
-                  placeholder={t('planner.dayN', { n: dayIndex + 1 })}
-                  className="w-full border-b-[1.5px] border-[color:var(--m-ink)] bg-transparent p-0 font-[inherit] text-[1.0625rem] font-bold outline-none"
-                />
+              title={editingTitle && heading.nameFirst ? (
+                titleInput(true)
               ) : (
                 <>
                   <span className="truncate">{heading.primary}</span>
-                  {canEditDays && (
-                    <button
-                      type="button"
-                      onClick={() => startRename(day.title || '')}
-                      aria-label={t('mobileTrip.renameDay')}
-                      className="flex flex-none p-[3px] text-m-faint"
-                    >
-                      <Pencil size={12} strokeWidth={1.8} />
-                    </button>
-                  )}
+                  {heading.nameFirst && renamePencil}
                 </>
               )}
-              sub={heading.secondary}
+              sub={!heading.nameFirst && heading.secondary ? (
+                editingTitle ? titleInput(false) : (
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="truncate">{heading.secondary}</span>
+                    {renamePencil}
+                  </span>
+                )
+              ) : heading.secondary}
               onClose={shell.closeSheet}
               closeLabel={t('common.close')}
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-[18px]">
+          <div className="m-scroll-fade mt-2 min-h-0 flex-1 overflow-y-auto px-[18px] pb-[18px] pt-[14px]">
             {/* ── Weather (16-day forecast, climate fallback) ── */}
             {day.date && lat != null && lng != null && (
               weatherLoading ? (
@@ -402,7 +415,7 @@ export default function MDaySheet({ planner, shell }: MTripSheetsProps) {
                         className={`flex w-full items-center gap-[10px] rounded-[13px] px-[11px] py-[9px] text-start ${INNER_CLS}`}
                       >
                         <ResIcon size={15} strokeWidth={2} className="flex-none text-m-muted" />
-                        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">{r.title}</span>
+                        <span dir="auto" className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">{r.title}</span>
                         {(startTime || endTime) && (
                           <span className="flex-none font-geist text-[0.6875rem] tabular-nums text-m-muted">
                             {startTime ? displayTime(startTime, locale, timeFormat) : ''}
@@ -499,9 +512,9 @@ export default function MDaySheet({ planner, shell }: MTripSheetsProps) {
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-[0.875rem] font-semibold">{acc.place_name}</div>
+                          <div dir="auto" className="truncate text-[0.875rem] font-semibold">{acc.place_name}</div>
                           {acc.place_address && (
-                            <div className="truncate font-geist text-[0.65625rem] text-m-muted">{acc.place_address}</div>
+                            <div dir="auto" className="truncate font-geist text-[0.65625rem] text-m-muted">{acc.place_address}</div>
                           )}
                         </div>
                         </button>

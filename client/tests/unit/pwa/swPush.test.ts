@@ -1,117 +1,337 @@
-import { readFileSync } from 'node:fs';
+// FE-SW-PUSH-001 to FE-SW-PUSH-016: the Web Push handlers in public/sw-push.js.
+//
+// The file is a classic script that Workbox imports into the generated service
+// worker, so it sits outside src/, ESLint and coverage. This spec is its only
+// guard: it evaluates the real file against a fake worker global and drives
+// the three events the way a browser would.
+//
+// What matters most:
+//  - every push shows a notification inside waitUntil, whatever arrives, since
+//    Chrome demands one per push and WebKit revokes a subscription that stays
+//    silent;
+//  - a click only ever opens a path on this origin;
+//  - a renewed subscription reaches the server, and the old one is forgotten
+//    only once the new one is stored.
+// Plus the drift guard: vite.config.js must import the file, and it must exist,
+// or importScripts gets a 404 instead of a script and the new worker never
+// installs.
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { runInNewContext } from 'node:vm';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, expect, it, vi } from 'vitest';
+const ORIGIN = 'https://trek.example';
+const SOURCE_PATH = resolve(process.cwd(), 'public/sw-push.js');
+const SOURCE = readFileSync(SOURCE_PATH, 'utf8');
 
-const source = readFileSync(resolve(process.cwd(), 'public/sw-push.js'), 'utf8');
-const origin = 'https://trek.example';
-const payload = {
-  v: 1,
-  recipientUserId: 42,
-  title: 'Trip updated',
-  body: 'The hotel changed',
-  path: '/trips/6?tab=bookings',
-  unreadCount: 3,
-  tag: 'chat:6',
-};
+type Listener = (event: Record<string, unknown>) => void;
 
-function worker(activeUser: number | undefined) {
-  const handlers: Record<string, (event: Record<string, unknown>) => void> = {};
-  const window = { url: origin, postMessage: vi.fn(), navigate: vi.fn(), focus: vi.fn() };
-  const clients = {
-    matchAll: vi.fn().mockResolvedValue([window]),
-    openWindow: vi.fn(),
-  };
-  const showNotification = vi.fn();
-  const setAppBadge = vi.fn();
-  const clearAppBadge = vi.fn();
-  const request = (result: unknown) => {
-    const pending = { result, onsuccess: undefined as (() => void) | undefined };
-    queueMicrotask(() => pending.onsuccess?.());
-    return pending;
-  };
-  runInNewContext(source, {
-    URL,
-    indexedDB: {
-      open: () =>
-        request({
-          close() {},
-          transaction: () => ({ objectStore: () => ({ get: () => request(activeUser) }) }),
-        }),
-    },
-    self: {
-      location: { origin },
-      registration: { showNotification },
-      navigator: { setAppBadge, clearAppBadge },
-      clients,
-      addEventListener: (name: string, handler: (event: Record<string, unknown>) => void) => {
-        handlers[name] = handler;
-      },
-    },
-  });
-  const fire = async (type: string, data: Record<string, unknown>) => {
-    let pending: Promise<unknown> | undefined;
-    handlers[type]({
-      ...data,
-      waitUntil: (work: Promise<unknown>) => {
-        pending = work;
-      },
-    });
-    expect(pending).toBeDefined();
-    await pending;
-  };
-  return { fire, window, clients, showNotification, setAppBadge, clearAppBadge };
+interface FakeWindow {
+  url: string;
+  focused: boolean;
+  focus: ReturnType<typeof vi.fn>;
+  navigate: ReturnType<typeof vi.fn>;
 }
 
-describe('encrypted device Web Push worker', () => {
-  it('shows and badges a matching recipient and coalesces chat messages', async () => {
-    const sw = worker(42);
-    await sw.fire('push', { data: { json: () => payload } });
-    expect(sw.showNotification).toHaveBeenCalledWith(
-      payload.title,
-      expect.objectContaining({
-        body: payload.body,
-        data: { path: payload.path },
-        tag: payload.tag,
-        renotify: true,
-      }),
-    );
-    expect(sw.setAppBadge).toHaveBeenCalledWith(3);
+function fakeWindow(over: Partial<FakeWindow> = {}): FakeWindow {
+  const win: FakeWindow = {
+    url: `${ORIGIN}/dashboard`,
+    focused: false,
+    focus: vi.fn(async () => win),
+    navigate: vi.fn(async () => win),
+    ...over,
+  };
+  return win;
+}
+
+function boot(windows: FakeWindow[] = [], enrolled: string | null = 'https://push.example/old') {
+  const listeners: Record<string, Listener> = {};
+  const registration = {
+    showNotification: vi.fn(async (_title: string, _options: NotificationOptions) => undefined),
+    pushManager: { subscribe: vi.fn() },
+  };
+  const clients = {
+    matchAll: vi.fn(async () => windows),
+    openWindow: vi.fn(async (_url: string) => null),
+  };
+  const self = {
+    addEventListener: (type: string, fn: Listener) => {
+      listeners[type] = fn;
+    },
+    registration,
+    clients,
+    location: { origin: ORIGIN },
+    navigator: { locks: { request: (_name: string, task: () => Promise<unknown>) => task() } },
+  };
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
+  let receipt = enrolled === null ? null : { retired: true, endpoint: enrolled };
+  const storage = {
+    match: async () => (receipt ? new Response(JSON.stringify(receipt)) : undefined),
+    open: async () => ({
+      put: async (_key: string, response: Response) => {
+        receipt = await response.json();
+      },
+    }),
+  };
+  new Function('self', 'fetch', 'caches', SOURCE)(self, fetchMock, storage);
+  return { listeners, registration, clients, fetch: fetchMock };
+}
+
+/** Dispatches one event and hands back what it passed to waitUntil. */
+function fire(listener: Listener, event: Record<string, unknown>): Promise<unknown> {
+  let waited: Promise<unknown> | undefined;
+  listener({
+    ...event,
+    waitUntil: (p: Promise<unknown>) => {
+      waited = p;
+    },
+  });
+  expect(waited).toBeInstanceOf(Promise);
+  return waited as Promise<unknown>;
+}
+
+function pushData(value: unknown) {
+  return {
+    json: () => (typeof value === 'string' ? JSON.parse(value) : value),
+    text: () => (typeof value === 'string' ? value : JSON.stringify(value)),
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('sw-push.js: push', () => {
+  it('FE-SW-PUSH-001: shows the payload as sent, with the icon and the path to open', async () => {
+    const sw = boot();
+    await fire(sw.listeners.push, {
+      data: pushData({ title: 'Trip invite', body: 'Anna invited you to Rome', url: '/trips/5' }),
+    });
+    expect(sw.registration.showNotification).toHaveBeenCalledWith('Trip invite', {
+      body: 'Anna invited you to Rome',
+      icon: '/icons/icon-192x192.png',
+      data: { url: '/trips/5' },
+    });
   });
 
-  it.each([undefined, 24])('conceals content and badge for a different or signed out user (%s)', async (active) => {
-    const sw = worker(active);
-    await sw.fire('push', { data: { json: () => payload } });
-    expect(sw.showNotification).toHaveBeenCalledWith(
-      'TREK',
-      expect.objectContaining({ body: 'Sign in to view your notification.', data: { path: '/' } }),
-    );
-    expect(sw.showNotification.mock.calls[0][1]).not.toHaveProperty('tag');
-    expect(sw.setAppBadge).not.toHaveBeenCalled();
-    expect(sw.clearAppBadge).not.toHaveBeenCalled();
+  it('FE-SW-PUSH-001b: a tagged push replaces the last one with that tag and still alerts', async () => {
+    const sw = boot();
+    const message = { title: 'New message in "Rome"', body: 'anna: see you there', url: '/trips/5' };
+    await fire(sw.listeners.push, { data: pushData({ ...message, tag: 'collab_message:/trips/5' }) });
+    expect(sw.registration.showNotification).toHaveBeenCalledWith(message.title, {
+      body: message.body,
+      icon: '/icons/icon-192x192.png',
+      tag: 'collab_message:/trips/5',
+      renotify: true,
+      data: { url: '/trips/5' },
+    });
+    // Without a tag there is nothing to replace, and renotify would be refused.
+    await fire(sw.listeners.push, { data: pushData({ ...message, tag: '' }) });
+    expect(sw.registration.showNotification.mock.calls[1][1]).not.toHaveProperty('tag');
+    expect(sw.registration.showNotification.mock.calls[1][1]).not.toHaveProperty('renotify');
   });
 
-  it('keeps malformed and pre-upgrade payloads private while still showing a notification', async () => {
-    const sw = worker(42);
-    await sw.fire('push', { data: { json: () => ({ title: payload.title, body: payload.body }) } });
-    expect(sw.showNotification.mock.calls[0][0]).toBe('TREK');
+  it('FE-SW-PUSH-001c: renotify follows the tag alone, never the payload', async () => {
+    const sw = boot();
+    // showNotification throws on renotify without a tag, so a payload asking for it must not get it.
+    await fire(sw.listeners.push, { data: pushData({ title: 'Booking', body: 'changed', renotify: true }) });
+    expect(sw.registration.showNotification.mock.calls[0][1]).not.toHaveProperty('renotify');
+    // Any tag at all brings it, not only the chat one.
+    await fire(sw.listeners.push, { data: pushData({ title: 'Booking', body: 'changed', tag: 'any' }) });
+    expect(sw.registration.showNotification.mock.calls[1][1]).toMatchObject({ tag: 'any', renotify: true });
   });
 
-  it('never opens a different origin from a notification click', async () => {
-    const sw = worker(42);
-    const close = vi.fn();
-    await sw.fire('notificationclick', { notification: { close, data: { path: '//evil.example' } } });
-    expect(close).toHaveBeenCalledOnce();
-    expect(sw.window.navigate).toHaveBeenCalledWith(`${origin}/`);
+  it('FE-SW-PUSH-002: a payload that is not JSON still shows, with its text as the body', async () => {
+    const sw = boot();
+    await fire(sw.listeners.push, { data: pushData('plain words, no JSON') });
+    expect(sw.registration.showNotification).toHaveBeenCalledWith('TREK', {
+      body: 'plain words, no JSON',
+      icon: '/icons/icon-192x192.png',
+      data: { url: '/' },
+    });
+  });
+
+  it('FE-SW-PUSH-003: a push without data, or with the wrong types, still shows something', async () => {
+    const sw = boot();
+    await fire(sw.listeners.push, { data: null });
+    await fire(sw.listeners.push, { data: pushData({ title: 42, body: ['x'], tag: 7 }) });
+    await fire(sw.listeners.push, { data: pushData('"just a string"') });
+    for (const call of sw.registration.showNotification.mock.calls) {
+      expect(call[0]).toBe('TREK');
+      expect(call[1]).toEqual({ body: '', icon: '/icons/icon-192x192.png', data: { url: '/' } });
+    }
+    expect(sw.registration.showNotification).toHaveBeenCalledTimes(3);
+  });
+
+  it('FE-SW-PUSH-004: a url pointing anywhere else is replaced by the start page', async () => {
+    const sw = boot();
+    for (const url of ['https://evil.example/phish', '//evil.example/x', 'javascript:alert(1)']) {
+      await fire(sw.listeners.push, { data: pushData({ title: 'x', body: 'y', url }) });
+    }
+    for (const call of sw.registration.showNotification.mock.calls) {
+      expect(call[1].data.url).toBe('/');
+    }
+  });
+
+  it('FE-SW-PUSH-005: a same-origin absolute url is reduced to its path, query and hash', async () => {
+    const sw = boot();
+    await fire(sw.listeners.push, {
+      data: pushData({ title: 'x', body: 'y', url: `${ORIGIN}/trips/5?tab=plan#day-2` }),
+    });
+    expect(sw.registration.showNotification.mock.calls[0][1]).toMatchObject({
+      data: { url: '/trips/5?tab=plan#day-2' },
+    });
+  });
+});
+
+describe('sw-push.js: notificationclick', () => {
+  function click(sw: ReturnType<typeof boot>, url: unknown) {
+    const notification = { close: vi.fn(), data: { url } };
+    return { notification, done: fire(sw.listeners.notificationclick, { notification }) };
+  }
+
+  it('FE-SW-PUSH-006: closes the notification, focuses a TREK window and takes it there', async () => {
+    const win = fakeWindow();
+    const sw = boot([win]);
+    const { notification, done } = click(sw, '/trips/5');
+    await done;
+    expect(notification.close).toHaveBeenCalled();
+    expect(sw.clients.matchAll).toHaveBeenCalledWith({ type: 'window', includeUncontrolled: true });
+    expect(win.focus).toHaveBeenCalled();
+    expect(win.navigate).toHaveBeenCalledWith(`${ORIGIN}/trips/5`);
     expect(sw.clients.openWindow).not.toHaveBeenCalled();
-    await sw.fire('notificationclick', { notification: { close, data: { path: payload.path } } });
-    expect(sw.window.navigate).toHaveBeenLastCalledWith(origin + payload.path);
   });
 
-  it('lets the authenticated app reconcile a changed browser subscription', async () => {
-    const sw = worker(42);
-    await sw.fire('pushsubscriptionchange', {});
-    expect(sw.window.postMessage).toHaveBeenCalledWith({ type: 'trek:web-push-subscription-changed' });
+  it('FE-SW-PUSH-007: prefers the window that already has the focus', async () => {
+    const background = fakeWindow();
+    const focused = fakeWindow({ focused: true });
+    const sw = boot([background, focused]);
+    await click(sw, '/notifications').done;
+    expect(focused.navigate).toHaveBeenCalledWith(`${ORIGIN}/notifications`);
+    expect(background.focus).not.toHaveBeenCalled();
+  });
+
+  it('FE-SW-PUSH-008: opens a window when none is left', async () => {
+    const sw = boot([]);
+    await click(sw, '/trips/5').done;
+    expect(sw.clients.openWindow).toHaveBeenCalledWith(`${ORIGIN}/trips/5`);
+  });
+
+  it('FE-SW-PUSH-009: a window the worker may not navigate gets a new one instead', async () => {
+    const uncontrolled = fakeWindow();
+    uncontrolled.navigate.mockRejectedValueOnce(new TypeError('not controlled'));
+    const sw = boot([uncontrolled]);
+    await click(sw, '/trips/5').done;
+    expect(sw.clients.openWindow).toHaveBeenCalledWith(`${ORIGIN}/trips/5`);
+  });
+
+  it('FE-SW-PUSH-010: a url from elsewhere, or none at all, opens the start page', async () => {
+    const sw = boot([]);
+    await click(sw, 'https://evil.example/').done;
+    const notification = { close: vi.fn(), data: null };
+    await fire(sw.listeners.notificationclick, { notification });
+    expect(sw.clients.openWindow.mock.calls).toEqual([[`${ORIGIN}/`], [`${ORIGIN}/`]]);
+  });
+});
+
+describe('sw-push.js: pushsubscriptionchange', () => {
+  const OLD_KEY = new Uint8Array([4, 1, 2, 3]).buffer;
+
+  function renewed(endpoint: string) {
+    return { endpoint, toJSON: () => ({ endpoint, keys: { p256dh: 'p', auth: 'a' } }) };
+  }
+
+  it('FE-SW-PUSH-011: subscribes again with the old key, stores the new one, then forgets the old', async () => {
+    const sw = boot();
+    sw.registration.pushManager.subscribe.mockResolvedValue(renewed('https://push.example/new'));
+    await fire(sw.listeners.pushsubscriptionchange, {
+      oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: OLD_KEY } },
+      newSubscription: null,
+    });
+
+    expect(sw.registration.pushManager.subscribe).toHaveBeenCalledWith({
+      userVisibleOnly: true,
+      applicationServerKey: OLD_KEY,
+    });
+    expect(sw.fetch).toHaveBeenCalledTimes(2);
+    const [postUrl, post] = sw.fetch.mock.calls[0];
+    expect(postUrl).toBe('/api/notifications/push/subscriptions');
+    expect(post).toMatchObject({ method: 'POST', credentials: 'same-origin' });
+    expect(JSON.parse(String(post?.body))).toEqual({
+      subscription: { endpoint: 'https://push.example/new', keys: { p256dh: 'p', auth: 'a' } },
+    });
+    const [, del] = sw.fetch.mock.calls[1];
+    expect(del).toMatchObject({ method: 'DELETE', credentials: 'same-origin' });
+    expect(JSON.parse(String(del?.body))).toEqual({ endpoint: 'https://push.example/old' });
+  });
+
+  it('FE-SW-PUSH-012: uses a subscription the browser already made', async () => {
+    const sw = boot();
+    await fire(sw.listeners.pushsubscriptionchange, {
+      oldSubscription: { endpoint: 'https://push.example/old' },
+      newSubscription: renewed('https://push.example/fresh'),
+    });
+    expect(sw.registration.pushManager.subscribe).not.toHaveBeenCalled();
+    expect(sw.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('FE-SW-PUSH-013: keeps the row when the endpoint did not change', async () => {
+    const sw = boot([], 'https://push.example/same');
+    await fire(sw.listeners.pushsubscriptionchange, {
+      oldSubscription: { endpoint: 'https://push.example/same', options: { applicationServerKey: OLD_KEY } },
+      newSubscription: renewed('https://push.example/same'),
+    });
+    expect(sw.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('FE-SW-PUSH-014: forgets nothing when the server did not take the new subscription', async () => {
+    const sw = boot();
+    sw.fetch.mockResolvedValueOnce(new Response(null, { status: 401 }));
+    await fire(sw.listeners.pushsubscriptionchange, {
+      oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: OLD_KEY } },
+      newSubscription: renewed('https://push.example/new'),
+    });
+    expect(sw.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('FE-SW-PUSH-015: gives up quietly, never with a rejected waitUntil', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sw = boot();
+    sw.registration.pushManager.subscribe.mockRejectedValueOnce(new Error('push service down'));
+    await expect(
+      fire(sw.listeners.pushsubscriptionchange, {
+        oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: OLD_KEY } },
+        newSubscription: null,
+      })
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+
+    await fire(sw.listeners.pushsubscriptionchange, { oldSubscription: null, newSubscription: null });
+    expect(sw.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('service worker cutover authorization', () => {
+  it.each([null, 'https://push.example/newly-enrolled'])(
+    'does not renew a legacy endpoint with receipt %s',
+    async (enrolled) => {
+      const sw = boot([], enrolled);
+      await fire(sw.listeners.pushsubscriptionchange, {
+        oldSubscription: {
+          endpoint: 'https://push.example/legacy',
+          options: { applicationServerKey: new Uint8Array([4]).buffer },
+        },
+        newSubscription: { endpoint: 'https://push.example/legacy-renewed', toJSON: () => ({}) },
+      });
+      expect(sw.fetch).not.toHaveBeenCalled();
+      expect(sw.registration.pushManager.subscribe).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('sw-push.js is wired into the service worker (drift guard)', () => {
+  it('FE-SW-PUSH-016: vite.config.js imports it and public/ ships it', () => {
+    const config = readFileSync(resolve(process.cwd(), 'vite.config.js'), 'utf8');
+    expect(config).toMatch(/importScripts:\s*\[\s*'sw-push\.js'\s*\]/);
+    expect(existsSync(SOURCE_PATH)).toBe(true);
   });
 });

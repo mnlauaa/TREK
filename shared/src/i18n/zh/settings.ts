@@ -84,6 +84,9 @@ const settings: TranslationStrings = {
   'settings.timeFormat': '时间格式',
   'settings.weekStart': '每周开始于',
   'settings.weekStartHint': '所有日期选择器中每周的第一天。Vacay 有单独的设置。',
+  'settings.dateFormat': '日期格式',
+  'settings.dateFormatHint': '所有日期字段和列表中日期的写法。带月份名称的日期保持你所用语言的写法。',
+  'settings.dateFormatAuto': '自动',
   'settings.preferredNavApp': '打开地点方式',
   'settings.preferredNavAppAsk': '每次询问',
   'settings.preferredNavAppHint': '选定应用后，导航按钮会直接打开它，而不再列出所有地图应用。',
@@ -332,6 +335,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.webhook': 'Webhook',
   'settings.notificationPreferences.email': '电子邮件',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': '推送',
   'settings.webPush.title': '此设备上的推送通知',
   'settings.webPush.hint': '即使 TREK 已关闭，也会在此设备上显示 TREK 通知。收到哪些事件取决于“推送”列。',
   'settings.webPush.enable': '为此设备开启',
@@ -610,6 +614,9 @@ const settings: TranslationStrings = {
   'settings.apiKeys.modal.done': '完成',
   'settings.mcp.deprecated': '已弃用',
   'settings.offline.cache.dateRange': '{start} 至 {end}',
+  'settings.offline.tileStore.title': '已查看的地图瓦片',
+  'settings.offline.tileStore.usage': '本设备上已用 {used}，上限 {limit}，最多保存 30 天',
+  'settings.offline.tileStore.clear': '清除',
 };
 
 export default settings;

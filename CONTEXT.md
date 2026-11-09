@@ -85,12 +85,12 @@ A per-trip check asking a newly joined Account member whether an existing Guest 
 _Avoid_: Guest prompt, claim prompt, new joiner check
 
 **Web Push channel**:
-TREK's own route for delivering eligible notifications to authorized browser installations.
-_Avoid_: Ntfy push, native push
+The upstream `push` notification channel, delivering to registered browsers or native iPhone/Android apps.
+_Avoid_: Ntfy push, the retired fork `webpush` channel
 
 **Device subscription**:
-An Account member's authorization for one browser installation to receive TREK Web Push notifications.
-_Avoid_: Device token, ntfy topic
+An Account member's registration of a browser or native app through upstream's push subscription API. The native app obtains its encrypted relay subscription after device permission is granted.
+_Avoid_: Ntfy topic
 
 ## Itinerary timing
 

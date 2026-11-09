@@ -383,15 +383,12 @@ export function deriveNet(raw: RawEnv) {
 }
 
 export function derivePush(raw: RawEnv) {
-  const forkPublicKey = raw.WEB_PUSH_VAPID_PUBLIC_KEY?.trim() || undefined;
-  const forkPrivateKey = raw.WEB_PUSH_VAPID_PRIVATE_KEY?.trim() || undefined;
-  const usesForkKeys = !!(forkPublicKey || forkPrivateKey);
   return {
-    // Select one pair of environment variables even when only half is set.
-    vapidPublicKey: usesForkKeys ? forkPublicKey : raw.VAPID_PUBLIC_KEY?.trim() || undefined,
-    vapidPrivateKey: usesForkKeys ? forkPrivateKey : raw.VAPID_PRIVATE_KEY?.trim() || undefined,
-    vapidSubject: raw.WEB_PUSH_VAPID_SUBJECT?.trim() || raw.VAPID_SUBJECT?.trim() || undefined,
-    ...(usesForkKeys ? { usesForkKeys: true } : {}),
+    // Trimmed, and blank counts as unset: the schema validated the trimmed value,
+    // so a padded key must not reach the crypto as a different string.
+    vapidPublicKey: raw.VAPID_PUBLIC_KEY?.trim() || undefined,
+    vapidPrivateKey: raw.VAPID_PRIVATE_KEY?.trim() || undefined,
+    vapidSubject: raw.VAPID_SUBJECT?.trim() || undefined,
   };
 }
 

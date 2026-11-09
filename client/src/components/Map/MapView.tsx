@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, useMemo, useCallback, memo, type Component
 import DOM from 'react-dom'
 import { categoryIconSvg } from './categoryIconSvg'
 import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Circle, useMap, Tooltip } from 'react-leaflet'
+import ContainerResizeWatcher, { MapCameraSnapshot, OpeningFrameFit } from './ContainerResizeWatcher'
+import { openingView } from './openingView'
 import MarkerClusterGroup from 'react-leaflet-cluster'
-import { makeMarkerDraggable, makePoiDraggable, draggedPoiId } from './markerDrag'
+import { makeMarkerDraggable } from './markerDrag'
 import { CLUSTER_OPTIONS, createClusterIcon, revealInCluster, type ClusterGroupLike } from './markerCluster'
 import RoadtripViaMarkers from './RoadtripViaMarkers'
 import PlannerWaypointMarker from './PlannerWaypointMarker'
@@ -49,17 +51,17 @@ import { PluginMapLayers } from './MapPluginLayers'
 import { useTransportRoutes } from '../../hooks/useTransportRoutes'
 import { visibleRouteReservations } from '../../utils/reservationRoutes'
 import { safeHexColor } from '../../utils/safeColor'
-import { placeMarkerLook } from './markerLook'
+import { placeMarkerFrame, placeMarkerLook } from './markerLook'
+import { bottomChromePadding } from './mapChromePadding'
 import { escapeHtml } from '@trek/shared'
 import type { Day, Place, Reservation, RouteVia } from '../../types'
 import type { MapHoverInfo } from './mapHover'
 import { nightPauseMarker, NIGHT_PAUSE_MIN_ZOOM } from './nightPauseMarker'
 import NightPauseTooltip from './NightPauseTooltip'
-import ClusteredPois from './ClusteredPois'
+import PoiMarkers from './PoiMarkers'
 import { NightPauseDrag } from './NightPauseDrag'
 import type { DayBoundaryControls } from './dayBoundaryDrag'
 import type { Poi } from './poiCategories'
-import { poiDetailRowKey, poiDetailRows, poiPinCacheKey, poiPinParts } from './poiMarker'
 import { resolveTrackColor, hasManualTrackColor } from './trackColors'
 import { SelectedTrackLine, TrackLines } from './TrackLines'
 import DawarichTrailLayer from './DawarichTrailLayer'
@@ -68,11 +70,13 @@ import { tileHealthHandlers, tourRasterBaseOf } from './tourRasterBases'
 import { crsForBasemap } from './gcj02Crs'
 import { isGcj02Basemap, resolveBasemap } from '../../utils/tileUrl'
 import VectorBasemap from './VectorBasemap'
+import { nativeRasterTemplate } from '../../native/tileCache'
 import { useSettingsStore } from '../../store/settingsStore'
 import { TourMapLayersLeaflet } from './RasterOverlayLeaflet'
-import { MapLayerSwitcher, TourMapLayerSwitcher, MAP_LAYER_SWITCHER_INSET, type TourBaseLayer } from './MapLayerSwitcher'
+import { MapLayerSwitcher, TourMapLayerSwitcher, type TourBaseLayer } from './MapLayerSwitcher'
+import { switcherRowStyle } from './switcherRow'
 import { MapLockPill } from './MapLockPill'
-import { computeMapViewport, TILE_SIZE_RASTER, type ViewportPadding } from '../../utils/mapViewport'
+import type { ViewportPadding } from '../../utils/mapViewport'
 import { parseRenderableRouteGeometry } from '../../utils/routeGeometry'
 
 import type { MapViewProps } from './mapViewContract'
@@ -121,7 +125,8 @@ function RouteViaMarker({ via, controls, eventHandlers, children }: {
   via: RouteVia; controls?: DayBoundaryControls; eventHandlers?: L.LeafletEventHandlerFnMap; children?: React.ReactNode
 }) {
   const [marker, setMarker] = useState<L.Marker | null>(null)
-  return <Marker ref={setMarker} position={[via.lat, via.lng]} icon={via.nightPause ? nightPauseIcon(via) : routeViaIcon(via.tone)}
+  const frame = useLngFrame()
+  return <Marker ref={setMarker} position={[via.lat, frameLng(frame, via.lng)]} icon={via.nightPause ? nightPauseIcon(via) : routeViaIcon(via.tone)}
     alt={via.nightPause ? via.label : undefined} zIndexOffset={800} eventHandlers={eventHandlers}>
     {children}
     {via.nightPause && <NightPauseDrag marker={marker} via={via} controls={controls} />}
@@ -152,10 +157,7 @@ function createPlaceIcon(place, orderNumbers, isSelected) {
   const { size, borderWidth } = look
   // Allow-listed, not escaped: the value lands in style="…" of a divIcon, where
   // escaping stops the attribute breakout but still permits a CSS url().
-  const borderColor = isSelected ? '#111827' : safeHexColor(place.category_color, 'white')
-  const shadow = isSelected
-    ? '0 0 0 3px rgba(17,24,39,0.25), 0 4px 14px rgba(0,0,0,0.3)'
-    : '0 2px 8px rgba(0,0,0,0.22)'
+  const { borderColor, shadow, className: frameClass } = placeMarkerFrame(isSelected, place.category_color)
   const bgColor = safeHexColor(place.category_color, '#6b7280')
 
   // Number badges (bottom-right), or the rating where there are none: a numbered stop
@@ -187,7 +189,7 @@ function createPlaceIcon(place, orderNumbers, isSelected) {
         width:${size}px;height:${size}px;
         cursor:pointer;position:relative;
       ">
-        <div style="
+        <div class="${frameClass}" style="
           width:${size}px;height:${size}px;border-radius:50%;
           border:${borderWidth}px solid ${borderColor};
           box-shadow:${shadow};
@@ -207,7 +209,7 @@ function createPlaceIcon(place, orderNumbers, isSelected) {
 
   const fallbackIcon = L.divIcon({
     className: '',
-    html: `<div style="
+    html: `<div class="${frameClass}" style="
       width:${size}px;height:${size}px;border-radius:50%;
       border:${borderWidth}px solid ${borderColor};
       box-shadow:${shadow};
@@ -225,59 +227,6 @@ function createPlaceIcon(place, orderNumbers, isSelected) {
   })
   iconCache.set(cacheKey, fallbackIcon)
   return fallbackIcon
-}
-
-// Small coloured pin for an OSM "explore" POI — distinct from the photo-circle
-// markers of planned places; the colour matches its pill category.
-const poiIconCache = new Map<string, L.DivIcon>()
-function createPoiIcon(poi: Pick<Poi, 'category' | 'icon' | 'color'>, brandWikidata?: string | null) {
-  // One flat disc in the category's colour with its icon, and never the chain's logo.
-  // The brands turned a corridor full of petrol stations into a row of advertisements,
-  // they were unreadable at pin size, and a brand with no logo on file fell back to a
-  // different picture entirely — so no two pins looked alike. `brandWikidata` is kept in
-  // the signature because the callers still have it; it simply no longer changes anything.
-  void brandWikidata
-  // A plugin category's key carries its colour and icon too, so two looks never share a pin.
-  const cacheKey = poiPinCacheKey(poi)
-  const cached = poiIconCache.get(cacheKey)
-  if (cached) return cached
-  const { color, svg } = poiPinParts(poi)
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="position:relative;width:26px;height:26px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;">${svg}</div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-    tooltipAnchor: [0, -14],
-  })
-  poiIconCache.set(cacheKey, icon)
-  return icon
-}
-
-/**
- * The hover tooltip of an explore POI: its name, and for a plugin POI the rows the
- * plugin knows about it (the GL hover card shows the same, see buildPoiPopupHtml).
- * React text throughout, so nothing a plugin sends is ever read as markup. A POI
- * without rows keeps the bare name it has always had.
- */
-function PoiTooltipBody({ poi }: Readonly<{ poi: Poi }>) {
-  const rows = poiDetailRows(poi)
-  if (!rows.length) return poi.name
-  // w-max because Leaflet's tooltip pane is 0px wide: without an intrinsic width the
-  // tooltip shrinks to its narrowest layout and the values wrap a letter per line. The
-  // label column stops at 45% and wraps, so a long label leaves its value room too.
-  return (
-    <div className="w-max max-w-56 whitespace-normal">
-      <div className="truncate font-semibold">{poi.name}</div>
-      <div className="mt-1 grid grid-cols-[fit-content(45%)_1fr] gap-x-1.5 font-normal" data-testid="poi-details">
-        {rows.map(row => (
-          <div key={poiDetailRowKey(row)} className="contents">
-            <span className="text-content-muted [overflow-wrap:anywhere]">{row.label}</span>
-            <span className="[overflow-wrap:anywhere]">{row.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // Clears the hover tooltip the moment the camera starts moving and suppresses
@@ -298,112 +247,6 @@ function CameraHoverGuard({ movingRef, onMoveStart, onZoom }: { movingRef: { cur
   return null
 }
 
-/**
- * Takes a corridor hit dropped anywhere on the map and reports where it landed.
- *
- * The container rather than the drawn route: a polyline is a real element here but not in
- * the GL renderers, and the drop coordinate answers "where on the drive" just as well
- * once the caller projects it onto the routed geometry — one behaviour for all three.
- */
-function PoiDropTarget({ onPoiDropOnRoute }: { onPoiDropOnRoute?: (osmId: string, lat: number, lng: number) => void }) {
-  const map = useMap()
-  useEffect(() => {
-    if (!onPoiDropOnRoute) return
-    const container = map.getContainer()
-    const onDragOver = (e: DragEvent) => {
-      if (!draggedPoiId(e)) return
-      e.preventDefault()
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-    }
-    const onDrop = (e: DragEvent) => {
-      const osmId = draggedPoiId(e)
-      if (!osmId) return
-      e.preventDefault()
-      const rect = container.getBoundingClientRect()
-      const at = map.containerPointToLatLng([e.clientX - rect.left, e.clientY - rect.top])
-      onPoiDropOnRoute(osmId, at.lat, at.lng)
-    }
-    container.addEventListener('dragover', onDragOver)
-    container.addEventListener('drop', onDrop)
-    return () => {
-      container.removeEventListener('dragover', onDragOver)
-      container.removeEventListener('drop', onDrop)
-    }
-  }, [map, onPoiDropOnRoute])
-  return null
-}
-
-// Emits the current viewport bbox on pan/zoom so the POI-explore pill can fetch
-// OSM places for the visible area, with the zoom an overlay's minimum is read against.
-function ViewportController({ onViewportChange }: { onViewportChange?: MapViewProps['onViewportChange'] }) {
-  const map = useMap()
-  useEffect(() => {
-    if (!onViewportChange) return
-    const emit = () => {
-      const b = map.getBounds()
-      onViewportChange({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, map.getZoom())
-    }
-    map.whenReady(emit) // ensure the first bbox is captured once the map is laid out
-    map.on('moveend', emit)
-    map.on('zoomend', emit)
-    return () => { map.off('moveend', emit); map.off('zoomend', emit) }
-  }, [map, onViewportChange])
-  return null
-}
-
-function MapCameraSnapshot({ onChange }: { onChange: (center: [number, number], zoom: number) => void }) {
-  const map = useMap()
-  useEffect(() => {
-    const save = () => {
-      const center = map.getCenter()
-      onChange([center.lat, center.lng], map.getZoom())
-    }
-    map.whenReady(save)
-    map.on('moveend zoomend', save)
-    return () => { map.off('moveend zoomend', save) }
-  }, [map, onChange])
-  return null
-}
-
-interface SelectionControllerProps {
-  /** False while the traveller locked the map (#2010): a pick changes nothing on it. */
-  follow: boolean
-  places: Place[]
-  selectedPlaceId: number | null
-  dayPlaces: Place[]
-  selectedPlace: Place | null
-  paddingOpts: L.FitBoundsOptions
-}
-
-function SelectionController({ follow, places, selectedPlaceId, dayPlaces, selectedPlace, paddingOpts }: SelectionControllerProps) {
-  const map = useMap()
-  const prev = useRef(null)
-
-  useEffect(() => {
-    if (follow && selectedPlaceId && selectedPlaceId !== prev.current) {
-      // Pan to the selected place without changing zoom. Offset the centre by the
-      // side-panel + bottom-inspector padding so the pin lands in the middle of the
-      // *visible* map area rather than the geometric centre (where the bottom panel
-      // would cover it). Reuses the same paddingOpts the fit-bounds path uses.
-      const selected = selectedPlaceTarget(selectedPlaceId, places, dayPlaces, selectedPlace)
-      if (selected?.lat != null && selected?.lng != null) {
-        const latlng: [number, number] = [selected.lat, selected.lng]
-        const tl = paddingOpts.paddingTopLeft as [number, number] | undefined
-        const br = paddingOpts.paddingBottomRight as [number, number] | undefined
-        if (tl && br && typeof map.project === 'function' && typeof map.unproject === 'function') {
-          const point = map.project(latlng).add([(br[0] - tl[0]) / 2, (br[1] - tl[1]) / 2])
-          map.panTo(map.unproject(point), { animate: true })
-        } else {
-          map.panTo(latlng, { animate: true })
-        }
-      }
-    }
-    prev.current = selectedPlaceId
-  }, [selectedPlaceId, places, dayPlaces, selectedPlace, map, follow])
-
-  return null
-}
-
 interface MapControllerProps {
   center: [number, number]
   zoom: number
@@ -411,14 +254,15 @@ interface MapControllerProps {
 
 function MapController({ center, zoom }: MapControllerProps) {
   const map = useMap()
+  const frame = useLngFrame()
   const prevCenter = useRef(center)
 
   useEffect(() => {
     if (prevCenter.current[0] !== center[0] || prevCenter.current[1] !== center[1]) {
-      map.setView(center, zoom)
+      map.setView([center[0], frameLng(frame, center[1])], zoom)
       prevCenter.current = center
     }
-  }, [center, zoom, map])
+  }, [center, zoom, map, frame])
 
   return null
 }
@@ -456,10 +300,12 @@ function BoundsController({ places, routeCoords, fitKey, paddingOpts, framedOnMo
   const prevFocusKey = useRef(focusKey)
   const built = useRef(false)
 
+  const frame = useLngFrame()
   const fitTo = useCallback((coords: [number, number][], padding: L.FitBoundsOptions = paddingOpts) => {
     if (coords.length === 0) return
     try {
-      const bounds = L.latLngBounds(coords)
+      // In the map's longitude frame, so a trip across the Pacific is framed across the Pacific (#2975).
+      const bounds = L.latLngBounds(frame ? coords.map(([lat, lng]) => [lat, frameLng(frame, lng)] as [number, number]) : coords)
       if (bounds.isValid()) {
         /*
          * The padding already reserves the day panel's height at the bottom
@@ -478,7 +324,7 @@ function BoundsController({ places, routeCoords, fitKey, paddingOpts, framedOnMo
         map.fitBounds(bounds, { maxZoom: 16, animate: true, ...padding })
       }
     } catch {}
-  }, [map, paddingOpts])
+  }, [map, paddingOpts, frame])
 
   // New fitKey (initial trip fit or a day selection): fit to the destinations now
   // and arm a one-shot re-fit for when the route arrives.
@@ -535,10 +381,6 @@ function BoundsController({ places, routeCoords, fitKey, paddingOpts, framedOnMo
   return null
 }
 
-interface MapClickHandlerProps {
-  onClick: ((e: L.LeafletMouseEvent) => void) | null
-}
-
 const TRACK_CASING_PANE = 'trek-track-casing'
 
 /**
@@ -561,26 +403,6 @@ function TrackCasingPane({ onReady }: { onReady: (ready: boolean) => void }) {
   return null
 }
 
-function MapClickHandler({ onClick }: MapClickHandlerProps) {
-  const map = useMap()
-  useEffect(() => {
-    if (!onClick) return
-    map.on('click', onClick)
-    return () => { map.off('click', onClick) }
-  }, [map, onClick])
-  return null
-}
-
-function MapContextMenuHandler({ onContextMenu }: { onContextMenu: ((e: L.LeafletMouseEvent) => void) | null }) {
-  const map = useMap()
-  useEffect(() => {
-    if (!onContextMenu) return
-    map.on('contextmenu', onContextMenu)
-    return () => { map.off('contextmenu', onContextMenu) }
-  }, [map, onContextMenu])
-  return null
-}
-
 // Travel times are shown in the day sidebar (per-segment connectors), not on the map.
 
 import { useMarkerThumbs } from './useMarkerThumbs'
@@ -588,15 +410,22 @@ import { markerPhotoHtml, placePhotoFull, placePhotoUrl } from './placePhoto'
 import { useGeolocation } from '../../hooks/useGeolocation'
 import LocationButton from './LocationButton'
 import { useIsPhone } from '../../mobile/useIsPhone'
+import { useIsWide } from '../../hooks/sizeClass'
 
 // Live-location rendering inside the Leaflet map. Subscribes via the
 // shared useGeolocation hook so the Leaflet and Mapbox variants behave
 // identically. Heading is shown as a rotated conic SVG when available.
 import type { GeoPosition, TrackingMode } from '../../hooks/useGeolocation'
-import { selectedPlaceTarget } from './selectedPlaceTarget'
+import { SelectionController } from './SelectionController'
+import { LngFrameProvider, useLngFrame, useTripLngFrame } from './lngFrameContext'
+import { frameLine, frameLng } from '../../utils/lngFrame'
+import { LngFrameFollower, MapClickHandler, MapContextMenuHandler, PoiDropTarget, ViewportController } from './leafletMapBridges'
 
-function LeafletLocationLayer({ position, mode }: { position: GeoPosition | null; mode: TrackingMode }) {
+function LeafletLocationLayer({ position: fix, mode }: { position: GeoPosition | null; mode: TrackingMode }) {
   const map = useMap()
+  const frame = useLngFrame()
+  // Drawn on the trip's world copy (#2975); every field but the longitude is the fix itself.
+  const position = useMemo(() => (fix && frame ? { ...fix, lng: frameLng(frame, fix.lng) } : fix), [fix, frame])
 
   // When the user is in follow mode, keep the map centred on the dot.
   // setView (no animation) is what Google Maps does during navigation —
@@ -711,7 +540,8 @@ const MemoMarker = memo(function MemoMarker({
   // differs, and the cluster group answers a moved child by taking it out and putting
   // it back — which collapses an open fan. A fresh array literal here did that on
   // every render the marker took part in.
-  const position = useMemo<[number, number]>(() => [place.lat, place.lng], [place.lat, place.lng])
+  const frame = useLngFrame()
+  const position = useMemo<[number, number]>(() => [place.lat, frameLng(frame, place.lng)], [place.lat, place.lng, frame])
   const register = useCallback((marker: unknown) => { onRegister(place.id, marker) }, [onRegister, place.id])
   return (
     <Marker
@@ -774,6 +604,7 @@ export const MapView = memo(function MapView({
   leftWidth = 0,
   rightWidth = 0,
   hasInspector = false,
+  inspectorHeight = 0,
   hasDayDetail = false,
   reservations = [] as Reservation[],
   showReservationStats = false,
@@ -826,8 +657,6 @@ export const MapView = memo(function MapView({
   // that is decides which layer draws it. A saved raster template still wins,
   // the default is a vector style.
   const basemap = useMemo(() => resolveBasemap(tileUrl, OFM_POSITRON), [tileUrl])
-  const poiClickRef = useRef(onPoiClick)
-  poiClickRef.current = onPoiClick
   /**
    * Amap's tiles are drawn in GCJ-02 (see gcj02Crs.ts). The projection has to be
    * decided before the map is constructed, because Leaflet cannot change a map's
@@ -835,66 +664,46 @@ export const MapView = memo(function MapView({
    */
   const isGcjBasemap = !tourRaster && basemap.kind === 'raster' && isGcj02Basemap(basemap.url)
   const gcjCrs = useMemo(() => crsForBasemap(isGcjBasemap), [isGcjBasemap])
-  const poiMarkers = useMemo(() => (pois as Poi[]).map((poi: Poi) => (
-    <Marker
-      key={`poi-${poi.osm_id}`}
-      alt={poi.name}
-      position={[poi.lat, poi.lng]}
-      icon={createPoiIcon(poi, poi.brand_wikidata)}
-      zIndexOffset={500}
-      eventHandlers={{
-        click: () => onPoiClick?.(poi),
-        // Wired on add rather than in a layout effect: Leaflet builds the icon element
-        // itself, and this is the first moment there is one to attach to.
-        add: (e: { target: { getElement: () => HTMLElement | undefined } }) => {
-          const el = e.target.getElement()
-          if (!el) return
-          // Native clicks avoid Leaflet suppressing a click after an earlier map drag.
-          el.setAttribute('aria-label', poi.name)
-          el.onclick = event => { event.stopPropagation(); poiClickRef.current?.(poi) }
-          if (onPoiDropOnRoute) makePoiDraggable(el, poi.osm_id)
-        },
-      }}
-    >
-      <Tooltip direction="top" offset={[0, -10]} opacity={1} className="map-tooltip"><PoiTooltipBody poi={poi} /></Tooltip>
-    </Marker>
-  )), [pois, onPoiClick, onPoiDropOnRoute])
+  // Leaflet draws a layer on one world copy only, so a trip across the antimeridian is
+  // drawn in a longitude frame that keeps it on one copy (#2975). Null for every other
+  // trip, and then each layer below draws exactly what it always drew.
+  const lngFrame = useTripLngFrame(places, dayPlaces, reservations)
   const visibleReservations = useMemo(() => (
     visibleRouteReservations(reservations, { visibleConnectionIds, showTransitRoutes, selectedDayId, days, scopeConnectionsToDay })
   ), [reservations, visibleConnectionIds, showTransitRoutes, selectedDayId, days, scopeConnectionsToDay])
   // Real road geometry for car/bus/taxi/bicycle bookings (straight line until it loads/if it fails).
   const transportRoutes = useTransportRoutes(visibleReservations)
-  // Dynamic padding: account for sidebars + bottom inspector + day detail panel
   // The chrome overlaying the map (side panels, day detail). Kept as a plain box so both the
   // Leaflet fit options and the opening-camera maths can read the same numbers.
   // Followed rather than read once: a phone turned sideways and back crosses
   // the breakpoint twice, and the padding here and the locate button further
   // down used to stay with whatever the map saw when it mounted.
   const isMobile = useIsPhone()
+  // The touch shell on an iPad or an unfolded foldable floats its toolbar over the
+  // top of the map and its buttons in the corners, and its pins stand above their
+  // spot: a day framed to the phone's thin margin ran under the toolbar.
+  const isWide = useIsWide()
   const paddingBox = useMemo((): ViewportPadding => {
-    if (isMobile) return { top: 20, right: 40, bottom: 20, left: 40 }
+    if (isMobile) {
+      const margin = { top: 20, right: 40, bottom: 20, left: 40 }
+      return isWide ? { ...margin, top: 84, bottom: 56 } : margin
+    }
     return {
       top: 60,
       right: rightWidth + 40,
-      bottom: hasInspector ? 320 : hasDayDetail ? 280 : 60,
+      bottom: bottomChromePadding({ hasInspector, inspectorHeight, hasDayDetail }),
       left: leftWidth + 40,
     }
-  }, [isMobile, leftWidth, rightWidth, hasInspector, hasDayDetail])
+  }, [isMobile, isWide, leftWidth, rightWidth, hasInspector, inspectorHeight, hasDayDetail])
 
   const paddingOpts = useMemo(() => leafletPadding(paddingBox), [paddingBox])
 
-  // Open framed on the places rather than on the caller's default, so a trip in Japan shows
-  // Japan straight away instead of the world view followed by a flight across the planet.
-  // The initializer runs once, at mount — exactly when this should be decided; afterwards the
-  // camera belongs to the user. `framed` is false when no place has coordinates (a new trip),
-  // and then the caller's center/zoom stands.
-  const [initialView] = useState(() => {
-    const framed = computeMapViewport(dayPlaces.length > 0 ? dayPlaces : places, {
-      tileSize: TILE_SIZE_RASTER,
-      padding: paddingBox,
-    })
-    return { center: framed?.center ?? center, zoom: framed?.zoom ?? zoom, framed: framed !== null }
-  })
+  // Open framed on the places, not on the caller's default: a trip in Japan shows Japan at once instead
+  // of the world and a flight across it. Decided once, at mount; afterwards the camera is the user's.
+  // `framed` is false when no place has coordinates (a new trip), and then the caller's center/zoom stands.
+  const [initialView] = useState(() => openingView(dayPlaces.length > 0 ? dayPlaces : places, {
+    padding: paddingBox, lngFrame, center, zoom, paned: isMobile && isWide,
+  }))
   const cameraSnapshotRef = useRef<{ center: [number, number]; zoom: number } | null>(null)
   const saveCameraSnapshot = useCallback((cameraCenter: [number, number], cameraZoom: number) => {
     cameraSnapshotRef.current = { center: cameraCenter, zoom: cameraZoom }
@@ -947,7 +756,8 @@ export const MapView = memo(function MapView({
 
   // Flattened [lat,lng] points of the selected day's route, so the bounds fit can
   // include the full polyline once it has been computed.
-  const routeCoords = useMemo<[number, number][]>(() => (route || []).flat() as [number, number][], [route])
+  const framedRoute = useMemo(() => (lngFrame && route ? route.map(seg => frameLine(lngFrame, seg)) : route), [route, lngFrame])
+  const routeCoords = useMemo<[number, number][]>(() => (framedRoute || []).flat() as [number, number][], [framedRoute])
   const photoUrls = useMarkerThumbs(places)
 
   const isTouchDevice = typeof window !== 'undefined' && navigator.maxTouchPoints > 0
@@ -1015,9 +825,9 @@ export const MapView = memo(function MapView({
   const gpxTracks = useMemo(() => places.flatMap(place => {
     const geometry = parseRenderableRouteGeometry(place.route_geometry)
     if (!geometry) return []
-    const coords: [number, number][] = geometry.map(([lat, lng]) => [lat, lng])
+    const coords: [number, number][] = frameLine(lngFrame, geometry.map(([lat, lng]) => [lat, lng] as [number, number]))
     return [{ place, coords, cased: hasManualTrackColor(place), color: resolveTrackColor(place) }]
-  }), [places])
+  }), [places, lngFrame])
 
   // Keeps the click handler out of the track lines' memo (TrackLines): `handleMarkerClick`
   // changes on every selection, and depending on it would redraw all tracks.
@@ -1053,6 +863,7 @@ export const MapView = memo(function MapView({
   return (
     <>
     <div className="w-full h-full relative">
+    <LngFrameProvider value={lngFrame}>
     <MapContainer
       // The datum is in the element's identity, because react-leaflet builds the
       // map once and Leaflet cannot change a CRS afterwards. Settings can arrive
@@ -1115,7 +926,7 @@ export const MapView = memo(function MapView({
       ) : (
         <TileLayer
           key="raster"
-          url={basemap.url}
+          url={nativeRasterTemplate(basemap.url)}
           attribution={attributionForTile(basemap.url)}
           maxZoom={19}
           keepBuffer={8}
@@ -1125,10 +936,14 @@ export const MapView = memo(function MapView({
         />
       )}
 
+      {/* First, so a fit or a camera request in the same commit starts from the trip's world copy. */}
+      <LngFrameFollower />
       <MapController center={center} zoom={zoom} />
+      <ContainerResizeWatcher />
+      {initialView.refit && <OpeningFrameFit frame={initialView.refit} />}
       {hasViewBaseLayer && <MapCameraSnapshot onChange={saveCameraSnapshot} />}
       <BoundsController places={dayPlaces.length > 0 ? dayPlaces : places} routeCoords={dayPlaces.length > 0 ? routeCoords : []} fitKey={fitKey} paddingOpts={paddingOpts} framedOnMount={initialView.framed} focusPoints={focusPoints} focusKey={focusKey} fitPadding={fitPadding} follow={followSelection} />
-      <SelectionController follow={followSelection} places={places} selectedPlaceId={selectedPlaceId} dayPlaces={dayPlaces} selectedPlace={selectedPlace} paddingOpts={paddingOpts} />
+      <SelectionController follow={followSelection} places={places} selectedPlaceId={selectedPlaceId} dayPlaces={dayPlaces} selectedPlace={selectedPlace} paddingBox={paddingBox} />
       <MapClickHandler onClick={onMapClick} />
       <MapContextMenuHandler onContextMenu={onMapContextMenu} />
       <CameraHoverGuard movingRef={mapMovingRef} onMoveStart={clearHover} onZoom={setMapZoom} />
@@ -1142,7 +957,7 @@ export const MapView = memo(function MapView({
 
       {/* Apple-Maps style: darker-blue casing under a bright-blue core, rounded.
           When the route can be reshaped an invisible band wider than both takes the click. */}
-      {route && route.length > 0 && route.flatMap((seg, i) => seg.length < 2 ? [] : routeWalking?.[i] ? [
+      {framedRoute && framedRoute.length > 0 && framedRoute.flatMap((seg, i) => seg.length < 2 ? [] : routeWalking?.[i] ? [
         // Walked, so dashed and without the casing: the drive is the solid line (#2532).
         <Polyline
           key={`${i}-walk`}
@@ -1174,7 +989,7 @@ export const MapView = memo(function MapView({
       {(accessLines ?? []).map((spur, i) => (
         <Polyline
           key={`access-${i}`}
-          positions={spur.line}
+          positions={frameLine(lngFrame, spur.line)}
           pathOptions={{ color: '#0a84ff', weight: 3, opacity: 0.85, dashArray: '2 7', lineCap: 'round' }}
           interactive={false}
         />
@@ -1190,13 +1005,13 @@ export const MapView = memo(function MapView({
         return [
           <Polyline
             key={`alt-${alt.index}-casing`}
-            positions={alt.coordinates}
+            positions={frameLine(lngFrame, alt.coordinates)}
             pathOptions={{ color: ALT_CASING, weight: active ? 9 : 8, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
             interactive={false}
           />,
           <Polyline
             key={`alt-${alt.index}`}
-            positions={alt.coordinates}
+            positions={frameLine(lngFrame, alt.coordinates)}
             pathOptions={{
               color: alt.color,
               weight: active ? 6 : 4,
@@ -1213,7 +1028,7 @@ export const MapView = memo(function MapView({
           // The drive time on the road itself, the way Apple labels them.
           <Marker
             key={`alt-${alt.index}-label`}
-            position={[alt.at.lat, alt.at.lng]}
+            position={[alt.at.lat, frameLng(lngFrame, alt.at.lng)]}
             zIndexOffset={600}
             icon={alternativeLabelIcon(alt.label, alt.note, alt.labelBg, active)}
             eventHandlers={onChooseAlternative ? {
@@ -1249,7 +1064,7 @@ export const MapView = memo(function MapView({
 
       {routeProfileFocus && (
         <CircleMarker
-          center={[routeProfileFocus.lat, routeProfileFocus.lng]}
+          center={[routeProfileFocus.lat, frameLng(lngFrame, routeProfileFocus.lng)]}
           radius={8}
           pathOptions={{ className: 'tour-profile-focus-marker', color: 'var(--bg-card)', weight: 3, fillColor: 'var(--text-muted)', fillOpacity: 1 }}
           interactive={false}
@@ -1277,7 +1092,7 @@ export const MapView = memo(function MapView({
         hiddenDates={dawarichHiddenDates}
         casingPane={hasCasingPane ? TRACK_CASING_PANE : undefined}
       />
-      <ClusteredPois pois={pois} enabled={clusterLoosely} onPoiClick={onPoiClick}>{poiMarkers}</ClusteredPois>
+      <PoiMarkers pois={pois as Poi[]} clusterLoosely={clusterLoosely} onPoiClick={onPoiClick} draggable={!!onPoiDropOnRoute} />
       {/* Charging stops / rest areas a plugin route places on the drawn day route.
           Host-vetted data (server-normalized), rendered as plain tone dots. */}
       {(routeVias as RouteVia[]).filter(v => !v.nightPause || mapZoom >= NIGHT_PAUSE_MIN_ZOOM).map((v, i) => (
@@ -1301,6 +1116,7 @@ export const MapView = memo(function MapView({
       <AssistantMapLeaflet assistant={assistant} padding={paddingBox} markerEl={assistantMarkerEl} />
       <PluginMapLayers tripId={tripId} />
     </MapContainer>
+    </LngFrameProvider>
     {isMobile && <LocationButton
       mode={trackingMode}
       error={trackingError}
@@ -1311,7 +1127,7 @@ export const MapView = memo(function MapView({
     {/* 20px off the sidebar, not 12: the pill is round and frosted, so at the
         smaller gap its shadow ran into the sidebar edge and the two read as one
         surface. */}
-    <div style={{ position: 'absolute', left: leftWidth + MAP_LAYER_SWITCHER_INSET, bottom: switcherBottom, zIndex: 1000, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ ...switcherRowStyle(leftWidth, rightWidth), bottom: switcherBottom }}>
       {onToggleFollow && <MapLockPill locked={!followSelection} onToggle={onToggleFollow} />}
       {hasViewBaseLayer
         ? <TourMapLayerSwitcher active={baseLayer} onChange={onViewBaseLayerChange}

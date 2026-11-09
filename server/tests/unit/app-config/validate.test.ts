@@ -168,7 +168,6 @@ describe('validateEnvAtBoot', () => {
         key,
       );
     const notSecret = new Set([
-      'WEB_PUSH_VAPID_PUBLIC_KEY',
       'VAPID_PUBLIC_KEY', // the public half, which every subscribing browser receives
       'TREK_PLUGIN_ALLOW_PRIVATE_EGRESS', // a switch about private networks, not a private value
     ]);

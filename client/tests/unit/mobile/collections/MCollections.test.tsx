@@ -1,12 +1,15 @@
-// FE-MOB-COLSCR-001 to FE-MOB-COLSCR-033
+// FE-MOB-COLSCR-001 to FE-MOB-COLSCR-034
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '../../../helpers/render'
+import { render, screen, fireEvent, waitFor, within } from '../../../helpers/render'
+import { setSizeClass } from '../../../helpers/sizeClass'
 import MCollections from '../../../../src/mobile/screens/collections/MCollections'
 import { ALL_SAVED } from '../../../../src/store/collectionStore'
 
 const mocks = vi.hoisted(() => ({ coll: {} as Record<string, unknown> }))
 
+const routeTransition = vi.hoisted(() => ({ skipNextRouteTransition: vi.fn() }))
+vi.mock('../../../../src/mobile/routeTransition', () => routeTransition)
 vi.mock('../../../../src/pages/collections/useCollections', () => ({
   useCollections: () => mocks.coll,
 }))
@@ -214,13 +217,14 @@ describe('MCollections', () => {
     expect(document.querySelector('.animate-spin')).not.toBeNull()
   })
 
-  it('FE-MOB-COLSCR-002: with no lists at all it offers the first-list CTA', () => {
+  it('FE-MOB-COLSCR-002: with no lists at all the dock + button starts the first one; the screen has no button of its own', async () => {
     mocks.coll = makeHook({ collections: [], ownedLists: [], activeCollection: null, activeId: null, canShare: false })
-    render(<MCollections />)
+    render(<MCollections />, { initialEntries: ['/collections?create=place'] })
 
     expect(screen.getByText('collections.empty.firstTitle')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /collections.newList/ }))
-    expect(fn('setEditorTarget')).toHaveBeenCalledWith('new')
+    expect(screen.queryByRole('button', { name: /^collections.newList$/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(fn('setEditorTarget')).toHaveBeenCalledWith('new'))
+    expect(fn('setShowAddPlace')).not.toHaveBeenCalled()
     expect(screen.queryByPlaceholderText('collections.search')).not.toBeInTheDocument()
   })
 
@@ -266,6 +270,8 @@ describe('MCollections', () => {
 
     fireEvent.click(screen.getByText('Julien Tipps'))
     expect(fn('handleSelectList')).toHaveBeenCalledWith(2)
+    // Another list is the same screen: the URL change must not slide a page in.
+    expect(routeTransition.skipNextRouteTransition).toHaveBeenCalled()
     // Picking closes the dropdown again.
     expect(screen.queryByText('Julien Tipps')).not.toBeInTheDocument()
   })
@@ -693,5 +699,18 @@ describe('MCollections: invites (#2645)', () => {
     const names = screen.getAllByText(/^(Lisbon|Rome)$/).map(el => el.textContent)
     expect(names).toEqual(['Lisbon', 'Rome'])
     expect(screen.getByPlaceholderText('collections.search')).toBeInTheDocument()
+  })
+
+  it('FE-MOB-COLSCR-034: with room for two panes the lists stand beside the places and the head names the list', () => {
+    setSizeClass('split')
+    render(<MCollections />)
+    const lists = screen.getByRole('navigation', { name: 'collections.title' })
+    expect(within(lists).getByRole('button', { name: /Hamburg/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { name: 'Hamburg' })).toBeInTheDocument()
+
+    fireEvent.click(within(lists).getByRole('button', { name: /collections.allSaved/ }))
+    expect(fn('handleSelectList')).toHaveBeenCalledWith(ALL_SAVED)
+    fireEvent.click(within(lists).getByRole('button', { name: /collections.newList/ }))
+    expect(fn('setEditorTarget')).toHaveBeenCalledWith('new')
   })
 })

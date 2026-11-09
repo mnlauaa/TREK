@@ -90,7 +90,6 @@ import { VacayUserYears } from './VacayUserYears.entity';
 import { VisitedCountries } from './VisitedCountries.entity';
 import { VisitedRegions } from './VisitedRegions.entity';
 import { WandererConnections } from './WandererConnections.entity';
-import { WebPushSubscriptions } from './WebPushSubscriptions.entity';
 import { WebauthnChallenges } from './WebauthnChallenges.entity';
 import { WebauthnCredentials } from './WebauthnCredentials.entity';
 
@@ -238,7 +237,6 @@ export class Users {
   visited_countries_collection = new Collection<VisitedCountries>(this);
   visited_regions_collection = new Collection<VisitedRegions>(this);
   wanderer_connections: Ref<WandererConnections> | null = null;
-  web_push_subscriptions_collection = new Collection<WebPushSubscriptions>(this);
   webauthn_challenges_collection = new Collection<WebauthnChallenges>(this);
   webauthn_credentials_collection = new Collection<WebauthnCredentials>(this);
 }
@@ -402,7 +400,6 @@ export const UsersSchema = defineEntity({
     visited_countries_collection: () => p.oneToMany(VisitedCountries).mappedBy('user').hidden(),
     visited_regions_collection: () => p.oneToMany(VisitedRegions).mappedBy('user').hidden(),
     wanderer_connections: () => p.oneToOne(WandererConnections).ref().mappedBy('user').hidden(),
-    web_push_subscriptions_collection: () => p.oneToMany(WebPushSubscriptions).mappedBy('user').hidden(),
     webauthn_challenges_collection: () => p.oneToMany(WebauthnChallenges).mappedBy('user').hidden(),
     webauthn_credentials_collection: () => p.oneToMany(WebauthnCredentials).mappedBy('user').hidden(),
   },

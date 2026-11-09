@@ -50,7 +50,7 @@
     "places.ts": { "marked": 0, "identical": 1 },
     "reservations.ts": { "marked": 0, "identical": 2 },
     "roadtrip.ts": { "marked": 0, "identical": 3 },
-    "settings.ts": { "marked": 0, "identical": 7 },
+    "settings.ts": { "marked": 0, "identical": 8 },
     "storage.ts": { "marked": 0, "identical": 2 }
   },
   "hu": {
@@ -84,7 +84,7 @@
   },
   "ru": {
     "admin.ts": { "marked": 0, "identical": 4 },
-    "settings.ts": { "marked": 0, "identical": 2 }
+    "settings.ts": { "marked": 0, "identical": 3 }
   },
   "sk": {
     "admin.ts": { "marked": 0, "identical": 1 }
@@ -106,7 +106,7 @@
   },
   "uk": {
     "admin.ts": { "marked": 0, "identical": 4 },
-    "settings.ts": { "marked": 0, "identical": 2 }
+    "settings.ts": { "marked": 0, "identical": 3 }
   },
   "vi": {
     "admin.ts": { "marked": 0, "identical": 1 },

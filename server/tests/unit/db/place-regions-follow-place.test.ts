@@ -225,7 +225,7 @@ describe('place_regions follows the place it was resolved from (#2527)', () => {
       expect(await recorded()).toContain('Migration20200101040700_the_2527_trigger_once_more_for_an');
     }, 30000);
 
-    it('gives an instance that ran Web Push at 244 the trigger and keeps its subscriptions', async () => {
+    it('gives a legacy push instance the trigger and retires its device registrations', async () => {
       await legacyInstallAt244();
       await rawExec(orm, 'DROP TRIGGER trg_place_regions_follow_place');
       // Web Push at 244, as that instance ran it.
@@ -266,9 +266,7 @@ describe('place_regions follows the place it was resolved from (#2527)', () => {
       await boot();
 
       expect(await triggers()).toHaveLength(1);
-      expect(await rawQuery(orm, 'SELECT endpoint FROM push_subscriptions')).toEqual([
-        { endpoint: 'https://push.example.test/1' },
-      ]);
+      expect(await rawQuery(orm, 'SELECT endpoint FROM push_subscriptions')).toEqual([]);
       expect(await recorded()).toContain('Migration20200101040700_the_2527_trigger_once_more_for_an');
       await rawExec(orm, 'UPDATE places SET lat = ?, lng = ? WHERE id = 1', [52.5163, 13.3777]);
       expect(await rawQuery(orm, 'SELECT country_code, region_code FROM place_regions WHERE place_id = 1')).toEqual([]);

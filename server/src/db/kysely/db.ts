@@ -127,6 +127,8 @@ import type { SchoolHolidayPeriodsTable } from './SchoolHolidayPeriods.table';
 import type { SchoolHolidayRegionsTable } from './SchoolHolidayRegions.table';
 import type { SettingsTable } from './Settings.table';
 import type { ShareTokensTable } from './ShareTokens.table';
+import type { StorageReclaimMarksTable } from './StorageReclaimMarks.table';
+import type { StorageReleaseQueueTable } from './StorageReleaseQueue.table';
 import type { TagsTable } from './Tags.table';
 import type { TodoCategoryAssigneesTable } from './TodoCategoryAssignees.table';
 import type { TodoItemsTable } from './TodoItems.table';
@@ -172,7 +174,6 @@ import type { VacayYearsTable } from './VacayYears.table';
 import type { VisitedCountriesTable } from './VisitedCountries.table';
 import type { VisitedRegionsTable } from './VisitedRegions.table';
 import type { WandererConnectionsTable } from './WandererConnections.table';
-import type { WebPushSubscriptionsTable } from './WebPushSubscriptions.table';
 import type { WebauthnChallengesTable } from './WebauthnChallenges.table';
 import type { WebauthnCredentialsTable } from './WebauthnCredentials.table';
 
@@ -305,6 +306,8 @@ export interface DB {
   school_holiday_regions: SchoolHolidayRegionsTable;
   settings: SettingsTable;
   share_tokens: ShareTokensTable;
+  storage_reclaim_marks: StorageReclaimMarksTable;
+  storage_release_queue: StorageReleaseQueueTable;
   tags: TagsTable;
   todo_category_assignees: TodoCategoryAssigneesTable;
   todo_items: TodoItemsTable;
@@ -350,7 +353,6 @@ export interface DB {
   visited_countries: VisitedCountriesTable;
   visited_regions: VisitedRegionsTable;
   wanderer_connections: WandererConnectionsTable;
-  web_push_subscriptions: WebPushSubscriptionsTable;
   webauthn_challenges: WebauthnChallengesTable;
   webauthn_credentials: WebauthnCredentialsTable;
 }

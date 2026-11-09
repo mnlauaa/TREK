@@ -15,6 +15,7 @@ import { buildPlanner, buildShell } from '../../../helpers/mobileTrip'
 import { resetAllStores, seedStore } from '../../../helpers/store'
 import { server } from '../../../helpers/msw/server'
 import { fireEvent, render, screen, waitFor, within } from '../../../helpers/render'
+import { setSizeClass } from '../../../helpers/sizeClass'
 
 // FE-MOB-COSTT-001 to FE-MOB-COSTT-053
 
@@ -297,7 +298,8 @@ describe('MCostsTab', () => {
     expect(chips).toHaveLength(2)
     expect(chips[0]).toHaveAttribute('aria-pressed', 'true')
     expect(chips[1]).toHaveAttribute('aria-pressed', 'false')
-    expect(chips.map(c => c.textContent)).toEqual(['costs.youShort$40.00', '$40.00'])
+    // The signed-in participant uses their own initial.
+    expect(chips.map(c => c.textContent)).toEqual(['M$40.00', '$40.00'])
   })
 
   it('FE-MOB-COSTT-017: toggles a member chip to paid', async () => {
@@ -654,7 +656,7 @@ describe('MCostsTab', () => {
     expect(within(card).getAllByText('+$58.00')).toHaveLength(2)
     expect(within(card).queryByText(/60\.00/)).not.toBeInTheDocument()
     // Named by what Bob entered, as the list names it (#2525), never re-converted.
-    expect(within(card).getByText('Museum · £30.00')).toBeInTheDocument()
+    expect(within(card).getByText('Museum (£30.00)')).toBeInTheDocument()
 
     fireEvent.click(bob)
     expect(bob).toHaveAttribute('aria-expanded', 'false')
@@ -915,5 +917,40 @@ describe('MCostsTab', () => {
     await screen.findByText('+$12.50')
     expect(screen.queryByText('sheet editing 12')).not.toBeInTheDocument()
     expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('FE-MOB-COSTT-054: with room for two panes the summary stands beside the expenses, and the search keeps to their column', async () => {
+    setSizeClass('split')
+    await renderTab()
+    const summary = screen.getByRole('complementary', { name: 'budget.title' })
+    expect(within(summary).getByText('costs.totalSpend')).toBeInTheDocument()
+    expect(within(summary).queryByPlaceholderText('costs.searchPlaceholder')).not.toBeInTheDocument()
+
+    const expenses = screen.getByRole('region', { name: 'costs.expenses' })
+    expect(within(expenses).getByPlaceholderText('costs.searchPlaceholder')).toBeInTheDocument()
+    expect(within(expenses).getByRole('heading', { name: 'costs.expenses' })).toBeInTheDocument()
+  })
+
+  it('FE-MOB-COSTT-055: in Arabic a signed balance and an amount read as one left-to-right run, and a payment names who paid whom in reading order', async () => {
+    const payment = { id: 503, from_user_id: 3, to_user_id: 1, amount: 15, currency: 'USD', created_at: '2026-06-15T09:00:00Z' }
+    serveSettlement({ ...SETTLEMENT, settlements: [payment] })
+    // The page reads right to left for the whole render (the translation provider
+    // would otherwise set it back to the test's English).
+    Object.defineProperty(document.documentElement, 'dir', { configurable: true, get: () => 'rtl', set: () => {} })
+    try {
+      await renderTab()
+      const settle = up(screen.getByText('costs.settleUp'), 3)
+      // The sign stays in front of the figure instead of trailing it.
+      expect(within(settle).getByText('+$12.50')).toHaveAttribute('dir', 'ltr')
+      expect(within(settle).getByText('−$7.25')).toHaveAttribute('dir', 'ltr')
+      expect(within(settle).getByText('$40.00')).toHaveAttribute('dir', 'ltr')
+      // Names keep their own direction, so a Latin one loses its end when cut.
+      expect(within(settle).getByText('Ghost')).toHaveAttribute('dir', 'auto')
+      // Each name isolated, the arrow pointing left from the payer to the payee.
+      expect(screen.getByText('\u2068Bob\u2069 ← \u2068costs.you\u2069')).toBeInTheDocument()
+    } finally {
+      // Back to the prototype's reflected attribute.
+      delete (document.documentElement as { dir?: string }).dir
+    }
   })
 })

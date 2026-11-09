@@ -333,10 +333,10 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     expect(myPaidOf(hotel(), usdCtx)).toBeCloseTo(791.55, 2);
     expect(myShareOf(hotel(), usdCtx)).toBeCloseTo(395.77, 2);
     // Under it, what was entered and the euros it was booked at, no third step.
-    const line = lineOf(801.76, hotel(), usdCtx, baseTotal(hotel(), usdCtx))!;
-    expect(line.entered).toEqual({ amount: 801.76, currency: 'USD' });
-    expect(line.into.currency).toBe('EUR');
-    expect(line.into.amount).toBeCloseTo(685.26, 2);
+    const line = lineOf(801.76, hotel(), usdCtx, baseTotal(hotel(), usdCtx));
+    expect(line?.entered).toEqual({ amount: 801.76, currency: 'USD' });
+    expect(line?.into.currency).toBe('EUR');
+    expect(line?.into.amount).toBeCloseTo(685.26, 2);
   });
 
   it('FE-MOB-CMOD-039: booked at today\'s rate, the bill reads exactly as typed and needs no line', () => {

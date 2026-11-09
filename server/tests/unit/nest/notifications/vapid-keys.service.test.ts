@@ -110,25 +110,6 @@ afterAll(() => {
 });
 
 describe('VapidKeysService key pair', () => {
-  it('persists a complete fork environment override at bootstrap and refuses a partial override', async () => {
-    const svc = make();
-    const fork = generateVapidKeyPair();
-    const upstream = generateVapidKeyPair();
-    vi.stubEnv('VAPID_PUBLIC_KEY', upstream.publicKey);
-    vi.stubEnv('VAPID_PRIVATE_KEY', upstream.privateKey);
-    vi.stubEnv('WEB_PUSH_VAPID_PUBLIC_KEY', fork.publicKey);
-    await expect(svc.getKeys()).rejects.toThrow(PushUnavailableError);
-    expect(await setting(VAPID_PUBLIC_KEY_SETTING)).toBeUndefined();
-
-    vi.stubEnv('WEB_PUSH_VAPID_PRIVATE_KEY', fork.privateKey);
-    vi.stubEnv('WEB_PUSH_VAPID_SUBJECT', 'mailto:fork@example.test');
-    await svc.onApplicationBootstrap();
-    expect(await svc.getKeys()).toEqual({ ...fork, source: 'env' });
-    expect(svc.getSubject()).toBe('mailto:fork@example.test');
-    expect(await setting(VAPID_PUBLIC_KEY_SETTING)).toBe(fork.publicKey);
-    expect(decrypt_api_key(await setting(VAPID_PRIVATE_KEY_SETTING))).toBe(fork.privateKey);
-  });
-
   it('VKEY-001: generates the pair once, the private half encrypted, and keeps serving it', async () => {
     const svc = make();
     const keys = await svc.getKeys();
@@ -428,7 +409,7 @@ describe('VapidKeysService subject', () => {
   });
 
   it('VKEY-010: then APP_URL, when it is public https', () => {
-    vi.stubEnv('APP_URL', ' https://account:placeholder@trek.example.test/private?invite=placeholder ');
+    vi.stubEnv('APP_URL', ' https://trek.example.test/ ');
     expect(svc.getSubject()).toBe('https://trek.example.test');
   });
 

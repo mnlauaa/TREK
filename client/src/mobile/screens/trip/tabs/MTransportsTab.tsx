@@ -4,7 +4,7 @@ import { formatPriceText } from '../../../../utils/formatters'
 import { useTranslation } from '../../../../i18n'
 import type { Reservation } from '../../../../types'
 import { CardActions, CardDeleteSheet, CardFiles, CardNotes, CardTitleButton, CardWhenAndCode } from './MReservationCardParts'
-import { Field, ReservationPluginSlots, SectionHeader, StatusDot, TabScroller, TravelerAvatars, TravelerFilterRow } from './tabChrome'
+import { CardGrid, Field, ReservationPluginSlots, SectionHeader, StatusDot, TabScroller, TravelerAvatars, TravelerFilterRow } from './tabChrome'
 import { STATUS_COLOR, type MTabScreenProps } from './tabModel'
 import { cardWhen, parseTransportMeta } from './transportsModel'
 import { TRANSPORT_TYPE_COLOR } from '../../../../components/Planner/bookings/bookingsModel'
@@ -36,7 +36,7 @@ export default function MTransportsTab({ planner, shell }: MTabScreenProps) {
   ].filter(s => s.rows.length > 0)
 
   return (
-    <TabScroller>
+    <TabScroller wide="full">
       {showTravelerFilter && (
         <TravelerFilterRow
           members={planner.tripMembers}
@@ -60,8 +60,9 @@ export default function MTransportsTab({ planner, shell }: MTabScreenProps) {
             open={!collapsed[section.id]}
             onToggle={() => toggle(section.id)}
           />
-          {!collapsed[section.id] &&
-            section.rows.map(res => (
+          {!collapsed[section.id] && (
+            <CardGrid>
+              {section.rows.map(res => (
               <TransportCard
                 key={res.id}
                 res={res}
@@ -70,7 +71,9 @@ export default function MTransportsTab({ planner, shell }: MTabScreenProps) {
                 canEdit={canEdit}
                 compact={shell.transportsCompact}
               />
-            ))}
+              ))}
+            </CardGrid>
+          )}
         </div>
       ))}
     </TabScroller>
@@ -141,7 +144,7 @@ function TransportCard({ res, planner, shell, canEdit, compact }: {
             type="button"
             onClick={toggleStatus}
             aria-label={confirmed ? t('reservations.pending') : t('reservations.confirmed')}
-            className="-m-1 flex-none p-1"
+            className="-m-1 flex flex-none p-1"
           >
             <StatusDot color={dotColor} />
           </button>
@@ -172,8 +175,9 @@ function TransportCard({ res, planner, shell, canEdit, compact }: {
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 rounded-[10px] border border-[color:var(--m-rowbr)] bg-m-card px-[10px] py-2 text-[0.71875rem] font-semibold text-m-ink">
                 {eps.map((ep, i) => (
                   <span key={i} className="inline-flex min-w-0 items-center gap-2">
-                    {i > 0 && <TypeIcon size={12} strokeWidth={2.2} className="flex-none" style={{ color: typeColor }} />}
-                    <span className="truncate">{ep.name}</span>
+                    {/* The vehicle heads for the next stop, so it turns round with the reading direction. */}
+                    {i > 0 && <TypeIcon size={12} strokeWidth={2.2} className="flex-none rtl:-scale-x-100" style={{ color: typeColor }} />}
+                    <span dir="auto" className="truncate">{ep.name}</span>
                   </span>
                 ))}
               </div>

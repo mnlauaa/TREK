@@ -5,7 +5,7 @@ import { WEB_PUSH_CHANNEL_ID } from '@trek/shared'
 import { useTranslation } from '../../i18n'
 import ToggleSwitch from './ToggleSwitch'
 import Section from './Section'
-import WebPushDevices from './WebPushDevices'
+import WebPushCard from './WebPushCard'
 import { EVENT_LABEL_KEYS, channelLabel, isLockedCell } from './notificationLabels'
 import { useNotificationSettings } from './useNotificationSettings'
 import { Tooltip } from '../shared/Tooltip'
@@ -183,7 +183,7 @@ export default function NotificationsTab(): React.ReactElement {
 
       {/* Per device rather than per account: the matrix above picks the events,
           this card decides whether this browser is one of the places they go. */}
-      {ready && hasChannel(WEB_PUSH_CHANNEL_ID) && <WebPushDevices />}
+      {ready && hasChannel(WEB_PUSH_CHANNEL_ID) && <WebPushCard />}
 
       {ready && pluginChannels.map(ch => (
         <SettingsCard
