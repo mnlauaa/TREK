@@ -33,7 +33,16 @@ import {
 
 import { createHash } from 'node:crypto';
 
-export const MAX_PUSH_PAYLOAD_BYTES = 3000;
+/**
+ * Ceiling for the JSON the service worker receives. A single aes128gcm record
+ * can carry just under 4 KB and some push services refuse anything larger, so
+ * the payload stays well clear of that and the body gives way first.
+ *
+ * The apps' relay (push.liketrek.com) is the tightest: it carries the encrypted
+ * record base64-encoded inside an APNs payload, which Apple caps at 4096 bytes.
+ * 2800 bytes of JSON become about 3870 there, with room for the APNs envelope.
+ */
+export const MAX_PUSH_PAYLOAD_BYTES = 2800;
 
 const TITLE_MAX_CHARS = 120;
 /** A navigate target is an app path like /trips/12; anything longer is not one. */
@@ -45,7 +54,37 @@ const PUSH_TIMEOUT_MS = 10_000;
 const PUSH_TTL_SECONDS = 24 * 60 * 60;
 const COLLAPSING_EVENT = 'collab_message';
 
-type Urgency = 'normal' | 'high';
+type Urgency = 'low' | 'normal' | 'high';
+
+/**
+ * The watch sync (WatchSyncPushService): a silent push to the TREK iPhone app
+ * that a packing list or the to-dos of one of its trips changed, so the app can
+ * refresh its Apple Watch while it is in the background. The relay sends it as
+ * an APNs background push (content-available, no alert) when it carries this
+ * header; the record itself says nothing beyond that.
+ */
+export const BACKGROUND_PUSH_HEADER = 'X-Trek-Push';
+const WATCH_SYNC_PAYLOAD = Buffer.from(JSON.stringify({ type: 'watch-sync' }), 'utf8');
+/** A refresh that arrives ten minutes late is stale; the next change sends another. */
+const WATCH_SYNC_TTL_SECONDS = 10 * 60;
+/** Later syncs replace a queued one at Apple: only the newest state matters. */
+const WATCH_SYNC_TOPIC = 'trek-watch-sync';
+
+/** The relay's APNs endpoints, the only devices with a watch to refresh. */
+export function isAppleRelayEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === 'https:' && url.hostname === 'push.liketrek.com' && url.pathname.startsWith('/v1/apns/');
+  } catch {
+    return false;
+  }
+}
+
+interface DeliveryOptions {
+  ttlSeconds?: number;
+  /** Sent as a background push by the relay, never shown. */
+  background?: boolean;
+}
 /** The events that are about a date, where arriving late defeats the point (RFC 8030 section 5.3). */
 const HIGH_URGENCY_EVENTS: ReadonlySet<string> = new Set([
   'trip_invite',
@@ -83,6 +122,7 @@ function payloadBytes(payload: PushPayload): number {
  * chat messages carry a tag, `collab_message:<trip path>`, so a burst of them in
  * one trip shows as one notification that keeps updating instead of a pile of
  * them. Everything else has no tag and never replaces an earlier notification.
+ * The event goes along so the Android app can sort it into a channel.
  *
  * The body is cut, at a character boundary and with an ellipsis, until the
  * JSON fits MAX_PUSH_PAYLOAD_BYTES. The title and the path are capped first, so
@@ -98,6 +138,8 @@ export function buildPushPayload(
     body: '',
     ...(url ? { url } : {}),
     ...(url && msg.event === COLLAPSING_EVENT ? { tag: `${COLLAPSING_EVENT}:${url}` } : {}),
+    // The Android app files it under a channel by event; a browser ignores it.
+    ...(msg.event ? { event: msg.event } : {}),
   };
   const full = { ...base, body: msg.body };
   if (payloadBytes(full) <= maxBytes) return full;
@@ -310,7 +352,7 @@ export class WebPushService {
 
   private async payload(userId: number, message: ChannelMessage): Promise<Buffer> {
     const unreadCount = await this.notifications.countUnreadForRecipient(userId);
-    const { url, ...content } = buildPushPayload(message, 2800);
+    const { url, ...content } = buildPushPayload(message, MAX_PUSH_PAYLOAD_BYTES - 200);
     return Buffer.from(JSON.stringify({ v: 1, recipientUserId: userId, ...content, path: url ?? '/', unreadCount }));
   }
 
@@ -319,6 +361,7 @@ export class WebPushService {
     payload: Buffer,
     sign: VapidSigner,
     urgency: Urgency,
+    options: DeliveryOptions = {},
   ): Promise<DeliveryOutcome> {
     if (!is_encrypted_api_key(row.subscription_encrypted)) return 'invalid';
     let clear: unknown;
@@ -339,11 +382,12 @@ export class WebPushService {
         {
           method: 'POST',
           headers: {
-            TTL: String(PUSH_TTL_SECONDS),
+            TTL: String(options.ttlSeconds ?? PUSH_TTL_SECONDS),
             Urgency: urgency,
             'Content-Encoding': 'aes128gcm',
             'Content-Type': 'application/octet-stream',
             Authorization: sign(endpoint),
+            ...(options.background ? { [BACKGROUND_PUSH_HEADER]: 'background', Topic: WATCH_SYNC_TOPIC } : {}),
           },
           body: new Uint8Array(body),
           signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
@@ -410,6 +454,38 @@ export class WebPushService {
     } catch (error) {
       if (error instanceof WebPushServiceError) return { success: false, error: error.message };
       throw error;
+    }
+  }
+
+  /** @txIndependent Each encrypted device records its own delivery outcome. */
+  async sendWatchSync(userId: number): Promise<boolean> {
+    try {
+      if (!(await this.enabled())) return false;
+      const context = await this.context(userId);
+      await this.subscriptions.markOriginMismatches(userId, context.scope.origin);
+      const rows = await this.subscriptions.listEligible(context.scope);
+      const sign = createVapidSigner(context.keys, this.keys.getSubject());
+      const options: DeliveryOptions = { ttlSeconds: WATCH_SYNC_TTL_SECONDS, background: true };
+      const outcomes = await Promise.all(
+        rows.map(async (row) => {
+          let subscription: unknown;
+          if (!is_encrypted_api_key(row.subscription_encrypted)) return false;
+          try {
+            subscription = JSON.parse(decrypt_api_key(row.subscription_encrypted) ?? 'null');
+          } catch {
+            return false;
+          }
+          const parsed = webPushSubscriptionSchema.safeParse(subscription);
+          if (!parsed.success || !isAppleRelayEndpoint(parsed.data.endpoint)) return false;
+          const outcome = await this.sendOne(row, WATCH_SYNC_PAYLOAD, sign, 'low', options);
+          await this.subscriptions.recordDelivery(row, outcome);
+          return outcome === 'sent';
+        }),
+      );
+      return outcomes.includes(true);
+    } catch {
+      logError(`Web Push dispatch failed user=${userId} event=watch_sync`);
+      return false;
     }
   }
 

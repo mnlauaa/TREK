@@ -68,7 +68,7 @@ export default function MCollPlaceSheet({
     'flex flex-1 items-center justify-center gap-[6px] rounded-[13px] border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheet)] px-2 py-[11px] text-[0.78125rem] font-semibold text-m-ink'
 
   return (
-    <MSheet open={place != null} onClose={onClose} material="opaque" className="!rounded-[24px]" ariaLabel={held?.name}>
+    <MSheet open={place != null} onClose={onClose} material="glass" className="!rounded-[24px]" ariaLabel={held?.name}>
       {held && (
         <>
           {/* Hero: auto cover (photo when available, the design gradient otherwise) */}
@@ -89,7 +89,7 @@ export default function MCollPlaceSheet({
               {held.category?.name && (
                 <span className={HERO_CAT_CHIP}>
                   <MapPin size={9} strokeWidth={2.6} className="flex-none" />
-                  <span className="truncate">{held.category.name}</span>
+                  <span dir="auto" className="truncate">{held.category.name}</span>
                 </span>
               )}
               {/* -me-1 keeps the buttons 14px off the edge, where close has always sat. */}

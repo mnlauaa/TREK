@@ -1,4 +1,4 @@
-import { splitEqualShares, sumMinor, toMinor } from '@trek/shared';
+import { currencyDecimals, splitEqualShares, sumMinor, toMinor } from '@trek/shared';
 
 /**
  * Re-denominate whole trip-currency cents into whole display-currency cents
@@ -41,7 +41,7 @@ export function sumMoney(amounts: number[]): number {
  * a won and rounded one by one on screen stops adding up (#2604). In the trip's own
  * currency the remainders are integers, so booking what is offered clears it.
  */
-export function allocateDisplayCents(cents: number[], factor: number, total?: number, unit = 1): number[] {
+function allocateDisplayCents(cents: number[], factor: number, total?: number, unit = 1): number[] {
   if (factor === 1 && unit === 1) return [...cents];
   const exact = cents.map((c) => (c * factor) / unit);
   const out = exact.map((v) => Math.floor(v));
@@ -145,8 +145,65 @@ export function tripConverter(
  * Units of `to` per 1 `from`, from a set of rates quoted against any base (each rate is
  * units of that currency per 1 base). Null when either quote is missing.
  */
-export function quoteRatio(rates: Record<string, number> | null, to: string, from: string): number | null {
+function quoteRatio(rates: Record<string, number> | null, to: string, from: string): number | null {
   const rTo = rates?.[to];
   const rFrom = rates?.[from];
   return rTo && rTo > 0 && rFrom && rFrom > 0 ? rTo / rFrom : null;
+}
+
+export function settlementFx(opts: {
+  base?: string;
+  rates?: Record<string, number> | null;
+  tripCurrency?: string;
+  baseRate?: number;
+}) {
+  const requested = (opts.base || opts.tripCurrency || 'EUR').toUpperCase();
+  const tripCurrency = (opts.tripCurrency || requested).toUpperCase();
+  const rates = opts.rates ?? null;
+  // Net the whole settlement in the trip's canonical currency and convert the final
+  // totals to the display currency once, instead of netting in the (moving) display
+  // currency. Otherwise per-expense rounding shifts as live FX drifts and the greedy
+  // debt-simplifier reshuffles it into phantom third-party micro-flows (#1382). When
+  // the display currency IS the trip currency (the common case) every conversion below
+  // is the identity, so behaviour is unchanged.
+  // rates[X] = units of X per 1 base; the frozen exchange_rate is units of item-currency
+  // per 1 trip-currency. Pre-rework rows store currency = NULL = "the trip's own currency".
+  // Prefer the FX rate frozen at entry time (#1335): a settled expense keeps the rate
+  // it was booked at, so a later live-rate drift doesn't re-open it with a residual.
+  const converterFor = (itemCurrency: string | null | undefined, itemRate?: number | null, source?: string) =>
+    tripConverter(itemCurrency, itemRate, tripCurrency, source);
+  // trip-currency → display currency, applied once to the final netted totals.
+  // Held as a plain factor so it is exactly linear: the balances are converted as
+  // one set (allocateDisplayCents) rather than one at a time, which is what keeps
+  // them adding up to zero in whatever currency the viewer picked (#1382).
+  //
+  // `rates` may be quoted against any base; the ratio of the two quotes is the
+  // factor either way. Callers pass the trip currency's own quote (see settlement()),
+  // the one freezeForeignRate froze every entry rate from, so a bill entered today in
+  // the display currency converts back to exactly what was typed (#2525). Taken the
+  // other way round, from the display currency's quote, the two quotes are not exact
+  // inverses and 12,345.67 USD came back as 12,346.06.
+  //
+  // Without a quote, the caller's own figure for the pair (`baseRate`) stands in for
+  // the missing display quote, and for nothing else: a row with a currency of its own
+  // is never converted with it. Like a live quote, it also reads a legacy transfer
+  // without a currency, which is taken to be in the display currency. With neither,
+  // the answer stays in the trip currency and says so, rather than printing trip cents
+  // as the display currency.
+  const baseRate = opts.baseRate != null && Number.isFinite(opts.baseRate) && opts.baseRate > 0 ? opts.baseRate : null;
+  const quoted = requested === tripCurrency ? 1 : (quoteRatio(rates, requested, tripCurrency) ?? baseRate);
+  const currency = quoted === null ? tripCurrency : requested;
+  const displayFactor = quoted ?? 1;
+  // Every figure goes out in whole steps of that currency: whole won or yen (#2604).
+  const displayUnit = 10 ** Math.max(0, 2 - currencyDecimals(currency));
+  const toDisplay = (cents: number[], total?: number) => allocateDisplayCents(cents, displayFactor, total, displayUnit);
+  // Currencyless legacy transfers are interpreted in the current display base.
+  // New transfers record their currency and frozen rate when entered.
+  const settleConverterFor = (sCurrency?: string | null, sRate?: number | null, source?: string) =>
+    sCurrency
+      ? tripConverter(sCurrency, sRate, tripCurrency, source)
+      : // The inverse of the display factor, so such a transfer reads back as entered.
+        (amount: number) => amount / displayFactor;
+
+  return { currency, displayFactor, toDisplay, converterFor, settleConverterFor };
 }

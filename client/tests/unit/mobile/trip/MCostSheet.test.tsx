@@ -8,7 +8,7 @@ import type { BudgetItem, BudgetItemMember } from '../../../../src/types'
 import { buildBudgetItem, buildTrip } from '../../../helpers/factories'
 import { localToday } from '../../../../src/components/Planner/today'
 import { resetAllStores } from '../../../helpers/store'
-import { act, fireEvent, render, screen, waitFor, within } from '../../../helpers/render'
+import { act, fireEvent, render, screen, waitFor } from '../../../helpers/render'
 
 // FE-MOB-COSTSH-001 to FE-MOB-COSTSH-038
 // The sheet reads its copy from useTranslation(), so assertions are English.
@@ -102,7 +102,8 @@ describe('MCostSheet', () => {
     expect(screen.getByRole('dialog', { name: 'Add expense' })).toBeInTheDocument()
     expect(nameField()).toHaveValue('')
     expect(catTrigger()).toHaveTextContent('Food & drink')
-    expect(screen.getByRole('button', { name: 'Y You' })).toBeInTheDocument()
+    // Your row shows your own initial ("alice"), the label beside it says "You".
+    expect(screen.getByRole('button', { name: 'A You' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'B bob' })).toBeInTheDocument()
     expect(submit()).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
@@ -224,7 +225,7 @@ describe('MCostSheet', () => {
   it('FE-MOB-COSTSH-005: an expense nobody shares is saved without members but keeps its payer', async () => {
     renderSheet()
     fillBasics('Souvenir', '12')
-    fireEvent.click(screen.getByRole('button', { name: 'Y You' }))
+    fireEvent.click(screen.getByRole('button', { name: 'A You' }))
     fireEvent.click(screen.getByRole('button', { name: 'B bob' }))
 
     fireEvent.click(submit())
@@ -330,7 +331,7 @@ describe('MCostSheet', () => {
     fillBasics('Group ticket', '100')
     fireEvent.click(screen.getByRole('button', { name: 'Multiple people paid' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'B bob' })[0])
-    fireEvent.click(screen.getAllByRole('button', { name: 'Y You' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'A You' })[0])
     fireEvent.click(screen.getByRole('button', { name: 'One person paid' }))
 
     expect(screen.getByRole('button', { name: 'bob' })).toBeInTheDocument()
@@ -369,7 +370,7 @@ describe('MCostSheet', () => {
     fireEvent.change(share, { target: { value: '30,5' } })
     expect(screen.getByDisplayValue('30,5')).toBe(share)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Y You' }))
+    fireEvent.click(screen.getByRole('button', { name: 'A You' }))
     fireEvent.click(screen.getByRole('button', { name: 'Tap to include' }))
     expect(screen.getAllByPlaceholderText('50,00')[0]).toHaveValue('')
   })
@@ -410,7 +411,7 @@ describe('MCostSheet', () => {
     expect(footerSubmit()).toBeEnabled()
 
     // Un-ticking everyone makes the item unsplittable again.
-    fireEvent.click(screen.getByRole('button', { name: 'Y You' }))
+    fireEvent.click(screen.getByRole('button', { name: 'A You' }))
     fireEvent.click(screen.getByRole('button', { name: 'B bob' }))
     expect(footerSubmit()).toBeDisabled()
   })
@@ -679,7 +680,7 @@ describe('MCostSheet', () => {
     })))
   })
 
-  it('FE-MOB-COSTSH-036: editing a booked bill previews the rate the save keeps (#2525)', () => {
+  it('FE-MOB-COSTSH-036: editing a bill in the display currency has nothing to preview (#2965)', () => {
     // A euro trip read in dollars, the bill entered in dollars at 1.17 to the euro.
     // Same currency as the list, so the sheet said nothing, while the list showed the
     // booked euros at today's rate beside the 801.76 typed here.
@@ -693,12 +694,9 @@ describe('MCostSheet', () => {
     })
     renderSheet({ base: 'USD', editing })
 
-    const hint = screen.getByText(/live rate/).parentElement as HTMLElement
-    expect(within(hint).getByText('$801.76')).toBeInTheDocument()
-    expect(within(hint).getByText(/^685,26\s€$/)).toBeInTheDocument()
-    expect(within(hint).getByText('$791.55')).toBeInTheDocument()
-    // Each share next to what it counts as, the figure the row's "you lent" is made of.
-    expect(screen.getByText(/Split 2 ways · \$400\.88 → \$395\.77 each/)).toBeInTheDocument()
+    // The list reads the dollars typed, so the sheet has no conversion to show.
+    expect(screen.queryByText(/live rate/)).toBeNull()
+    expect(screen.getByText(/Split 2 ways · \$400\.88 each/)).toBeInTheDocument()
   })
 
   it('FE-MOB-COSTSH-037: a bill booked at today\'s rate has nothing to preview (#2525)', () => {

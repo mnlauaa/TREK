@@ -15,6 +15,7 @@ import {
   PLANNER_TRIP_VIEWS_KEY,
   WEEK_START_VALUES,
   commonCurrencyListSchema,
+  DATE_FORMAT_VALUES,
   compactPlannerTripViews,
   normalizeAppearance,
   plannerTripViewsSchema,
@@ -46,6 +47,8 @@ export const DEFAULTABLE_USER_SETTING_KEYS = [
   'time_format',
   // First day of the week in every date picker (#2029).
   'week_start',
+  // How dates are written in numbers, in every date field and list (#2971).
+  'date_format',
   // Instance-wide default currency for Costs (new users inherit it until they
   // pick their own). Free-form ISO code, validated on the client.
   'default_currency',
@@ -114,6 +117,7 @@ const VALID_VALUES: Partial<Record<DefaultableKey, unknown[]>> = {
   distance_unit: ['metric', 'imperial'],
   time_format: ['12h', '24h'],
   week_start: [...WEEK_START_VALUES],
+  date_format: [...DATE_FORMAT_VALUES],
   dark_mode: [true, false, 'light', 'dark', 'auto'],
   map_provider: ['leaflet', 'mapbox-gl', 'maplibre-gl'],
   llm_provider: ['local', 'openai', 'anthropic'],

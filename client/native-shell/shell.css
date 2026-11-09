@@ -1,0 +1,1261 @@
+/*
+ * The address screen the app ships. Dark first, mirroring the app's neutral
+ * default scheme (client/src/index.css), so it shares the launch screen's
+ * background and never flashes. Everything past this screen is the UI the
+ * chosen server delivers.
+ */
+
+/*
+ * TREK's own type, self-hosted (latin subset, bundled — the shell loads offline
+ * and hotlinks nothing). Poppins is the display face across the app and
+ * liketrek.com; MuseoModerno draws the "cloud" of the TREK Cloud wordmark.
+ */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/poppins-latin-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/poppins-latin-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/poppins-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'MuseoModerno';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('./fonts/museomoderno-latin-600.woff2') format('woff2');
+}
+/*
+ * Poppins and MuseoModerno have no Cyrillic, so Russian and Ukrainian fell back
+ * to the system's plain sans. Each family gets a Cyrillic-only stand-in under its
+ * own name, picked for the same build: Montserrat for the geometric text face,
+ * Comfortaa for the rounded headline. The unicode-range keeps Latin on TREK's
+ * own faces and loads these only when a Cyrillic letter is on screen.
+ */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/montserrat-cyrillic-500.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/montserrat-cyrillic-600.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/montserrat-cyrillic-700.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'MuseoModerno';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('./fonts/comfortaa-cyrillic-700.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* Italic, subset to the letters of "cloud" — the wordmark's badge, nothing else. */
+@font-face {
+  font-family: 'MuseoModerno';
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/museomoderno-italic-600.woff2') format('woff2');
+}
+
+:root {
+  --bg: #09090b;
+  --bg-2: #101013;
+  --surface: #18181b;
+  --surface-2: #1f1f23;
+  --edge: #27272a;
+  --edge-strong: #3f3f46;
+  --ink: #fafafa;
+  --muted: #a1a1aa;
+  --faint: #71717a;
+  --accent: #fafafa;
+  --accent-ink: #09090b;
+  --danger: #f87171;
+  --ok: #4ade80;
+  /* The hairline the ambient grid is drawn in, and a travel-dusk wash for depth. */
+  --grid: rgba(255, 255, 255, 0.055);
+  --wash-1: rgba(129, 140, 248, 0.12);
+  /* Mixes with transparent, spelled out per scheme: older Android web views (Chrome 113)
+     resolved color-mix() towards transparent as opaque and drew solid halos and rings. */
+  --accent-ink-a16: rgba(9, 9, 11, 0.16);
+  --accent-ink-a35: rgba(9, 9, 11, 0.35);
+  --danger-a16: rgba(248, 113, 113, 0.16);
+  --ink-a22: rgba(250, 250, 250, 0.22);
+  --ink-a3: rgba(250, 250, 250, 0.03);
+  --ink-a4: rgba(250, 250, 250, 0.04);
+  --ink-a9: rgba(250, 250, 250, 0.09);
+  --ok-a16: rgba(74, 222, 128, 0.16);
+  --ok-a22: rgba(74, 222, 128, 0.22);
+  --wash-1-a85: rgba(129, 140, 248, 0.102);
+  --wash-1-a90: rgba(129, 140, 248, 0.108);
+  --wash-2: rgba(244, 114, 182, 0.08);
+  --veil-top: rgba(9, 9, 11, 0.4);
+  --veil-mid: rgba(9, 9, 11, 0.72);
+  --font: 'Poppins', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --radius: 16px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* 1 left to right, -1 in Arabic: a screen that comes next slides in from the trailing side. */
+  --flow: 1;
+  color-scheme: dark;
+}
+:root[dir='rtl'] {
+  --flow: -1;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --bg-2: #fafafa;
+    --surface: #f4f4f5;
+    --surface-2: #ececef;
+    --edge: #e4e4e7;
+    --edge-strong: #d4d4d8;
+    --ink: #111827;
+    --muted: #52525b;
+    --faint: #9ca3af;
+    --accent: #111827;
+    --accent-ink: #ffffff;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --grid: rgba(17, 24, 39, 0.075);
+    --wash-1: rgba(79, 70, 229, 0.1);
+    --accent-ink-a16: rgba(255, 255, 255, 0.16);
+    --accent-ink-a35: rgba(255, 255, 255, 0.35);
+    --danger-a16: rgba(220, 38, 38, 0.16);
+    --ink-a22: rgba(17, 24, 39, 0.22);
+    --ink-a3: rgba(17, 24, 39, 0.03);
+    --ink-a4: rgba(17, 24, 39, 0.04);
+    --ink-a9: rgba(17, 24, 39, 0.09);
+    --ok-a16: rgba(22, 163, 74, 0.16);
+    --ok-a22: rgba(22, 163, 74, 0.22);
+    --wash-1-a85: rgba(79, 70, 229, 0.085);
+    --wash-1-a90: rgba(79, 70, 229, 0.09);
+    --wash-2: rgba(219, 39, 119, 0.07);
+    --veil-top: rgba(255, 255, 255, 0.12);
+    --veil-mid: rgba(255, 255, 255, 0.74);
+    color-scheme: light;
+  }
+  .shell-logo,
+  .mark {
+    filter: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(90% 55% at 50% -12%, var(--wash-1), transparent 62%),
+    radial-gradient(80% 50% at 50% 112%, var(--wash-2), transparent 64%), var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * The backdrop, in two fixed layers behind the content. First a soft dusk wash
+ * at top and bottom — a trace of the colour the app's photos carry, never loud
+ * enough to read as decoration. Then a quiet grid that fades out through a
+ * radial mask: depth, the way liketrek.com's hero carries it.
+ */
+/* The grid, strongest at the top-right and fading left and down — the half the
+   photo leaves open, so the two meet in a soft seam down the middle. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 440px;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 54px 54px;
+  -webkit-mask-image: radial-gradient(135% 95% at 100% 0%, #000 34%, transparent 80%);
+  mask-image: radial-gradient(135% 95% at 100% 0%, #000 34%, transparent 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+/*
+ * A travel photo as a top band (Kyoto at dusk, the same image liketrek.com uses
+ * in its pricing section), under a dark gradient and faded out at the bottom so
+ * the headline stays legible. Dark-first; in light mode it steps back to the
+ * quiet grid instead, which reads better on a white page.
+ */
+/* The travel photo (Kyoto at dusk, as on liketrek.com), anchored left and faded
+   out toward the right so it hands over to the grid, and down into the page.
+   The veil over it takes the scheme's page colour: a dark dusk in dark mode, a
+   bright morning haze in light mode, so the black wordmark still reads on it. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: 440px;
+  background:
+    linear-gradient(180deg, var(--veil-top) 0%, var(--veil-mid) 62%, var(--bg) 100%),
+    url('./img/kyoto.webp') left 28% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 40%, transparent 80%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 40%, transparent 80%);
+  pointer-events: none;
+  z-index: 0;
+}
+/* In Arabic the photo holds the leading (right) side and the grid the other. */
+:root[dir='rtl'] body::after {
+  background-position:
+    0 0,
+    right 28%;
+  -webkit-mask-image: linear-gradient(270deg, #000 0%, #000 40%, transparent 80%);
+  mask-image: linear-gradient(270deg, #000 0%, #000 40%, transparent 80%);
+}
+:root[dir='rtl'] body::before {
+  -webkit-mask-image: radial-gradient(135% 95% at 0% 0%, #000 34%, transparent 80%);
+  mask-image: radial-gradient(135% 95% at 0% 0%, #000 34%, transparent 80%);
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 28px) 24px calc(env(safe-area-inset-bottom) + 24px);
+  /* Clip only the sideways slide: a screen taller than the window scrolls the
+     page instead (and a sticky column needs an ancestor that does not scroll). */
+  overflow-x: clip;
+}
+
+/* ── Screen transitions ──────────────────────────────────────────────────── */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Centred while it fits; taller than the window it starts at the top and the
+     page scrolls, rather than overflowing both edges as justify-content would. */
+  margin-block: auto;
+}
+/* A screen's two halves (main.ts, columns()): one column unless the layout asks. */
+.col {
+  display: contents;
+}
+.screen-enter {
+  animation: screenIn 0.5s var(--ease) both;
+}
+/* Lifted out where it stood: main.ts sets its top, left and width. */
+.screen-leave {
+  animation: screenOut 0.28s var(--ease-in) both;
+  position: absolute;
+  margin: 0;
+}
+.screen-back.screen-enter {
+  animation-name: screenInBack;
+}
+.screen-back.screen-leave {
+  animation-name: screenOutBack;
+}
+@keyframes screenIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(26px * var(--flow)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes screenOut {
+  to {
+    opacity: 0;
+    transform: translateX(calc(-22px * var(--flow)));
+  }
+}
+@keyframes screenInBack {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-26px * var(--flow)));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes screenOutBack {
+  to {
+    opacity: 0;
+    transform: translateX(calc(22px * var(--flow)));
+  }
+}
+
+/* Children stagger in, so a screen assembles rather than snaps. Inside the two
+   halves the explanation comes first and the choices follow. */
+.screen-enter > :not(.col),
+.screen-enter > .col > * {
+  animation: riseIn 0.55s var(--ease) both;
+}
+.screen-enter > .col > :nth-child(1) {
+  animation-delay: 0.02s;
+}
+.screen-enter > .col > :nth-child(2) {
+  animation-delay: 0.07s;
+}
+.screen-enter > .col > :nth-child(3) {
+  animation-delay: 0.12s;
+}
+.screen-enter > .col > :nth-child(4) {
+  animation-delay: 0.17s;
+}
+.screen-enter > .col-act > :nth-child(1) {
+  animation-delay: 0.15s;
+}
+.screen-enter > .col-act > :nth-child(2) {
+  animation-delay: 0.2s;
+}
+.screen-enter > .col-act > :nth-child(3) {
+  animation-delay: 0.25s;
+}
+.screen-enter > .col-act > :nth-child(4) {
+  animation-delay: 0.3s;
+}
+.screen-enter > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.screen-enter > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.screen-enter > *:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.screen-enter > *:nth-child(4) {
+  animation-delay: 0.17s;
+}
+.screen-enter > *:nth-child(5) {
+  animation-delay: 0.22s;
+}
+.screen-enter > *:nth-child(6) {
+  animation-delay: 0.27s;
+}
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Brand ───────────────────────────────────────────────────────────────── */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 6px;
+}
+.brand .mark {
+  width: 40px;
+  height: 40px;
+}
+.brand .wordmark {
+  font-weight: 700;
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+.brand .tag {
+  font-style: italic;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 2px 10px;
+  line-height: 1.3;
+}
+
+.shell-logo {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+}
+
+/* The big hero mark on the welcome screen, with a gentle breathing float. */
+.hero-mark {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 20px;
+  animation: floaty 6s ease-in-out infinite;
+  filter: drop-shadow(0 14px 36px var(--wash-1-a90))
+    drop-shadow(0 6px 16px var(--ink-a22));
+}
+
+/* The full TREK wordmark on the welcome screen, in the variant that reads on the scheme. */
+.hero-logo {
+  display: block;
+  margin-bottom: 22px;
+  filter: drop-shadow(0 14px 36px var(--wash-1-a90))
+    drop-shadow(0 6px 16px var(--ink-a22));
+  animation: logoRise 0.7s var(--ease) both;
+}
+.hero-logo img {
+  display: block;
+  height: 62px;
+  width: auto;
+}
+.hero-logo .on-light {
+  display: none;
+}
+@media (prefers-color-scheme: light) {
+  .hero-logo .on-dark {
+    display: none;
+  }
+  .hero-logo .on-light {
+    display: block;
+  }
+}
+@keyframes logoRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────── */
+.title {
+  font-size: 2.05rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0;
+  /* Honour the newline in the headline string (e.g. "Deine Reisen.\nDein Plan."). */
+  white-space: pre-line;
+  text-wrap: balance;
+}
+/* The welcome headline as the brand says it: MuseoModerno, lower case. */
+.brand-title {
+  font-family: 'MuseoModerno', 'Poppins', sans-serif;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+}
+
+/* The TREK Cloud lockup (cloud intro screen): the wordmark plus the "cloud"
+   badge in italic MuseoModerno, an inverted pill, exactly as on liketrek.com. */
+.cloud-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  /* Left to right inside (dir="ltr"), yet on the screen's start edge in Arabic. */
+  align-self: flex-start;
+}
+.cloud-wordmark img {
+  display: block;
+  height: 38px;
+  width: auto;
+}
+.cloud-wordmark .on-light {
+  display: none;
+}
+@media (prefers-color-scheme: light) {
+  .cloud-wordmark .on-dark {
+    display: none;
+  }
+  .cloud-wordmark .on-light {
+    display: block;
+  }
+}
+.cloud-tag {
+  font-family: 'MuseoModerno', system-ui, sans-serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  padding: 2px 11px;
+  border-radius: 999px;
+  color: var(--bg);
+  background: var(--ink);
+}
+.title-sm {
+  font-size: 1.5rem;
+  line-height: 1.18;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0;
+  text-wrap: balance;
+}
+.sub {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.55;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  /* No lone last word ("AI.") on a line of its own. */
+  text-wrap: balance;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  font: inherit;
+  font-weight: 600;
+  font-size: 1.02rem;
+  padding: 16px 22px;
+  border: 1px solid transparent;
+  /* A pill, as the app's buttons are. */
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  box-shadow:
+    0 8px 22px -14px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+  transition:
+    transform 0.14s var(--ease),
+    opacity 0.2s,
+    background 0.2s,
+    box-shadow 0.2s,
+    border-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 54px;
+}
+.btn:active {
+  transform: scale(0.975);
+}
+.btn:disabled {
+  opacity: 0.55;
+}
+/* A two-line choice (welcome) is a card rather than a button: the app's card radius. */
+.btn:has(.btn-row) {
+  border-radius: 22px;
+  padding-inline: 18px;
+}
+.btn-ghost {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--edge);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px var(--ink-a4);
+}
+.btn-ghost:active {
+  background: var(--surface-2);
+}
+.btn-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  /* A subtitle that wraps keeps to the start edge under its title. */
+  text-align: start;
+}
+.btn-row b {
+  font-weight: 650;
+}
+.btn-row small {
+  font-weight: 500;
+  font-size: 0.86rem;
+  opacity: 0.7;
+}
+.btn .chev {
+  flex: none;
+  margin-inline-start: auto;
+  opacity: 0.5;
+}
+/* A centred label with the chevron at the far edge, the label optically centred. */
+.btn-go .btn-label {
+  flex: 1;
+  padding-inline-start: 20px;
+}
+/* Chevrons point along the reading direction. */
+:root[dir='rtl'] .chev,
+:root[dir='rtl'] .back svg {
+  transform: scaleX(-1);
+}
+
+.linkbtn {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 12px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  align-self: center;
+  transition: color 0.2s;
+}
+
+/* "Try the demo": a tertiary action, but a tidy pill so it reads as a choice, not stray text. */
+.demo-link {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  align-self: stretch;
+  width: 100%;
+  margin-top: 2px;
+  padding: 9px 18px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.2s,
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.14s var(--ease);
+}
+.demo-link:active {
+  transform: scale(0.97);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.linkbtn:active {
+  color: var(--ink);
+}
+a.linkbtn {
+  text-decoration: none;
+}
+
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 22px;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--edge);
+  font-size: 0.86rem;
+}
+.foot-links a {
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 2px;
+  transition: color 0.2s;
+}
+.foot-links a:active {
+  color: var(--ink);
+}
+
+/* ── Address form ────────────────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.field {
+  position: relative;
+}
+.field input {
+  width: 100%;
+  font: inherit;
+  font-size: 1rem;
+  padding: 13px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 var(--ink-a4);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.25s;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.field input::placeholder {
+  color: var(--faint);
+}
+.field input:focus {
+  border-color: var(--edge-strong);
+  box-shadow: 0 0 0 4px var(--ink-a9);
+}
+.field.bad input {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px var(--danger-a16);
+  animation: shake 0.3s;
+}
+@keyframes shake {
+  25% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+}
+
+.error {
+  color: var(--danger);
+  margin: 0;
+  min-height: 1.4em;
+  line-height: 1.45;
+  font-size: 0.95rem;
+  transition: opacity 0.2s;
+}
+
+/* Spinner inside the connect button while probing. */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--accent-ink-a35);
+  border-top-color: var(--accent-ink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Feature list (cloud screen) ─────────────────────────────────────────── */
+.features {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 2px;
+}
+.feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 11px 0;
+  border-top: 1px solid var(--edge);
+}
+.feature:first-child {
+  border-top: 0;
+}
+.feature .ic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+}
+.feature .tx {
+  line-height: 1.4;
+  padding-top: 5px;
+  font-size: 0.98rem;
+}
+
+/* ── Success tick before the server loads ────────────────────────────────── */
+.success {
+  align-items: center;
+  text-align: center;
+  justify-content: center;
+}
+.tick {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--ok-a16);
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  animation: pop 0.45s var(--ease) both;
+}
+.tick svg {
+  width: 38px;
+  height: 38px;
+  color: var(--ok);
+}
+.tick path {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: draw 0.45s 0.15s var(--ease) forwards;
+}
+@keyframes pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  margin-block: 0 2px;
+  margin-inline-start: -8px;
+}
+.back {
+  font: inherit;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.98rem;
+  padding: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.back:active {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── Plan picker (cloud subscription) ────────────────────────────────────── */
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  align-self: stretch;
+}
+.segmented button {
+  flex: 1;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.segmented .save {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ok-a22);
+  color: var(--ok);
+}
+.segmented button[aria-pressed='true'] .save {
+  background: var(--accent-ink-a16);
+  color: var(--accent-ink);
+}
+
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.plan {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--surface);
+  box-shadow:
+    0 2px 10px -4px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px var(--ink-a3);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.14s var(--ease);
+}
+.plan.featured {
+  box-shadow:
+    0 10px 30px -10px var(--wash-1-a85),
+    0 2px 8px -3px rgba(0, 0, 0, 0.35);
+}
+.plan:active {
+  transform: scale(0.99);
+}
+.plan.featured {
+  border-color: var(--edge-strong);
+  background: var(--surface-2);
+}
+.plan-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.plan-name {
+  font-weight: 700;
+  font-size: 1.12rem;
+}
+.plan-price {
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+.plan-price small {
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-inline-start: 7px;
+}
+.plan-feats {
+  margin: 10px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.plan-feats span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-feats svg {
+  flex: none;
+  color: var(--ok);
+}
+.plan-feats .off,
+.plan-feats .off svg {
+  color: var(--faint);
+}
+.plan .btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 13px;
+}
+.plan:not(.featured) .btn {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--edge);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+.loading .spinner {
+  width: 26px;
+  height: 26px;
+  border-color: var(--edge-strong);
+  border-top-color: var(--ink);
+}
+.note {
+  text-align: center;
+  color: var(--faint);
+  font-size: 0.84rem;
+  margin: 2px 0 0;
+  line-height: 1.45;
+}
+/* Under the plans: restore, the renewal terms, the legal links. */
+.plans-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.plans-foot .hint {
+  text-align: center;
+  margin: 0;
+}
+.plans-foot .hint:empty {
+  display: none;
+}
+
+/* ── Claim: address + email, and the provisioning wait ───────────────────── */
+/* One rounded field holding the address input and its fixed ".liketrek.com"
+   suffix — the input itself is seamless, the box and its states live here. */
+.slug-field {
+  display: flex;
+  align-items: center;
+  padding-inline-end: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 var(--ink-a4);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.25s;
+}
+.slug-field .slug-input,
+.slug-field .slug-input:focus {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  border: 0;
+  background: transparent;
+  /* The ring is the whole field's (focus-within below), not a second one inside it. */
+  box-shadow: none;
+}
+/* An email is typed left to right, but its Arabic placeholder reads from the right. */
+:root[dir='rtl'] .field input.ltr-value:placeholder-shown {
+  direction: rtl;
+}
+.slug-field:focus-within {
+  border-color: var(--edge-strong);
+  box-shadow: 0 0 0 4px var(--ink-a9);
+}
+.slug-field.bad {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 4px var(--danger-a16);
+  animation: shake 0.3s;
+}
+.slug-suffix {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.95rem;
+  padding-inline-start: 4px;
+  user-select: none;
+}
+.hint {
+  margin: -6px 2px 2px;
+  font-size: 0.84rem;
+  color: var(--faint);
+  min-height: 1.1em;
+  transition: color 0.2s;
+}
+.hint.ok {
+  color: var(--ok);
+}
+.hint.bad {
+  color: var(--danger);
+}
+
+.screen-center {
+  justify-content: center;
+  text-align: center;
+  align-items: center;
+  gap: 18px;
+}
+.screen-center .title-sm,
+.screen-center .sub {
+  text-align: center;
+}
+.provision-mark {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.provision-mark .spinner {
+  width: 40px;
+  height: 40px;
+  border-width: 3px;
+  border-color: var(--edge-strong);
+  border-top-color: var(--accent);
+}
+
+/* ── A large screen ──────────────────────────────────────────────────────────
+   On its side (an iPad, a foldable unfolded) the photo becomes a panel of its
+   own on the leading half, full height, and the column of choices stands
+   centred in the other half, the way a split sign-in page uses the width.
+   Upright, the photo band grows with the screen instead of stopping at a
+   phone's 440px. Logical sides, so Arabic mirrors it. */
+@media (min-width: 840px) and (min-height: 600px) and (orientation: landscape) {
+  body::after,
+  :root[dir='rtl'] body::after {
+    inset: 16px auto 16px 16px;
+    inset-block: 16px;
+    inset-inline: 16px auto;
+    width: calc(50% - 24px);
+    height: auto;
+    border-radius: 28px;
+    background:
+      linear-gradient(180deg, transparent 50%, rgba(0, 0, 0, 0.32) 100%),
+      url('./img/kyoto.webp') 30% 45% / cover no-repeat;
+    -webkit-mask-image: none;
+    mask-image: none;
+    box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.55);
+  }
+  body::before {
+    inset: 0;
+    inset-inline-start: 50%;
+    height: auto;
+  }
+  .shell {
+    max-width: none;
+    width: 50%;
+    margin-inline: 50% 0;
+    padding-inline: max(32px, calc(25vw - 220px));
+  }
+}
+/* With the whole half of a 13" iPad on its side, the plans stand two by two
+   rather than in a column to scroll through. */
+@media (min-width: 1200px) and (min-height: 600px) and (orientation: landscape) {
+  .shell:has(.plans) {
+    padding-inline: max(32px, calc(25vw - 320px));
+  }
+  .plans {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* An iPad upright, a foldable unfolded, half of an iPad in Split View: the photo
+   spans the whole width as a band across the top and fades out only downwards,
+   and the choices stand under it in a wider column than a phone's, centred in
+   the room the band leaves, so the page reads as one composition rather than a
+   phone screen at the top of the glass. The plans take two columns. */
+@media (min-width: 600px) and (min-height: 800px) and (orientation: portrait) {
+  body::before,
+  body::after {
+    height: 56vh;
+  }
+  body::after,
+  :root[dir='rtl'] body::after {
+    background-position:
+      0 0,
+      center 30%;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .shell {
+    max-width: 560px;
+    padding-top: calc(env(safe-area-inset-top) + 28vh);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 6vh);
+  }
+  .shell:has(.plans) {
+    max-width: 760px;
+    padding-top: calc(env(safe-area-inset-top) + 16vh);
+  }
+  .plans {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ── A short screen on its side ──────────────────────────────────────────────
+   A phone, or a foldable folded, turned landscape: one column of choices is
+   taller than the glass, and the second choice or the main button ended up
+   below the edge. The two halves of a screen stand side by side instead, what
+   it is on the leading side and what to do on the other, top-aligned under the
+   status bar. The leading half stays put while a long list beside it (the
+   plans) scrolls, so Back is always in reach. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .shell {
+    max-width: 880px;
+    padding-top: calc(env(safe-area-inset-top) + 16px);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+    padding-inline: max(28px, env(safe-area-inset-left)) max(28px, env(safe-area-inset-right));
+  }
+  .screen:has(> .col) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 40px;
+    align-items: center;
+  }
+  /* The plans run longer than the window: both halves start at the top. */
+  .screen:has(.plans) {
+    align-items: start;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .col-about {
+    position: sticky;
+    top: calc(env(safe-area-inset-top) + 16px);
+  }
+  .hero-logo {
+    margin-bottom: 4px;
+  }
+  .hero-logo img {
+    height: 46px;
+  }
+  .title {
+    font-size: 1.75rem;
+  }
+  .btn {
+    min-height: 50px;
+    padding-block: 12px;
+  }
+  .features {
+    margin: 0;
+  }
+  .feature {
+    padding: 7px 0;
+  }
+  .foot-links {
+    margin-top: 0;
+    padding-top: 10px;
+  }
+}

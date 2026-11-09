@@ -1,6 +1,8 @@
 import type { BudgetParticipantFinal, BudgetSettlement, BudgetUnconverted, CostCategory } from '@trek/shared';
+import { readDateFormat } from '../../hooks/useDateFormat';
 import { bookedInTrip, convertBooked, convertedLine, tripAmountOf } from '../../hooks/useExchangeRates';
 import type { BudgetItem } from '../../types';
+import { formatDisplayDate } from '../../utils/dateFormat';
 import { currencyDecimals } from '../../utils/formatters';
 import { currenciesWith, SYMBOLS } from './BudgetPanel.constants';
 import { paidByUser, readUserNote, settlementDate, splitEqualShares } from './CostsPanel.helpers';
@@ -121,7 +123,7 @@ export interface CostsBalance {
 /** A recorded settle-up transfer ("Ajouter un paiement") — history, not a suggestion like {@link CostsSettlementFlow}. */
 export type CostsSettlement = Omit<BudgetSettlement, 'trip_id'> & Partial<Pick<BudgetSettlement, 'trip_id'>>;
 
-/** A recorded payment in the display currency, at the rate frozen when it was settled (#1445). */
+/** A recorded payment displayed from its frozen trip-currency value. */
 export function paymentAmount(s: CostsSettlement, ctx: CostsCtx): number {
   return !s.currency
     ? s.amount
@@ -358,12 +360,17 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
   const fmtDate = (iso: string) => {
     if (!iso) return '';
     try {
-      return new Date(iso + 'T00:00:00Z').toLocaleDateString(opts.locale, {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        timeZone: 'UTC',
-      });
+      return formatDisplayDate(
+        new Date(iso + 'T00:00:00Z'),
+        opts.locale,
+        {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          timeZone: 'UTC',
+        },
+        readDateFormat()
+      );
     } catch {
       return iso;
     }

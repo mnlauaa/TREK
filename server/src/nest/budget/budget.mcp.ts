@@ -25,7 +25,7 @@ import { TripMembershipService } from '../trip-membership/trip-membership.servic
 import { BudgetWritesService } from './budget-writes.service';
 import { BudgetService } from './budget.service';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { exchangeRateWriteSchema, idSchema, sumMinor, toMinor } from '@trek/shared';
+import { COST_CATEGORY_HINT, exchangeRateWriteSchema, idSchema, sumMinor, toMinor } from '@trek/shared';
 
 import { z } from 'zod';
 
@@ -178,7 +178,7 @@ export class BudgetMcp {
       ...exchangeRateWriteSchema.shape,
       tripId: idSchema,
       name: z.string().min(1).max(200),
-      category: z.string().max(100).optional().describe('Budget category (e.g. Accommodation, Food, Transport)'),
+      category: z.string().max(100).optional().describe(COST_CATEGORY_HINT),
       total_price: z.number().describe('Signed: a negative total records a refund/partial reimbursement (#2176)'),
       currency: z
         .string()
@@ -326,7 +326,7 @@ export class BudgetMcp {
       tripId: idSchema,
       itemId: idSchema,
       name: z.string().min(1).max(200).optional(),
-      category: z.string().max(100).optional(),
+      category: z.string().max(100).optional().describe(COST_CATEGORY_HINT),
       total_price: z.number().optional(),
       currency: z
         .string()
@@ -476,7 +476,7 @@ export class BudgetMcp {
     inputSchema: {
       tripId: idSchema,
       name: z.string().min(1).max(200),
-      category: z.string().max(100).optional().describe('Budget category (e.g. Accommodation, Food, Transport)'),
+      category: z.string().max(100).optional().describe(COST_CATEGORY_HINT),
       total_price: z.number().describe('Signed: a negative total records a refund/partial reimbursement (#2176)'),
       note: z.string().max(500).optional(),
       userIds: z

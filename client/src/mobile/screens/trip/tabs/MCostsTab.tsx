@@ -16,7 +16,9 @@ import { useExpenseLinks } from '../../../../components/Budget/useExpenseLinks'
 import { finalBudgetFor, finalBudgetSources, formerParticipantRows, paidByUser, readUserNote } from '../../../../components/Budget/CostsPanel.helpers'
 import { catMeta, COST_CAT_META } from '../../../../components/Budget/costsCategories'
 import MConfirmSheet from '../../settings/MConfirmSheet'
-import { CountPill, TabScroller } from './tabChrome'
+import { flowText } from '../../../../utils/flowText'
+import { openFile } from '../../../../utils/fileDownload'
+import { CountPill, TabPanes } from './tabChrome'
 import { STATUS_COLOR, type MTabScreenProps } from './tabModel'
 import {
   baseTotal, categoryFilterKeys, dayFilterKeys, groupLedgerByDay, isUnfinished, lineOf, memberShareOf,
@@ -125,8 +127,10 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
     }
   }
 
-  return (
-    <TabScroller>
+  // The summary: what the trip costs and who owes whom. Beside the expenses on
+  // a window with room for two panes, above them everywhere else.
+  const summary = (
+    <>
       {/* Hero — "Total Trip Spend" (spec §3.1). Fixed dark card, both themes. */}
       <div className="rounded-[20px] p-4 shadow-[0_18px_44px_-18px_rgba(0,0,0,.5)]" style={{ background: '#15151A', color: '#F5F5F7' }}>
         <div className="font-geist text-[0.625rem] font-bold uppercase tracking-[.09em]" style={{ color: 'rgba(245,245,247,.55)' }}>
@@ -135,31 +139,40 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
         <div className="mt-1 font-geist text-[1.875rem] font-extrabold tabular-nums tracking-[-0.02em]">
           {formatMoney(totals.totalSpend, base, locale)}
         </div>
-        <div className="mt-[6px] flex flex-wrap gap-[14px] text-[0.6875rem]" style={{ color: 'rgba(245,245,247,.7)' }}>
-          <span>{t('costs.yourShare')} · <b style={{ color: '#F5F5F7' }}>{formatMoney(totals.myShare, base, locale)}</b></span>
-          <span>{t('costs.youPaid')} · <b style={{ color: '#F5F5F7' }}>{formatMoney(totals.myPaid, base, locale)}</b></span>
+        {/* Each figure under its own label, so the two pairs never read as one run. */}
+        <div className="mt-[8px] flex flex-wrap gap-x-[22px] gap-y-[6px] text-[0.6875rem]" style={{ color: 'rgba(245,245,247,.7)' }}>
+          <span className="flex flex-col">
+            {t('costs.yourShare')}
+            <b className="tabular-nums" style={{ color: '#F5F5F7' }}>{formatMoney(totals.myShare, base, locale)}</b>
+          </span>
+          <span className="flex flex-col">
+            {t('costs.youPaid')}
+            <b className="tabular-nums" style={{ color: '#F5F5F7' }}>{formatMoney(totals.myPaid, base, locale)}</b>
+          </span>
         </div>
       </div>
 
-      {/* You owe / You're owed (spec §3.2) */}
+      {/* You owe / You're owed (spec §3.2). The two tiles stand level and each
+          amount sits at the foot of its tile, so a label that wraps in one of
+          them (German "Dir wird geschuldet") leaves both amounts on one line. */}
       <div className="mt-[10px] flex gap-2">
-        <div className="flex-1 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
-          <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[10px]" style={{ background: 'rgba(214,39,59,.12)', color: STATUS_COLOR.danger }}>
+        <div className="flex flex-1 flex-col rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
+          <span className="flex h-[30px] w-[30px] items-center justify-center self-start rounded-[10px]" style={{ background: 'rgba(214,39,59,.12)', color: STATUS_COLOR.danger }}>
             <ArrowDown size={15} strokeWidth={2.2} />
           </span>
           <div className="mt-2 text-[0.8125rem] font-bold text-m-ink">{t('costs.youOwe')}</div>
           <div className="font-geist text-[0.59375rem] text-m-faint">{t('costs.youOweSub')}</div>
-          <div className="mt-1 font-geist text-[1.1875rem] font-extrabold tabular-nums" style={{ color: totals.owe > 0.5 ? STATUS_COLOR.danger : 'var(--m-ink)' }}>
+          <div className="mt-auto pt-1 font-geist text-[1.1875rem] font-extrabold tabular-nums" style={{ color: totals.owe > 0.5 ? STATUS_COLOR.danger : 'var(--m-ink)' }}>
             {formatMoney(totals.owe, base, locale)}
           </div>
         </div>
-        <div className="flex-1 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
-          <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[10px]" style={{ background: 'rgba(47,163,122,.12)', color: STATUS_COLOR.confirmed }}>
+        <div className="flex flex-1 flex-col rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
+          <span className="flex h-[30px] w-[30px] items-center justify-center self-start rounded-[10px]" style={{ background: 'rgba(47,163,122,.12)', color: STATUS_COLOR.confirmed }}>
             <ArrowUp size={15} strokeWidth={2.2} />
           </span>
           <div className="mt-2 text-[0.8125rem] font-bold text-m-ink">{t('costs.youreOwed')}</div>
           <div className="font-geist text-[0.59375rem] text-m-faint">{t('costs.youreOwedSub')}</div>
-          <div className="mt-1 font-geist text-[1.1875rem] font-extrabold tabular-nums" style={{ color: totals.owed > 0.5 ? STATUS_COLOR.confirmed : 'var(--m-ink)' }}>
+          <div className="mt-auto pt-1 font-geist text-[1.1875rem] font-extrabold tabular-nums" style={{ color: totals.owed > 0.5 ? STATUS_COLOR.confirmed : 'var(--m-ink)' }}>
             {formatMoney(totals.owed, base, locale)}
           </div>
         </div>
@@ -184,15 +197,18 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
       {/* Settle up (spec §3.4) */}
       <div className="mt-2 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card p-[13px]">
         {/* Toggle and "Add payment" are siblings, not nested: a control inside a
-            control reads as one element to a screen reader. */}
-        <div className="flex w-full items-center gap-[7px]">
+            control reads as one element to a screen reader. Where the title, the
+            count, the chevron and the button do not fit on one line (a long
+            language in a narrow pane), the button moves to a line of its own
+            under them instead of lying over the count and the chevron. */}
+        <div className="flex w-full flex-wrap items-center gap-x-[10px] gap-y-2">
           <button
             type="button"
             aria-expanded={settleOpen}
             onClick={() => setSettleOpen(v => !v)}
-            className="flex min-w-0 flex-1 items-center gap-[7px] text-start"
+            className="flex min-w-0 flex-[1_1_auto] items-center gap-[7px] text-start"
           >
-            <span className="text-[0.875rem] font-extrabold text-m-ink">{t('costs.settleUp')}</span>
+            <span className="min-w-0 text-[0.875rem] font-extrabold text-m-ink">{t('costs.settleUp')}</span>
             <CountPill>{flows.length}</CountPill>
             {settleOpen ? (
               <ChevronUp size={14} strokeWidth={2} className="ms-auto flex-none text-m-faint" />
@@ -204,7 +220,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
             <button
               type="button"
               onClick={() => setAddPaymentOpen(true)}
-              className="flex flex-none items-center gap-[5px] rounded-full border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-[11px] py-[6px] font-[inherit] text-[0.71875rem] font-semibold text-m-muted"
+              className="ms-auto flex flex-none items-center gap-[5px] whitespace-nowrap rounded-full border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-[11px] py-[6px] font-[inherit] text-[0.71875rem] font-semibold text-m-muted"
             >
               <Plus size={11} strokeWidth={2.2} />
               {t('costs.addPayment')}
@@ -226,10 +242,10 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
               <div className="mt-[6px]">
                 {flows.map((f, i) => (
                   <div key={i} className="flex items-center gap-2 border-b border-[color:var(--m-rowbr)] py-2 last:border-b-0">
-                    <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(f.from.user_id)}</span>
+                    <span dir="auto" className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(f.from.user_id)}</span>
                     <ArrowRight size={12} strokeWidth={2.2} className="flex-none text-m-faint" />
-                    <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(f.to.user_id)}</span>
-                    <span className="ms-auto flex-none font-geist text-[0.78125rem] font-extrabold tabular-nums text-m-ink">{formatMoney(f.amount, base, locale)}</span>
+                    <span dir="auto" className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(f.to.user_id)}</span>
+                    <span dir="ltr" className="ms-auto flex-none font-geist text-[0.78125rem] font-extrabold tabular-nums text-m-ink">{formatMoney(f.amount, base, locale)}</span>
                   </div>
                 ))}
               </div>
@@ -244,7 +260,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
                 <div key={p.id} className="flex items-center gap-[9px] border-b border-[color:var(--m-rowbr)] py-[7px] last:border-b-0">
                   <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} isMe={p.id === me} variant="neutral" size={24} t={t} />
                   <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{p.id === me ? t('costs.you') : p.username}</span>
-                  <span className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums" style={{ color: pos ? STATUS_COLOR.confirmed : neg ? STATUS_COLOR.danger : 'var(--m-faint)' }}>
+                  <span dir="ltr" className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums" style={{ color: pos ? STATUS_COLOR.confirmed : neg ? STATUS_COLOR.danger : 'var(--m-faint)' }}>
                     {pos ? '+' : neg ? '−' : ''}
                     {formatMoney(Math.abs(balance), base, locale)}
                   </span>
@@ -273,7 +289,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
               >
                 <MCostMemberAvatar name={p.username} avatarUrl={p.avatar_url} isMe={p.id === me} variant="neutral" size={24} t={t} />
                 <span className="min-w-0 flex-1 truncate text-[0.78125rem] font-semibold text-m-ink">{personName(p.id)}</span>
-                <span className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">{formatMoney(row.final, base, locale)}</span>
+                <span dir="ltr" className="ms-auto flex-none font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">{formatMoney(row.final, base, locale)}</span>
                 {open
                   ? <ChevronUp size={13} strokeWidth={2.2} className="flex-none text-m-faint" />
                   : <ChevronDown size={13} strokeWidth={2.2} className="flex-none text-m-faint" />}
@@ -299,7 +315,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
                 <div className="flex items-center gap-[7px]">
                   <span className="h-2 w-2 flex-none rounded-full" style={{ background: meta.color }} />
                   <span className="min-w-0 flex-1 truncate font-geist text-[0.65625rem] font-semibold text-m-muted">{t(meta.labelKey)}</span>
-                  <span className="ms-auto flex-none font-geist text-[0.65625rem] font-bold tabular-nums text-m-ink">{formatMoney(c.amount, base, locale)}</span>
+                  <span dir="ltr" className="ms-auto flex-none font-geist text-[0.65625rem] font-bold tabular-nums text-m-ink">{formatMoney(c.amount, base, locale)}</span>
                 </div>
                 <div className="mt-1 h-1 overflow-hidden rounded-full bg-[color:var(--m-ic)]">
                   <span className="block h-full rounded-full" style={{ width: `${c.widthPct}%`, background: meta.color }} />
@@ -310,15 +326,23 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
         )}
       </div>
 
-      {/* Expenses — header, search, filters (spec §3.6) */}
-      <h2 className="mt-4 text-[1.0625rem] font-extrabold text-m-ink">{t('costs.expenses')}</h2>
+    </>
+  )
+
+  return (
+    <>
+    <TabPanes aside={summary} asideLabel={t('budget.title')}>
+      {/* Expenses — header, search, filters (spec §3.6). One block, so on a wide
+          window the search field keeps to the column like the heading above it. */}
+      <section aria-label={t('costs.expenses')}>
+      <h2 className="mt-4 text-[1.0625rem] font-extrabold text-m-ink split:mt-0">{t('costs.expenses')}</h2>
       <input
         type="text"
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder={t('costs.searchPlaceholder')}
         aria-label={t('costs.searchPlaceholder')}
-        className="mt-2 w-full rounded-full border border-[color:var(--m-rowbr)] bg-m-card px-[13px] py-[10px] font-[inherit] text-[0.8125rem] font-medium text-m-ink outline-none placeholder:text-m-faint"
+        className="mt-2 block w-full rounded-full border border-[color:var(--m-rowbr)] bg-m-card px-[13px] py-[10px] font-[inherit] text-[0.8125rem] font-medium text-m-ink outline-none placeholder:text-m-faint"
       />
       <div className="mt-2 flex rounded-full bg-m-card p-[3px]">
         {(['all', 'mine', 'owed'] as const).map(seg => (
@@ -434,7 +458,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
           <div key={g.dateKey || 'no-date'}>
             <div className="mt-[14px] flex items-baseline gap-2 px-[2px]">
               <span className="font-geist text-[0.625rem] font-bold uppercase tracking-[.09em] text-m-faint">{groupLabel(g.dateKey)}</span>
-              <span className="ms-auto flex-none font-geist text-[0.59375rem] font-bold tabular-nums text-m-muted">
+              <span dir="ltr" className="ms-auto flex-none font-geist text-[0.59375rem] font-bold tabular-nums text-m-muted">
                 {t('costs.spent', { amount: formatMoney(groupTotal, base, locale) })}
               </span>
             </div>
@@ -483,6 +507,8 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
           <p className="py-6 text-center font-geist text-[0.6875rem] text-m-faint">{t('costs.noMatch')}</p>
         )
       )}
+      </section>
+    </TabPanes>
 
       {/* Add / edit expense — the shared desktop modal (spec §3.9); not rebuilt here. */}
       {expenseModalOpen && (
@@ -544,7 +570,7 @@ export default function MCostsTab({ planner, shell }: MTabScreenProps) {
           onClose={() => setPreviewReceipts(null)}
         />
       )}
-    </TabScroller>
+    </>
   )
 }
 
@@ -592,7 +618,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
         <div className="flex items-center gap-[10px]">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="truncate text-[0.8125rem] font-bold text-m-ink">{item.name}</span>
+              <span dir="auto" className="truncate text-[0.8125rem] font-bold text-m-ink">{item.name}</span>
               {(item.receipts || []).length > 0 && (
                 <button
                   type="button"
@@ -609,7 +635,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
               )}
             </div>
             {line && (
-              <div className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
+              <div dir="auto" className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
                 {formatMoney(line.entered.amount, line.entered.currency, locale)} {'→'} {formatMoney(line.into.amount, line.into.currency, locale)}
               </div>
             )}
@@ -627,7 +653,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
                     }`}
                   >
                     <MCostMemberAvatar name={m.username} avatarUrl={m.avatar_url} isMe={m.user_id === ctx.me} variant="accent" size={14} t={t} />
-                    <span className="font-geist text-[0.5625rem] font-bold tabular-nums text-m-ink">
+                    <span dir="ltr" className="font-geist text-[0.5625rem] font-bold tabular-nums text-m-ink">
                       {formatMoney(memberShareOf(item, m.user_id, ctx), base, locale)}
                     </span>
                   </button>
@@ -635,7 +661,7 @@ function ExpenseRow({ item, ctx, base, locale, t, canEdit, onEdit, onDelete, onT
               </div>
             )}
           </div>
-          <span className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
+          <span dir="ltr" className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
             {awaitingConversion(item, ctx.tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : formatMoney(total, base, locale)}
           </span>
         </div>
@@ -705,7 +731,7 @@ function PaymentRow({ settlement, ctx, base, locale, t, personName, canEdit, onE
   // A transfer without a currency was entered in the display currency, not the trip's.
   const amount = paymentAmount(settlement, ctx)
   const line = paymentLineOf(settlement, ctx, amount)
-  const who = `${personName(settlement.from_user_id)} → ${personName(settlement.to_user_id)}`
+  const who = flowText([personName(settlement.from_user_id), personName(settlement.to_user_id)])
   return (
     <div className="mt-2 flex items-center gap-[6px]">
       <div className="relative min-w-0 flex-1 rounded-2xl border border-[color:var(--m-rowbr)] bg-m-card px-3 py-[12px]">
@@ -717,12 +743,12 @@ function PaymentRow({ settlement, ctx, base, locale, t, personName, canEdit, onE
             <div className="truncate text-[0.8125rem] font-bold text-m-ink">{t('costs.payment')}</div>
             <div className="truncate font-geist text-[0.65625rem] text-m-faint">{who}</div>
             {line && (
-              <div className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
+              <div dir="auto" className="mt-[1px] truncate font-geist text-[0.59375rem] text-m-faint">
                 {formatMoney(line.entered.amount, line.entered.currency, locale)} {'→'} {formatMoney(line.into.amount, line.into.currency, locale)}
               </div>
             )}
           </div>
-          <span className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
+          <span dir="ltr" className="flex-none rounded-full bg-[color:var(--m-ic)] px-[11px] py-1 font-geist text-[0.75rem] font-extrabold tabular-nums text-m-ink">
             {awaitingConversion(settlement, ctx.tripCurrency) ? t('costs.exchangeRates.awaitingConversion') : formatMoney(amount, base, locale)}
           </span>
         </div>
@@ -760,17 +786,17 @@ function FinalBudgetBreakdown({ row, items, ctx, base, locale, t, personName }: 
 }) {
   const signed = (v: number) => (v < 0 ? '−' : '+') + formatMoney(Math.abs(v), base, locale)
   const { fronted, moved, outstanding } = finalBudgetSources(row, items)
-  const transfer = (fromId: number, toId: number) => `${personName(fromId)} → ${personName(toId)}`
+  const transfer = (fromId: number, toId: number) => flowText([personName(fromId), personName(toId)])
   // Beside a converted row's name, what was entered, as the list above names it (#2525).
   const nameOf = (itemId: number, name: string, shown: number) => {
     const e = items.find(i => i.id === itemId)
     const entered = e ? lineOf(paidByUser(e, row.user_id), e, ctx, shown)?.entered : null
-    return entered ? `${name} · ${formatMoney(entered.amount, entered.currency, locale)}` : name
+    return entered ? `${name} (${formatMoney(entered.amount, entered.currency, locale)})` : name
   }
   const line = (key: string, label: string, value: string) => (
     <div key={key} className="flex items-baseline gap-2 py-[2px] font-geist text-[0.6875rem]">
       <span className="min-w-0 flex-1 truncate text-m-muted">{label}</span>
-      <span className="flex-none font-semibold tabular-nums text-m-ink">{value}</span>
+      <span dir="ltr" className="flex-none font-semibold tabular-nums text-m-ink">{value}</span>
     </div>
   )
   // Capped and scrollable so a long trip's list can't push the page away.

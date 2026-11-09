@@ -122,6 +122,8 @@
   "SchoolHolidayRegions": "school-holidays",
   "Settings": "settings",
   "ShareTokens": "share",
+  "StorageReclaimMarks": "storage",
+  "StorageReleaseQueue": "storage",
   "Tags": "tags",
   "TodoCategoryAssignees": "todo",
   "TodoItems": "todo",

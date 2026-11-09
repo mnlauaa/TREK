@@ -173,6 +173,21 @@ describe('MPlaceSheet', () => {
     expect(screen.queryByRole('button', { name: 'Change image' })).not.toBeInTheDocument()
   })
 
+  it('FE-MOB-PLSH-033: the category pill stands under the name and address, as wide as its name', () => {
+    renderSheet()
+    const pill = screen.getByText('Museum').parentElement as HTMLElement
+    // No cap of its own any more: under the photo it was cut to "Shoppi…".
+    expect(pill.className).not.toMatch(/max-w-\[/)
+    expect(pill).toHaveClass('max-w-full')
+    // In the column with the name, so the photo keeps the leading edge of the cards below.
+    expect(pill.parentElement).toContainElement(screen.getByText('Kunsthistorisches Museum'))
+  })
+
+  it('FE-MOB-PLSH-034: the section labels are the small capitals every sheet uses', () => {
+    renderSheet()
+    expect(screen.getByText('Assigned Days')).toHaveClass('uppercase')
+  })
+
   it('FE-MOB-PLSH-003: clears the place selection when closed', () => {
     const { planner } = renderSheet()
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))

@@ -35,7 +35,7 @@ interface Addon {
 }
 
 export default function Navbar({ tripTitle, tripId, onBack, showBack, onSettings }: NavbarProps): React.ReactElement {
-  const { user, logout, isPrerelease, appVersion } = useAuthStore()
+  const { user, logout, isPrerelease, appVersion, managed } = useAuthStore()
   const { settings, updateSetting } = useSettingsStore()
   const { addons: allAddons, loadAddons } = useAddonStore()
   const { t, locale } = useTranslation()
@@ -123,7 +123,7 @@ export default function Navbar({ tripTitle, tripId, onBack, showBack, onSettings
       paddingTop: 'env(safe-area-inset-top, 0px)',
       height: 'var(--nav-h)',
       transition: 'background 240ms cubic-bezier(0.23,1,0.32,1), backdrop-filter 240ms cubic-bezier(0.23,1,0.32,1), box-shadow 240ms cubic-bezier(0.23,1,0.32,1)',
-    }} className="hidden md:flex items-center px-4 gap-4 fixed top-0 inset-x-0 z-[200]">
+    }} data-desktop-navbar="" className="hidden md:flex items-center px-4 gap-4 fixed top-0 inset-x-0 z-[200]">
       {/* Left side. flex-1 basis-0, matching the action cluster on the right, so
           the tab pill between them sits in the middle of the bar rather than
           being centred on top of both (#1983). Both columns keep at least their
@@ -326,6 +326,7 @@ export default function Navbar({ tripTitle, tripId, onBack, showBack, onSettings
                     {t('nav.settings')}
                   </Link>
 
+                  {!managed && (
                   <Link to="/help" onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-2 px-4 py-2 text-sm transition-colors text-content-secondary"
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
@@ -333,6 +334,7 @@ export default function Navbar({ tripTitle, tripId, onBack, showBack, onSettings
                     <BookOpen className="w-4 h-4" />
                     {t('nav.help')}
                   </Link>
+                  )}
                   <Link to="/legal" onClick={() => setUserMenuOpen(false)}
                     className="flex items-center gap-2 px-4 py-2 text-body transition-colors text-content-secondary"
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}

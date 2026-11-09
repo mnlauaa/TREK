@@ -65,8 +65,8 @@ describe('ALL_ENTITIES', () => {
    * `entity-schema-parity.test.ts` can't see — it iterates the metadata map,
    * which de-duplicates by class name).
    */
-  it('ENT-003: exactly 170 entities, every class name unique', () => {
-    expect(ALL_ENTITIES.length).toBe(170);
+  it('ENT-003: exactly 172 entities, every class name unique', () => {
+    expect(ALL_ENTITIES.length).toBe(172);
     const names = ALL_ENTITIES.map((s) => s.meta.className);
     expect(new Set(names).size).toBe(names.length);
   });

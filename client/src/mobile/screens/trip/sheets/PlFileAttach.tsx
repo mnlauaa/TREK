@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { ExternalLink, FileText, Link2, Paperclip, X } from 'lucide-react'
+import { ExternalLink, FileText, Link2, Paperclip, Wallet, X } from 'lucide-react'
 import { openFile } from '../../../../utils/fileDownload'
+import { isWalletPass } from '../../../../components/Files/FileManager.helpers'
 import type { TripFile } from '../../../../types'
 import type { TripPlanner } from '../MTripShell'
 
@@ -85,7 +86,7 @@ export default function PlFileAttach({ planner, files, onAdd, onRemove, hideHint
               className={ITEM_CLS}
             >
               <FileText size={11} strokeWidth={2} className="flex-none text-m-faint" />
-              <span className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] text-m-ink">{file.original_name}</span>
+              <span dir="auto" className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] text-m-ink">{file.original_name}</span>
               <Link2 size={12} strokeWidth={2.2} className="flex-none text-m-faint" />
             </button>
           ))}
@@ -95,15 +96,17 @@ export default function PlFileAttach({ planner, files, onAdd, onRemove, hideHint
         <div className="mt-2 flex flex-col gap-1">
           {attached.map(file => (
             <button key={file.id} type="button" onClick={() => { void openFile(file.url, file.original_name) }} className={ITEM_CLS}>
-              <FileText size={11} strokeWidth={2} className="flex-none text-m-faint" />
-              <span className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] font-medium text-m-ink">{file.original_name}</span>
+              {isWalletPass(file.mime_type, file.original_name)
+                ? <Wallet size={11} strokeWidth={2} className="flex-none text-m-ink" />
+                : <FileText size={11} strokeWidth={2} className="flex-none text-m-faint" />}
+              <span dir="auto" className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] font-medium text-m-ink">{file.original_name}</span>
               <ExternalLink size={11} strokeWidth={2} className="flex-none text-m-faint" />
             </button>
           ))}
           {files.map((file, idx) => (
             <div key={`${file.name}-${idx}`} className={ITEM_CLS}>
               <Paperclip size={11} strokeWidth={2} className="flex-none text-m-faint" />
-              <span className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] text-m-muted">{file.name}</span>
+              <span dir="auto" className="min-w-0 flex-1 truncate font-geist text-[0.6875rem] text-m-muted">{file.name}</span>
               <button
                 type="button"
                 onClick={() => onRemove(idx)}
