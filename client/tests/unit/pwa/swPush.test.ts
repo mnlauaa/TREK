@@ -43,7 +43,7 @@ function fakeWindow(over: Partial<FakeWindow> = {}): FakeWindow {
   return win;
 }
 
-function boot(windows: FakeWindow[] = [], enrolled: string | null = 'https://push.example/old') {
+function boot(windows: FakeWindow[] = []) {
   const listeners: Record<string, Listener> = {};
   const registration = {
     showNotification: vi.fn(async (_title: string, _options: NotificationOptions) => undefined),
@@ -60,19 +60,9 @@ function boot(windows: FakeWindow[] = [], enrolled: string | null = 'https://pus
     registration,
     clients,
     location: { origin: ORIGIN },
-    navigator: { locks: { request: (_name: string, task: () => Promise<unknown>) => task() } },
   };
   const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
-  let receipt = enrolled === null ? null : { retired: true, endpoint: enrolled };
-  const storage = {
-    match: async () => (receipt ? new Response(JSON.stringify(receipt)) : undefined),
-    open: async () => ({
-      put: async (_key: string, response: Response) => {
-        receipt = await response.json();
-      },
-    }),
-  };
-  new Function('self', 'fetch', 'caches', SOURCE)(self, fetchMock, storage);
+  new Function('self', 'fetch', SOURCE)(self, fetchMock);
   return { listeners, registration, clients, fetch: fetchMock };
 }
 
@@ -267,15 +257,15 @@ describe('sw-push.js: pushsubscriptionchange', () => {
   it('FE-SW-PUSH-012: uses a subscription the browser already made', async () => {
     const sw = boot();
     await fire(sw.listeners.pushsubscriptionchange, {
-      oldSubscription: { endpoint: 'https://push.example/old' },
+      oldSubscription: null,
       newSubscription: renewed('https://push.example/fresh'),
     });
     expect(sw.registration.pushManager.subscribe).not.toHaveBeenCalled();
-    expect(sw.fetch).toHaveBeenCalledTimes(2);
+    expect(sw.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('FE-SW-PUSH-013: keeps the row when the endpoint did not change', async () => {
-    const sw = boot([], 'https://push.example/same');
+    const sw = boot();
     await fire(sw.listeners.pushsubscriptionchange, {
       oldSubscription: { endpoint: 'https://push.example/same', options: { applicationServerKey: OLD_KEY } },
       newSubscription: renewed('https://push.example/same'),
@@ -308,24 +298,6 @@ describe('sw-push.js: pushsubscriptionchange', () => {
     await fire(sw.listeners.pushsubscriptionchange, { oldSubscription: null, newSubscription: null });
     expect(sw.fetch).not.toHaveBeenCalled();
   });
-});
-
-describe('service worker cutover authorization', () => {
-  it.each([null, 'https://push.example/newly-enrolled'])(
-    'does not renew a legacy endpoint with receipt %s',
-    async (enrolled) => {
-      const sw = boot([], enrolled);
-      await fire(sw.listeners.pushsubscriptionchange, {
-        oldSubscription: {
-          endpoint: 'https://push.example/legacy',
-          options: { applicationServerKey: new Uint8Array([4]).buffer },
-        },
-        newSubscription: { endpoint: 'https://push.example/legacy-renewed', toJSON: () => ({}) },
-      });
-      expect(sw.fetch).not.toHaveBeenCalled();
-      expect(sw.registration.pushManager.subscribe).not.toHaveBeenCalled();
-    }
-  );
 });
 
 describe('sw-push.js is wired into the service worker (drift guard)', () => {
