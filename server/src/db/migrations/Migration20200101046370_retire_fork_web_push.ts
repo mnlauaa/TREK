@@ -13,13 +13,12 @@ export class Migration20200101046370_retire_fork_web_push extends Migration {
       DELETE FROM notification_channel_preferences WHERE channel = 'webpush';
       DELETE FROM push_subscriptions;
     `);
-    const defaults = db
-      .prepare("SELECT key, value FROM app_settings WHERE key GLOB 'notif_default_*_webpush'")
-      .all() as { key: string; value: string | null }[];
+    const defaults = db.prepare('SELECT key, value FROM app_settings').all() as { key: string; value: string | null }[];
     const save = db.prepare(
       'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     );
     for (const { key, value } of defaults) {
+      if (!key.startsWith('notif_default_') || !key.endsWith('_webpush')) continue;
       save.run(`${key.slice(0, -7)}push`, value);
       db.prepare('DELETE FROM app_settings WHERE key = ?').run(key);
     }

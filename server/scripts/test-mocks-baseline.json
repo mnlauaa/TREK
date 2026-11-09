@@ -274,6 +274,7 @@
     "tests/unit/plugins/trip-warnings.controller.test.ts": 1,
     "tests/unit/plugins/view-contributions.controller.test.ts": 1,
     "tests/websocket/connection.test.ts": 1,
-    "tests/websocket/wire-envelope.test.ts": 1
+    "tests/websocket/wire-envelope.test.ts": 1,
+    "tests/unit/nest/notifications/push-subscriptions.service.test.ts": 1
   }
 }
