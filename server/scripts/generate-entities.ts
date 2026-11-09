@@ -2014,7 +2014,7 @@ export async function generateEntities(): Promise<GenerateResult> {
         bidirectionalRelations: true,
         forceUndefined: false,
         undefinedDefaults: true,
-        skipTables: ['mikro_orm_migrations'],
+        skipTables: ['mikro_orm_migrations', 'web_push_subscriptions'],
         fileName: (className: string) => `${className}.entity`,
         onImport,
         onProcessedMetadata: async (metadata, platform) => {

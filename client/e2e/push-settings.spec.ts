@@ -10,7 +10,7 @@ test('upstream push settings are available on desktop and phone', async ({ page 
     await page.goto('/settings?tab=notifications');
     await expect(page.getByText('Push notifications on this device', { exact: true })).toBeVisible();
     await expect(page.getByRole('status')).toHaveText(
-      'Notifications are blocked for TREK in this browser. Allow them in the browser settings, then try again.',
+      'Notifications are blocked for TREK in this browser. Allow them in the browser settings, then try again.'
     );
     await expect(page.getByText('Device name', { exact: true })).toHaveCount(0);
   }

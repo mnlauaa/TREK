@@ -42,14 +42,6 @@ export interface WebPushCardState {
   sendTest: () => void
 }
 
-const STATE_TEXT_KEYS: Partial<Record<WebPushDeviceState, string>> = {
-  unsupported: 'settings.webPush.unsupported',
-  insecure: 'settings.webPush.insecure',
-  'ios-install': 'settings.webPush.iosInstall',
-  denied: 'settings.webPush.denied',
-  on: 'settings.webPush.enabled',
-}
-
 export function useWebPush(): WebPushCardState {
   const { t } = useTranslation()
   const toast = useToast()
@@ -140,10 +132,16 @@ export function useWebPush(): WebPushCardState {
       })
   }
 
-  const textKey = state ? STATE_TEXT_KEYS[state] : undefined
+  const stateTexts: Partial<Record<WebPushDeviceState, string>> = {
+    unsupported: t('settings.webPush.unsupported'),
+    insecure: t('settings.webPush.insecure'),
+    'ios-install': t('settings.webPush.iosInstall'),
+    denied: t('settings.webPush.denied'),
+    on: t('settings.webPush.enabled'),
+  }
   return {
     state,
-    stateText: textKey ? t(textKey) : null,
+    stateText: state ? stateTexts[state] ?? null : null,
     canSwitch: state === 'on' || state === 'off',
     on: state === 'on',
     switchLabel: state === 'on' ? t('settings.webPush.disable') : t('settings.webPush.enable'),
