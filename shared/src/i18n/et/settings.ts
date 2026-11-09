@@ -149,6 +149,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'Test ebaõnnestus.',
   'settings.notificationPreferences.pluginConfigured': 'Seadistatud. Halda kasutajaandmeid plugina seadete lehel.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Tõuketeavitus',
   'settings.webPush.title': 'Tõuketeavitused selles seadmes',
   'settings.webPush.hint':
     'Näitab TREKi teavitusi selles seadmes ka siis, kui TREK on suletud. Milliseid sündmusi saabub, määrab veerg Tõuketeavitus.',

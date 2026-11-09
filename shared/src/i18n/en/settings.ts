@@ -144,6 +144,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'Test failed.',
   'settings.notificationPreferences.pluginConfigured': 'Configured. Manage credentials on the plugin’s settings page.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push',
   'settings.webPush.title': 'Push notifications on this device',
   'settings.webPush.hint':
     'Shows TREK notifications on this device even while TREK is closed. Which events arrive follows the Push column.',

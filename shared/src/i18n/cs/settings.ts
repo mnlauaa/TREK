@@ -349,6 +349,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.webhook': 'Webhook',
   'settings.notificationPreferences.email': 'E-mail',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Push notifikace na tomto zařízení',
   'settings.webPush.hint':
     'Zobrazuje oznámení TREK na tomto zařízení, i když je TREK zavřený. Které události dorazí, určuje sloupec Push.',

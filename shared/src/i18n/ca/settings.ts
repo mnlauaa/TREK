@@ -330,6 +330,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.webhook': 'Webhook',
   'settings.notificationPreferences.email': 'Correu electrònic',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Notificacions push en aquest dispositiu',
   'settings.webPush.hint':
     'Mostra les notificacions de TREK en aquest dispositiu fins i tot quan TREK està tancat. Els esdeveniments que arriben segueixen la columna Push.',

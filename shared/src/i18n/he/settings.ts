@@ -142,6 +142,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'הבדיקה נכשלה.',
   'settings.notificationPreferences.pluginConfigured': 'מוגדר. נהלו את פרטי הגישה בעמוד ההגדרות של התוסף.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'פוש',
   'settings.webPush.title': 'התראות פוש במכשיר הזה',
   'settings.webPush.hint': 'מציג התראות של TREK במכשיר הזה גם כש-TREK סגור. אילו אירועים יגיעו נקבע לפי עמודת הפוש.',
   'settings.webPush.enable': 'הפעלה במכשיר הזה',

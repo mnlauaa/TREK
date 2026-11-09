@@ -140,6 +140,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Đã cấu hình. Quản lý thông tin đăng nhập ở trang cài đặt của plugin.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Thông báo đẩy',
   'settings.webPush.title': 'Thông báo đẩy trên thiết bị này',
   'settings.webPush.hint':
     'Hiển thị thông báo của TREK trên thiết bị này ngay cả khi TREK đang đóng. Những sự kiện nào được gửi đến tuân theo cột Thông báo đẩy.',

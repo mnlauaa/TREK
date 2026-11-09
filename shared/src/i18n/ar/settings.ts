@@ -335,6 +335,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'فشل الاختبار.',
   'settings.notificationPreferences.pluginConfigured': 'تم الإعداد. أدر بيانات الاعتماد من صفحة إعدادات الإضافة.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'إشعارات فورية',
   'settings.webPush.title': 'الإشعارات الفورية على هذا الجهاز',
   'settings.webPush.hint':
     'يعرض إشعارات TREK على هذا الجهاز حتى عندما يكون TREK مغلقًا. الأحداث التي تصل تتبع عمود «إشعارات فورية».',

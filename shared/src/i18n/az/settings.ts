@@ -166,6 +166,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Konfiqurasiya edilib. Giriş məlumatlarını plaginin tənzimləmələr səhifəsindən idarə edin.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Bu cihazda push bildirişləri',
   'settings.webPush.hint':
     'TREK bağlı olanda belə TREK bildirişlərini bu cihazda göstərir. Hansı hadisələrin gəldiyini Push sütunu müəyyən edir.',

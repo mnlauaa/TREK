@@ -127,6 +127,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': '測試失敗。',
   'settings.notificationPreferences.pluginConfigured': '已設定。請在外掛的設定頁面管理憑證。',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': '推播',
   'settings.webPush.title': 'Web Push 裝置',
   'settings.webPush.hint': '即使 TREK 已關閉，也會在此裝置上顯示 TREK 通知。收到哪些事件取決於「推播」欄。',
   'settings.webPush.enable': '在此裝置啟用推播',

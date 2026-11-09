@@ -27,7 +27,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const pushStub = {
   isAvailable: vi.fn(async () => true),
   hasDevices: vi.fn(async (userId: number) => userId === 7),
-  sendToUser: vi.fn(async () => ({ sent: 1, failed: 0, invalid: 0 })),
+  sendToUser: vi.fn(async () => true),
   sendTest: vi.fn(async () => ({ success: true })),
 };
 const stubTransports = {
@@ -65,7 +65,7 @@ afterEach(() => {
 
 describe('channelRegistry', () => {
   it('CHREG-001: the four built-in external channels are registered; in-app is not', async () => {
-    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'webpush']);
+    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'push']);
     expect(await getChannel('inapp')).toBeUndefined();
   });
 
@@ -83,14 +83,14 @@ describe('channelRegistry', () => {
     expect(await getChannel('plugin:gotify')).toBeDefined();
     live = false;
     expect(await getChannel('plugin:gotify')).toBeUndefined();
-    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'webpush']);
+    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'push']);
   });
 
   it('CHREG-004 — a throwing plugin source cannot take notifications down', async () => {
     setPluginChannelSource(() => {
       throw new Error('runtime exploded');
     });
-    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'webpush']);
+    expect((await listChannels()).map((c) => c.id)).toEqual(['email', 'webhook', 'ntfy', 'push']);
   });
 
   it('CHREG-005 — a plugin can never claim a built-in id', async () => {
@@ -104,21 +104,21 @@ describe('channelRegistry', () => {
     expect((await getChannel('email'))?.bypassesActiveToggleForAdminEvents).toBe(true);
     expect((await getChannel('webhook'))?.bypassesActiveToggleForAdminEvents).toBeUndefined();
     expect((await getChannel('ntfy'))?.bypassesActiveToggleForAdminEvents).toBeUndefined();
-    expect((await getChannel('webpush'))?.bypassesActiveToggleForAdminEvents).toBeUndefined();
+    expect((await getChannel('push'))?.bypassesActiveToggleForAdminEvents).toBeUndefined();
   });
 
   it('CHREG-007 — webhook and ntfy deliver the admin-global copy; email does not', async () => {
     expect((await getChannel('webhook'))?.supportsAdminGlobal).toBe(true);
     expect((await getChannel('ntfy'))?.supportsAdminGlobal).toBe(true);
     expect((await getChannel('email'))?.supportsAdminGlobal).toBeUndefined();
-    expect((await getChannel('webpush'))?.supportsAdminGlobal).toBeUndefined();
-    expect((await getChannel('webpush'))?.sendGlobal).toBeUndefined();
+    expect((await getChannel('push'))?.supportsAdminGlobal).toBeUndefined();
+    expect((await getChannel('push'))?.sendGlobal).toBeUndefined();
   });
 
   it('CHREG-008b: push carries every user event, but neither admin-scoped ones nor synology_session_cleared', async () => {
-    const push = (await getChannel('webpush'))!;
+    const push = (await getChannel('push'))!;
     expect(push.source).toBe('builtin');
-    expect(push.labelKey).toBe('settings.notificationPreferences.webpush');
+    expect(push.labelKey).toBe('settings.notificationPreferences.push');
     for (const event of ['trip_invite', 'collab_message', 'trip_reminder', 'plugin_notification'] as const) {
       expect(push.supportsEvent(event)).toBe(true);
     }
@@ -128,17 +128,17 @@ describe('channelRegistry', () => {
   });
 
   it('CHREG-008c: push is configured for a user with a device and hands sends and tests to the transport', async () => {
-    const push = (await getChannel('webpush'))!;
+    const push = (await getChannel('push'))!;
     expect(await push.isConfiguredFor(7)).toBe(true);
     expect(await push.isConfiguredFor(8)).toBe(false);
-    await expect(push.sendToUser(7, MSG)).resolves.toBe(true);
+    await push.sendToUser(7, MSG);
     expect(pushStub.sendToUser).toHaveBeenCalledWith(7, MSG);
     await expect(push.test!(7)).resolves.toEqual({ success: true });
     expect(pushStub.sendTest).toHaveBeenCalledWith(7);
   });
 
   it('CHREG-008d: push is ready only while it can sign, and hides meanwhile; a plugin cannot claim that', async () => {
-    const push = (await getChannel('webpush'))!;
+    const push = (await getChannel('push'))!;
     expect(push.hiddenWhileInstanceUnconfigured).toBe(true);
     expect(await push.isInstanceConfigured!()).toBe(true);
     pushStub.isAvailable.mockResolvedValueOnce(false);

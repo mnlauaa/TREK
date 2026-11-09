@@ -1,5 +1,5 @@
 import type { PublicConfig, SettingResetKey, SettingResetResponse } from '@trek/shared'
-import { createExchangeRateApi, createGuestIdentityApi, createWebPushApi, createExchangeRateSnapshotApi } from './retainedRoutes'
+import { createExchangeRateApi, createGuestIdentityApi, createExchangeRateSnapshotApi } from './retainedRoutes'
 import { isEffectivelyOffline } from '../sync/networkMode'
 import axios, { AxiosInstance } from 'axios'
 import { checkInDev, parseInDev } from './contractChecks'
@@ -1582,7 +1582,6 @@ export const tripInviteApi = {
 const CHANNEL_TEST_TIMEOUT = 40000
 
 export const notificationsApi = {
-  ...createWebPushApi(apiClient, parseInDev),
   getPreferences: () => apiClient.get('/notifications/preferences').then(r => r.data),
   updatePreferences: (prefs: Record<string, Record<string, boolean>>) => apiClient.put('/notifications/preferences', prefs).then(r => r.data),
   testSmtp: (email?: string) => apiClient.post('/notifications/test-smtp', { email }, { timeout: CHANNEL_TEST_TIMEOUT }).then(r => checkInDev(channelTestResultSchema, r.data, 'notifications.testSmtp')),

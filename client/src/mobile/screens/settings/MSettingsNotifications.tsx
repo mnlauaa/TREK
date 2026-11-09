@@ -4,7 +4,7 @@ import { WEB_PUSH_CHANNEL_ID } from '@trek/shared'
 import { useTranslation } from '../../../i18n'
 import { MSetCard, MSetEyebrow, MSetInput, MSetButton, MSetHint } from './MSettingsUi'
 import MChip from '../../components/MChip'
-import WebPushDevices from '../../../components/Settings/WebPushDevices'
+import MWebPushCard from './MWebPushCard'
 import { EVENT_LABEL_KEYS, channelLabel, isLockedCell } from '../../../components/Settings/notificationLabels'
 import { MASKED, useNotificationSettings } from '../../../components/Settings/useNotificationSettings'
 
@@ -92,7 +92,7 @@ export default function MSettingsNotifications() {
             </div>
           )}
 
-          {hasChannel(WEB_PUSH_CHANNEL_ID) && <WebPushDevices />}
+          {hasChannel(WEB_PUSH_CHANNEL_ID) && <MWebPushCard />}
 
           {pluginChannels.map((ch) => (
             <div key={ch.id} className="mb-3 rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-sheet)] p-3">

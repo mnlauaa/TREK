@@ -131,6 +131,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'テストに失敗しました。',
   'settings.notificationPreferences.pluginConfigured': '設定済みです。認証情報はプラグインの設定ページで管理します。',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'プッシュ',
   'settings.webPush.title': 'このデバイスのプッシュ通知',
   'settings.webPush.hint':
     'TREKを閉じている間も、このデバイスにTREKの通知を表示します。届くイベントは「プッシュ」列の設定に従います。',

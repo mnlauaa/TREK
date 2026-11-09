@@ -132,6 +132,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': '테스트에 실패했습니다.',
   'settings.notificationPreferences.pluginConfigured': '설정됨. 자격 증명은 플러그인 설정 페이지에서 관리하세요.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': '푸시',
   'settings.webPush.title': '이 기기의 푸시 알림',
   'settings.webPush.hint':
     'TREK이 닫혀 있어도 이 기기에 TREK 알림을 표시합니다. 어떤 이벤트가 도착할지는 푸시 열을 따릅니다.',

@@ -127,10 +127,6 @@ export const envSchema = z.object({
   VAPID_PRIVATE_KEY: optionalWith(isP256PrivateKey, 'must be a base64url-encoded P-256 private key (32 bytes)'),
   VAPID_SUBJECT: optionalWith(isVapidSubject, 'must be a mailto: address or an https:// URL'),
 
-  WEB_PUSH_VAPID_PUBLIC_KEY: z.string().optional(),
-  WEB_PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
-  WEB_PUSH_VAPID_SUBJECT: z.string().optional(),
-
   // MCP
   MCP_SESSION_TTL: positiveNumber,
   MCP_MAX_SESSION_PER_USER: positiveNumber,

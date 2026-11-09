@@ -143,6 +143,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Ρυθμίστηκε. Διαχειριστείτε τα διαπιστευτήρια στη σελίδα ρυθμίσεων του πρόσθετου.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push',
   'settings.webPush.title': 'Push ειδοποιήσεις σε αυτή τη συσκευή',
   'settings.webPush.hint':
     'Εμφανίζει τις ειδοποιήσεις του TREK σε αυτή τη συσκευή ακόμη και όταν το TREK είναι κλειστό. Ποια συμβάντα φτάνουν καθορίζεται από τη στήλη Push.',

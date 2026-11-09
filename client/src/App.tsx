@@ -1,7 +1,4 @@
-import { reconcileWebPush, updateAppBadge } from './services/webPush'
-import { useInAppNotificationStore } from './store/inAppNotificationStore'
 import { useParams } from 'react-router'
-import WebPushInvitation from './components/Notifications/WebPushInvitation'
 import { NewMemberIdentityCheck } from './components/Trips/GuestIdentityTransferModal'
 import React, { useEffect, useState, useRef, ReactNode, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router'
@@ -40,6 +37,7 @@ import OfflineBanner from './components/Layout/OfflineBanner'
 import NativeUpdateNotice from './components/Layout/NativeUpdateNotice'
 import AppLockGate from './components/Layout/AppLockGate'
 import NativeImportSheet from './mobile/components/NativeImportSheet'
+import MPushPrompt from './mobile/components/MPushPrompt'
 import NativeWidgetsSync from './components/Layout/NativeWidgetsSync'
 import { SystemNoticeHost } from './components/SystemNotices/SystemNoticeHost.js'
 import HelpPanel from './components/Help/HelpPanel'
@@ -326,14 +324,6 @@ function TripPlannerRoute() {
   )
 }
 
-async function reconcileWebPushSubscription() {
-  try {
-    await reconcileWebPush()
-  } catch {
-    // Reconciliation can run again on the next subscription change or sign-in.
-  }
-}
-
 export default function App() {
   const { loadUser, isAuthenticated, demoMode, setManaged, setDemoMode, setDevMode, setIsPrerelease, setAppVersion, setHasMapsKey, setHasAmapKey, setPlacesProvider, setServerTimezone, setAppRequireMfa, setTripRemindersEnabled, setPlacesPhotosEnabled, setPlacesAutocompleteEnabled, setPlacesDetailsEnabled, setPlacesEnrichEnabled, setPlaceShadowEnabled } = useAuthStore()
   const { loadSettings } = useSettingsStore()
@@ -454,21 +444,6 @@ export default function App() {
   // interceptor's covers all of /public/. A route that is public to one and not
   // to the other is exactly the seam that puts a 401 back.
   const hideAuthedWidgets = isAuthPage || isAuthPublicPath(location.pathname)
-  useEffect(() => {
-    if (!isAuthenticated) return
-    const worker = navigator.serviceWorker
-    const refresh = (event: MessageEvent) => {
-      if (event.data?.type === 'trek:web-push-subscription-changed') void reconcileWebPushSubscription()
-    }
-    worker?.addEventListener?.('message', refresh)
-    const unsubscribe = useInAppNotificationStore.subscribe((state, previous) => {
-      if (state.unreadCount !== previous.unreadCount) void updateAppBadge(state.unreadCount)
-    })
-    return () => {
-      worker?.removeEventListener?.('message', refresh)
-      unsubscribe()
-    }
-  }, [isAuthenticated])
   // The Help & Docs page is the wiki, written for somebody who runs TREK
   // themselves: keys, backups, updates, the server behind it. A managed install
   // does not offer it; the in-app help center stays.
@@ -489,12 +464,10 @@ export default function App() {
         </ErrorBoundary>
       )}
       <ErrorBoundary boundaryId="widget:offline-banner" fallback={null}><OfflineBanner /></ErrorBoundary>
-      {!hideAuthedWidgets && isAuthenticated && (
-        <ErrorBoundary boundaryId="widget:web-push-invitation" fallback={null}><WebPushInvitation /></ErrorBoundary>
-      )}
       <ErrorBoundary boundaryId="widget:native-update" fallback={null}><NativeUpdateNotice /></ErrorBoundary>
       <ErrorBoundary boundaryId="widget:app-lock" fallback={null}><AppLockGate /></ErrorBoundary>
       <ErrorBoundary boundaryId="widget:native-import" fallback={null}><NativeImportSheet /></ErrorBoundary>
+      {!hideAuthedWidgets && isPhone && <ErrorBoundary boundaryId="widget:push-prompt" fallback={null}><MPushPrompt /></ErrorBoundary>}
       <ErrorBoundary boundaryId="widget:native-widgets" fallback={null}><NativeWidgetsSync /></ErrorBoundary>
       {/* One boundary for all route chunks, above <Routes> so it stays mounted
           across navigations. react-router runs location updates inside a transition,

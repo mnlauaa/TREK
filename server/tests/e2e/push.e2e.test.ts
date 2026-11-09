@@ -1,24 +1,21 @@
 /**
- * Web Push routes e2e: /api/notifications/web-push/* and the push test send
+ * Web Push routes e2e: /api/notifications/push/* and the push test send
  * through the real JwtAuthGuard, the Zod pipe and the real providers on a temp
  * SQLite db. Only the outbound POST (safeFetchFollow) is replaced.
  */
 import { db } from '../../src/db/database';
 import { PushSubscriptions } from '../../src/db/entities/PushSubscriptions.entity';
-import { WebPushSubscriptions } from '../../src/db/entities/WebPushSubscriptions.entity';
-import { decrypt_api_key } from '../../src/nest/common/crypto/apiKeyCrypto';
 import { TrekExceptionFilter } from '../../src/nest/common/trek-exception.filter';
 import { ZodValidationPipe } from '../../src/nest/common/zod-validation.pipe';
 import { NotificationsModule } from '../../src/nest/notifications/notifications.module';
 import { RealtimeModule } from '../../src/nest/realtime/realtime.module';
-import { deleteRows, findRows, insertRow } from '../helpers/factories/rows';
+import { deleteRows, findRows } from '../helpers/factories/rows';
 import { readAppSetting, setAppSetting } from '../helpers/factories/settings';
 import { makeUser } from '../helpers/factories/users';
 import { createTestMikroOrmModule, createTestOrm, type TestOrm } from '../helpers/test-orm';
 import { TestUnitOfWorkModule } from '../helpers/test-uow';
 import { sessionCookie } from './harness';
 import { Test } from '@nestjs/testing';
-import { WEB_PUSH_CHANNEL_ID } from '@trek/shared';
 
 import cookieParser from 'cookie-parser';
 import type { Server } from 'http';
@@ -55,14 +52,21 @@ function subscription(endpoint = ENDPOINT) {
 
 let orm: TestOrm;
 
-const BASE = '/api/notifications/web-push';
-const INSTALLATION = '92e5fb2d-bb3d-4cc3-8681-9ef88b2d74e7';
-const current = (data = subscription(), intent: 'enable' | 'reconcile' = 'enable') => ({
-  installationId: INSTALLATION,
-  label: 'Mac',
-  subscription: data,
-  intent,
-});
+async function rows() {
+  return (await findRows(orm, PushSubscriptions, {}, { id: 'asc' })).map((r) => ({
+    user_id: r.user_id,
+    endpoint: r.endpoint,
+    vapid_public_key: r.vapid_public_key,
+    user_agent: r.user_agent,
+  }));
+}
+
+/** An app setting the push service keeps; fails the case when it is not there. */
+async function storedSetting(key: string): Promise<string> {
+  const value = await readAppSetting(orm, key);
+  if (value === null) throw new Error(`no app setting ${key}`);
+  return value;
+}
 
 describe('Web Push e2e (real auth guard + temp SQLite)', () => {
   let server: Server;
@@ -86,7 +90,6 @@ describe('Web Push e2e (real auth guard + temp SQLite)', () => {
   }
 
   beforeAll(async () => {
-    vi.stubEnv('APP_URL', 'https://trek.example.test/path');
     // The two users the session cookies are signed for, pinned to ids 1 and 2.
     orm = await createTestOrm(db);
     await makeUser(orm, {
@@ -109,135 +112,173 @@ describe('Web Push e2e (real auth guard + temp SQLite)', () => {
 
   beforeEach(async () => {
     await deleteRows(orm, PushSubscriptions);
-    await deleteRows(orm, WebPushSubscriptions);
-    await setAppSetting(orm, 'notification_channels', WEB_PUSH_CHANNEL_ID);
     safeFetchFollow.mockReset();
   });
 
   afterAll(async () => {
     await app.close();
     await orm.close();
-    vi.unstubAllEnvs();
   });
 
-  it('requires a session for device and configuration routes', async () => {
-    expect((await request(server).get(`${BASE}/config`)).status).toBe(401);
-    expect((await request(server).put(`${BASE}/current`).send(current())).status).toBe(401);
-    expect((await request(server).delete(`${BASE}/devices/1`)).status).toBe(401);
+  it('401 on every push route without a session cookie', async () => {
+    expect((await request(server).get('/api/notifications/push/public-key')).status).toBe(401);
+    expect(
+      (await request(server).post('/api/notifications/push/subscriptions').send({ subscription: subscription() }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await request(server).delete('/api/notifications/push/subscriptions').send({ endpoint: ENDPOINT })).status,
+    ).toBe(401);
   });
 
-  it('exposes the existing key and encrypts the registered subscription', async () => {
-    const publicKey = await readAppSetting(orm, 'web_push_vapid_public_key');
-    const config = await request(server).get(`${BASE}/config`).set('Cookie', sessionCookie(1));
-    expect(config.status).toBe(200);
-    expect(config.body).toEqual({
-      enabled: true,
-      available: true,
-      publicKey,
-      canonicalOrigin: 'https://trek.example.test',
-      maxDevices: 10,
-    });
-    const data = current();
-    const registered = await request(server).put(`${BASE}/current`).set('Cookie', sessionCookie(1)).send(data);
-    expect(registered.status).toBe(200);
-    expect(registered.body).toMatchObject({ state: 'active', device: { installationId: INSTALLATION, label: 'Mac' } });
-    const [row] = await findRows(orm, WebPushSubscriptions);
-    expect(row.subscription_encrypted).toMatch(/^enc:v1:/);
-    expect(row.endpoint_hash).not.toContain(ENDPOINT);
-    expect(JSON.parse(decrypt_api_key(row.subscription_encrypted) ?? '')).toEqual(data.subscription);
-    expect(await findRows(orm, PushSubscriptions)).toEqual([]);
+  it('GET public-key: the pair exists from bootstrap on, so the route only reads it', async () => {
+    const stored = await storedSetting('web_push_vapid_public_key');
+    const res = await request(server).get('/api/notifications/push/public-key').set('Cookie', sessionCookie(1));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ publicKey: stored });
+    const raw = Buffer.from(res.body.publicKey, 'base64url');
+    expect(raw.length).toBe(65);
+    expect(raw[0]).toBe(0x04);
   });
 
-  it('moves a shared endpoint to its latest account and never reconciles the revoked installation', async () => {
-    const data = current();
-    await request(server).put(`${BASE}/current`).set('Cookie', sessionCookie(1)).send(data).expect(200);
-    await request(server).put(`${BASE}/current`).set('Cookie', sessionCookie(2)).send(data).expect(200);
-    await request(server)
-      .put(`${BASE}/current`)
+  it('POST subscriptions: 200 with the device count, stored against the served key', async () => {
+    const { body: key } = await request(server)
+      .get('/api/notifications/push/public-key')
+      .set('Cookie', sessionCookie(1));
+    const res = await request(server)
+      .post('/api/notifications/push/subscriptions')
       .set('Cookie', sessionCookie(1))
-      .send({ ...data, intent: 'reconcile' })
-      .expect(200, { state: 'revoked' });
-    await request(server).get(`${BASE}/devices`).set('Cookie', sessionCookie(1)).expect(200, { devices: [] });
-    const list = await request(server).get(`${BASE}/devices`).set('Cookie', sessionCookie(2)).expect(200);
-    expect(list.body.devices).toHaveLength(1);
+      .set('User-Agent', 'e2e-browser/1.0')
+      .send({ subscription: subscription() });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, devices: 1 });
+    expect(await rows()).toEqual([
+      { user_id: 1, endpoint: ENDPOINT, vapid_public_key: key.publicKey, user_agent: 'e2e-browser/1.0' },
+    ]);
   });
 
-  it('keeps a renamed device label on reconciliation and only lets its owner revoke it', async () => {
-    const data = current();
-    const result = await request(server).put(`${BASE}/current`).set('Cookie', sessionCookie(1)).send(data).expect(200);
-    const id = result.body.device.id;
+  it('POST subscriptions: the same browser subscribing for another account moves to it', async () => {
     await request(server)
-      .patch(`${BASE}/devices/${id}`)
+      .post('/api/notifications/push/subscriptions')
       .set('Cookie', sessionCookie(1))
-      .send({ label: 'Travel laptop' })
-      .expect(200);
-    const reconciled = await request(server)
-      .put(`${BASE}/current`)
-      .set('Cookie', sessionCookie(1))
-      .send({ ...data, intent: 'reconcile' })
-      .expect(200);
-    expect(reconciled.body.device.label).toBe('Travel laptop');
-    await request(server).delete(`${BASE}/devices/${id}`).set('Cookie', sessionCookie(2)).expect(404);
-    await request(server)
-      .delete(`${BASE}/devices/${id}`)
-      .set('Cookie', sessionCookie(1))
-      .expect(200, { success: true });
+      .send({ subscription: subscription() });
+    const res = await request(server)
+      .post('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(2))
+      .send({ subscription: subscription() });
+    expect(res.body).toEqual({ success: true, devices: 1 });
+    expect((await rows()).map((r) => r.user_id)).toEqual([2]);
   });
 
-  it('rejects insecure endpoints and malformed requests', async () => {
-    await request(server)
-      .put(`${BASE}/current`)
+  it('POST subscriptions: 400 with the bespoke message for a host that is not a push service', async () => {
+    const res = await request(server)
+      .post('/api/notifications/push/subscriptions')
       .set('Cookie', sessionCookie(1))
-      .send(current(subscription('http://push.example.test')))
-      .expect(400);
-    await request(server)
-      .put(`${BASE}/current`)
-      .set('Cookie', sessionCookie(1))
-      .send({ ...current(), subscription: { endpoint: ENDPOINT } })
-      .expect(400);
-    expect(await findRows(orm, WebPushSubscriptions)).toEqual([]);
+      .send({ subscription: subscription('https://example.com/collect') });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Push endpoint is not a known push service' });
+    expect(await rows()).toEqual([]);
   });
 
-  it('only sends to registered encrypted devices and retains old plaintext rows for re-registration', async () => {
-    const data = current();
-    await insertRow(orm, PushSubscriptions, {
-      user: 1,
-      endpoint: ENDPOINT,
-      p256dh: data.subscription.keys.p256dh,
-      auth: data.subscription.keys.auth,
-      vapid_public_key: (await readAppSetting(orm, 'web_push_vapid_public_key'))!,
-    });
-    await request(server).get(`${BASE}/devices`).set('Cookie', sessionCookie(1)).expect(200, { devices: [] });
-    expect(safeFetchFollow).not.toHaveBeenCalled();
-    const registered = await request(server)
-      .put(`${BASE}/current`)
+  it('POST subscriptions: 400 from the contract when the keys are missing', async () => {
+    const res = await request(server)
+      .post('/api/notifications/push/subscriptions')
       .set('Cookie', sessionCookie(1))
-      .send(data)
-      .expect(200);
-    const id = registered.body.device.id;
-    safeFetchFollow.mockResolvedValue(new Response(null, { status: 201 }));
+      .send({ subscription: { endpoint: ENDPOINT } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toEqual(expect.stringContaining('keys'));
+  });
+
+  it('DELETE subscriptions: only the owner removes the endpoint, and a repeat is still 200', async () => {
     await request(server)
-      .post(`${BASE}/devices/${id}/test`)
+      .post('/api/notifications/push/subscriptions')
       .set('Cookie', sessionCookie(1))
-      .expect(200, { success: true });
-    expect(safeFetchFollow).toHaveBeenCalledExactlyOnceWith(
+      .send({ subscription: subscription() });
+
+    const stranger = await request(server)
+      .delete('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(2))
+      .send({ endpoint: ENDPOINT });
+    expect(stranger.status).toBe(200);
+    expect(await rows()).toHaveLength(1);
+
+    const owner = await request(server)
+      .delete('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(1))
+      .send({ endpoint: ENDPOINT });
+    expect(owner.status).toBe(200);
+    expect(owner.body).toEqual({ success: true });
+    expect(await rows()).toEqual([]);
+
+    const again = await request(server)
+      .delete('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(1))
+      .send({ endpoint: ENDPOINT });
+    expect(again.status).toBe(200);
+  });
+
+  it('DELETE subscriptions: 400 without an endpoint', async () => {
+    const res = await request(server)
+      .delete('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(1))
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('POST test/push: sends the test message to the caller’s devices through the SSRF-guarded fetch', async () => {
+    const none = await request(server).post('/api/notifications/test/push').set('Cookie', sessionCookie(1));
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual({ success: false, error: 'Channel is not configured for this user' });
+
+    await request(server)
+      .post('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(1))
+      .send({ subscription: subscription() });
+    safeFetchFollow.mockResolvedValue({ ok: true, status: 201, body: null, headers: { get: () => null } });
+    const res = await request(server).post('/api/notifications/test/push').set('Cookie', sessionCookie(1));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(safeFetchFollow).toHaveBeenCalledWith(
       ENDPOINT,
-      expect.objectContaining({ method: 'POST', signal: expect.any(AbortSignal) }),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Encoding': 'aes128gcm' }),
+      }),
       { maxRedirects: 0, bypassInternalIpAllowed: true },
     );
-    expect(await findRows(orm, PushSubscriptions)).toHaveLength(1);
   });
 
-  it('reports an unreadable VAPID key as unavailable and leaves its stored identity intact', async () => {
-    const privateKey = await readAppSetting(orm, 'web_push_vapid_private_key');
+  it('a stored private key that no longer decrypts turns push off with a 503 and is never replaced', async () => {
+    const readKey = storedSetting;
+    const unreadable = 'enc:v1:bm90IGEgY2lwaGVydGV4dA';
+    const publicKey = await readKey('web_push_vapid_public_key');
+    const ciphertext = await readKey('web_push_vapid_private_key');
+    await request(server)
+      .post('/api/notifications/push/subscriptions')
+      .set('Cookie', sessionCookie(1))
+      .send({ subscription: subscription() });
+    await setAppSetting(orm, 'web_push_vapid_private_key', unreadable);
     try {
-      await setAppSetting(orm, 'web_push_vapid_private_key', 'enc:v1:unreadable');
-      const config = await request(server).get(`${BASE}/config`).set('Cookie', sessionCookie(1)).expect(200);
-      expect(config.body).toMatchObject({ enabled: true, available: false, error: expect.any(String) });
-      await request(server).put(`${BASE}/current`).set('Cookie', sessionCookie(1)).send(current()).expect(503);
-      expect(await readAppSetting(orm, 'web_push_vapid_private_key')).toBe('enc:v1:unreadable');
+      const key = await request(server).get('/api/notifications/push/public-key').set('Cookie', sessionCookie(1));
+      expect(key.status).toBe(503);
+      expect(key.body).toEqual({ error: 'Web Push is currently unavailable on this server' });
+      const sub = await request(server)
+        .post('/api/notifications/push/subscriptions')
+        .set('Cookie', sessionCookie(1))
+        .send({ subscription: subscription(`${ENDPOINT}-second`) });
+      expect(sub.status).toBe(503);
+      const test = await request(server).post('/api/notifications/test/push').set('Cookie', sessionCookie(1));
+      expect(test.status).toBe(200);
+      expect(test.body).toEqual({ success: false, error: 'Web Push is currently unavailable on this server' });
+      expect(safeFetchFollow).not.toHaveBeenCalled();
+      // The device registered before stays, and neither stored row was touched.
+      expect((await rows()).map((r) => r.endpoint)).toEqual([ENDPOINT]);
+      expect(await readKey('web_push_vapid_public_key')).toBe(publicKey);
+      expect(await readKey('web_push_vapid_private_key')).toBe(unreadable);
     } finally {
-      await setAppSetting(orm, 'web_push_vapid_private_key', privateKey!);
+      await setAppSetting(orm, 'web_push_vapid_private_key', ciphertext);
     }
+    const back = await request(server).get('/api/notifications/push/public-key').set('Cookie', sessionCookie(1));
+    expect(back.body).toEqual({ publicKey });
   });
 });

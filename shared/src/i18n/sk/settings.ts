@@ -146,6 +146,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Nastavené. Prihlasovacie údaje spravujte na stránke nastavení doplnku.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Push oznámenia v tomto zariadení',
   'settings.webPush.hint':
     'Zobrazuje oznámenia TREK v tomto zariadení, aj keď je TREK zatvorený. Ktoré udalosti prídu, určuje stĺpec Push.',

@@ -594,8 +594,8 @@ describe('AdminNotificationsTab', () => {
 
     fireEvent.click(within(card('Web Push')).getByRole('button', { name: 'Web Push' }));
 
-    await waitFor(() => expect(body).toEqual({ notification_channels: 'email,webpush,plugin-gotify' }));
-    expect(replaySmtp(admin.setSmtpValues, 0).notification_channels).toBe('email,webpush,plugin-gotify');
+    await waitFor(() => expect(body).toEqual({ notification_channels: 'email,push,plugin-gotify' }));
+    expect(replaySmtp(admin.setSmtpValues, 0).notification_channels).toBe('email,push,plugin-gotify');
   });
 
   it('FE-ADMNOT-046: an active push channel shows its switch on, and switching it off keeps email', async () => {

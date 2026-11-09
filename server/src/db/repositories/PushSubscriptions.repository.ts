@@ -131,14 +131,9 @@ export class PushSubscriptionsRepository extends TrekRepository<PushSubscription
    * `DELETE FROM push_subscriptions WHERE user_id = ?` — a password change, a
    * reset or an admin setting a password drops every device with the other
    * credentials (AuthService, AdminService), since a device outlives every session.
-   * The caller's credential transaction also clears encrypted device registrations.
    */
   async deleteAllForUser(userId: number): Promise<void> {
     await this.nativeDelete({ user: userId });
-    await this.kysely<Pick<DB, 'web_push_subscriptions'>>()
-      .deleteFrom('web_push_subscriptions')
-      .where('user_id', '=', userId)
-      .execute();
   }
 
   /** PS7 (`deleteById`) — `DELETE FROM push_subscriptions WHERE id = ?`. */

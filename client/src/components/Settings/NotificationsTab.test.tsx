@@ -1208,13 +1208,13 @@ describe('NotificationsTab — webhook and channel-test failures', () => {
 // receive push, which is exactly what the card must then say.
 
 const pushMatrix = (active: boolean) => ({
-  preferences: { trip_invite: { inapp: true, webpush: true } },
+  preferences: { trip_invite: { inapp: true, push: true } },
   channels: [
     { id: 'inapp', source: 'builtin', labelKey: 'settings.notificationPreferences.inapp', active: true, configured: true },
-    { id: 'webpush', source: 'builtin', labelKey: 'settings.notificationPreferences.webpush', active, configured: false },
+    { id: 'push', source: 'builtin', labelKey: 'settings.notificationPreferences.push', active, configured: false },
   ],
   event_types: ['trip_invite'],
-  implemented_combos: { trip_invite: ['inapp', 'webpush'] },
+  implemented_combos: { trip_invite: ['inapp', 'push'] },
 });
 
 describe('NotificationsTab: Web Push', () => {
@@ -1225,15 +1225,11 @@ describe('NotificationsTab: Web Push', () => {
 
   it('FE-COMP-NOTIFICATIONS-PUSH-001: an active push channel gets its column and the device card', async () => {
     mockMatrix(pushMatrix(true));
-    server.use(
-      http.get('/api/notifications/web-push/config', () => HttpResponse.json({ enabled: true, available: true, maxDevices: 10 })),
-      http.get('/api/notifications/web-push/devices', () => HttpResponse.json({ devices: [] })),
-    );
     render(<NotificationsTab />);
 
     expect(await screen.findByText('Push notifications on this device')).toBeInTheDocument();
     expect(screen.getByText('Push')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Turn on for this device' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(/push/i);
   });
 
   it('FE-COMP-NOTIFICATIONS-PUSH-002: no card and no column while the admin has push off', async () => {

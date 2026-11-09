@@ -22,7 +22,7 @@ import {
 } from './notification-events';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
-import { NOTIFICATION_DEFAULTS, WEB_PUSH_CHANNEL_ID, type NotificationDefault } from '@trek/shared';
+import { NOTIFICATION_DEFAULTS, type NotificationDefault } from '@trek/shared';
 
 export interface PreferencesMatrix {
   preferences: Partial<Record<NotifEventType, Partial<Record<NotifChannel, boolean>>>>;
@@ -170,11 +170,10 @@ export class NotificationPreferencesService {
       'none';
     if (raw === 'none') return [];
     const builtins = new Set((await listChannels()).filter((c) => c.source === 'builtin').map((c) => c.id));
-    const channels = raw.split(',').map((entry) => {
-      const id = entry.trim();
-      return id === 'push' ? WEB_PUSH_CHANNEL_ID : id;
-    });
-    return [...new Set(channels.filter((id) => builtins.has(id)))];
+    return raw
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => builtins.has(c));
   }
 
   /** Is this channel switched on? Plugin channels are on by virtue of being live. */

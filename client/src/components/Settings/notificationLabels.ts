@@ -1,4 +1,3 @@
-import { WEB_PUSH_CHANNEL_ID } from '@trek/shared'
 /**
  * Labels for the notification matrix, shared by the desktop and phone settings
  * and the admin's defaults for users (#1536), so the three can never name an
@@ -34,7 +33,6 @@ export const EVENT_LABEL_KEYS: Record<string, string> = {
 
 /** Plugin channels have no i18n; the server sends their display name outright. */
 export function channelLabel(ch: { id: string; labelKey?: string; label?: string }, t: (k: string) => string): string {
-  if (ch.id === WEB_PUSH_CHANNEL_ID) return t('settings.notificationPreferences.webpush')
   if (ch.labelKey) return t(ch.labelKey) || ch.id
   return ch.label || ch.id
 }

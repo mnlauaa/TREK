@@ -7,20 +7,18 @@
 // the background, so a slow push service can never hold a login up. The push
 // module has its own spec; here it is a pair of spies, except in the one case
 // that runs the real logout teardown against a session that already ran out.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAuthStore } from '../../../src/store/authStore';
-import { buildUser } from '../../helpers/factories';
 import { server } from '../../helpers/msw/server';
 import { resetAllStores } from '../../helpers/store';
+import { buildUser } from '../../helpers/factories';
+import { useAuthStore } from '../../../src/store/authStore';
 
 const push = vi.hoisted(() => ({
-  forgetWebPushOnLogout: vi.fn(),
-  reconcileWebPush: vi.fn(),
-  setActivePushUser: vi.fn(),
-  updateAppBadge: vi.fn(),
+  forgetPushDeviceOnLogout: vi.fn(),
+  resyncPushSubscription: vi.fn(),
 }));
-vi.mock('../../../src/services/webPush', () => push);
+vi.mock('../../../src/push/webPush', () => push);
 
 vi.mock('../../../src/sync/syncTriggers', () => ({
   registerSyncTriggers: vi.fn(),
@@ -37,10 +35,8 @@ vi.mock('../../../src/sync/tripSyncManager', () => ({
 beforeEach(() => {
   resetAllStores();
   vi.clearAllMocks();
-  push.forgetWebPushOnLogout.mockResolvedValue(undefined);
-  push.reconcileWebPush.mockResolvedValue(undefined);
-  push.setActivePushUser.mockResolvedValue(undefined);
-  push.updateAppBadge.mockResolvedValue(undefined);
+  push.forgetPushDeviceOnLogout.mockResolvedValue(undefined);
+  push.resyncPushSubscription.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -51,10 +47,7 @@ describe('authStore and Web Push', () => {
   it('FE-STORE-AUTH-PUSH-001: logout forgets the push device before the logout request clears the cookie', async () => {
     useAuthStore.setState({ user: buildUser(), isAuthenticated: true });
     const order: string[] = [];
-    push.setActivePushUser.mockImplementation(async (user) => {
-      order.push(`active ${user}`);
-    });
-    push.forgetWebPushOnLogout.mockImplementation(async () => {
+    push.forgetPushDeviceOnLogout.mockImplementation(async () => {
       order.push('forget push device');
     });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -65,17 +58,13 @@ describe('authStore and Web Push', () => {
     await useAuthStore.getState().logout();
 
     expect(fetchSpy).toHaveBeenCalled();
-    expect(order).toEqual(['active null', 'forget push device', 'fetch /api/auth/logout']);
+    expect(order).toEqual(['forget push device', 'fetch /api/auth/logout']);
   });
 
   it('FE-STORE-AUTH-PUSH-002: the logout request waits until the push step has finished', async () => {
     useAuthStore.setState({ user: buildUser(), isAuthenticated: true });
     let finishPush!: () => void;
-    push.forgetWebPushOnLogout.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishPush = resolve;
-      })
-    );
+    push.forgetPushDeviceOnLogout.mockReturnValue(new Promise<void>((resolve) => { finishPush = resolve; }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
 
     const loggingOut = useAuthStore.getState().logout();
@@ -91,8 +80,8 @@ describe('authStore and Web Push', () => {
   it('FE-STORE-AUTH-PUSH-003: an expired session answers the push DELETE with 401, and logout still runs to the end', async () => {
     // The real teardown this time: its DELETE must be a plain fetch, because
     // apiClient would meet the 401 with its redirect to the login page.
-    const real = await vi.importActual<typeof import('../../../src/services/webPush')>('../../../src/services/webPush');
-    push.forgetWebPushOnLogout.mockImplementation(real.forgetWebPushOnLogout);
+    const real = await vi.importActual<typeof import('../../../src/push/webPush')>('../../../src/push/webPush');
+    push.forgetPushDeviceOnLogout.mockImplementation(real.forgetPushDeviceOnLogout);
     const unsubscribe = vi.fn(async () => true);
     const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/this-device', unsubscribe };
     const registration = { pushManager: { getSubscription: vi.fn(async () => subscription) } };
@@ -103,15 +92,11 @@ describe('authStore and Web Push', () => {
     vi.stubGlobal('PushManager', function PushManager() {});
     vi.stubGlobal('Notification', { permission: 'granted' });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    localStorage.setItem('trek_web_push_installation_id', '2bf01d54-60c3-4cdf-bd02-4b6f0dce0d83');
-    localStorage.setItem('trek_web_push_enabled', '1');
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(async (input) =>
-        String(input) === '/api/notifications/web-push/devices'
-          ? Response.json({ error: 'Authentication required', code: 'AUTH_REQUIRED' }, { status: 401 })
-          : new Response(null, { status: 200 })
-      );
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input) === '/api/notifications/push/subscriptions'
+        ? Response.json({ error: 'Authentication required', code: 'AUTH_REQUIRED' }, { status: 401 })
+        : new Response(null, { status: 200 }),
+    );
     useAuthStore.setState({ user: buildUser(), isAuthenticated: true });
     const before = window.location.href;
 
@@ -123,10 +108,10 @@ describe('authStore and Web Push', () => {
     }
 
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
-      '/api/notifications/web-push/devices',
+      '/api/notifications/push/subscriptions',
       '/api/auth/logout',
     ]);
-    expect(fetchSpy.mock.calls[0][1]).toMatchObject({ credentials: 'same-origin' });
+    expect(fetchSpy.mock.calls[0][1]).toMatchObject({ method: 'DELETE', credentials: 'include' });
     expect(unsubscribe).toHaveBeenCalled();
     expect(window.location.href).toBe(before);
     expect(useAuthStore.getState().user).toBeNull();
@@ -136,13 +121,12 @@ describe('authStore and Web Push', () => {
     const user = buildUser();
     server.use(http.post('/api/auth/login', () => HttpResponse.json({ user, token: 'tok' })));
     // Never settles: the login must not be waiting on it.
-    push.reconcileWebPush.mockReturnValue(new Promise(() => {}));
+    push.resyncPushSubscription.mockReturnValue(new Promise(() => {}));
 
     await useAuthStore.getState().login(user.email, 'password');
 
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
-    expect(push.setActivePushUser).toHaveBeenCalledWith(user.id);
-    expect(push.reconcileWebPush).toHaveBeenCalledTimes(1);
+    expect(push.resyncPushSubscription).toHaveBeenCalledTimes(1);
   });
 
   it('FE-STORE-AUTH-PUSH-005: a failed login does not touch push', async () => {
@@ -150,6 +134,6 @@ describe('authStore and Web Push', () => {
 
     await expect(useAuthStore.getState().login('bad@example.com', 'wrong')).rejects.toThrow();
 
-    expect(push.reconcileWebPush).not.toHaveBeenCalled();
+    expect(push.resyncPushSubscription).not.toHaveBeenCalled();
   });
 });

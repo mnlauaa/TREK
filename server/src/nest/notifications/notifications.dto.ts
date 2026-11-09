@@ -6,8 +6,8 @@ import {
   testWebhookRequestSchema,
   testNtfyRequestSchema,
   notificationRespondRequestSchema,
-  webPushCurrentRequestSchema,
-  webPushRenameRequestSchema,
+  pushSubscribeRequestSchema,
+  pushUnsubscribeRequestSchema,
 } from '@trek/shared';
 
 import { createZodDto } from 'nestjs-zod';
@@ -24,8 +24,8 @@ export class TestSmtpDto extends createZodDto(testSmtpRequestSchema) {}
 export class TestWebhookDto extends createZodDto(testWebhookRequestSchema) {}
 export class TestNtfyDto extends createZodDto(testNtfyRequestSchema) {}
 export class NotificationRespondDto extends createZodDto(notificationRespondRequestSchema) {}
-export class WebPushCurrentDto extends createZodDto(webPushCurrentRequestSchema) {}
-export class WebPushRenameDto extends createZodDto(webPushRenameRequestSchema) {}
+export class PushSubscribeDto extends createZodDto(pushSubscribeRequestSchema) {}
+export class PushUnsubscribeDto extends createZodDto(pushUnsubscribeRequestSchema) {}
 
 /** The admin-side notification routes NotificationsController serves. */
 export class AdminNotificationPreferencesDto extends createZodDto(adminNotificationPreferencesRequestSchema) {}

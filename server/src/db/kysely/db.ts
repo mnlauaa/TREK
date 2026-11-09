@@ -174,7 +174,6 @@ import type { VacayYearsTable } from './VacayYears.table';
 import type { VisitedCountriesTable } from './VisitedCountries.table';
 import type { VisitedRegionsTable } from './VisitedRegions.table';
 import type { WandererConnectionsTable } from './WandererConnections.table';
-import type { WebPushSubscriptionsTable } from './WebPushSubscriptions.table';
 import type { WebauthnChallengesTable } from './WebauthnChallenges.table';
 import type { WebauthnCredentialsTable } from './WebauthnCredentials.table';
 
@@ -354,7 +353,6 @@ export interface DB {
   visited_countries: VisitedCountriesTable;
   visited_regions: VisitedRegionsTable;
   wanderer_connections: WandererConnectionsTable;
-  web_push_subscriptions: WebPushSubscriptionsTable;
   webauthn_challenges: WebauthnChallengesTable;
   webauthn_credentials: WebauthnCredentialsTable;
 }

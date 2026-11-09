@@ -131,6 +131,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'Tes gagal.',
   'settings.notificationPreferences.pluginConfigured': 'Sudah diatur. Kelola kredensial di halaman pengaturan plugin.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Notifikasi push di perangkat ini',
   'settings.webPush.hint':
     'Menampilkan notifikasi TREK di perangkat ini meskipun TREK sedang ditutup. Peristiwa yang dikirim mengikuti kolom Push.',

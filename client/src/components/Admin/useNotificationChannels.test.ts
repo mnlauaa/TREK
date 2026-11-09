@@ -40,7 +40,7 @@ beforeEach(() => {
 
 describe('the stored list', () => {
   it('FE-ADMCHAN-001: reads the plural setting, the legacy singular one, and none', () => {
-    expect(parseChannelList({ notification_channels: 'email, push ,plugin-gotify' })).toEqual(['email', 'webpush', 'plugin-gotify'])
+    expect(parseChannelList({ notification_channels: 'email, push ,plugin-gotify' })).toEqual(['email', 'push', 'plugin-gotify'])
     expect(parseChannelList({ notification_channel: 'webhook' })).toEqual(['webhook'])
     expect(parseChannelList({ notification_channels: 'none' })).toEqual([])
     expect(parseChannelList({})).toEqual([])
@@ -48,28 +48,21 @@ describe('the stored list', () => {
   })
 
   it('FE-ADMCHAN-002: writes built-ins in their fixed order and keeps every other id', () => {
-    expect(serializeChannelList(['plugin-gotify', 'push', 'email'])).toBe('email,webpush,plugin-gotify')
+    expect(serializeChannelList(['plugin-gotify', 'push', 'email'])).toBe('email,push,plugin-gotify')
     expect(serializeChannelList([])).toBe('none')
   })
 
   it('FE-ADMCHAN-003: flips exactly one id', () => {
-    expect(toggleChannelList(['email', 'plugin-gotify'], 'push')).toBe('email,webpush,plugin-gotify')
+    expect(toggleChannelList(['email', 'plugin-gotify'], 'push')).toBe('email,push,plugin-gotify')
     expect(toggleChannelList(['email', 'push'], 'push')).toBe('email')
     expect(toggleChannelList(['push'], 'push')).toBe('none')
   })
 
-  it('canonicalizes a mixed legacy/current list and disables both push aliases together', () => {
-    const mixed = ['push', 'plugin-gotify', 'webpush', 'email'];
-    expect(parseChannelList({ notification_channels: mixed.join(',') })).toEqual(['webpush', 'plugin-gotify', 'email']);
-    expect(serializeChannelList(mixed)).toBe('email,webpush,plugin-gotify');
-    expect(toggleChannelList(mixed, 'webpush')).toBe('email,plugin-gotify');
-  });
-
   it('FE-ADMCHAN-004: Web Push is a built-in with its own switch card', () => {
-    expect(BUILTIN_CHANNEL_ORDER).toEqual(['email', 'webhook', 'ntfy', 'webpush'])
-    expect(SWITCH_ONLY_CHANNELS.map(c => c.id)).toEqual(['webhook', 'ntfy', 'webpush'])
+    expect(BUILTIN_CHANNEL_ORDER).toEqual(['email', 'webhook', 'ntfy', 'push'])
+    expect(SWITCH_ONLY_CHANNELS.map(c => c.id)).toEqual(['webhook', 'ntfy', 'push'])
     expect(SWITCH_ONLY_CHANNELS[2]).toEqual({
-      id: 'webpush',
+      id: 'push',
       titleKey: 'admin.notifications.webPushPanel.title',
       hintKey: 'admin.notifications.webPushPanel.hint',
     })
@@ -86,8 +79,8 @@ describe('useNotificationChannels', () => {
   it('FE-ADMCHAN-006: switching one on saves the whole list and shows it at once', async () => {
     const { hook, toast } = mount({ notification_channels: 'email,plugin-gotify' })
     await act(() => hook.result.current.channels.toggle('push'))
-    expect(updateAppSettings).toHaveBeenCalledWith({ notification_channels: 'email,webpush,plugin-gotify' })
-    expect(hook.result.current.smtpValues.notification_channels).toBe('email,webpush,plugin-gotify')
+    expect(updateAppSettings).toHaveBeenCalledWith({ notification_channels: 'email,push,plugin-gotify' })
+    expect(hook.result.current.smtpValues.notification_channels).toBe('email,push,plugin-gotify')
     expect(toast.error).not.toHaveBeenCalled()
   })
 
@@ -95,7 +88,7 @@ describe('useNotificationChannels', () => {
     updateAppSettings.mockRejectedValueOnce(new Error('500'))
     const { hook, toast } = mount({ notification_channels: 'email' })
     await act(() => hook.result.current.channels.toggle('push'))
-    expect(updateAppSettings).toHaveBeenCalledWith({ notification_channels: 'email,webpush' })
+    expect(updateAppSettings).toHaveBeenCalledWith({ notification_channels: 'email,push' })
     expect(hook.result.current.smtpValues.notification_channels).toBe('email')
     expect(hook.result.current.channels.isActive('push')).toBe(false)
     expect(toast.error).toHaveBeenCalledWith('Error')

@@ -168,7 +168,6 @@ import { VacayYearsSchema } from './VacayYears.entity';
 import { VisitedCountriesSchema } from './VisitedCountries.entity';
 import { VisitedRegionsSchema } from './VisitedRegions.entity';
 import { WandererConnectionsSchema } from './WandererConnections.entity';
-import { WebPushSubscriptionsSchema } from './WebPushSubscriptions.entity';
 import { WebauthnChallengesSchema } from './WebauthnChallenges.entity';
 import { WebauthnCredentialsSchema } from './WebauthnCredentials.entity';
 
@@ -342,7 +341,6 @@ export const ALL_ENTITIES: readonly EntitySchema[] = [
   VisitedCountriesSchema,
   VisitedRegionsSchema,
   WandererConnectionsSchema,
-  WebPushSubscriptionsSchema,
   WebauthnChallengesSchema,
   WebauthnCredentialsSchema,
 ];

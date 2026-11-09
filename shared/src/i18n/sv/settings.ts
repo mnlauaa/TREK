@@ -139,6 +139,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.pluginConfigured':
     'Konfigurerat. Hantera dina uppgifter på pluginets inställningssida.',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': 'Push', // same-as-en
   'settings.webPush.title': 'Push-meddelanden på den här enheten',
   'settings.webPush.hint':
     'Visar TREK-meddelanden på den här enheten även när TREK är stängt. Vilka händelser som kommer fram styrs av kolumnen Push.',

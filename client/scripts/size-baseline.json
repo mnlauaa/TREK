@@ -1,6 +1,6 @@
 {
   "e2e/help/fixtures.ts": 2291,
-  "src/api/client.ts": 1848,
+  "src/api/client.ts": 1846,
   "src/components/Admin/AdminPluginsPanel.test.tsx": 2704,
   "src/components/Admin/AdminPluginsPanel.tsx": 1266,
   "src/components/Budget/CostsPanel.test.tsx": 2715,

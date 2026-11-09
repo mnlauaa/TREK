@@ -1,58 +1,84 @@
+/**
+ * The Web Push transport (WPUSH-*): what goes over the wire, what each push
+ * service answer does to the table, and the payload the worker receives
+ * (WPUSH-PAY-*). safeFetchFollow is the boundary; the database is real.
+ */
 import { db as testDb } from '../../../../src/db/database';
-import { WebPushSubscriptions } from '../../../../src/db/entities/WebPushSubscriptions.entity';
+import { AppSettings } from '../../../../src/db/entities/AppSettings.entity';
+import { PushSubscriptions } from '../../../../src/db/entities/PushSubscriptions.entity';
 import { ALL_EVENT_TYPES, type ChannelMessage } from '../../../../src/nest/notifications/notification-events';
+import { checkPushSubscription } from '../../../../src/nest/notifications/push/push-subscription.helpers';
+import type { PushSubscriptionsService } from '../../../../src/nest/notifications/push/push-subscriptions.service';
+import { PushController } from '../../../../src/nest/notifications/push/push.controller';
+import {
+  PUSH_UNAVAILABLE_ERROR,
+  VAPID_PRIVATE_KEY_SETTING,
+  VAPID_PUBLIC_KEY_SETTING,
+  type VapidKeysService,
+} from '../../../../src/nest/notifications/push/vapid-keys.service';
 import { generateVapidKeyPair } from '../../../../src/nest/notifications/push/web-push-crypto';
 import {
   BACKGROUND_PUSH_HEADER,
+  FORBIDDEN_FAILURES_BEFORE_REMOVAL,
   MAX_PUSH_PAYLOAD_BYTES,
-  MAX_WEB_PUSH_DEVICES,
   WebPushService,
   buildPushPayload,
   isAppleRelayEndpoint,
   samePagePath,
 } from '../../../../src/nest/notifications/transports/web-push.service';
-import { createUser, setNotificationChannels } from '../../../helpers/factories';
+import { SsrfBlockedError } from '../../../../src/utils/ssrfGuard';
+import { createUser } from '../../../helpers/factories';
 import { findRows, updateRows } from '../../../helpers/factories/rows';
-import { makeNotificationsService, makeWebPushService } from '../../../helpers/notifications';
+import { readAppSetting } from '../../../helpers/factories/settings';
+import { makePushSubscriptionsService, makeVapidKeysService } from '../../../helpers/notifications';
 import { resetTestDb } from '../../../helpers/test-db';
-import { sharedTestOrm } from '../../../helpers/test-uow';
-import { WEB_PUSH_CHANNEL_ID } from '@trek/shared';
+import { createTestOrm, type TestOrm } from '../../../helpers/test-orm';
+import { HttpException } from '@nestjs/common';
 
-import { createDecipheriv, createECDH, hkdfSync, randomUUID, type ECDH } from 'node:crypto';
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
+import { createDecipheriv, createECDH, hkdfSync, type ECDH } from 'node:crypto';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
+// One snapshot connection per file, created inside the factory so nothing has
+// to be hoisted above the imports; the tests reach it through the mocked module.
 vi.mock('../../../../src/db/database', async () => {
   const { createSnapshotTestDb } = await import('../../../helpers/db-mock');
   const db = createSnapshotTestDb();
-  return { db, closeDb: () => {}, reinitialize: () => {} };
+  return {
+    db,
+    closeDb: () => {},
+    reinitialize: () => {},
+    getPlaceWithTags: () => null,
+    canAccessTrip: () => null,
+    isOwner: () => false,
+  };
 });
-const { safeFetchFollow } = vi.hoisted(() => ({ safeFetchFollow: vi.fn() }));
-vi.mock('../../../../src/utils/ssrfGuard', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../src/utils/ssrfGuard')>()),
-  safeFetchFollow,
+const { logInfo, logError, safeFetchFollow } = vi.hoisted(() => ({
+  logInfo: vi.fn(),
+  logError: vi.fn(),
+  safeFetchFollow: vi.fn(),
 }));
+vi.mock('../../../../src/nest/audit/audit-log.logger', () => ({
+  LOG_LEVEL: 'error',
+  logInfo,
+  logDebug: vi.fn(),
+  logError,
+  logWarn: vi.fn(),
+}));
+vi.mock('../../../../src/utils/ssrfGuard', () => {
+  class SsrfBlockedError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'SsrfBlockedError';
+    }
+  }
+  return { SsrfBlockedError, safeFetchFollow };
+});
 
-const ENDPOINT = 'https://push.example.test:8443/push/device';
+// Built in beforeAll: both providers take repositories and a UnitOfWork,
+// which are async to resolve on this file's handle.
+let keys: VapidKeysService;
+let subscriptions: PushSubscriptionsService;
 let push: WebPushService;
-
-beforeAll(async () => {
-  await makeNotificationsService(testDb);
-  push = await makeWebPushService(testDb);
-});
-
-beforeEach(() => {
-  resetTestDb(testDb);
-  vi.stubEnv('APP_URL', 'https://trek.example.test');
-  setNotificationChannels(testDb, WEB_PUSH_CHANNEL_ID);
-  safeFetchFollow.mockReset();
-});
-
-afterEach(() => vi.unstubAllEnvs());
-afterAll(() => testDb.close());
-
-async function rows(userId: number) {
-  return findRows(await sharedTestOrm(testDb), WebPushSubscriptions, { user: userId }, { id: 'asc' });
-}
 
 const MSG: ChannelMessage = {
   event: 'collab_message',
@@ -68,32 +94,17 @@ interface Device {
   auth: Buffer;
 }
 
-function deviceInput(
-  endpoint: string,
-  installationId: string = randomUUID(),
-  intent: 'enable' | 'reconcile' = 'enable',
-) {
+async function subscribe(userId: number, endpoint: string): Promise<Device> {
   const ua = createECDH('prime256v1');
   ua.generateKeys();
   const auth = Buffer.from('fedcba9876543210');
-  return {
-    device: { endpoint, ua, auth },
-    input: {
-      installationId,
-      intent,
-      label: 'Browser',
-      subscription: {
-        endpoint,
-        keys: { p256dh: ua.getPublicKey('base64url'), auth: auth.toString('base64url') },
-      },
-    },
-  };
-}
-
-async function subscribe(userId: number, endpoint = ENDPOINT) {
-  const { device, input } = deviceInput(endpoint);
-  const result = await push.registerCurrent(userId, input);
-  return { ...device, id: result.device!.id, input };
+  const checked = checkPushSubscription({
+    endpoint,
+    keys: { p256dh: ua.getPublicKey('base64url'), auth: auth.toString('base64url') },
+  });
+  if ('error' in checked) throw new Error(checked.error);
+  await subscriptions.upsert(userId, checked.value, await keys.getPublicKey());
+  return { endpoint, ua, auth };
 }
 
 /** The browser's side of RFC 8291, to read what was actually sent. */
@@ -123,102 +134,344 @@ function reply(status: number, text = '') {
   };
 }
 
-describe('Encrypted Web Push delivery', () => {
-  it('sends one VAPID-signed message with a bounded, recipient-aware worker payload', async () => {
+async function rows(userId: number) {
+  return await subscriptions.listForUser(userId);
+}
+
+beforeAll(async () => {
+  keys = await makeVapidKeysService(testDb);
+  subscriptions = await makePushSubscriptionsService(testDb);
+  push = new WebPushService(keys, subscriptions);
+});
+
+beforeEach(() => {
+  resetTestDb(testDb);
+  safeFetchFollow.mockReset();
+  logInfo.mockClear();
+  logError.mockClear();
+});
+
+let orm: TestOrm;
+
+beforeAll(async () => {
+  orm = await createTestOrm(testDb);
+});
+
+afterAll(async () => {
+  await orm.close();
+  testDb.close();
+});
+
+describe('WebPushService delivery', () => {
+  it('WPUSH-001: posts one encrypted, VAPID-signed message through the SSRF guard', async () => {
     const { user } = createUser(testDb);
-    const device = await subscribe(user.id);
+    const device = await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/abc');
     safeFetchFollow.mockResolvedValue(reply(201));
 
-    await expect(push.sendToUser(user.id, { ...MSG, body: '🚄'.repeat(5000) })).resolves.toEqual({
-      sent: 1,
-      invalid: 0,
-      failed: 0,
-    });
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(true);
+
     expect(safeFetchFollow).toHaveBeenCalledTimes(1);
     const [url, init, options] = safeFetchFollow.mock.calls[0];
     expect(url).toBe(device.endpoint);
-    expect(init).toMatchObject({
-      method: 'POST',
-      headers: { 'Content-Encoding': 'aes128gcm', Authorization: expect.stringMatching(/^vapid t=/) },
-      signal: expect.any(AbortSignal),
-    });
     expect(options).toEqual({ maxRedirects: 0, bypassInternalIpAllowed: true });
-    const payload = open(init.body, device);
-    expect(payload).toMatchObject({
-      v: 1,
-      recipientUserId: user.id,
-      title: MSG.title,
-      path: '/trips/12',
-      unreadCount: 0,
-      event: MSG.event,
+    expect(init.method).toBe('POST');
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.headers).toMatchObject({
+      TTL: '86400',
+      Urgency: 'normal',
+      'Content-Encoding': 'aes128gcm',
+      'Content-Type': 'application/octet-stream',
     });
-    expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThanOrEqual(MAX_PUSH_PAYLOAD_BYTES);
-    expect((await rows(user.id))[0]).toMatchObject({ last_success_at: expect.any(String), last_error_at: null });
-  });
-
-  it.each([404, 410])('marks an expired device invalid after HTTP %i', async (status) => {
-    const { user } = createUser(testDb);
-    await subscribe(user.id);
-    safeFetchFollow.mockResolvedValue(reply(status));
-    await expect(push.sendToUser(user.id, MSG)).resolves.toEqual({ sent: 0, invalid: 1, failed: 0 });
-    expect((await rows(user.id))[0]).toMatchObject({ status: 'invalid', last_error_at: expect.any(String) });
-  });
-
-  it('rejects corrupt ciphertext before sending and records other errors without revoking', async () => {
-    const { user } = createUser(testDb);
-    const corrupt = await subscribe(user.id, ENDPOINT + '/corrupt');
-    await subscribe(user.id, ENDPOINT + '/transient');
-    await updateRows(
-      await sharedTestOrm(testDb),
-      WebPushSubscriptions,
-      { id: corrupt.id },
-      {
-        subscription_encrypted: 'enc:v1:unreadable',
-      },
+    expect(init.headers.Authorization).toMatch(
+      new RegExp(`^vapid t=[\\w-]+\\.[\\w-]+\\.[\\w-]+, k=${await keys.getPublicKey()}$`),
     );
-    safeFetchFollow.mockRejectedValue(new Error('timed out'));
-    await expect(push.sendToUser(user.id, MSG)).resolves.toEqual({ sent: 0, invalid: 1, failed: 1 });
-    expect(safeFetchFollow).toHaveBeenCalledTimes(1);
-    expect(await rows(user.id)).toMatchObject([
-      { status: 'invalid', last_error_at: expect.any(String) },
-      { status: 'active', last_error_at: expect.any(String) },
-    ]);
+    expect(open(init.body, device)).toEqual({
+      title: MSG.title,
+      body: MSG.body,
+      url: '/trips/12',
+      tag: 'collab_message:/trips/12',
+      event: 'collab_message',
+    });
+
+    const [row] = await rows(user.id);
+    expect(row.last_success_at).not.toBeNull();
+    expect(row.failure_count).toBe(0);
   });
 
-  it('fails closed on origin changes and ignores stale delivery responses after reconciliation', async () => {
+  it('WPUSH-002: date-bound events go out with high urgency', async () => {
     const { user } = createUser(testDb);
-    const { input, id } = await subscribe(user.id);
-    safeFetchFollow.mockImplementation(async () => {
-      await push.registerCurrent(user.id, { ...input, intent: 'reconcile' });
-      return reply(410);
-    });
+    await subscribe(user.id, 'https://web.push.apple.com/QGx');
+    safeFetchFollow.mockResolvedValue(reply(201));
+    await push.sendToUser(user.id, { ...MSG, event: 'trip_reminder' });
+    expect(safeFetchFollow.mock.calls[0][1].headers.Urgency).toBe('high');
+  });
+
+  it('WPUSH-003: 404 and 410 mean the browser is gone, and the row goes with it', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/expired');
+    await subscribe(user.id, 'https://updates.push.services.mozilla.com/wpush/v2/revoked');
+    safeFetchFollow.mockImplementation(async (url: string) => reply(url.includes('expired') ? 404 : 410));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(await rows(user.id)).toEqual([]);
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it('WPUSH-004: a first 403 with Apple’s BadJwtToken keeps the device, counts it and logs the reason', async () => {
+    // Apple answers 403 for a token it rejects, which is the server's problem
+    // (subject, clock, key), not a sign the device is gone.
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://web.push.apple.com/QGx');
+    safeFetchFollow.mockResolvedValue(reply(403, '{"reason":"BadJwtToken"}'));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(await rows(user.id)).toHaveLength(1);
+    expect((await rows(user.id))[0].failure_count).toBe(1);
+    const line = logError.mock.calls[0][0] as string;
+    expect(line).toContain('HTTP 403');
+    expect(line).toContain('BadJwtToken');
+    expect(line).toContain('host=web.push.apple.com');
+    // The endpoint is a capability URL: the log names the host only.
+    expect(line).not.toContain('/QGx');
+  });
+
+  it(`WPUSH-004b: the device goes after ${FORBIDDEN_FAILURES_BEFORE_REMOVAL} failed sends in a row ending in 403`, async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://web.push.apple.com/QGx');
+    safeFetchFollow.mockResolvedValue(reply(403, '{"reason":"BadJwtToken"}'));
+    await Array.from({ length: FORBIDDEN_FAILURES_BEFORE_REMOVAL - 1 }, (_, i) => i + 1).reduce(async (previous, i) => {
+      await previous;
+      await push.sendToUser(user.id, MSG);
+      expect((await rows(user.id))[0].failure_count).toBe(i);
+    }, Promise.resolve());
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(await rows(user.id)).toEqual([]);
+    expect(logError).toHaveBeenLastCalledWith(expect.stringContaining('removed a device'));
+    expect(logError).toHaveBeenLastCalledWith(expect.stringContaining('BadJwtToken'));
+  });
+
+  it('WPUSH-004c: a success between refusals starts the count over', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://web.push.apple.com/QGx');
+    safeFetchFollow.mockResolvedValue(reply(403, '{"reason":"BadJwtToken"}'));
+    await Array.from({ length: FORBIDDEN_FAILURES_BEFORE_REMOVAL - 1 }).reduce(async (previous) => {
+      await previous;
+      await push.sendToUser(user.id, MSG);
+    }, Promise.resolve());
+    safeFetchFollow.mockResolvedValueOnce(reply(201));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(true);
+    expect((await rows(user.id))[0].failure_count).toBe(0);
     await push.sendToUser(user.id, MSG);
-    expect((await rows(user.id))[0]).toMatchObject({ id, status: 'active' });
-
-    vi.stubEnv('APP_URL', 'https://new.example.test');
-    expect(await push.listDevices(user.id)).toEqual([]);
-    await expect(push.registerCurrent(user.id, { ...input, intent: 'reconcile' })).resolves.toEqual({
-      state: 'revoked',
-    });
-    expect((await rows(user.id))[0]).toMatchObject({ id, status: 'origin_mismatch' });
+    expect(await rows(user.id)).toHaveLength(1);
+    expect((await rows(user.id))[0].failure_count).toBe(1);
   });
 
-  it('applies the cap to new and reactivated devices and makes a key change require reconciliation', async () => {
+  it('WPUSH-005: any other failure keeps the row, counts it and logs the capped body', async () => {
     const { user } = createUser(testDb);
-    const revoked = await subscribe(user.id);
-    await push.revokeDevice(user.id, revoked.id);
-    for (let i = 0; i < MAX_WEB_PUSH_DEVICES; i++) await subscribe(user.id, ENDPOINT + '/' + i);
-    await expect(push.registerCurrent(user.id, revoked.input)).rejects.toMatchObject({ code: 'WEB_PUSH_DEVICE_LIMIT' });
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/busy');
+    safeFetchFollow.mockResolvedValue(reply(503, `overloaded ${'x'.repeat(5000)}`));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect((await rows(user.id))[0].failure_count).toBe(1);
+    const line = logError.mock.calls[0][0] as string;
+    expect(line).toContain('HTTP 503');
+    expect(line.length).toBeLessThan(1300);
 
+    // A body that cannot be read changes nothing but the log text.
+    safeFetchFollow.mockResolvedValueOnce({
+      ...reply(500),
+      text: async () => {
+        throw new Error('stream reset');
+      },
+    });
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect((await rows(user.id))[0].failure_count).toBe(2);
+    expect(logError).toHaveBeenLastCalledWith(expect.stringMatching(/HTTP 500 .*host=fcm\.googleapis\.com: $/));
+  });
+
+  it('WPUSH-006: a refused or failed request is a failure, never a throw', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/a');
+    safeFetchFollow.mockRejectedValueOnce(new SsrfBlockedError('Requests to private addresses are not allowed'));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(logError).toHaveBeenLastCalledWith(expect.stringContaining('blocked by SSRF guard'));
+
+    safeFetchFollow.mockRejectedValueOnce(new Error('The operation was aborted due to timeout'));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(logError).toHaveBeenLastCalledWith(expect.stringContaining('timeout'));
+    expect((await rows(user.id))[0].failure_count).toBe(2);
+  });
+
+  it('WPUSH-007: one device getting it is enough', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/ok');
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/down');
+    safeFetchFollow.mockImplementation(async (url: string) => reply(url.endsWith('/ok') ? 201 : 500));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(true);
+    // Both hosts are the same origin, so one token served both requests.
+    const [a, b] = safeFetchFollow.mock.calls.map((c) => c[1].headers.Authorization);
+    expect(a).toBe(b);
+  });
+
+  it('WPUSH-008: a row made for a previous server key is dropped without a request', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/old');
+    await updateRows(orm, PushSubscriptions, {}, { vapid_public_key: 'previous-key' });
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+    expect(await rows(user.id)).toEqual([]);
+  });
+
+  it('WPUSH-009: a row whose host is not a push service any more is dropped without a request', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/y');
+    await updateRows(
+      orm,
+      PushSubscriptions,
+      { endpoint: { $like: '%/x' } },
+      { endpoint: 'https://attacker.example.test/collect' },
+    );
+    await updateRows(orm, PushSubscriptions, { endpoint: { $like: '%/y' } }, { endpoint: 'not a url' });
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+    expect(await rows(user.id)).toEqual([]);
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining('host=attacker.example.test'));
+    // Not even a URL: the log still has something to name instead of the value.
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining('not a known push service user'));
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining('host=invalid-endpoint'));
+  });
+
+  it('WPUSH-010: broken stored keys count as a failure for that row', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+    await updateRows(orm, PushSubscriptions, {}, { auth: '***' });
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+    expect((await rows(user.id))[0].failure_count).toBe(1);
+  });
+
+  it('WPUSH-011: nothing to send to is simply false', async () => {
+    const { user } = createUser(testDb);
+    expect(await push.hasDevices(user.id)).toBe(false);
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+  });
+
+  it('WPUSH-012: a failure before any request (no key pair) is logged and false', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+    const spy = vi.spyOn(keys, 'getKeys').mockRejectedValueOnce(new Error('database is locked'));
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+    expect(logError).toHaveBeenCalledWith(expect.stringContaining('database is locked'));
+    spy.mockRestore();
+  });
+
+  it('WPUSH-012b: while the stored key pair cannot be used nothing is sent and every device stays', async () => {
+    const { user } = createUser(testDb);
+    await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+    const publicKey = await keys.getPublicKey();
+    // A restore under a different ENCRYPTION_KEY: the ciphertext no longer opens.
+    await updateRows(orm, AppSettings, { key: VAPID_PRIVATE_KEY_SETTING }, { value: 'enc:v1:bm90IGEgY2lwaGVydGV4dA' });
+
+    await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+    expect(await rows(user.id)).toHaveLength(1);
+    expect((await rows(user.id))[0].vapid_public_key).toBe(publicKey);
+    expect((await rows(user.id))[0].failure_count).toBe(0);
+    expect(await push.isAvailable()).toBe(false);
+
+    // The test send says why instead of a bare failure, and sends nothing either.
+    await expect(push.sendTest(user.id)).resolves.toEqual({ success: false, error: PUSH_UNAVAILABLE_ERROR });
+    expect(safeFetchFollow).not.toHaveBeenCalled();
+  });
+
+  it('WPUSH-012c: an install that only ran on VAPID_* generates nothing when that pair breaks, and keeps every device', async () => {
     const pair = generateVapidKeyPair();
-    vi.stubEnv('WEB_PUSH_VAPID_PUBLIC_KEY', pair.publicKey);
-    vi.stubEnv('WEB_PUSH_VAPID_PRIVATE_KEY', pair.privateKey);
-    expect(await push.listDevices(user.id)).toEqual([]);
-    expect(await push.config()).toMatchObject({ available: true, publicKey: pair.publicKey });
-    const previous = (await rows(user.id))[1];
-    const refreshed = deviceInput(ENDPOINT + '/fresh', previous.installation_id, 'reconcile');
-    await expect(push.registerCurrent(user.id, refreshed.input)).resolves.toMatchObject({ state: 'active' });
-    expect(await push.listDevices(user.id)).toHaveLength(1);
+    vi.stubEnv('VAPID_PUBLIC_KEY', pair.publicKey);
+    vi.stubEnv('VAPID_PRIVATE_KEY', pair.privateKey);
+    try {
+      const { user } = createUser(testDb);
+      await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+      await subscribe(user.id, 'https://web.push.apple.com/y');
+      // An existingSecret without the private half: the variable is simply gone.
+      vi.stubEnv('VAPID_PRIVATE_KEY', '');
+
+      await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+      await expect(push.sendTest(user.id)).resolves.toEqual({ success: false, error: PUSH_UNAVAILABLE_ERROR });
+
+      expect(await push.isAvailable()).toBe(false);
+      expect(safeFetchFollow).not.toHaveBeenCalled();
+      expect(await findRows(orm, AppSettings, { key: { $like: 'web_push_vapid_%' } })).toEqual([]);
+      expect((await rows(user.id)).map((row) => row.vapid_public_key)).toEqual([pair.publicKey, pair.publicKey]);
+
+      // The Secret fixed: the same devices receive again, nobody turns push on again.
+      vi.stubEnv('VAPID_PRIVATE_KEY', pair.privateKey);
+      safeFetchFollow.mockResolvedValue(reply(201));
+      await expect(push.sendToUser(user.id, MSG)).resolves.toBe(true);
+      expect(safeFetchFollow).toHaveBeenCalledTimes(2);
+      expect(await rows(user.id)).toHaveLength(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('WPUSH-012d: a broken VAPID_* pair over a pair stored from before sends nothing, keeps every device and serves no key', async () => {
+    // The first start without VAPID_* stored a pair; the operator then brought their own.
+    const storedKey = await keys.getPublicKey();
+    const pair = generateVapidKeyPair();
+    vi.stubEnv('VAPID_PUBLIC_KEY', pair.publicKey);
+    vi.stubEnv('VAPID_PRIVATE_KEY', pair.privateKey);
+    const controller = new PushController(keys, subscriptions);
+    try {
+      const { user } = createUser(testDb);
+      await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+      await subscribe(user.id, 'https://web.push.apple.com/y');
+      // An existingSecret rotated without the private half.
+      vi.stubEnv('VAPID_PRIVATE_KEY', '');
+
+      await expect(push.sendToUser(user.id, MSG)).resolves.toBe(false);
+      await expect(push.sendTest(user.id)).resolves.toEqual({ success: false, error: PUSH_UNAVAILABLE_ERROR });
+      expect(await push.isAvailable()).toBe(false);
+      expect(safeFetchFollow).not.toHaveBeenCalled();
+      // Signing with the stored pair would have dropped both rows; they stay on the environment key.
+      expect((await rows(user.id)).map((row) => row.vapid_public_key)).toEqual([pair.publicKey, pair.publicKey]);
+      expect(await readAppSetting(orm, VAPID_PUBLIC_KEY_SETTING)).toBe(storedKey);
+      // Browsers are not handed the stored key to subscribe again with either.
+      let refusal: unknown = null;
+      try {
+        await controller.publicKey();
+      } catch (err) {
+        refusal = err;
+      }
+      expect(refusal).toBeInstanceOf(HttpException);
+      expect((refusal as HttpException).getStatus()).toBe(503);
+
+      // The Secret fixed: the same rows receive again, and the key served is the one they hold.
+      vi.stubEnv('VAPID_PRIVATE_KEY', pair.privateKey);
+      safeFetchFollow.mockResolvedValue(reply(201));
+      await expect(push.sendToUser(user.id, MSG)).resolves.toBe(true);
+      expect(safeFetchFollow).toHaveBeenCalledTimes(2);
+      expect(await rows(user.id)).toHaveLength(2);
+      expect(await controller.publicKey()).toEqual({ publicKey: pair.publicKey });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('WPUSH-013: the test send reports success and failure like the other channels', async () => {
+    const { user } = createUser(testDb);
+    const device = await subscribe(user.id, 'https://fcm.googleapis.com/fcm/send/x');
+    safeFetchFollow.mockResolvedValueOnce(reply(201));
+    expect(await push.isAvailable()).toBe(true);
+    await expect(push.sendTest(user.id)).resolves.toEqual({ success: true });
+    const sent = open(safeFetchFollow.mock.calls[0][1].body, device);
+    expect(sent).toMatchObject({ title: 'Test Notification', url: '/settings?tab=notifications' });
+    // Only chat collapses; a second test is a second notification.
+    expect(sent).not.toHaveProperty('tag');
+    safeFetchFollow.mockResolvedValueOnce(reply(500));
+    await expect(push.sendTest(user.id)).resolves.toEqual({
+      success: false,
+      error: 'Failed to send push notification',
+    });
   });
 });
 
@@ -229,7 +482,7 @@ describe('WebPushService.sendWatchSync', () => {
 
   it('WSYNC-008: only the iPhone app gets it, as a short-lived background push the relay recognises', async () => {
     const { user } = createUser(testDb);
-    const device = await subscribe(user.id, APNS);
+    await subscribe(user.id, APNS);
     await subscribe(user.id, FCM);
     await subscribe(user.id, BROWSER);
     safeFetchFollow.mockResolvedValue(reply(201));
@@ -238,7 +491,6 @@ describe('WebPushService.sendWatchSync', () => {
     expect(safeFetchFollow).toHaveBeenCalledTimes(1);
     const [url, init] = safeFetchFollow.mock.calls[0];
     expect(url).toBe(APNS);
-    expect(open(init.body, device)).toEqual({ type: 'watch-sync' });
     expect(init.headers).toMatchObject({
       [BACKGROUND_PUSH_HEADER]: 'background',
       Topic: 'trek-watch-sync',

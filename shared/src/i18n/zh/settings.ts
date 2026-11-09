@@ -335,6 +335,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.webhook': 'Webhook',
   'settings.notificationPreferences.email': '电子邮件',
   'settings.notificationPreferences.ntfy': 'Ntfy',
+  'settings.notificationPreferences.push': '推送',
   'settings.webPush.title': '此设备上的推送通知',
   'settings.webPush.hint': '即使 TREK 已关闭，也会在此设备上显示 TREK 通知。收到哪些事件取决于“推送”列。',
   'settings.webPush.enable': '为此设备开启',

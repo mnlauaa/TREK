@@ -1,105 +1,77 @@
 import type { User } from '../../../types';
 import { CurrentUser } from '../../auth-core/current-user.decorator';
 import { JwtAuthGuard } from '../../auth-core/jwt-auth.guard';
-import { ResponseContract } from '../../common/response-contract';
-import { toRowId } from '../../common/row-id';
-import { WebPushCurrentDto, WebPushRenameDto } from '../notifications.dto';
-import { WebPushService, WebPushServiceError } from '../transports/web-push.service';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpException,
-  Param,
-  Patch,
-  Post,
-  Put,
-  UseGuards,
-} from '@nestjs/common';
-import {
-  channelTestResultSchema,
-  successResponseSchema,
-  webPushConfigResultSchema,
-  webPushCurrentResultSchema,
-  webPushDeviceListResultSchema,
-} from '@trek/shared';
+import { PushSubscribeDto, PushUnsubscribeDto } from '../notifications.dto';
+import { checkPushSubscription } from './push-subscription.helpers';
+import { PushSubscriptionsService } from './push-subscriptions.service';
+import { PUSH_UNAVAILABLE_ERROR, PushUnavailableError, VapidKeysService } from './vapid-keys.service';
+import { Body, Controller, Delete, Get, Headers, HttpCode, HttpException, Post, UseGuards } from '@nestjs/common';
+import type { PushPublicKeyResult, PushSubscribeResult, PushUnsubscribeResult } from '@trek/shared';
 
-@Controller('api/notifications/web-push')
+/**
+ * /api/notifications/push: how a browser signs up for Web Push (#894).
+ *
+ * The browser fetches the server's public key, subscribes with its push
+ * service, and hands the subscription over here; logging out or switching push
+ * off in that browser deletes it again. Which events arrive is the ordinary
+ * preference matrix ('push' column), and the test send is the generic
+ * POST /api/notifications/test/push.
+ *
+ * No MCP tool mirrors these routes on purpose: a subscription is created by a
+ * browser's push manager for that one browser, and there is nothing an MCP
+ * client could subscribe with.
+ */
+@Controller('api/notifications/push')
 @UseGuards(JwtAuthGuard)
 export class PushController {
-  constructor(private readonly push: WebPushService) {}
+  constructor(
+    private readonly keys: VapidKeysService,
+    private readonly subscriptions: PushSubscriptionsService,
+  ) {}
 
-  @Get('config')
-  @ResponseContract(webPushConfigResultSchema)
-  config() {
-    return this.push.config();
+  @Get('public-key')
+  async publicKey(): Promise<PushPublicKeyResult> {
+    return { publicKey: await this.currentPublicKey() };
   }
 
-  @Get('devices')
-  @ResponseContract(webPushDeviceListResultSchema)
-  async devices(@CurrentUser() user: User) {
-    try {
-      return { devices: await this.push.listDevices(user.id) };
-    } catch (error) {
-      this.mapError(error);
-    }
+  @Post('subscriptions')
+  @HttpCode(200)
+  async subscribe(
+    @CurrentUser() user: User,
+    @Body() body: PushSubscribeDto,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<PushSubscribeResult> {
+    const checked = checkPushSubscription(body.subscription);
+    if ('error' in checked) throw new HttpException({ error: checked.error }, 400);
+    const devices = await this.subscriptions.upsert(user.id, checked.value, await this.currentPublicKey(), userAgent);
+    return { success: true, devices };
   }
 
-  @Put('current')
-  @ResponseContract(webPushCurrentResultSchema)
-  async current(@CurrentUser() user: User, @Body() body: WebPushCurrentDto) {
-    try {
-      return await this.push.registerCurrent(user.id, body);
-    } catch (error) {
-      this.mapError(error);
-    }
-  }
-
-  @Patch('devices/:id')
-  @ResponseContract(webPushCurrentResultSchema.pick({ device: true }).required())
-  async rename(@CurrentUser() user: User, @Param('id') id: string, @Body() body: WebPushRenameDto) {
-    const device = await this.push.renameDevice(user.id, this.deviceId(id), body.label);
-    if (!device) throw new HttpException({ error: 'Not found' }, 404);
-    return { device };
-  }
-
-  @Delete('devices/:id')
-  @ResponseContract(successResponseSchema)
-  async revoke(@CurrentUser() user: User, @Param('id') id: string) {
-    if (!(await this.push.revokeDevice(user.id, this.deviceId(id)))) {
-      throw new HttpException({ error: 'Not found' }, 404);
-    }
+  /**
+   * Idempotent: the push service may already have expired the row, and a
+   * browser logging out must not get an error for that. Only the caller's own
+   * endpoint can go; the same URL on someone else's account is left alone.
+   * Works while push is unavailable too, so a device can always be forgotten.
+   */
+  @Delete('subscriptions')
+  @HttpCode(200)
+  async unsubscribe(@CurrentUser() user: User, @Body() body: PushUnsubscribeDto): Promise<PushUnsubscribeResult> {
+    await this.subscriptions.removeForUser(user.id, body.endpoint);
     return { success: true };
   }
 
-  @Post('devices/:id/test')
-  @HttpCode(200)
-  @ResponseContract(channelTestResultSchema)
-  async test(@CurrentUser() user: User, @Param('id') id: string) {
+  /**
+   * The key browsers subscribe with. While the key pair cannot be used, stored
+   * or from VAPID_* (the log says why), the answer is a 503: nothing could be
+   * signed for a new subscription, and the devices already subscribed stay as
+   * they are.
+   */
+  private async currentPublicKey(): Promise<string> {
     try {
-      return await this.push.testDevice(user.id, this.deviceId(id));
-    } catch (error) {
-      this.mapError(error);
+      return await this.keys.getPublicKey();
+    } catch (err) {
+      if (err instanceof PushUnavailableError) throw new HttpException({ error: PUSH_UNAVAILABLE_ERROR }, 503);
+      throw err;
     }
-  }
-
-  private deviceId(value: string): number {
-    const id = toRowId(value);
-    if (id === null || id <= 0) throw new HttpException({ error: 'Invalid id' }, 400);
-    return id;
-  }
-
-  private mapError(error: unknown): never {
-    if (!(error instanceof WebPushServiceError)) throw error;
-    const status = {
-      WEB_PUSH_DISABLED: 409,
-      WEB_PUSH_DEVICE_LIMIT: 409,
-      WEB_PUSH_SUBSCRIPTION_INVALID: 400,
-      WEB_PUSH_ORIGIN_UNAVAILABLE: 503,
-      VAPID_CONFIG_INVALID: 503,
-    }[error.code];
-    throw new HttpException({ error: error.message, code: error.code }, status);
   }
 }

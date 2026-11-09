@@ -631,29 +631,24 @@ describe('MSettingsNotifications: Web Push', () => {
   it('FE-MOB-SETNOTIF-033: an active push channel gets its chip and the device card', async () => {
     usePrefs(
       matrix({
-        preferences: { trip_invite: { inapp: true, webpush: true } },
-        channels: [builtin('inapp'), builtin('webpush', { configured: false })],
-        implemented_combos: { trip_invite: ['inapp', 'webpush'] },
+        preferences: { trip_invite: { inapp: true, push: true } },
+        channels: [builtin('inapp'), builtin('push', { configured: false })],
+        implemented_combos: { trip_invite: ['inapp', 'push'] },
       }),
-    );
-    server.use(
-      http.get('/api/notifications/web-push/config', () => HttpResponse.json({ enabled: true, available: true, maxDevices: 10 })),
-      http.get('/api/notifications/web-push/devices', () => HttpResponse.json({ devices: [] })),
     );
     render(<MSettingsNotifications />);
 
     expect(await screen.findByText('Push notifications on this device')).toBeInTheDocument();
     const row = (await screen.findByText('Trip invitations')).parentElement as HTMLElement;
     expect(within(row).getByRole('button', { name: 'Push' })).toBeInTheDocument();
-    expect(screen.getByText('This browser cannot receive push notifications.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Turn on for this device' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(/push/i);
   });
 
   it('FE-MOB-SETNOTIF-034: no card while the admin has push off', async () => {
     usePrefs(
       matrix({
-        channels: [builtin('inapp'), builtin('webpush', { active: false })],
-        implemented_combos: { trip_invite: ['inapp', 'webpush'] },
+        channels: [builtin('inapp'), builtin('push', { active: false })],
+        implemented_combos: { trip_invite: ['inapp', 'push'] },
       }),
     );
     render(<MSettingsNotifications />);

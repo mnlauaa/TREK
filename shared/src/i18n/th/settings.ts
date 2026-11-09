@@ -125,6 +125,7 @@ const settings: TranslationStrings = {
   'settings.notificationPreferences.testFailed': 'การทดสอบล้มเหลว',
   'settings.notificationPreferences.pluginConfigured': 'กำหนดค่าแล้ว จัดการข้อมูลประจำตัวในหน้าการตั้งค่าปลั๊กอิน',
   'settings.notificationPreferences.ntfy': 'เอ็นทีฟี่',
+  'settings.notificationPreferences.push': 'พุช',
   'settings.webPush.title': 'การแจ้งเตือนแบบพุชบนอุปกรณ์นี้',
   'settings.webPush.hint':
     'แสดงการแจ้งเตือนของ TREK บนอุปกรณ์นี้แม้ในขณะที่ปิด TREK อยู่ เหตุการณ์ที่จะได้รับเป็นไปตามคอลัมน์ พุช',
