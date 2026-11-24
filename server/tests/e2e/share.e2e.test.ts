@@ -207,7 +207,15 @@ describe('Share-link e2e (real auth guard + real SQL over temp SQLite)', () => {
 
     const res = await request(server).get(`/api/shared/${created.body.token}`);
     expect(res.status).toBe(200);
-    expect(res.body.days).toEqual([{ id: day.id, day_number: day.day_number, date: null, title: 'Louvre day' }]);
+    expect(res.body.days).toEqual([
+      {
+        id: day.id,
+        day_number: day.day_number,
+        date: null,
+        title: 'Louvre day',
+        timing: { enabled: true, start: '09:00', travel: [] },
+      },
+    ]);
     expect(res.body.dayNotes[day.id]).toEqual([expect.objectContaining({ text: 'Meet at noon' })]);
     expect(res.body.dayNotes[day.id][0]).not.toHaveProperty('trip_id');
     expect(res.body.categories).toEqual([{ id: used.id, name: 'Museums', color: used.color, icon: used.icon }]);

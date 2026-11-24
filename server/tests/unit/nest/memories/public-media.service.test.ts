@@ -118,14 +118,18 @@ describe('renditionFor', () => {
   it('PMEDIA-006: a copy that takes longer than a request waits is refused as pending and finished for the next one', async () => {
     write('journey', 'long.jpg', phonePhoto());
     let release = () => {};
+    let started = () => {};
+    const building = new Promise<void>((resolve) => (started = resolve));
     const held = new Promise<void>((resolve) => (release = resolve));
     storage.withLocalFile.mockImplementationOnce(async (category, name, fn) => {
+      started();
       await held;
       return fn(at(category, name));
     });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const first = expect(service.renditionFor('journey', 'long.jpg')).rejects.toBeInstanceOf(RenditionPendingError);
+      await building;
       await vi.advanceTimersByTimeAsync(50_000);
       await first;
     } finally {

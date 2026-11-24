@@ -1707,15 +1707,20 @@ describe('repository parity (rule 19 — full-key toEqual against the legacy sta
   });
 });
 
+function seedTwoMemberTrip() {
+  const { user: me } = createUser(testDb);
+  const { user: bob } = createUser(testDb);
+  const trip = createTrip(testDb, me.id);
+  addTripMember(testDb, trip.id, bob.id);
+  return { trip, me, bob };
+}
+
 // #2525: a bill entered in dollars on a euro trip was booked at the rate of the day. The
 // totals the MCP summary, the budget prompt and the per-person resource hand out added its
 // dollars to the euros as they stood and called the sum euros.
 describe('trip totals read every row in the trip currency (#2525)', () => {
   async function seedDollarBill() {
-    const { user: me } = createUser(testDb);
-    const { user: bob } = createUser(testDb);
-    const trip = createTrip(testDb, me.id);
-    addTripMember(testDb, trip.id, bob.id);
+    const { trip, me, bob } = seedTwoMemberTrip();
     const members = [{ user_id: me.id }, { user_id: bob.id }];
     const hotel = await budget.createBudgetItem(trip.id, {
       name: 'Aparthotel Silver', category: 'accommodation', currency: 'USD', exchange_rate: 1.17,
@@ -1780,16 +1785,8 @@ describe('trip totals read every row in the trip currency (#2525)', () => {
 // converted the ledger back with the dollar's. The two quotes are not exact inverses, so a
 // bill entered today read a few cents off and paying what settle-up offered left a balance.
 describe('the settlement converts with the quote the entry rate was frozen from (#2525)', () => {
-  function seedSameDayBill() {
-    const { user: me } = createUser(testDb);
-    const { user: bob } = createUser(testDb);
-    const trip = createTrip(testDb, me.id);
-    addTripMember(testDb, trip.id, bob.id);
-    return { trip, me, bob };
-  }
-
   it('BUDGET-SVC-DB-082: a same-day bill in the display currency reads as typed and settles to zero', async () => {
-    const { trip, me, bob } = seedSameDayBill();
+    const { trip, me, bob } = seedTwoMemberTrip();
     // Frozen now, from the euro's quote: 1.1429.
     const bill = await budget.create(String(trip.id), {
       name: 'Villa', category: 'accommodation', currency: 'USD', total_price: 12345.67,
@@ -1801,10 +1798,16 @@ describe('the settlement converts with the quote the entry rate was frozen from 
     const mine = before.finalBudgets.find(f => f.user_id === me.id)!;
     expect(mine.expenses).toBe(12345.67);
     expect(mine.sources.fronted).toEqual([{ item_id: bill.id, cents: 1234567 }]);
-    expect(before.flows.map(f => f.amount)).toEqual([6172.84]);
+    expect(before.flows).toHaveLength(1);
+    const [flow] = before.flows;
+    expect(flow.from.user_id).toBe(bob.id);
+    expect(flow.to.user_id).toBe(me.id);
+    // The odd cent rotates by expense id; either participant can receive it.
+    expect([6172.83, 6172.84]).toContain(flow.amount);
+    expect(Math.round(mine.final * 100) + Math.round(flow.amount * 100)).toBe(1234567);
 
     // Bob pays exactly what settle-up offers, in dollars, as the Costs screen records it.
-    await budget.createSettlement(trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: 6172.84, currency: 'USD' }, me.id);
+    await budget.createSettlement(trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: flow.amount, currency: before.currency, exchange_rate: flow.exchange_rate, rate_base_currency: before.trip_currency }, me.id);
     const after = await budget.settlement(trip.id, 'USD', 'EUR');
     expect(after.balances.map(b => b.balance)).toEqual([0, 0]);
     expect(after.flows).toEqual([]);
@@ -1812,7 +1815,7 @@ describe('the settlement converts with the quote the entry rate was frozen from 
   });
 
   it('BUDGET-SVC-DB-083: the final budget lists a bill at what was typed even where its trip cent rounds away', async () => {
-    const { trip, me, bob } = seedSameDayBill();
+    const { trip, me, bob } = seedTwoMemberTrip();
     // 123.45 USD is 108.0147 EUR. As a whole trip cent, 108.01 EUR, it came back as 123.44.
     const bill = await budget.create(String(trip.id), {
       name: 'Taxi', currency: 'USD', total_price: 123.45,
@@ -1830,7 +1833,7 @@ describe('the settlement converts with the quote the entry rate was frozen from 
   });
 
   it('BUDGET-SVC-DB-084: a legacy transfer without a currency reads back in the display currency as entered', async () => {
-    const { trip, me, bob } = seedSameDayBill();
+    const { trip, me, bob } = seedTwoMemberTrip();
     await budget.insertSettlement(trip.id, { from_user_id: bob.id, to_user_id: me.id, amount: 30 }, me.id);
     const s = await budget.settlement(trip.id, 'USD', 'EUR');
     const mine = s.finalBudgets.find(f => f.user_id === me.id)!;
@@ -1839,7 +1842,7 @@ describe('the settlement converts with the quote the entry rate was frozen from 
   });
 
   it('BUDGET-SVC-DB-085: falls back to the display currency\'s quote when the trip\'s is unavailable', async () => {
-    const { trip, me, bob } = seedSameDayBill();
+    const { trip, me, bob } = seedTwoMemberTrip();
     await budget.createBudgetItem(trip.id, {
       name: 'Dinner', currency: 'EUR', payers: [{ user_id: me.id, amount: 100 }],
       members: [{ user_id: me.id }, { user_id: bob.id }],
@@ -1978,10 +1981,7 @@ describe('rows no rate can convert, and the rates that heal them', () => {
   });
 
   it('BUDGET-SVC-DB-064: prefers the server quote, never touches frozen, trip-currency or NULL-currency rows', async () => {
-    const { user: me } = createUser(testDb);
-    const { user: bob } = createUser(testDb);
-    const trip = createTrip(testDb, me.id);
-    addTripMember(testDb, trip.id, bob.id);
+    const { trip, me, bob } = seedTwoMemberTrip();
     const row = async (currency: string | null, exchange_rate?: number) =>
       (await budget.createBudgetItem(trip.id, { name: 'Row', currency, exchange_rate, total_price: 10 })).id;
     const usd = await row('USD');
@@ -2066,10 +2066,7 @@ describe('rows no rate can convert, and the rates that heal them', () => {
   });
 
   it('BUDGET-SVC-DB-069: settlement() passes baseRate only as display fallback (fetch order of 085 unchanged)', async () => {
-    const { user: me } = createUser(testDb);
-    const { user: bob } = createUser(testDb);
-    const trip = createTrip(testDb, me.id);
-    addTripMember(testDb, trip.id, bob.id);
+    const { trip, me, bob } = seedTwoMemberTrip();
     await budget.createBudgetItem(trip.id, {
       name: 'Dinner', currency: 'EUR', payers: [{ user_id: me.id, amount: 100 }],
       members: [{ user_id: me.id }, { user_id: bob.id }],

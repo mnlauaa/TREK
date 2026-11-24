@@ -500,7 +500,7 @@ export function buildCostsCsv(items: BudgetItem[], opts: CsvBuildOptions): { fil
         (e.total_price || 0).toFixed(currencyDecimals(cur)),
         cur,
         ...(tripCol ? [Number.isFinite(inTrip) ? inTrip.toFixed(currencyDecimals(trip)) : ''] : []),
-        Number.isFinite(inTrip) ? baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)) : '',
+        awaitingDisplayConversion(e, opts.ctx) ? '' : baseTotal(e, opts.ctx).toFixed(currencyDecimals(opts.base)),
         esc(note),
       ].join(sep)
     );

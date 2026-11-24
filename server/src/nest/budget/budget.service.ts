@@ -18,7 +18,7 @@ import type { BudgetItemMembersRepository } from '../../db/repositories/BudgetIt
 import { BudgetItemPayers } from '../../db/entities/BudgetItemPayers.entity';
 import type { BudgetItemPayersRepository } from '../../db/repositories/BudgetItemPayers.repository';
 import { BudgetSettlements } from '../../db/entities/BudgetSettlements.entity';
-import type { BudgetSettlementsRepository } from '../../db/repositories/BudgetSettlements.repository';
+import type { BudgetSettlementsRepository, BudgetSettlementWithUsersRow } from '../../db/repositories/BudgetSettlements.repository';
 import { BudgetCategoryOrder } from '../../db/entities/BudgetCategoryOrder.entity';
 import type { BudgetCategoryOrderRepository } from '../../db/repositories/BudgetCategoryOrder.repository';
 import { Reservations } from '../../db/entities/Reservations.entity';
@@ -39,14 +39,6 @@ type Trip = TripAccess;
 
 /** A trip currency switch whose rates are already fetched, ready to write (#1543). */
 export type CurrencyRebase = { previous: string; next: string; bridge: number | undefined };
-
-type SettlementRow = BudgetRateColumns & {
-  id: number; trip_id: number; from_user_id: number; to_user_id: number;
-  amount: number; currency: string | null;
-  created_at: string; settled_at: string | null; note?: string | null; created_by_user_id: number | null;
-  from_username: string; from_avatar: string | null;
-  to_username: string; to_avatar: string | null;
-};
 
 /** A settle-up note as stored (#2340): trimmed, and nothing at all when blank. */
 function settlementNote(note: string | null | undefined): string | null {
@@ -1047,7 +1039,7 @@ export class BudgetService {
     const movedRows: Record<number, { settlement_id: number; from_user_id: number; to_user_id: number; cents: number }[]> = {};
 
     for (const item of items) {
-      const { toTrip, toDisplay } = convertRow(item.currency, item.exchange_rate, item.exchange_rate_source);
+      const { toTrip, toDisplay } = convertRow(item.currency, item.exchange_rate ?? null, item.exchange_rate_source);
       if (!toDisplay) {
         unconvertedItems.push(item.id);
         unconvertedCurrencies.add((item.currency || '').toUpperCase());
@@ -1183,7 +1175,7 @@ export class BudgetService {
   // query (the legacy raw fu.username was the odd one out) — now the
   // repository's own `joinedQuery()`/`SETTLEMENT_SELECT` shape.
 
-  private mapSettlementRow(r: SettlementRow) {
+  private mapSettlementRow(r: BudgetSettlementWithUsersRow) {
     return {
       id: r.id, trip_id: r.trip_id,
       from_user_id: r.from_user_id, to_user_id: r.to_user_id,

@@ -60,7 +60,6 @@
   "src/nest/accommodations/accommodations.service.ts": 2,
   "src/nest/atlas/atlas-geo.ts": 2,
   "src/nest/auth/auth.service.ts": 1,
-  "src/nest/budget/budget.service.ts": 2,
   "src/nest/calendar/calendar.service.ts": 5,
   "src/nest/collections/collections.service.ts": 1,
   "src/nest/day-notes/day-notes.mcp.ts": 1,

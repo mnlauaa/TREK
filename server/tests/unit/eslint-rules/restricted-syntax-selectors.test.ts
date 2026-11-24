@@ -227,7 +227,7 @@ void safeFetch(url);`,
   const SQL_HOMES = ['src/db/dialect/', 'src/db/engine/', 'src/db/migrations/'];
   const LIFECYCLE_SQL_STRINGS: Record<string, number> = {
     'src/db/email-case-index.ts': 3,
-    'src/db/legacy-baseline.ts': 3,
+    'src/db/legacy-baseline.ts': 0,
     'src/db/migration-utils.ts': 6,
     'src/db/pre-migrate-snapshot.ts': 3,
   };
