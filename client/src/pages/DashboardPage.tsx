@@ -1,6 +1,4 @@
 import CurrencySelect from '../components/shared/CurrencySelect'
-import DepartureCountdownBoard from './dashboard/DepartureCountdownBoard'
-import type { DepartureTransport } from './dashboard/dashboardModel'
 import React from 'react'
 import { useTranslation } from '../i18n'
 import Navbar from '../components/Layout/Navbar'
@@ -28,7 +26,7 @@ import { IcsSubscribeModal } from '../components/Planner/IcsSubscribeModal'
 import CollectionsWidget from '../components/Dashboard/CollectionsWidget'
 import { useCurrencyConverter } from '../components/Dashboard/useCurrencyConverter'
 import { useDashboardPlugins } from '../components/Dashboard/useDashboardPlugins'
-import { shortZone, useDashboardTimezones } from '../components/Dashboard/useDashboardTimezones'
+import { shortZone, useDashboardTimezones, zoneOptionLabel } from '../components/Dashboard/useDashboardTimezones'
 import PluginWidgets from '../components/Plugins/PluginWidgets'
 import PluginFrame from '../components/Plugins/PluginFrame'
 import { TripCardBadges } from '../components/Plugins/TripCardBadges'
@@ -105,7 +103,7 @@ function DashboardPageDesktop(): React.ReactElement {
   // useDashboard data hook; this component only renders what it returns.
   const {
     demoMode, locale, t, navigate,
-    spotlight, heroBundle, departure, stats, upcoming, gridTrips, isLoading,
+    spotlight, heroBundle, stats, upcoming, gridTrips, isLoading,
     loadError, retryLoad,
     tripFilter, setTripFilter, viewMode, toggleViewMode,
     showForm, setShowForm, editingTrip, setEditingTrip,
@@ -164,7 +162,6 @@ function DashboardPageDesktop(): React.ReactElement {
               <BoardingPassHero
                 trip={spotlight}
                 bundle={heroBundle}
-                departure={departure}
                 locale={locale}
                 onOpen={() => navigate(`/trips/${spotlight.id}`)}
                 onEdit={() => { setEditingTrip(spotlight); setShowForm(true) }}
@@ -331,8 +328,8 @@ function DashboardPageDesktop(): React.ReactElement {
 }
 
 // ── Boarding-pass hero ───────────────────────────────────────────────────────
-function BoardingPassHero({ trip, bundle, departure, locale, onOpen, onEdit, onCopy, onArchive, onDelete }: {
-  trip: DashboardTrip; bundle: HeroBundle | null; departure: DepartureTransport | null; locale: string; onOpen: () => void
+function BoardingPassHero({ trip, bundle, locale, onOpen, onEdit, onCopy, onArchive, onDelete }: {
+  trip: DashboardTrip; bundle: HeroBundle | null; locale: string; onOpen: () => void
   onEdit: () => void; onCopy: () => void; onArchive: () => void; onDelete: () => void
 }): React.ReactElement {
   const { t } = useTranslation()
@@ -472,7 +469,6 @@ function BoardingPassHero({ trip, bundle, departure, locale, onOpen, onEdit, onC
             <div className="hero-pass-inner">{passCells}</div>
           </div>
         </div>
-        {departure && <DepartureCountdownBoard departure={departure} />}
       </div>
     </div>
   )
@@ -549,7 +545,7 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
         <div className="atlas-card">
           <div className="label">{t('dashboard.atlas.tripsTotal')}</div>
           <div className="value mono">{statsPending ? <Skeleton width={44} height={30} radius={6} /> : stats.totalTrips ?? 0}</div>
-          <div className="delta">{statsPending ? <Skeleton width={90} height={12} /> : t('dashboard.atlas.placesMapped', { count: stats.totalPlaces ?? 0 })}</div>
+          <div className="delta">{statsPending ? <span className="trek-skeleton delta-pending">{t('dashboard.atlas.placesMapped', { count: 0 })}</span> : t('dashboard.atlas.placesMapped', { count: stats.totalPlaces ?? 0 })}</div>
           <svg className="spark" width="80" height="36" viewBox="0 0 80 36">
             <polyline points="0,30 12,26 22,28 32,18 44,22 56,10 68,14 80,4" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -577,7 +573,7 @@ function AtlasStats({ stats }: { stats: TravelStats | null }): React.ReactElemen
             {statsPending ? <Skeleton width={60} height={30} radius={6} /> : distanceText}
             {' '}<span className="unit">{distanceLabel}</span>
           </div>
-          <div className="delta">{statsPending ? <Skeleton width={110} height={12} /> : t('dashboard.atlas.aroundEquator', { count: equatorTimes })}</div>
+          <div className="delta">{statsPending ? <span className="trek-skeleton delta-pending">{t('dashboard.atlas.aroundEquator', { count: '0.00' })}</span> : t('dashboard.atlas.aroundEquator', { count: equatorTimes })}</div>
           <svg className="spark" width="80" height="36" viewBox="0 0 80 36">
             <circle cx="40" cy="18" r="14" fill="none" stroke="oklch(0.88 0.01 70)" strokeWidth="2" />
             <circle cx="40" cy="18" r="14" fill="none" strokeWidth="2" strokeDasharray="58 88" strokeLinecap="round" transform="rotate(-90 40 18)" />
@@ -667,7 +663,7 @@ function TripCard({ trip, locale, badges, matchedPlaces, onOpen, onEdit, onCopy,
 // ── Currency tool (self-contained, mirrors the design's fx widget) ───────────
 function CurrencyTool(): React.ReactElement {
   const { t } = useTranslation()
-  const { from, to, setFrom, setTo, amount, setAmount, currencies, rate, converted, swap, fetchRates: fetchRate } = useCurrencyConverter()
+  const { from, to, setFrom, setTo, amount, setAmount, currencies, rate, converted, swap, fetchRates: fetchRate, pairPending, ratePending } = useCurrencyConverter()
 
   return (
     <div className="tool">
@@ -675,7 +671,8 @@ function CurrencyTool(): React.ReactElement {
         <div className="tool-title"><RefreshCw size={14} /> {t('dashboard.currency')}</div>
         <button type="button" className="tool-action" aria-label={t('dashboard.aria.refreshRates')} onClick={fetchRate}><RefreshCw size={14} /></button>
       </div>
-      <div className="fx-input">
+      {/* Held invisible until the saved pair is known, so the defaults never flash first (#3009). */}
+      <div className="fx-input" style={pairPending ? { visibility: 'hidden' } : undefined}>
         <div className="fx-field">
           <div className="lbl">{t('dashboard.fx.from')}</div>
           <input className="amt mono" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" />
@@ -689,7 +686,9 @@ function CurrencyTool(): React.ReactElement {
         </div>
       </div>
       <div className="fx-rate">
-        <span>{rate != null ? `1 ${from} = ${rate.toFixed(4)} ${to}` : t('dashboard.fx.unavailable')}</span>
+        {pairPending || ratePending
+          ? <span className="trek-skeleton" aria-hidden>{`1 ${from} = 0.0000 ${to}`}</span>
+          : <span>{rate != null ? `1 ${from} = ${rate.toFixed(4)} ${to}` : t('dashboard.fx.unavailable')}</span>}
       </div>
     </div>
   )
@@ -702,7 +701,7 @@ function TimezoneTool({ locale }: { locale: string }): React.ReactElement {
 
   const tzOptions = allZones
     .filter(z => !zones.includes(z))
-    .map(z => ({ value: z, label: z.replace(/_/g, ' '), searchLabel: z }))
+    .map(z => ({ value: z, label: zoneOptionLabel(z), searchLabel: `${z} ${zoneOptionLabel(z)}` }))
 
   return (
     <div className="tool">
@@ -762,6 +761,7 @@ function UpcomingTool({ items, locale, onOpen }: {
             const timeStr = parsed.time ? formatTime(parsed.time, locale, timeFormat) : null
             const typeClass = RES_TYPE_CLASS[r.type] || 'other'
             const moment = MOMENT_LABEL[r.type]
+            const where = moment ? t(moment) : (r.location || r.place_name || r.trip_title)
             return (
               <div className="upc-item" key={upcomingKey(r)} onClick={() => onOpen(r.trip_id)}
                 role="button" data-no-press tabIndex={0}
@@ -770,14 +770,20 @@ function UpcomingTool({ items, locale, onOpen }: {
                 <div className="upc-info">
                   <div className="t">
                     {r.title}
-                    {r.status === 'pending' && <span className="upc-pending">{t('reservations.pending')}</span>}
                   </div>
                   <div className="s">
-                    {timeStr && <><Clock size={11} /> {timeStr} · </>}
-                    {moment ? t(moment) : (r.location || r.place_name || r.trip_title)}
+                    {timeStr && <span className="upc-chip"><Clock size={11} />{timeStr}</span>}
+                    {where && <span className="upc-chip"><span className="upc-chip-text">{where}</span></span>}
                   </div>
                 </div>
-                <div className={`upc-type ${typeClass}`}>{RES_ICON[r.type] || <Ticket size={16} />}</div>
+                <div className={`upc-type ${typeClass}`}>
+                  {RES_ICON[r.type] || <Ticket size={16} />}
+                  {r.status === 'pending' && (
+                    <span className="upc-pending" title={t('reservations.pending')} aria-label={t('reservations.pending')}>
+                      {t('reservations.pending').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
               </div>
             )
           })}

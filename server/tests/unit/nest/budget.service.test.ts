@@ -39,7 +39,10 @@ const checkPermission = vi.fn(() => true);
 const permissionsStub = { checkPermission } as unknown as PermissionsService;
 
 const getRates = vi.fn();
-const exchangeRatesStub = { getRates } as unknown as ExchangeRatesService;
+const exchangeRatesStub = {
+  getRates,
+  listTripExchangeRates: vi.fn().mockResolvedValue([]),
+} as unknown as ExchangeRatesService;
 
 const realtime = new FakeRealtimeService();
 const broadcast = realtime.broadcastMock;
@@ -74,7 +77,9 @@ const writtenMetadata = (): unknown => JSON.parse(reservationsRepo.setMetadata.m
 function svc(
   tripMembersRepo: TripMembersRepository = {} as unknown as TripMembersRepository,
   tripsRepo: TripsRepository = {} as unknown as TripsRepository,
-  budgetItemsRepo: BudgetItemsRepository = {} as unknown as BudgetItemsRepository,
+  budgetItemsRepo: BudgetItemsRepository = {
+    hasUnfrozenForeign: vi.fn().mockResolvedValue(false),
+  } as unknown as BudgetItemsRepository,
 ) {
   return new BudgetService(
     permissionsStub,
@@ -84,7 +89,7 @@ function svc(
     budgetItemsRepo,
     {} as unknown as BudgetItemMembersRepository,
     {} as unknown as BudgetItemPayersRepository,
-    {} as unknown as BudgetSettlementsRepository,
+    { listUnfrozenForeignCurrencies: vi.fn().mockResolvedValue([]) } as unknown as BudgetSettlementsRepository,
     {} as unknown as BudgetCategoryOrderRepository,
     reservationsRepoStub,
     {} as unknown as PlacesRepository,
@@ -146,7 +151,12 @@ describe('BudgetService', () => {
       await s.settlement('5', 'usd', 'eur');
       // The quote every entry rate was frozen from; the dollar's is not its exact inverse.
       expect(getRates.mock.calls).toEqual([['EUR']]);
-      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'USD', rates: { EUR: 1, USD: 1.1 }, tripCurrency: 'EUR' });
+      expect(calcSpy).toHaveBeenCalledWith('5', {
+        base: 'USD',
+        tripRates: {},
+        rates: { EUR: 1, USD: 1.1 },
+        tripCurrency: 'EUR',
+      });
     });
 
     it("stands in the display currency's quote when the trip's cannot be fetched", async () => {
@@ -155,7 +165,12 @@ describe('BudgetService', () => {
       getRates.mockImplementation(async (b: string) => (b === 'USD' ? { USD: 1, EUR: 0.9 } : null));
       await s.settlement('5', 'USD', 'EUR');
       expect(getRates.mock.calls).toEqual([['EUR'], ['USD']]);
-      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'USD', rates: { USD: 1, EUR: 0.9 }, tripCurrency: 'EUR' });
+      expect(calcSpy).toHaveBeenCalledWith('5', {
+        base: 'USD',
+        tripRates: {},
+        rates: { USD: 1, EUR: 0.9 },
+        tripCurrency: 'EUR',
+      });
     });
 
     it('falls back to the trip currency when no base is given', async () => {
@@ -164,7 +179,7 @@ describe('BudgetService', () => {
       getRates.mockResolvedValue(null);
       await s.settlement('5', undefined, 'gbp');
       expect(getRates).not.toHaveBeenCalled();
-      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'GBP', rates: null, tripCurrency: 'GBP' });
+      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'GBP', tripRates: {}, rates: null, tripCurrency: 'GBP' });
     });
 
     it('falls back to EUR when neither base nor trip currency is present', async () => {
@@ -173,7 +188,7 @@ describe('BudgetService', () => {
       getRates.mockResolvedValue(null);
       await s.settlement('5', undefined, '');
       expect(getRates).not.toHaveBeenCalled();
-      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'EUR', rates: null, tripCurrency: 'EUR' });
+      expect(calcSpy).toHaveBeenCalledWith('5', { base: 'EUR', tripRates: {}, rates: null, tripCurrency: 'EUR' });
     });
   });
 

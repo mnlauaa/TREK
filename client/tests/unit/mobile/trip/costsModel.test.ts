@@ -326,17 +326,11 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     payers: [payer(1, 801.76)], members: [member(1), member(2)],
   });
 
-  it('FE-MOB-CMOD-038: a bill booked at a rate that has moved since counts as its euros at today\'s rate', () => {
-    // 685.26 EUR, which the balances net and settle-up offers; the row, the payer's
-    // figure and the share read the same, or a payback of the row's half reopens the trip.
-    expect(baseTotal(hotel(), usdCtx)).toBeCloseTo(791.55, 2);
-    expect(myPaidOf(hotel(), usdCtx)).toBeCloseTo(791.55, 2);
-    expect(myShareOf(hotel(), usdCtx)).toBeCloseTo(395.77, 2);
-    // Under it, what was entered and the euros it was booked at, no third step.
-    const line = lineOf(801.76, hotel(), usdCtx, baseTotal(hotel(), usdCtx));
-    expect(line?.entered).toEqual({ amount: 801.76, currency: 'USD' });
-    expect(line?.into.currency).toBe('EUR');
-    expect(line?.into.amount).toBeCloseTo(685.26, 2);
+  it('FE-MOB-CMOD-038: a bill in the display currency keeps its receipt amount when rates move', () => {
+    expect(baseTotal(hotel(), usdCtx)).toBe(801.76);
+    expect(myPaidOf(hotel(), usdCtx)).toBe(801.76);
+    expect(myShareOf(hotel(), usdCtx)).toBe(400.88);
+    expect(lineOf(801.76, hotel(), usdCtx, baseTotal(hotel(), usdCtx))).toBeNull();
   });
 
   it('FE-MOB-CMOD-039: booked at today\'s rate, the bill reads exactly as typed and needs no line', () => {
@@ -367,7 +361,7 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     const zero = expense({ total_price: 0, currency: 'USD', exchange_rate: 1.17 });
     expect(lineOf(0, zero, usdCtx, 0)).toBeNull();
     const legacy = expense({ total_price: 50, currency: 'USD', exchange_rate: 1 });
-    expect(baseTotal(legacy, usdCtx)).toBe(0);
+    expect(baseTotal(legacy, usdCtx)).toBe(50);
     expect(lineOf(50, legacy, usdCtx, 50)).toBeNull();
     const inEur = { ...usdCtx, displayCurrency: 'EUR', convert: (a: number) => a };
     expect(lineOf(801.76, hotel(), inEur, 685.26)).toEqual({ entered: { amount: 801.76, currency: 'USD' }, into: { amount: 685.26, currency: 'EUR' } });
@@ -381,11 +375,12 @@ describe('costsModel: a bill entered in the display currency (#2525)', () => {
     ].map((e, i) => ({ ...e, name: e.name || 'Hotel', expense_date: e.expense_date || '2026-07-19', id: i + 1 }));
     const inUsd = buildCostsCsv(items, { base: 'USD', ctx: usdCtx, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inUsd[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Amount (USD);Note');
-    expect(inUsd[1]).toMatch(/;801\.76;USD;685\.26;791\.55;$/);
-    // Unfrozen foreign rows keep their original amount, with blank accounting amounts.
-    expect(inUsd[2]).toMatch(/;115\.51;USD;;;$/);
+    expect(inUsd[1]).toMatch(/;801\.76;USD;685\.26;801\.76;$/);
+    // The original USD amount is known even when the booked EUR amount is unavailable.
+    expect(inUsd[2]).toMatch(/;115\.51;USD;;115\.51;$/);
     const inEur = buildCostsCsv(items, { base: 'EUR', ctx: { ...usdCtx, displayCurrency: 'EUR' }, locale: 'en-US', tripTitle: 'Trip', t }).content.split('\r\n');
     expect(inEur[0]).toBe('Date;Name;Category;Amount;Currency;Amount (EUR);Note');
+    expect(inEur[2]).toMatch(/;115\.51;USD;;$/);
   });
 });
 
@@ -442,7 +437,7 @@ describe('costsModel — breakdown and presentation', () => {
     const bars = categoryBreakdown(items, ctx);
 
     expect(bars.map(b => b.key)).toEqual(['accommodation', 'food']);
-    expect(bars[0]).toEqual({ key: 'accommodation', amount: 300, widthPct: 100 });
+    expect(bars[0]).toEqual({ key: 'accommodation', amount: 300, widthPct: 100, leftOut: false });
     expect(bars[1].amount).toBe(200);
     expect(bars[1].widthPct).toBeCloseTo(66.667, 3);
   });
@@ -464,14 +459,14 @@ describe('costsModel — breakdown and presentation', () => {
     // category keeps its own row at the bottom, without a bar — a negative CSS
     // width would be dropped and paint a full one.
     expect(bars).toEqual([
-      { key: 'food', amount: 60, widthPct: 100 },
-      { key: 'activities', amount: -20, widthPct: 0 },
+      { key: 'food', amount: 60, widthPct: 100, leftOut: false },
+      { key: 'activities', amount: -20, widthPct: 0, leftOut: false },
     ]);
   });
 
   it('FE-MOB-CMOD-032: an all-negative breakdown renders rows but no bars (#2176)', () => {
     const bars = categoryBreakdown([expense({ category: 'food', total_price: -20 })], ctx);
-    expect(bars).toEqual([{ key: 'food', amount: -20, widthPct: 0 }]);
+    expect(bars).toEqual([{ key: 'food', amount: -20, widthPct: 0, leftOut: false }]);
   });
 
   it('FE-MOB-CMOD-021: tint turns a hex colour into rgba, with or without the leading hash', () => {

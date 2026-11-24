@@ -88,7 +88,8 @@ export type BudgetItemReceipt = z.infer<typeof budgetItemReceiptSchema>;
  * that to the trip base currency (NULL currency + rate 1 = base currency).
  * On a foreign row, rate 1 without recognized provenance is the legacy unfrozen
  * default. Explicit/trip/global/identity provenance makes 1 an intentional freeze.
- * Unfrozen rows appear under `unconverted` until a rate is applied.
+ * Settlement uses the trip or system quote for an unfrozen row when possible.
+ * Rows without a usable conversion appear under `unconverted`.
  */
 export const budgetItemSchema = z.object({
   id: z.number(),
@@ -125,12 +126,12 @@ export const budgetItemSchema = z.object({
 export type BudgetItem = z.infer<typeof budgetItemSchema>;
 
 const payerInputSchema = z.object({
-  user_id: z.number(),
+  user_id: z.number().int(),
   amount: z.number(),
 });
 
 const memberInputSchema = z.object({
-  user_id: z.number(),
+  user_id: z.number().int(),
   amount: z.number().nullable().optional(),
 });
 
@@ -168,21 +169,21 @@ export const budgetCreateItemRequestSchema = z.object({
   // server falls back to total_price with no explicit payer.
   payers: z.array(payerInputSchema).optional(),
   // Equal-split participants. When omitted, the item has no split (planning-only).
-  member_ids: z.array(z.number()).optional(),
+  member_ids: z.array(z.number().int()).optional(),
   members: z.array(memberInputSchema).optional(),
-  persons: z.number().nullable().optional(),
-  days: z.number().nullable().optional(),
+  persons: z.number().int().nullable().optional(),
+  days: z.number().int().nullable().optional(),
   note: z.string().nullable().optional(),
   ticket_json: z.string().nullable().optional(),
   expense_date: z.string().nullable().optional(),
   // Link this expense to a reservation (e.g. created from a booking's
   // "add expense" flow). The server stores it on budget_items.reservation_id.
-  reservation_id: z.number().optional(),
+  reservation_id: z.number().int().optional(),
   // The same for a place: the place form's "add expense" flow saves the place
   // first, then creates the expense against it (#1298).
-  place_id: z.number().optional(),
+  place_id: z.number().int().optional(),
   // Receipt files to link to this expense
-  receipt_file_ids: z.array(z.number()).optional(),
+  receipt_file_ids: z.array(z.number().int()).optional(),
   // Rates to freeze a foreign currency with when the server has none of its own.
   fallback_fx: budgetFallbackFxSchema.optional(),
 });
@@ -197,14 +198,14 @@ export const budgetUpdateItemRequestSchema = z.object({
   exchange_rate: z.number().optional(),
   exchange_rate_note: z.string().max(500).nullable().optional(),
   payers: z.array(payerInputSchema).optional(),
-  member_ids: z.array(z.number()).optional(),
+  member_ids: z.array(z.number().int()).optional(),
   members: z.array(memberInputSchema).optional(),
-  persons: z.number().nullable().optional(),
-  days: z.number().nullable().optional(),
+  persons: z.number().int().nullable().optional(),
+  days: z.number().int().nullable().optional(),
   note: z.string().nullable().optional(),
   ticket_json: z.string().nullable().optional(),
   expense_date: z.string().nullable().optional(),
-  receipt_file_ids: z.array(z.number()).optional(),
+  receipt_file_ids: z.array(z.number().int()).optional(),
   // Link an existing expense to a booking or a place on the same trip (#2084);
   // null lets go of the link and keeps the expense. Omitted leaves it as is.
   reservation_id: z.number().int().positive().nullable().optional(),
@@ -220,15 +221,12 @@ export const budgetUpdatePayersRequestSchema = z.object({
 export type BudgetUpdatePayersRequest = z.infer<typeof budgetUpdatePayersRequestSchema>;
 
 /**
- * A persisted settle-up transfer (budget_settlements row): "from paid to" a
- * given amount, entered in the payer's display `currency`. `exchange_rate` is the
- * live rate frozen at settle time (units of that currency per 1 trip currency), so
- * a settled position stays balanced when live rates drift (#1445). Legacy rows
- * have currency = null / exchange_rate = 1 and convert with live rates. A row in
- * another currency with rate 1 and legacy/missing provenance was never frozen:
- * it is excluded and listed under `unconverted` until a rate is applied. Intentional
- * parity is recognized by provenance. New foreign writes require a rate. Creating
- * one marks a suggested flow as paid; deleting it (undo) brings the flow back.
+ * A settle-up transfer records the payer, recipient, amount and currency.
+ * A suggested repayment freezes its quote in units of its currency per unit
+ * of trip currency. Older payments without a currency count in the display
+ * currency. A foreign row with a legacy rate of 1 uses the available trip or
+ * system quote. Provenance distinguishes explicitly booked 1:1 rates. Rows
+ * without a usable conversion appear under `unconverted`.
  */
 export const budgetSettlementSchema = z.object({
   id: z.number(),
@@ -262,11 +260,12 @@ export const budgetSettlementSchema = z.object({
 export type BudgetSettlement = z.infer<typeof budgetSettlementSchema>;
 
 export const budgetCreateSettlementRequestSchema = z.object({
-  from_user_id: z.number(),
-  to_user_id: z.number(),
+  from_user_id: z.number().int(),
+  to_user_id: z.number().int(),
   amount: z.number(),
   // The display currency the amount was entered in; the server freezes its FX rate.
   currency: z.string().nullable().optional(),
+  rate_base_currency: currencyCodeSchema.optional(),
   exchange_rate: z.number().positive().finite().optional(),
   exchange_rate_note: z.string().max(500).nullable().optional(),
   // The day the transfer happened. Null when the caller sets none; the ledger then
@@ -281,8 +280,8 @@ export type BudgetCreateSettlementRequest = z.infer<typeof budgetCreateSettlemen
 
 /** Edit a persisted settle-up transfer (same fields as create; full replace). */
 export const budgetUpdateSettlementRequestSchema = z.object({
-  from_user_id: z.number(),
-  to_user_id: z.number(),
+  from_user_id: z.number().int(),
+  to_user_id: z.number().int(),
   amount: z.number(),
   currency: z.string().nullable().optional(),
   exchange_rate: z.number().positive().finite().optional(),
@@ -395,7 +394,7 @@ export const budgetParticipantFinalSchema = z.object({
 export type BudgetParticipantFinal = z.infer<typeof budgetParticipantFinalSchema>;
 
 export const budgetUpdateMembersRequestSchema = z.object({
-  user_ids: z.array(z.number()),
+  user_ids: z.array(z.number().int()),
 });
 export type BudgetUpdateMembersRequest = z.infer<typeof budgetUpdateMembersRequestSchema>;
 
@@ -405,7 +404,7 @@ export const budgetToggleMemberPaidRequestSchema = z.object({
 export type BudgetToggleMemberPaidRequest = z.infer<typeof budgetToggleMemberPaidRequestSchema>;
 
 export const budgetReorderItemsRequestSchema = z.object({
-  orderedIds: z.array(z.number()),
+  orderedIds: z.array(z.number().int()),
 });
 export type BudgetReorderItemsRequest = z.infer<typeof budgetReorderItemsRequestSchema>;
 

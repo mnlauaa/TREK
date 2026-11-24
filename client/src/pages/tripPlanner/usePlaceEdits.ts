@@ -109,7 +109,7 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
       // Always strip time fields from place update: time is per-assignment only.
       // Same for the day-specific note (#2163): it belongs to the assignment,
       // never to the pool place.
-      const { place_time, end_time, assignment_notes, ...placeData } = data
+      const { place_time, end_time, assignment_notes, stay_minutes, ...placeData } = data
       await tripActions.updatePlace(tripId, editingPlace.id, placeData)
       // If editing from assignment context, save time per-assignment
       if (editingAssignmentId) {
@@ -118,12 +118,17 @@ export function usePlaceEdits(options: PlaceEditsOptions) {
         const assignments = useTripStore.getState().assignments
         const dayKey = Object.keys(assignments).find(key => assignments[key].some(a => a.id === editingAssignmentId))
         if (dayKey) {
-          if (place_time !== undefined || end_time !== undefined) {
-            const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)
-            const current = requiredVisitTimes(visit)
+          if (stay_minutes !== undefined) {
+            await tripActions.setAssignmentStay(tripId, Number(dayKey), editingAssignmentId, stay_minutes)
+          }
+          const visit = assignments[dayKey].find(a => a.id === editingAssignmentId)
+          const current = requiredVisitTimes(visit)
+          const start = place_time === undefined ? current.start : place_time || null
+          const end = end_time === undefined ? current.end : end_time || null
+          if (start !== current.start || end !== current.end) {
             await tripActions.setAssignmentTimes(tripId, Number(dayKey), editingAssignmentId, {
-              place_time: place_time === undefined ? current.start : place_time || null,
-              end_time: end_time === undefined ? current.end : end_time || null,
+              place_time: start,
+              end_time: end,
             })
           }
           // The form only includes assignment_notes when the user changed it, so

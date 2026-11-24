@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '../../../helpers/render';
 import MDashboard from '../../../../src/mobile/screens/dashboard/MDashboard';
 import { tripsApi } from '../../../../src/api/client';
+import { useSettingsStore } from '../../../../src/store/settingsStore';
 import { useAuthStore } from '../../../../src/store/authStore';
 import { useInAppNotificationStore } from '../../../../src/store/inAppNotificationStore';
 import { usePluginStore } from '../../../../src/store/pluginStore';
@@ -418,6 +419,7 @@ describe('MDashboard', () => {
   });
 
   it('FE-MOB-DASH-041: crossing the split size keeps the widgets mounted, so the converter keeps its amount', () => {
+    useSettingsStore.setState({ isLoaded: true });
     mocks.dash = buildDash();
     render(<MDashboard />);
     const amount = screen.getAllByRole('textbox', { name: 'From' })[0] as HTMLInputElement;
@@ -433,6 +435,7 @@ describe('MDashboard', () => {
   });
 
   it('FE-MOB-DASH-042: on a landscape tablet the widget column scrolls on its own, within the window', () => {
+    useSettingsStore.setState({ isLoaded: true });
     mocks.dash = buildDash();
     render(<MDashboard />);
     const column = screen.getAllByRole('textbox', { name: 'From' })[0].closest('[class*="split:sticky"]') as HTMLElement;

@@ -105,8 +105,17 @@ describe('RoadtripStayModal', () => {
     fireEvent.change(slider(), { target: { value: '45' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(9, 45))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(9, 45, undefined))
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('reopens a stay longer than one day and saves exactly seven days', async () => {
+    const { onSave } = open({ minutes: 2880, assignmentId: 42 })
+    const minutes = screen.getByRole('textbox', { name: 'Stay (min)' })
+    expect(minutes).toHaveValue('2880')
+    fireEvent.change(minutes, { target: { value: '10080' } })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(9, 10_080, 42))
   })
 
   it('FE-STAYMODAL-010: clearing sends a zero, never a null', async () => {
@@ -116,7 +125,7 @@ describe('RoadtripStayModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /no stay|none/i }))
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(9, 0))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(9, 0, undefined))
     expect(onSave.mock.calls[0][1]).not.toBeNull()
   })
 
