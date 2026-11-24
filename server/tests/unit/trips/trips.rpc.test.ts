@@ -310,7 +310,7 @@ describe('TripsRpc writes', () => {
       code: 'RESOURCE_FORBIDDEN',
       message: 'no permission to change how trip 1 keeps its costs',
     });
-    expect(f.trips.updateTrip).not.toHaveBeenCalled();
+    expect(f.trips.update).not.toHaveBeenCalled();
   });
 
   it('TRIPS-RPC-023 with budget_edit the costs mode reaches the service', async () => {
@@ -318,7 +318,7 @@ describe('TripsRpc writes', () => {
     expect((await f.host().dispatch(req('trips.update', { tripId: 1, input: { costs_mode: 'totals' } }), 42)).ok).toBe(
       true,
     );
-    expect(f.trips.updateTrip).toHaveBeenCalledWith(1, 42, { costs_mode: 'totals' }, 'user');
+    expect(f.trips.update).toHaveBeenCalledWith(1, 42, { costs_mode: 'totals' }, 'user');
   });
 
   it('TRIPS-RPC-024 road trip day boundaries that moved with their days go out with the trip (#3119)', async () => {
