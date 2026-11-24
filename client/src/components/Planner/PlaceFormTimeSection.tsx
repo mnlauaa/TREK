@@ -4,10 +4,11 @@ import { useId, useMemo } from 'react';
 
 import type { Assignment } from '../../types';
 import CustomTimePicker from '../shared/CustomTimePicker';
-import { EditorField, GRID_2 } from '../shared/dialogParts';
+import { EditorField, GRID_2, INPUT } from '../shared/dialogParts';
 import { fs } from '../shared/DialogShell';
 import { TourEndHint } from '../Tours/TourDayTimeParts';
 import { timeCollisions, type PlaceFormData } from './PlaceFormModal.helpers';
+import { VisitStayInput } from './VisitStayInput';
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -43,6 +44,8 @@ export function TimeSection({
     [assignmentId, dayAssignments, form.place_time, form.end_time]
   );
   const errorId = useId();
+  const assignment = dayAssignments.find((a) => a.id === assignmentId);
+  const stayLabel = `${t('roadtrip.stop.stayShort')} (${t('roadtrip.limit.minutes')})`;
 
   return (
     <div className="flex flex-col gap-2">
@@ -73,12 +76,18 @@ export function TimeSection({
           />
         </EditorField>
       </div>
-      <TourEndHint
-        start={form.place_time}
-        end={form.end_time}
-        assignment={dayAssignments.find((a) => a.id === assignmentId)}
-        tour={tour}
-      />
+      {assignment && (
+        <EditorField label={stayLabel}>
+          <VisitStayInput
+            assignment={assignment}
+            label={stayLabel}
+            value={form.assignment_stay}
+            onChange={(value) => handleChange('assignment_stay', value)}
+            className={INPUT}
+          />
+        </EditorField>
+      )}
+      <TourEndHint start={form.place_time} end={form.end_time} assignment={assignment} tour={tour} />
       {hasTimeError && (
         <div id={errorId} className={WARNING_BANNER} style={fs(12, 'body')}>
           <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />

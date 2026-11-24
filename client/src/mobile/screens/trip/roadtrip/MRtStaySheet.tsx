@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Minus, Plus } from 'lucide-react'
 import MSheet from '../../../components/MSheet'
 import MChip from '../../../components/MChip'
+import { NumericInput } from '../../../../components/shared/NumericInput'
 import type { MTripSheetsProps } from '../MTripShell'
 import { useTranslation } from '../../../../i18n'
 import { useSettingsStore } from '../../../../store/settingsStore'
@@ -33,8 +34,10 @@ interface RtStaySheetPayload {
  * How long the traveller stays at one stop, on the phone ('rtstay', payload
  * { placeId, minutes, name }).
  *
- * Saves the selected visit's duration override through `planner.setRoadtripStay`.
- * Without a selected visit, it updates the place default. Zero is a valid stay.
+ * Writes the stay of the visit it was opened on through `planner.setRoadtripStay`, which
+ * is the same single write the desktop dialog makes, so two visits of one place keep
+ * their own lengths (#3092). Zero rather than null clears it: a null would hand the visit
+ * back to the place's stay instead of taking the stay away.
  *
  * Two things this sheet deliberately does not do:
  *
@@ -51,7 +54,9 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
   const open = shell.sheet?.id === 'rtstay'
   const payload = (shell.sheet?.payload ?? {}) as RtStaySheetPayload
   const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
-  const canEdit = planner.can(payload.assignmentId ? 'day_edit' : 'place_edit', planner.trip)
+  // A visit's stay is part of the day plan; only a stop with no saved visit writes the place.
+  const onVisit = typeof payload.assignmentId === 'number' && payload.assignmentId > 0
+  const canEdit = planner.can(onVisit ? 'day_edit' : 'place_edit', planner.trip)
 
   // Hold the last payload so the name and the number survive the exit animation
   // instead of blinking out while the sheet slides away.
@@ -117,10 +122,6 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
    * Reopening 'rtstop' is the point of the save: the times that just moved are shown
    * there, in the chain's own reading, so the change lands where it was asked for.
    * Closing without saving deliberately does not reopen it: nothing moved.
-   *
-   * `setRoadtripStay` reports its own failures and resolves either way, so the catch is
-   * the second line rather than the first: what it guards is the sheet being left showing
-   * a number the place does not have.
    */
   const save = async () => {
     const placeId = stop?.placeId
@@ -128,7 +129,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     const value = minutes
     setSaving(true)
     try {
-      await planner.setRoadtripStay(placeId, value, payload)
+      await planner.setRoadtripStay(placeId, value, payload.assignmentId)
       // 'rtstop' is located by day and assignment, not by place: spreading this sheet's own
       // payload into it opened a sheet that resolved to nothing, drew nothing, and still
       // counted as open, which blocks the day swipe until something else closes it.
@@ -190,12 +191,14 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
                 <Minus size={17} strokeWidth={2.2} aria-hidden="true" />
               </button>
               <div className="flex min-w-[6rem] flex-col items-center">
-                <span
-                  aria-live="polite"
-                  className="text-[2.5rem] font-extrabold leading-none tabular-nums text-m-ink"
-                >
-                  {minutes}
-                </span>
+                <NumericInput
+                  aria-label={`${t('roadtrip.stop.stayShort')} (${t('roadtrip.limit.minutes')})`}
+                  className="w-[8rem] rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-2 py-1 text-center text-[2rem] font-extrabold leading-none tabular-nums text-m-ink"
+                  value={minutes}
+                  onValueChange={next => setMinutes(clampMinutes(Number(next)))}
+                  readOnly={!canEdit}
+                  disabled={saving}
+                />
                 <span className="mt-[7px] font-geist text-[0.625rem] font-bold uppercase tracking-[.09em] text-m-faint">
                   {t('roadtrip.stay.custom')}
                 </span>
