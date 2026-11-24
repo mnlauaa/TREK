@@ -5,7 +5,7 @@ TREK coordinates shared trips, including the currencies used to record, settle, 
 ## Language
 
 **Trip currency**:
-The single accounting currency in which a trip's balances are netted.
+The reference currency for a trip and its stored exchange rates.
 _Avoid_: Base currency, accounting base
 
 **Expense currency**:
@@ -17,7 +17,7 @@ The currency of the original amount recorded for one settlement payment.
 _Avoid_: Settlement currency, transfer currency
 
 **Display currency**:
-A user's presentation-only currency for reading final totals and balances.
+The currency a user reads totals in. On the Costs page, the currency selected for the trip also denominates suggested repayments.
 _Avoid_: User currency, preferred currency
 
 **Common currency list**:
@@ -85,9 +85,26 @@ A per-trip check asking a newly joined Account member whether an existing Guest 
 _Avoid_: Guest prompt, claim prompt, new joiner check
 
 **Web Push channel**:
-TREK's own route for delivering eligible notifications to authorized browser installations.
-_Avoid_: Ntfy push, native push
+The upstream `push` notification channel, delivering to registered browsers or native iPhone/Android apps.
+_Avoid_: Ntfy push, the retired fork `webpush` channel
 
 **Device subscription**:
-An Account member's authorization for one browser installation to receive TREK Web Push notifications.
-_Avoid_: Device token, ntfy topic
+An Account member's registration of a browser or native app through upstream's push subscription API. The native app obtains its encrypted relay subscription after device permission is granted.
+_Avoid_: Ntfy topic
+
+## Itinerary timing
+
+**Visit**:
+One occurrence of a place on an itinerary day. Repeated visits may have different times and stays.
+
+**Fixed time**:
+An arrival or departure deliberately chosen for a visit, retained even when the itinerary cannot meet it.
+
+**Predicted time**:
+An estimated reachable arrival or departure based on the plan and travel information. It is not a reservation or a change to a fixed time.
+
+**Stay duration**:
+Time spent at a visit, including waiting there and excluding travel. A fixed departure determines the stay when present.
+
+**Booking time**:
+The appointment, availability or timetable recorded by a reservation, distinct from the traveller’s planned visit.

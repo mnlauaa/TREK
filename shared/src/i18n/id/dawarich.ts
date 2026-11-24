@@ -4,7 +4,7 @@ const dawarich: TranslationStrings = {
   // ── Connection ─────────────────────────────────────────────────────────────
   'dawarich.title': 'Dawarich',
   'dawarich.intro':
-    'Hubungkan instans Dawarich milikmu sendiri untuk melihat ke mana kamu benar-benar pergi. TREK membacanya dan mengusulkan entri jurnal, tempat, dan negara — tidak ada yang ditambahkan sebelum kamu mengonfirmasinya, dan tidak ada yang ditulis kembali ke Dawarich.',
+    'Hubungkan instans Dawarich milikmu sendiri untuk melihat ke mana kamu benar-benar pergi. TREK membacanya dan mengusulkan entri jurnal, tempat, dan negara; tidak ada yang ditambahkan sebelum kamu mengonfirmasinya, dan tidak ada yang ditulis kembali ke Dawarich.',
   'dawarich.url': 'Alamat instans',
   'dawarich.apiKey': 'Kunci API',
   'dawarich.apiKeyPlaceholder': 'Tempelkan kunci API Dawarich milikmu',
@@ -114,7 +114,7 @@ const dawarich: TranslationStrings = {
   'dawarich.accept.confirm.journal': 'Tambah entri',
   'dawarich.accept.confirm.bucket_list': 'Coret',
   'dawarich.accept.recorded': 'Terekam {from} sampai {to}',
-  'dawarich.accept.duration': '{minutes} mnt',
+  'dawarich.accept.duration': '{count} mnt',
   'dawarich.accept.name': 'Nama',
   'dawarich.accept.date': 'Tanggal',
   'dawarich.accept.from': 'Tiba',
@@ -157,7 +157,6 @@ const dawarich: TranslationStrings = {
   'dawarich.atlas.loading': 'Membaca rekamanmu…',
   'dawarich.atlas.empty': 'Rekamanmu tidak menunjukkan negara yang belum dimiliki TREK.',
   'dawarich.atlas.cities': '{count} kota',
-  'dawarich.atlas.citiesOne': '1 kota',
   'dawarich.atlas.accept': 'Tambah {count} negara',
   'dawarich.atlas.accepted': '{count} negara ditambahkan',
   'dawarich.atlas.unresolved': 'TREK tidak dapat mencocokkan ini dengan sebuah negara: {names}.',
@@ -174,9 +173,7 @@ const dawarich: TranslationStrings = {
   'dawarich.bucket.metersAway': '{meters} m dari sana',
   'dawarich.bucket.kilometersAway': '{km} km dari sana',
   'dawarich.bucket.rule':
-    'Sebuah keinginan dianggap tercapai dalam radius {meters} m dan setelah {minutes} menit di lokasi.',
-
-  'dawarich.journey.dayStays.one': '1 persinggahan dari Dawarich',
+    'Sebuah keinginan dianggap tercapai dalam radius {meters} m dan setelah {count} menit di lokasi.',
   'dawarich.journey.dayStays.other': '{count} persinggahan dari Dawarich',
 };
 

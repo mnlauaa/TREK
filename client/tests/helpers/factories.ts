@@ -5,21 +5,21 @@
  */
 
 import type {
-  AppConfig,
-  Assignment,
-  BudgetItem,
-  Category,
+  User,
+  Trip,
   Day,
+  Place,
+  Assignment,
   DayNote,
   PackingItem,
-  Place,
-  Reservation,
-  Settings,
-  Tag,
   TodoItem,
-  Trip,
+  BudgetItem,
+  Reservation,
   TripFile,
-  User,
+  Tag,
+  Category,
+  Settings,
+  AppConfig,
 } from '../../src/types';
 
 // ── Counters ──────────────────────────────────────────────────────────────────

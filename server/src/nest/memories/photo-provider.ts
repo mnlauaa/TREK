@@ -1,5 +1,6 @@
-import type { Response } from 'express';
 import type { AssetInfo, ServiceResult } from './memories.helpers';
+
+import type { Response } from 'express';
 
 /** What a caller can ask a provider for. */
 export type PhotoAssetKind = 'thumbnail' | 'original';
@@ -24,6 +25,8 @@ export interface PhotoAssetRef {
   mediaType?: string | null;
   /** Forwarded Range header, for seeking in a video. */
   range?: string;
+  /** Who the asset goes to; a share link's viewer gets an image rendered without the stored metadata. */
+  audience?: 'owner' | 'public';
 }
 
 export interface PhotoBytes {

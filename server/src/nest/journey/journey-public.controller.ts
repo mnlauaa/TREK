@@ -1,12 +1,22 @@
-import { Controller, Get, HttpException, Param, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
-import path from 'node:path';
-import { JourneyService } from './journey.service';
-import { StorageService } from '../storage/storage.service';
+import { ADDON_IDS } from '../../addons';
 import { AddonGuard } from '../addons/addon.guard';
 import { RequireAddon } from '../addons/require-addon.decorator';
-import { ADDON_IDS } from '../../addons';
-import { Public } from '../auth/public.decorator';
+import { Public } from '../auth-core/public.decorator';
+import { ResponseContract } from '../common/response-contract';
+import { rowId } from '../common/row-id.pipe';
+import {
+  answerRenditionPending,
+  pendingOrNone,
+  PublicMediaService,
+  RENDITION_PENDING,
+} from '../memories/public-media.service';
+import { StorageService } from '../storage/storage.service';
+import { JourneyService } from './journey.service';
+import { Controller, Get, HttpException, Param, Res, UseGuards } from '@nestjs/common';
+import { journeyPublicMapLayersResponseSchema, journeyPublicResponseSchema } from '@trek/shared';
+
+import type { Response } from 'express';
+import path from 'node:path';
 
 /**
  * /api/public/journey — unauthenticated, share-token validated read + photo
@@ -16,6 +26,8 @@ import { Public } from '../auth/public.decorator';
  * no authentication, every route validates the share token (404 on failure),
  * the unified proxy streams by trek_photo_id and the legacy proxy serves local
  * files (with the uploads-dir traversal guard) or proxies immich/synology.
+ * A local file never leaves here as stored: both proxies send its
+ * location-free copy (PublicMediaService), or nothing.
  *
  * The addon gate is the one guard here, and it has to be: turning the Journey
  * addon off is meant to take the feature away, and without it already-published
@@ -30,24 +42,50 @@ export class JourneyPublicController {
   constructor(
     private readonly journey: JourneyService,
     private readonly storage: StorageService,
+    private readonly publicMedia: PublicMediaService,
   ) {}
 
+  /**
+   * The shared journey. Its contract is strict: a column that is not named
+   * there (a storage key, an asset id, an author) fails every test that reaches
+   * this route instead of going out to the public.
+   */
   @Get(':token')
-  get(@Param('token') token: string) {
-    const data = this.journey.getPublicJourney(token);
+  @ResponseContract(journeyPublicResponseSchema)
+  async get(@Param('token') token: string) {
+    const data = await this.journey.getPublicJourney(token);
     if (!data) {
       throw new HttpException({ error: 'Not found' }, 404);
     }
     return data;
   }
 
+  /**
+   * What the shared map shows beside the entries and photos (JRN-04), cut to
+   * the link's flags on the server: nothing while the map is not shared.
+   */
+  @Get(':token/map-layers')
+  @ResponseContract(journeyPublicMapLayersResponseSchema)
+  async mapLayers(@Param('token') token: string) {
+    const layers = await this.journey.getPublicMapLayers(token);
+    if (!layers) {
+      throw new HttpException({ error: 'Not found' }, 404);
+    }
+    return layers;
+  }
+
   @Get(':token/photos/:photoId/:kind')
-  async photo(@Param('token') token: string, @Param('photoId') photoId: string, @Param('kind') kind: string, @Res() res: Response): Promise<void> {
-    const valid = this.journey.validateShareTokenForPhoto(token, Number(photoId));
+  async photo(
+    @Param('token') token: string,
+    @Param('photoId', rowId('Not found')) photoId: number,
+    @Param('kind') kind: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const valid = await this.journey.validateShareTokenForPhoto(token, photoId);
     if (!valid) {
       throw new HttpException({ error: 'Not found' }, 404);
     }
-    await this.journey.streamPhoto(res, valid.ownerId, Number(photoId), kind === 'thumbnail' ? 'thumbnail' : 'original');
+    await this.journey.streamPhoto(res, valid.ownerId, photoId, kind === 'thumbnail' ? 'thumbnail' : 'original');
   }
 
   @Get(':token/photo/:provider/:assetId/:ownerId/:kind')
@@ -58,7 +96,7 @@ export class JourneyPublicController {
     @Param('kind') kind: string,
     @Res() res: Response,
   ): Promise<void> {
-    const valid = this.journey.validateShareTokenForAsset(token, assetId);
+    const valid = await this.journey.validateShareTokenForAsset(token, assetId);
     if (!valid) {
       throw new HttpException({ error: 'Not found' }, 404);
     }
@@ -73,11 +111,18 @@ export class JourneyPublicController {
       if (!(await this.storage.exists('journey', name).catch(() => false))) {
         throw new HttpException({ error: 'Not found' }, 404);
       }
+      // The copy without GPS and place tags, never the stored original; a file
+      // that cannot be cleaned is not served at all.
+      const rendition = await this.publicMedia.renditionFor('journey', name).catch(pendingOrNone);
+      if (rendition === RENDITION_PENDING) {
+        answerRenditionPending(res);
+        return;
+      }
+      if (!rendition) {
+        throw new HttpException({ error: 'Not found' }, 404);
+      }
       res.set('Cache-Control', 'public, max-age=86400');
-      // The storage layer serves it, whichever driver is configured. dev's fix
-      // for the absolute-path 404 under the Nest ExpressAdapter does not apply
-      // here any more: nothing on this path calls sendFile.
-      await this.storage.sendToResponse('journey', name, res);
+      await this.storage.sendToResponse('journey', rendition, res);
       return;
     }
 

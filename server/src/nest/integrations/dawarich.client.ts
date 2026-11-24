@@ -1,8 +1,8 @@
+import { readCappedJson } from '../../utils/cappedFetch';
+import { safeFetch } from '../../utils/ssrfGuard';
+import { mergeVisitedCountries, splitWindow, VISITED_CITIES_WINDOW_DAYS } from './dawarich.helpers';
 import { Injectable } from '@nestjs/common';
 import type { DawarichErrorCode } from '@trek/shared';
-import { safeFetch } from '../../utils/ssrfGuard';
-import { readCappedJson } from '../../utils/cappedFetch';
-import { mergeVisitedCountries, splitWindow, VISITED_CITIES_WINDOW_DAYS } from './dawarich.helpers';
 
 /**
  * Thin HTTP client for the Dawarich REST API (github.com/Freika/dawarich).
@@ -47,6 +47,8 @@ export const VISITS_PAGE_SIZE = 500;
 export const TRACKS_PAGE_SIZE = 200;
 /** Points cap at 10000 upstream. A day of tracking is a few thousand. */
 export const POINTS_PAGE_SIZE = 5000;
+/** Points read to name one stay. Enough to get past a few not yet geocoded. */
+const GEOCODED_POINTS_PAGE_SIZE = 50;
 
 /**
  * How many pages one call will walk before giving up and saying so.
@@ -104,11 +106,26 @@ export interface DawarichVisitRaw {
     latitude: number | string | null;
     longitude: number | string | null;
     id: number | null;
+    /** Sent since 1.22, alongside the visit's own `name`. */
+    name?: string | null;
+    /** Street and locality from the place's geodata, since 1.22. */
+    address?: string | null;
     /** Requested upstream, absent at 1.14.4. Read defensively so it lights up on its own. */
     country_code?: string | null;
   } | null;
   /** Requested upstream, absent at 1.14.4. */
   updated_at?: string | null;
+  /**
+   * The weighted middle of the visit's own points, since 1.22. The only
+   * coordinate a visit without a place or an area carries.
+   */
+  center?: { latitude: number | string | null; longitude: number | string | null } | null;
+}
+
+/** The reverse-geocoded part of one entry of `GET /api/v1/points` (not slim). */
+export interface DawarichGeocodedPoint {
+  city?: string | null;
+  country_name?: string | null;
 }
 
 /** One GeoJSON feature from `GET /api/v1/tracks`. */
@@ -250,11 +267,7 @@ export class DawarichClient {
     }
 
     if (!response.ok) {
-      throw new DawarichError(
-        classify(response.status),
-        `Dawarich answered HTTP ${response.status}`,
-        response.status,
-      );
+      throw new DawarichError(classify(response.status), `Dawarich answered HTTP ${response.status}`, response.status);
     }
 
     // Read through the cap rather than calling .json(): Dawarich answers chunked
@@ -387,6 +400,23 @@ export class DawarichClient {
   }
 
   /**
+   * The first recorded points of a stay with what reverse geocoding made of
+   * them, to name a visit Dawarich sends without one (#3105). One small page:
+   * a stay's opening points name it as well as all of them would, and the full
+   * serializer carries geodata, so a whole day of it is no cheap answer.
+   */
+  async listGeocodedPoints(creds: DawarichCreds, from: Date, to: Date): Promise<DawarichGeocodedPoint[]> {
+    const { data } = await this.get<DawarichGeocodedPoint[]>(creds, '/points', {
+      start_at: unixSeconds(from),
+      end_at: unixSeconds(to),
+      order: 'asc',
+      page: '1',
+      per_page: String(GEOCODED_POINTS_PAGE_SIZE),
+    });
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
    * Countries and cities the recordings put the user in, for the Atlas.
    *
    * Asked for a month at a time and folded back together: Dawarich computes this
@@ -395,11 +425,7 @@ export class DawarichClient {
    * The windows go one after another rather than in parallel, because each one
    * is a full computation on the user's own server.
    */
-  async listVisitedCities(
-    creds: DawarichCreds,
-    from: Date,
-    to: Date,
-  ): Promise<DawarichVisitedCountry[]> {
+  async listVisitedCities(creds: DawarichCreds, from: Date, to: Date): Promise<DawarichVisitedCountry[]> {
     const answers: DawarichVisitedCountry[][] = [];
     for (const window of splitWindow(from, to, VISITED_CITIES_WINDOW_DAYS)) {
       const { data } = await this.get<{ data?: DawarichVisitedCountry[] }>(creds, '/countries/visited_cities', {

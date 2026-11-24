@@ -1,0 +1,83 @@
+import { ValidationError } from '../common/domain-errors';
+import { addIsoDays, MAX_TRIP_DAYS, tripSpanDays, type PermissionKey } from '@trek/shared';
+
+/**
+ * Pure helpers of the trips domain, moved out of trips.service.ts. Nothing
+ * here touches the DB, so they stay plain exports rather than methods on
+ * TripsService.
+ */
+
+/**
+ * The date range is refused, not cut short: generateDays used to clip the day
+ * rows at the limit while the trip kept its full end date, so everything past
+ * the cut-off had dates but no day to go on (#2403). An inverted range is
+ * refused here as well, because a start date moved past the stored end date
+ * arrives on its own and would otherwise empty the trip.
+ */
+export function assertTripSpan(startDate: string, endDate: string) {
+  const span = tripSpanDays(startDate, endDate);
+  if (span < 1) throw new ValidationError('End date must be after start date');
+  if (span > MAX_TRIP_DAYS) throw new ValidationError(`A trip can span at most ${MAX_TRIP_DAYS} days`);
+}
+
+/**
+ * Strips `feed_token` from a trip row on its way out.
+ *
+ * The column is the sole credential for the anonymous /api/feed/trip/:token.ics
+ * route, and `SELECT t.*` hands it to every reader of the trip. Gating the
+ * token endpoint on `share_manage` means nothing while any member can read the
+ * same value out of the trip payload, so the two go together. No TREK client
+ * reads the field (it is absent from client/ and shared/ entirely).
+ */
+export function withoutFeedToken<T>(row: T): T {
+  if (row && typeof row === 'object') delete (row as { feed_token?: unknown }).feed_token;
+  return row;
+}
+
+/** The fields of a trip update that count as an edit, as against archiving it or changing its cover. */
+const TRIP_EDIT_FIELDS = ['title', 'description', 'start_date', 'end_date', 'currency', 'reminder_days', 'day_count'];
+
+/**
+ * The permissions a trip update needs, in the order PUT /api/trips/:id checks
+ * them, each with the refusal that route answers. Archiving and the cover have
+ * their own action, and so does the costs mode (#1714): it decides what Costs
+ * shows, so whoever may edit the costs sets it, as against the trip's own
+ * details. Any other field present is an edit. update_trip runs the same list,
+ * so an MCP caller cannot archive a trip or swap its cover on the strength of
+ * trip_edit alone.
+ */
+export function tripUpdatePermissions(body: object): { action: PermissionKey; refusal: string }[] {
+  const sent = (field: string) => (body as Record<string, unknown>)[field] !== undefined;
+  const needed: { action: PermissionKey; refusal: string }[] = [];
+  if (sent('is_archived')) {
+    needed.push({ action: 'trip_archive', refusal: 'No permission to archive/unarchive this trip' });
+  }
+  if (sent('cover_image')) {
+    needed.push({ action: 'trip_cover_upload', refusal: 'No permission to change cover image' });
+  }
+  if (sent('costs_mode')) {
+    needed.push({ action: 'budget_edit', refusal: 'No permission to change how this trip keeps its costs' });
+  }
+  if (TRIP_EDIT_FIELDS.some(sent)) needed.push({ action: 'trip_edit', refusal: 'No permission to edit this trip' });
+  return needed;
+}
+
+/**
+ * The start the owner's leave days move to when the trip's dates change: the
+ * old start moved by as far as the trip's first dated day moved. When the days
+ * move with a new start, that is the new start; when days were only added
+ * around the plan, the first day kept its date and the leave stays (#3119).
+ * Without a dated day to go by, the new start as it always was.
+ */
+export function leaveStartFor(
+  oldStart: string | null | undefined,
+  daysBefore: readonly { id: number; date: string | null }[],
+  dateNow: ReadonlyMap<number, string | null>,
+  newStart: string | null | undefined,
+): string | null | undefined {
+  const first = daysBefore.find((d) => d.date);
+  const firstNow = first ? dateNow.get(first.id) : null;
+  if (!oldStart || !first?.date || !firstNow) return newStart;
+  const moved = Math.round((Date.parse(`${firstNow}T00:00:00Z`) - Date.parse(`${first.date}T00:00:00Z`)) / 86_400_000);
+  return addIsoDays(oldStart, moved);
+}

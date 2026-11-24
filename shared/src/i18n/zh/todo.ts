@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': '无清单',
   'todo.namePlaceholder': '任务名称',
   'todo.descriptionPlaceholder': '描述（可选）',
+  'todo.editDescription': '点击编辑，链接可直接打开',
   'todo.unassigned': '未分配',
   'todo.noCategory': '无清单',
   'todo.hasDescription': '有描述',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': '优先级',
   'todo.detail.noPriority': '无',
   'todo.sortByPrio': '优先级',
+  'todo.progressCount': '已完成 {done}/{total}',
+  'todo.allDone': '全部完成！',
+  'todo.filter.myShort': '我的',
 };
 export default todo;

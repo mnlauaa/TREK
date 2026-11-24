@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Bez seznamu',
   'todo.namePlaceholder': 'Název úkolu',
   'todo.descriptionPlaceholder': 'Popis (volitelné)',
+  'todo.editDescription': 'Kliknutím upravíte, odkazy se otevřou přímo',
   'todo.unassigned': 'Nepřiřazeno',
   'todo.noCategory': 'Bez seznamu',
   'todo.hasDescription': 'Má popis',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Priorita',
   'todo.detail.noPriority': 'Žádná',
   'todo.sortByPrio': 'Priorita',
+  'todo.progressCount': '{done} z {total} hotovo',
+  'todo.allDone': 'Vše hotovo!',
+  'todo.filter.myShort': 'Moje',
 };
 export default todo;

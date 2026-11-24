@@ -1,29 +1,14 @@
 import type { StoreApi } from 'zustand';
-import { useAuthStore } from '../../src/store/authStore';
-import { useTripStore } from '../../src/store/tripStore';
-import { useSettingsStore } from '../../src/store/settingsStore';
-import { useVacayStore } from '../../src/store/vacayStore';
-import { useAddonStore } from '../../src/store/addonStore';
-import { useInAppNotificationStore } from '../../src/store/inAppNotificationStore';
-import { usePermissionsStore } from '../../src/store/permissionsStore';
-// Journey store is reset individually in journey tests to avoid circular import issues
+import { useAddonStore, type CollabFeatures } from '../../src/store/addonStore';
+import { RESET_STORES } from './storeRegistry';
 
-// Capture initial states at import time (before any test modifies them)
-const initialAuthState = useAuthStore.getState();
-const initialTripState = useTripStore.getState();
-const initialSettingsState = useSettingsStore.getState();
-const initialVacayState = useVacayStore.getState();
-const initialAddonState = useAddonStore.getState();
-const initialNotifState = useInAppNotificationStore.getState();
-const initialPermsState = usePermissionsStore.getState();
+// The state of each store in the registry when this module was first imported,
+// before any test modified it.
+const initialStates = Object.entries(RESET_STORES).map(([name, store]) => ({ name, store, state: store.getState() }));
+
+/** Puts every store in RESET_STORES (tests/helpers/storeRegistry.ts) back to its initial state. */
 export function resetAllStores(): void {
-  useAuthStore.setState(initialAuthState, true);
-  useTripStore.setState(initialTripState, true);
-  useSettingsStore.setState(initialSettingsState, true);
-  useVacayStore.setState(initialVacayState, true);
-  useAddonStore.setState(initialAddonState, true);
-  useInAppNotificationStore.setState(initialNotifState, true);
-  usePermissionsStore.setState(initialPermsState, true);
+  for (const { store, state } of initialStates) store.setState(state, true);
 }
 
 /**
@@ -39,9 +24,20 @@ export function resetAllStores(): void {
  */
 type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
 
-export function seedStore<T extends object>(
-  store: Pick<StoreApi<T>, 'setState'>,
-  state: DeepPartial<T>,
-): void {
+export function seedStore<T extends object>(store: Pick<StoreApi<T>, 'setState'>, state: DeepPartial<T>): void {
   store.setState(state as Partial<T>);
+}
+
+/**
+ * The instance's addons as the app read them from GET /api/addons: these on,
+ * every other off. A trip that names no addon of its own (the default MSW
+ * answer of GET /api/trips/:id/addons) then shows exactly these.
+ */
+export function seedInstanceAddons(ids: string[], collabFeatures?: Partial<CollabFeatures>): void {
+  useAddonStore.setState((state) => ({
+    addons: ids.map((id) => ({ id, name: id, type: 'trip', icon: '', enabled: true })),
+    loaded: true,
+    failed: false,
+    collabFeatures: { ...state.collabFeatures, ...collabFeatures },
+  }));
 }

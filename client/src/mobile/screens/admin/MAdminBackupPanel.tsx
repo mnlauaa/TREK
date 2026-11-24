@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from 'react'
 import {
   Check,
   Clock,
@@ -10,196 +9,29 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { backupApi } from '../../../api/client'
-import { useToast } from '../../../components/shared/Toast'
+import {
+  DAYS_OF_MONTH,
+  DAYS_OF_WEEK,
+  HOURS,
+  INTERVAL_OPTIONS,
+  KEEP_OPTIONS,
+  useBackupAdmin,
+} from '../../../components/Admin/useBackupAdmin'
 import { useTranslation } from '../../../i18n'
-import { useSettingsStore } from '../../../store/settingsStore'
-import { getApiErrorMessage } from '../../../types'
 import MChip from '../../components/MChip'
 import MToggle from '../../components/MToggle'
 import MConfirmSheet from '../settings/MConfirmSheet'
-import { MAdminButton, MAdminCard, MAdminCardHead, MAdminField, MAdminRow } from './MAdminUi'
-
-const INTERVAL_OPTIONS = [
-  { value: 'hourly',  labelKey: 'backup.interval.hourly' },
-  { value: 'daily',   labelKey: 'backup.interval.daily' },
-  { value: 'weekly',  labelKey: 'backup.interval.weekly' },
-  { value: 'monthly', labelKey: 'backup.interval.monthly' },
-]
-
-const KEEP_OPTIONS = [
-  { value: 1,  labelKey: 'backup.keep.1day' },
-  { value: 3,  labelKey: 'backup.keep.3days' },
-  { value: 7,  labelKey: 'backup.keep.7days' },
-  { value: 14, labelKey: 'backup.keep.14days' },
-  { value: 30, labelKey: 'backup.keep.30days' },
-  { value: 0,  labelKey: 'backup.keep.forever' },
-]
-
-const DAYS_OF_WEEK = [
-  { value: 0, labelKey: 'backup.dow.sunday' },
-  { value: 1, labelKey: 'backup.dow.monday' },
-  { value: 2, labelKey: 'backup.dow.tuesday' },
-  { value: 3, labelKey: 'backup.dow.wednesday' },
-  { value: 4, labelKey: 'backup.dow.thursday' },
-  { value: 5, labelKey: 'backup.dow.friday' },
-  { value: 6, labelKey: 'backup.dow.saturday' },
-]
-
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
-
-const DAYS_OF_MONTH = Array.from({ length: 28 }, (_, i) => i + 1)
-
-const SELECT_CLASS =
-  'h-[42px] w-full rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-3 text-[0.84375rem] text-m-ink outline-none focus:border-[color:var(--m-faint)]'
+import { MAdminButton, MAdminCard, MAdminCardHead, MAdminField, MAdminRow, MAdminSelect } from './MAdminUi'
 
 export default function MAdminBackupPanel() {
-  const [backups, setBackups] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
-  const [restoringFile, setRestoringFile] = useState(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [autoSettings, setAutoSettings] = useState({ enabled: false, interval: 'daily', keep_days: 7, hour: 2, day_of_week: 0, day_of_month: 1 })
-  const [autoSettingsSaving, setAutoSettingsSaving] = useState(false)
-  const [autoSettingsDirty, setAutoSettingsDirty] = useState(false)
-  const [serverTimezone, setServerTimezone] = useState('')
-  const [restoreConfirm, setRestoreConfirm] = useState(null) // { type: 'file'|'upload', filename, file? }
-  const [deleteConfirm, setDeleteConfirm] = useState(null) // filename pending deletion
-  const fileInputRef = useRef(null)
-  const toast = useToast()
-  const { t, locale } = useTranslation()
-  const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
-
-  const loadBackups = async () => {
-    setIsLoading(true)
-    try {
-      const data = await backupApi.list()
-      setBackups(data.backups || [])
-    } catch {
-      toast.error(t('backup.toast.loadError'))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const loadAutoSettings = async () => {
-    try {
-      const data = await backupApi.getAutoSettings()
-      // A 200 without a settings block would blank the whole schedule form.
-      if (data.settings) setAutoSettings(data.settings)
-      if (data.timezone) setServerTimezone(data.timezone)
-    } catch {}
-  }
-
-  useEffect(() => { loadBackups(); loadAutoSettings() }, [])
-
-  const handleCreate = async () => {
-    setIsCreating(true)
-    try {
-      await backupApi.create()
-      toast.success(t('backup.toast.created'))
-      await loadBackups()
-    } catch {
-      toast.error(t('backup.toast.createError'))
-    } finally {
-      setIsCreating(false)
-    }
-  }
-
-  const handleRestore = (filename) => {
-    setRestoreConfirm({ type: 'file', filename })
-  }
-
-  const handleUploadRestore = (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0]
-    if (!file) return
-    e.target.value = ''
-    setRestoreConfirm({ type: 'upload', filename: file.name, file })
-  }
-
-  const executeRestore = async () => {
-    if (!restoreConfirm) return
-    const { type, filename, file } = restoreConfirm
-    setRestoreConfirm(null)
-
-    if (type === 'file') {
-      setRestoringFile(filename)
-      try {
-        await backupApi.restore(filename)
-        toast.success(t('backup.toast.restored'))
-        setTimeout(() => window.location.reload(), 1500)
-      } catch (err: unknown) {
-        toast.error(getApiErrorMessage(err, t('backup.toast.restoreError')))
-        setRestoringFile(null)
-      }
-    } else {
-      setIsUploading(true)
-      try {
-        await backupApi.uploadRestore(file)
-        toast.success(t('backup.toast.restored'))
-        setTimeout(() => window.location.reload(), 1500)
-      } catch (err: unknown) {
-        toast.error(getApiErrorMessage(err, t('backup.toast.uploadError')))
-        setIsUploading(false)
-      }
-    }
-  }
-
-  const handleDelete = (filename) => {
-    setDeleteConfirm(filename)
-  }
-
-  const executeDelete = async () => {
-    const filename = deleteConfirm
-    setDeleteConfirm(null)
-    if (!filename) return
-    try {
-      await backupApi.delete(filename)
-      toast.success(t('backup.toast.deleted'))
-      setBackups(prev => prev.filter(b => b.filename !== filename))
-    } catch {
-      toast.error(t('backup.toast.deleteError'))
-    }
-  }
-
-  const handleAutoSettingsChange = (key, value) => {
-    setAutoSettings(prev => ({ ...prev, [key]: value }))
-    setAutoSettingsDirty(true)
-  }
-
-  const handleSaveAutoSettings = async () => {
-    setAutoSettingsSaving(true)
-    try {
-      const data = await backupApi.setAutoSettings(autoSettings)
-      if (data.settings) setAutoSettings(data.settings)
-      setAutoSettingsDirty(false)
-      toast.success(t('backup.toast.settingsSaved'))
-    } catch {
-      toast.error(t('backup.toast.settingsError'))
-    } finally {
-      setAutoSettingsSaving(false)
-    }
-  }
-
-  const formatSize = (bytes) => {
-    if (!bytes) return '-'
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  }
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-'
-    try {
-      const opts: Intl.DateTimeFormatOptions = {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-      }
-      if (serverTimezone) opts.timeZone = serverTimezone
-      return new Date(dateStr).toLocaleString(locale, opts)
-    } catch { return dateStr }
-  }
-
-  const isAuto = (filename) => filename.startsWith('auto-backup-')
+  const {
+    backups, isLoading, isCreating, restoringFile, isUploading, autoSettings, autoSettingsSaving, autoSettingsDirty,
+    serverTimezone, restoreConfirm, setRestoreConfirm, deleteTarget: deleteConfirm, setDeleteTarget: setDeleteConfirm,
+    fileInputRef, is12h, loadBackups, handleCreate, handleDownload, handleRestore, handleUploadRestore,
+    executeRestore, handleDelete, executeDelete, handleAutoSettingsChange, handleSaveAutoSettings, formatSize,
+    formatDate, isAuto,
+  } = useBackupAdmin({ keepSettingsWhenMissing: true })
+  const { t } = useTranslation()
 
   return (
     <div className="space-y-3">
@@ -302,10 +134,10 @@ export default function MAdminBackupPanel() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pl-12">
+                <div className="flex items-center gap-2 ps-12">
                   <MAdminButton
                     variant="ghost"
-                    onClick={() => backupApi.download(backup.filename).catch(() => toast.error(t('backup.toast.downloadError')))}
+                    onClick={() => handleDownload(backup.filename)}
                   >
                     <Download size={12} strokeWidth={2.2} />
                     {t('backup.download')}
@@ -323,7 +155,7 @@ export default function MAdminBackupPanel() {
                     type="button"
                     onClick={() => handleDelete(backup.filename)}
                     aria-label={t('common.delete')}
-                    className="ml-auto flex h-8 w-8 flex-none items-center justify-center rounded-full text-m-faint"
+                    className="ms-auto flex h-8 w-8 flex-none items-center justify-center rounded-full text-m-faint"
                   >
                     <Trash2 size={16} strokeWidth={2.2} />
                   </button>
@@ -382,25 +214,18 @@ export default function MAdminBackupPanel() {
               {autoSettings.interval !== 'hourly' && (
                 <MAdminField
                   label={t('backup.auto.hour')}
-                  hint={`${t('backup.auto.hourHint', { format: is12h ? '12h' : '24h' })}${serverTimezone ? ` (Timezone: ${serverTimezone})` : ''}`}
+                  hint={serverTimezone ? t('backup.auto.hourHintTz', { format: is12h ? '12h' : '24h', timezone: serverTimezone }) : t('backup.auto.hourHint', { format: is12h ? '12h' : '24h' })}
                 >
-                  <select
+                  <MAdminSelect
+                    title={t('backup.auto.hour')}
                     value={String(autoSettings.hour)}
-                    onChange={e => handleAutoSettingsChange('hour', Number.parseInt(e.target.value, 10))}
-                    className={SELECT_CLASS}
-                  >
-                    {HOURS.map(h => {
-                      let label: string
-                      if (is12h) {
-                        const period = h >= 12 ? 'PM' : 'AM'
-                        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
-                        label = `${h12}:00 ${period}`
-                      } else {
-                        label = `${String(h).padStart(2, '0')}:00`
-                      }
-                      return <option key={h} value={String(h)}>{label}</option>
+                    onChange={value => handleAutoSettingsChange('hour', Number.parseInt(value, 10))}
+                    options={HOURS.map(h => {
+                      if (!is12h) return { value: String(h), label: `${String(h).padStart(2, '0')}:00` }
+                      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+                      return { value: String(h), label: `${h12}:00 ${h >= 12 ? 'PM' : 'AM'}` }
                     })}
-                  </select>
+                  />
                 </MAdminField>
               )}
 
@@ -424,15 +249,12 @@ export default function MAdminBackupPanel() {
               {/* Day of month (for monthly) */}
               {autoSettings.interval === 'monthly' && (
                 <MAdminField label={t('backup.auto.dayOfMonth')} hint={t('backup.auto.dayOfMonthHint')}>
-                  <select
+                  <MAdminSelect
+                    title={t('backup.auto.dayOfMonth')}
                     value={String(autoSettings.day_of_month)}
-                    onChange={e => handleAutoSettingsChange('day_of_month', Number.parseInt(e.target.value, 10))}
-                    className={SELECT_CLASS}
-                  >
-                    {DAYS_OF_MONTH.map(d => (
-                      <option key={d} value={String(d)}>{String(d)}</option>
-                    ))}
-                  </select>
+                    onChange={value => handleAutoSettingsChange('day_of_month', Number.parseInt(value, 10))}
+                    options={DAYS_OF_MONTH.map(d => ({ value: String(d), label: String(d) }))}
+                  />
                 </MAdminField>
               )}
 

@@ -15,6 +15,74 @@ export function readEnv(): AppEnv {
 }
 
 /**
+ * Variables whose value never goes into the boot report, even when it is the
+ * malformed one: the report lands in container logs, and a key that is merely
+ * mistyped is still a real key. The name and the problem are enough to fix it.
+ */
+export const SECRET_ENV_KEYS: ReadonlySet<string> = new Set([
+  'ENCRYPTION_KEY',
+  'OIDC_CLIENT_SECRET',
+  'SMTP_PASS',
+  'VAPID_PRIVATE_KEY',
+  'UNSPLASH_ACCESS_KEY',
+  'ADMIN_PASSWORD',
+  'PLACES_API_KEY',
+  'TREK_SERVICES_KEY',
+  'AMAP_API_KEY',
+  'AMAP_API_SECRET',
+  'MAPBOX_ACCESS_TOKEN',
+  'CARTO_API_KEY',
+  'DEMO_ADMIN_PASS',
+  'TREK_DB_URL',
+  'MAIL_INGEST_IMAP_PASS',
+  'MAIL_INGEST_WEBHOOK_SECRET',
+]);
+
+/** How a variable's value appears in the boot report. */
+function reportedValue(key: string, value: string | undefined): string {
+  return SECRET_ENV_KEYS.has(key) ? '***' : JSON.stringify(value);
+}
+
+/**
+ * Variables whose surrounding whitespace is stripped once at boot. The schema
+ * already validates them trimmed, but every reader compares the raw string:
+ * NODE_ENV="production " served no web UI at all (#2565), LOG_LEVEL="debug "
+ * fell back to info, DEFAULT_LANGUAGE="de " to English. Deliberately a short
+ * list, not every variable: a secret may carry its spaces on purpose.
+ */
+const TRIMMED_AT_BOOT = ['NODE_ENV', 'LOG_LEVEL', 'DEFAULT_LANGUAGE'] as const;
+
+/**
+ * Strips the whitespace a .env line or a compose file left around the values in
+ * TRIMMED_AT_BOOT and writes the result back, so Express (`app.get('env')`),
+ * the plugin child processes and any library reading NODE_ENV itself see the
+ * same value as readEnv(). Casing is left alone. Each change is reported, since
+ * the banner cannot show a trailing space.
+ *
+ * NODE_ENV="test " is the one exception: trimmed it would switch a running
+ * instance onto an in-memory database without crons, so it is only reported.
+ */
+export function normalizeEnvAtBoot(raw: RawEnv = process.env as RawEnv): void {
+  for (const key of TRIMMED_AT_BOOT) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    const trimmed = value.trim();
+    if (trimmed === value) continue;
+    if (key === 'NODE_ENV' && trimmed === 'test') {
+      bootWarning(`${key}=${JSON.stringify(value)} has surrounding whitespace and is not treated as "test".`);
+      continue;
+    }
+    raw[key] = trimmed;
+    bootWarning(`${key}=${JSON.stringify(value)} has surrounding whitespace, using ${JSON.stringify(trimmed)}.`);
+  }
+}
+
+/** Runs before the file logger exists, so it goes to stderr as a process warning. */
+function bootWarning(message: string): void {
+  process.emitWarning(message, { code: 'TREK_ENV_WHITESPACE' });
+}
+
+/**
  * Fail-fast startup validation: a variable that is PRESENT but malformed aborts
  * boot with an aggregated report; unset/blank variables always pass (their
  * documented defaults apply). Called once from the production entrypoint (see
@@ -28,15 +96,34 @@ export function validateEnvAtBoot(raw: RawEnv = process.env as RawEnv): void {
     ? []
     : result.error.issues.map((issue) => {
         const key = String(issue.path[0]);
-        return `  - ${key}=${JSON.stringify(raw[key])}: ${issue.message}`;
+        return `  - ${key}=${reportedValue(key, raw[key])}: ${issue.message}`;
       });
-  lines.push(...managedPreconditions(raw));
+  lines.push(...databasePreconditions(raw), ...managedPreconditions(raw));
   if (lines.length === 0) return;
   console.error(`Invalid environment configuration:\n${lines.join('\n')}`);
   throw new Error(
     `Invalid environment configuration (${lines.length} problem${lines.length === 1 ? '' : 's'}). ` +
       'Fix the variables listed above, or unset them to use their defaults.',
   );
+}
+
+/** The SQLite settings that mean nothing next to TREK_DB_URL. */
+const SQLITE_ONLY_DB_KEYS = ['TREK_DB_FILE', 'TREK_DB_JOURNAL_MODE', 'TREK_DB_SYNCHRONOUS'] as const;
+
+/**
+ * Cross-field rules for the database engine. TREK_DB_URL beside a SQLite
+ * setting names two databases, and either guess would leave the operator on
+ * the one they did not mean: it refuses instead (fail closed, see
+ * server/CLAUDE.md). The URL itself never reaches the report.
+ */
+function databasePreconditions(raw: RawEnv): string[] {
+  if (!raw.TREK_DB_URL?.trim()) return [];
+  const sqliteKeys = SQLITE_ONLY_DB_KEYS.filter((key) => raw[key]?.trim());
+  if (sqliteKeys.length === 0) return [];
+  return [
+    `  - ambiguous database configuration: TREK_DB_URL is set together with ${sqliteKeys.join(', ')}, ` +
+      'which only apply to the SQLite file. Unset one side.',
+  ];
 }
 
 /**

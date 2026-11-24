@@ -6,9 +6,22 @@ const pdf: TranslationStrings = {
   'pdf.costLabel': 'التكلفة',
   'pdf.preview': 'معاينة PDF',
   'pdf.saveAsPdf': 'حفظ كـ PDF',
+  'pdf.openInSafari': 'فتح في Safari',
+  'pdf.safariHint':
+    'لا يمكن لنظام iOS الطباعة من التطبيق على الشاشة الرئيسية. سيفتح Safari هذه الرحلة مع تجهيز التصدير، ويمكنك حفظ ملف PDF هناك.',
   'pdf.pageBreakPerDay': 'فاصل صفحة لكل يوم',
+  'pdf.transportNotes': 'ملاحظات التنقل',
+  'pdf.largeText': 'نص كبير',
   'pdf.mapTitle': 'نظرة عامة على المسار',
   'pdf.distanceLabel': 'المسافة',
   'pdf.mapCredit': 'حدود الدول: geoBoundaries (CC BY 4.0)',
+  'pdf.showOverview': 'نظرة عامة',
+  'pdf.showPhotos': 'الصور',
+  'pdf.showDetails': 'التواصل وساعات العمل',
+  'pdf.atAGlance': 'لمحة سريعة',
+  'pdf.bookings': 'الحجوزات والإقامات',
+  'pdf.day': 'اليوم',
+  'pdf.stay': 'الإقامة',
+  'pdf.plan': 'الخطة',
 };
 export default pdf;

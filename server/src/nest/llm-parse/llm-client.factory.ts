@@ -1,17 +1,21 @@
-import type { LlmExtractionClient } from './llm-provider.interface';
-import type { ResolvedLlmConfig } from './llm-config';
-import { OpenAiCompatibleClient } from './clients/openai-compatible.client';
 import { AnthropicClient } from './clients/anthropic.client';
+import { ConnectionReadClient } from './clients/connection-read.client';
+import { OpenAiCompatibleClient } from './clients/openai-compatible.client';
+import type { ResolvedLlmConfig } from './llm-config';
+import type { LlmExtractionClient } from './llm-provider.interface';
 
 /**
  * Pick the provider client for a resolved config.
  *  - 'anthropic'        → Anthropic Messages API client
  *  - 'openai' | 'local' → OpenAI-compatible client (cloud or local base URL)
+ *  - 'chatgpt'          → the plan the AI connection lends, read through it
  */
 export function createLlmClient(config: ResolvedLlmConfig): LlmExtractionClient {
   switch (config.provider) {
     case 'anthropic':
       return new AnthropicClient();
+    case 'chatgpt':
+      return new ConnectionReadClient(config.read);
     case 'openai':
     case 'local':
       return new OpenAiCompatibleClient();

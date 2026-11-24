@@ -1,9 +1,10 @@
-import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { buildUser } from '../../tests/helpers/factories';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '../../tests/helpers/render';
+import userEvent from '@testing-library/user-event';
 import { resetAllStores, seedStore } from '../../tests/helpers/store';
+import { buildUser } from '../../tests/helpers/factories';
 import { useAuthStore } from '../store/authStore';
+import { useAddonStore } from '../store/addonStore';
 import SettingsPage from './SettingsPage';
 
 // Mock heavy settings sub-tabs to focus on page-level concerns
@@ -28,7 +29,9 @@ vi.mock('../components/Settings/AccountTab', () => ({
 }));
 
 vi.mock('../components/Settings/AboutTab', () => ({
-  default: ({ appVersion }: { appVersion: string }) => <div data-testid="about-tab">About v{appVersion}</div>,
+  default: ({ appVersion }: { appVersion: string }) => (
+    <div data-testid="about-tab">About v{appVersion}</div>
+  ),
 }));
 
 beforeEach(() => {
@@ -125,8 +128,8 @@ describe('SettingsPage', () => {
     });
   });
 
-  describe('FE-PAGE-SETTINGS-006: Legal link shown when version loads', () => {
-    it('links the displayed app version to the public legal page', async () => {
+  describe('FE-PAGE-SETTINGS-006: Legal source link when version loads', () => {
+    it('links to legal source and version when the API returns a version', async () => {
       const { http, HttpResponse } = await import('msw');
       const { server } = await import('../../tests/helpers/msw/server');
 
@@ -140,15 +143,37 @@ describe('SettingsPage', () => {
             oidc_only_mode: false,
             version: '2.9.10',
           });
-        })
+        }),
       );
 
       render(<SettingsPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('link', { name: /legal & source.*2\.9\.10/i })).toHaveAttribute('href', '/legal');
+        expect(screen.getByRole('link', { name: /legal.*2\.9\.10/i })).toHaveAttribute('href', '/legal');
       });
-      expect(screen.queryByRole('button', { name: /about/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('FE-PAGE-SETTINGS-007: Integrations tab without any integration addon', () => {
+    // API keys live in the Integrations tab and need no addon, so the tab has to
+    // be there on an instance where MCP, AirTrail, AI Parsing, Dawarich and the
+    // photo providers are all switched off.
+    it('still offers the Integrations tab and opens it', async () => {
+      seedStore(useAddonStore, { isEnabled: () => false, loadAddons: vi.fn().mockResolvedValue(undefined) });
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await user.click(await screen.findByRole('button', { name: /integrations/i }));
+
+      expect(await screen.findByTestId('integrations-tab')).toBeInTheDocument();
+    });
+
+    it('keeps it on a managed install too', async () => {
+      seedStore(useAddonStore, { isEnabled: () => false, loadAddons: vi.fn().mockResolvedValue(undefined) });
+      seedStore(useAuthStore, { managed: true });
+      render(<SettingsPage />, { initialEntries: ['/settings?tab=integrations'] });
+
+      expect(await screen.findByTestId('integrations-tab')).toBeInTheDocument();
     });
   });
 });

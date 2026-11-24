@@ -1,14 +1,17 @@
-import { createZodDto } from 'nestjs-zod';
 import {
   assignmentCreateRequestSchema,
   assignmentReorderRequestSchema,
   assignmentMoveRequestSchema,
   assignmentTimeRequestSchema,
   assignmentEndDayRequestSchema,
+  assignmentStayRequestSchema,
   assignmentNotesRequestSchema,
   assignmentTransportRequestSchema,
+  assignmentRouteRequestSchema,
   assignmentParticipantsRequestSchema,
 } from '@trek/shared';
+
+import { createZodDto } from 'nestjs-zod';
 
 /**
  * Server-side createZodDto wrappers over the @trek/shared assignment
@@ -24,4 +27,7 @@ export class AssignmentTimeDto extends createZodDto(assignmentTimeRequestSchema)
 export class AssignmentEndDayDto extends createZodDto(assignmentEndDayRequestSchema) {}
 export class AssignmentNotesDto extends createZodDto(assignmentNotesRequestSchema) {}
 export class AssignmentTransportDto extends createZodDto(assignmentTransportRequestSchema) {}
+export class AssignmentRouteDto extends createZodDto(assignmentRouteRequestSchema) {}
 export class AssignmentParticipantsDto extends createZodDto(assignmentParticipantsRequestSchema) {}
+
+export class AssignmentStayDto extends createZodDto(assignmentStayRequestSchema) {}

@@ -1,8 +1,6 @@
-import { Circle, Bookmark, CheckCircle2 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import type { CollectionPlace, CollectionStatus, CollectionLabel } from '@trek/shared'
-import { COLLECTION_STATUSES } from '@trek/shared'
+import type { CollectionPlace, CollectionLabel } from '@trek/shared'
 import type { StatusFilter, CollectionSortMode } from '../../store/collectionStore'
+import { textMatchesSearch } from '../../utils/placeSearch'
 
 /**
  * Pure data shaping + presentation metadata for the Collections page. No React
@@ -10,30 +8,9 @@ import type { StatusFilter, CollectionSortMode } from '../../store/collectionSto
  * page hook (useCollections) and the view components share these helpers.
  */
 
-export interface StatusMeta {
-  icon: LucideIcon
-  /** i18n key for the human label. */
-  labelKey: string
-  /** CSS colour token / hex for the badge on a light/surface background. */
-  color: string
-  /** Brighter variant for a pill sitting over a photo cover / the hero scrim. */
-  coverColor: string
-}
-
-export const STATUS_META: Record<CollectionStatus, StatusMeta> = {
-  idea: { icon: Circle, labelKey: 'collections.status.idea', color: 'var(--text-muted)', coverColor: '#e5e7eb' },
-  want: { icon: Bookmark, labelKey: 'collections.status.want', color: 'var(--accent)', coverColor: '#c7d2fe' },
-  visited: { icon: CheckCircle2, labelKey: 'collections.status.visited', color: '#10b981', coverColor: '#6ee7b7' },
-}
-
-/** Stable order for the filter chips + the one-tap cycle. */
-export const STATUS_ORDER: CollectionStatus[] = [...COLLECTION_STATUSES]
-
-/** idea → want → visited → idea */
-export function nextStatus(status: CollectionStatus): CollectionStatus {
-  const i = STATUS_ORDER.indexOf(status)
-  return STATUS_ORDER[(i + 1) % STATUS_ORDER.length]
-}
+// The status presentation lives with the components (the assistant's cards
+// draw it too); re-exported here for the page and its views.
+export { STATUS_META, STATUS_ORDER, nextStatus } from '../../components/Collections/collectionStatus'
 
 /** Order the places for display. 'default' keeps the saved order (sort_order,
  *  then newest first); 'name_asc' sorts alphabetically by name (locale-aware). */
@@ -60,7 +37,6 @@ export function filterPlaces(
   labelFilter: number[] = [],
   ratingFilter: number | 'all' = 'all',
 ): CollectionPlace[] {
-  const q = search.trim().toLowerCase()
   return places.filter(p => {
     if (!p) return false
     if (statusFilter !== 'all' && p.status !== statusFilter) return false
@@ -68,18 +44,13 @@ export function filterPlaces(
     // Minimum-average-stars filter (#1435): unrated places drop out once a floor is set.
     if (ratingFilter !== 'all' && (p.rating_avg == null || p.rating_avg < ratingFilter)) return false
     if (labelFilter.length && !labelFilter.some(id => (p.label_ids ?? []).includes(id))) return false
-    if (!q) return true
-    return (
-      p.name.toLowerCase().includes(q) ||
-      (p.address ?? '').toLowerCase().includes(q) ||
-      (p.notes ?? '').toLowerCase().includes(q)
-    )
+    return textMatchesSearch([p.name, p.address, p.notes], search)
   })
 }
 
 /** Count places per status for the filter chips. */
 export function statusCounts(places: CollectionPlace[]): Record<StatusFilter, number> {
-  const counts: Record<StatusFilter, number> = { all: 0, idea: 0, want: 0, visited: 0 }
+  const counts: Record<StatusFilter, number> = { all: 0, idea: 0, want: 0, visited: 0, revisit: 0 }
   for (const p of places) { if (!p) continue; counts.all += 1; counts[p.status] += 1 }
   return counts
 }
@@ -115,6 +86,25 @@ export function presentLabels(labels: CollectionLabel[], places: CollectionPlace
 /** Only the places that can render on a map. */
 export function mappablePlaces(places: CollectionPlace[]): CollectionPlace[] {
   return places.filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number')
+}
+
+/**
+ * A saved place with its category where the trip map reads it. The server nests a
+ * collection place's category (`category.color`), the markers and the hover card
+ * read the flat fields a trip place carries, so every pin here was the grey default
+ * (#3073).
+ */
+export function withMarkerCategory(place: CollectionPlace): CollectionPlace & {
+  category_name: string | null
+  category_color: string | null
+  category_icon: string | null
+} {
+  return {
+    ...place,
+    category_name: place.category?.name ?? null,
+    category_color: place.category?.color ?? null,
+    category_icon: place.category?.icon ?? null,
+  }
 }
 
 /**

@@ -1,14 +1,13 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': 'Utazás megosztása',
   'members.inviteUser': 'Felhasználó meghívása',
   'members.selectUser': 'Felhasználó kiválasztása…',
   'members.invite': 'Meghívás',
   'members.allHaveAccess': 'Minden felhasználónak már van hozzáférése.',
   'members.access': 'Hozzáférés',
-  'members.person': 'személy',
   'members.persons': 'személy',
+  'members.persons.one': 'személy',
   'members.you': 'te',
   'members.owner': 'Tulajdonos',
   'members.leaveTrip': 'Utazás elhagyása',
@@ -33,23 +32,9 @@ const members: TranslationStrings = {
   'members.guestAddError': 'Nem sikerült hozzáadni a vendéget',
   'members.guestRenameError': 'Nem sikerült átnevezni a vendéget',
   'members.guestRemoved': 'Vendég eltávolítva',
-  'members.confirmRemoveGuest': 'Eltávolítja ezt a vendéget? A hozzárendelései és költségrészei is törlődnek.',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest':
+    'Eltávolítja ezt a vendéget? A hozzárendelései törlődnek, a költségekből rá eső rész pedig a többi résztvevő között oszlik meg.',
+  'members.guestHasPayments':
+    'Ez a vendég kifizetett egy költséget, vagy részese egy rögzített fizetésnek. Előbb módosítsa a fizetőt, vagy törölje a fizetést.',
 };
 export default members;

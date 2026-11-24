@@ -7,51 +7,44 @@
  * notice riding the attach ctx, and the scope gating (declarative
  * trips:write markers + the canReadTrips/canDeleteTrips predicates).
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
-
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: any, userId: number) =>
-      db.prepare(`SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`).get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-}));
-
-const { broadcastMock } = vi.hoisted(() => ({ broadcastMock: vi.fn() }));
-vi.mock('../../../src/websocket', () => ({ broadcast: broadcastMock }));
-
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { resetTestDb } from '../../helpers/test-db';
-import { createUser, createTrip, createDay, createPlace, addTripMember, createBudgetItem, createPackingItem, createReservation, createDayNote, createCollabNote, createDayAssignment, createDayAccommodation } from '../../helpers/factories';
+import { Days } from '../../../src/db/entities/Days.entity';
+import { RoadtripDayBoundaries } from '../../../src/db/entities/RoadtripDayBoundaries.entity';
+import { Trips } from '../../../src/db/entities/Trips.entity';
+import { VacayEntries } from '../../../src/db/entities/VacayEntries.entity';
+import { VacayUserYears } from '../../../src/db/entities/VacayUserYears.entity';
+import { VacayYears } from '../../../src/db/entities/VacayYears.entity';
+import { invalidatePermissionsCache } from '../../../src/nest/permissions/permissions-cache';
+import { makeBudgetItem } from '../../helpers/factories/budget';
+import { makeCollabNote } from '../../helpers/factories/collab';
+import { makeDayAccommodation, makeDayAssignment, makeDayNote } from '../../helpers/factories/itinerary';
+import { makePackingItem } from '../../helpers/factories/packing';
+import { makePlace } from '../../helpers/factories/places';
+import { makeReservation } from '../../helpers/factories/reservations';
+import { countRows, findRow, findRows, insertRow, insertRows, updateRows } from '../../helpers/factories/rows';
+import { setAppSetting, setUserSetting } from '../../helpers/factories/settings';
+import { addTripMember, makeDay, makeTrip } from '../../helpers/factories/trips';
+import { makeUser } from '../../helpers/factories/users';
+import { makeVacayEntry, makeVacayPlan, addVacayPlanMember } from '../../helpers/factories/vacay';
+import { FakeRealtimeService } from '../../helpers/fake-realtime';
 import { createMcpHarness, parseToolResult, parseResourceResult, type McpHarness } from '../../helpers/mcp-harness';
+import { resetDatabase } from '../../helpers/reset-database';
+import { bootTestApp } from '../../helpers/test-app';
+import { MikroORM } from '@mikro-orm/core';
 import { MAX_TRIP_DAYS } from '@trek/shared';
 
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
+
+const realtime = new FakeRealtimeService();
+const broadcastMock = realtime.broadcastMock;
+
+let orm: MikroORM;
+
+beforeAll(async () => {
+  orm = (await bootTestApp(realtime)).get(MikroORM);
 });
 
-beforeEach(() => {
-  resetTestDb(testDb);
+beforeEach(async () => {
+  await resetDatabase(orm);
   broadcastMock.mockClear();
   delete process.env.DEMO_MODE;
 });
@@ -61,13 +54,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-afterAll(() => {
-  testDb.close();
+afterAll(async () => {
+  await (await bootTestApp(realtime)).close();
 });
 
+async function tripRow(id: number) {
+  return (await findRow(orm, Trips, { id }))!;
+}
+
+/** The vacay entry dates of the user in the plan between `from` and `to`, both included, in date order. */
+async function vacayDatesBetween(planId: number, userId: number, from: string, to: string): Promise<string[]> {
+  const rows = await findRows(
+    orm,
+    VacayEntries,
+    { plan: planId, user: userId, date: { $gte: from, $lte: to } },
+    { date: 'asc' },
+  );
+  return rows.map((r) => r.date);
+}
+
+/** A vacay plan for the user with the year 2026 open and 30 days in it. */
+async function vacayPlanWithYear(userId: number): Promise<number> {
+  const { id: planId } = await makeVacayPlan(orm, userId);
+  await insertRow(orm, VacayYears, { plan: planId, year: 2026 });
+  await insertRow(orm, VacayUserYears, { user: userId, plan: planId, year: 2026, vacation_days: 30, carried_over: 0 });
+  return planId;
+}
+
 async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>) {
-  const h = await createMcpHarness({ userId, withResources: false });
-  try { await fn(h); } finally { await h.cleanup(); }
+  const h = await createMcpHarness({ realtime, userId, withResources: false });
+  try {
+    await fn(h);
+  } finally {
+    await h.cleanup();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -76,45 +96,45 @@ async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>)
 
 describe('Tool: create_trip', () => {
   it('creates a trip with title only and generates 7 default days', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Summer Escape' } });
       const data = parseToolResult(result) as any;
       expect(data.trip).toBeTruthy();
       expect(data.trip.title).toBe('Summer Escape');
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(data.trip.id) as { c: number };
-      expect(days.c).toBe(7);
+      const days = await countRows(orm, Days, { trip: data.trip.id });
+      expect(days).toBe(7);
     });
   });
 
   it('creates a trip with dates and auto-generates correct number of days', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip',
         arguments: { title: 'Paris Trip', start_date: '2026-07-01', end_date: '2026-07-05' },
       });
       const data = parseToolResult(result) as any;
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(data.trip.id) as { c: number };
-      expect(days.c).toBe(5);
+      const days = await countRows(orm, Days, { trip: data.trip.id });
+      expect(days).toBe(5);
     });
   });
 
   it('generates every day of a trip longer than a year (#2403)', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip',
         arguments: { title: 'Long Trip', start_date: '2025-01-26', end_date: '2026-01-28' },
       });
       const data = parseToolResult(result) as any;
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(data.trip.id) as { c: number };
-      expect(days.c).toBe(368);
+      const days = await countRows(orm, Days, { trip: data.trip.id });
+      expect(days).toBe(368);
     });
   });
 
   it('refuses a date range longer than MAX_TRIP_DAYS instead of cutting the days short', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip',
@@ -122,20 +142,23 @@ describe('Tool: create_trip', () => {
       });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result.content)).toContain(`at most ${MAX_TRIP_DAYS} days`);
-      expect(testDb.prepare('SELECT COUNT(*) as c FROM trips').get()).toEqual({ c: 0 });
+      expect(await countRows(orm, Trips)).toBe(0);
     });
   });
 
   it('returns error for invalid start_date format', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Trip', start_date: 'not-a-date' } });
+      const result = await h.client.callTool({
+        name: 'create_trip',
+        arguments: { title: 'Trip', start_date: 'not-a-date' },
+      });
       expect(result.isError).toBe(true);
     });
   });
 
   it('returns error when end_date is before start_date', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip',
@@ -147,7 +170,7 @@ describe('Tool: create_trip', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Demo Trip' } });
       expect(result.isError).toBe(true);
@@ -155,71 +178,92 @@ describe('Tool: create_trip', () => {
   });
 
   it('gives a dateless trip the requested day_count instead of the default 7', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Open Ended', day_count: 12 } });
+      const result = await h.client.callTool({
+        name: 'create_trip',
+        arguments: { title: 'Open Ended', day_count: 12 },
+      });
       const data = parseToolResult(result) as any;
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(data.trip.id) as { c: number };
-      expect(days.c).toBe(12);
-      const row = testDb.prepare('SELECT start_date, end_date FROM trips WHERE id = ?').get(data.trip.id) as any;
+      const days = await countRows(orm, Days, { trip: data.trip.id });
+      expect(days).toBe(12);
+      const row = await tripRow(data.trip.id);
       expect(row.start_date).toBeNull();
       expect(row.end_date).toBeNull();
     });
   });
 
   it('refuses a day_count outside 1..MAX_TRIP_DAYS', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      expect((await h.client.callTool({ name: 'create_trip', arguments: { title: 'Zero', day_count: 0 } })).isError).toBe(true);
-      expect((await h.client.callTool({ name: 'create_trip', arguments: { title: 'Huge', day_count: MAX_TRIP_DAYS + 1 } })).isError).toBe(true);
-      expect(testDb.prepare('SELECT COUNT(*) as c FROM trips').get()).toEqual({ c: 0 });
+      expect(
+        (await h.client.callTool({ name: 'create_trip', arguments: { title: 'Zero', day_count: 0 } })).isError,
+      ).toBe(true);
+      expect(
+        (await h.client.callTool({ name: 'create_trip', arguments: { title: 'Huge', day_count: MAX_TRIP_DAYS + 1 } }))
+          .isError,
+      ).toBe(true);
+      expect(await countRows(orm, Trips)).toBe(0);
     });
   });
 
   it('stores the requested reminder_days', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Reminded', reminder_days: 14 } });
+      const result = await h.client.callTool({
+        name: 'create_trip',
+        arguments: { title: 'Reminded', reminder_days: 14 },
+      });
       const data = parseToolResult(result) as any;
-      const row = testDb.prepare('SELECT reminder_days FROM trips WHERE id = ?').get(data.trip.id) as any;
+      const row = await tripRow(data.trip.id);
       expect(row.reminder_days).toBe(14);
     });
   });
 
   it('turns the reminder off with reminder_days 0 rather than falling back to 3', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Quiet', reminder_days: 0 } });
       const data = parseToolResult(result) as any;
-      const row = testDb.prepare('SELECT reminder_days FROM trips WHERE id = ?').get(data.trip.id) as any;
+      const row = await tripRow(data.trip.id);
       expect(row.reminder_days).toBe(0);
     });
   });
 
   it('refuses a reminder_days outside 0..30', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      expect((await h.client.callTool({ name: 'create_trip', arguments: { title: 'Early', reminder_days: 31 } })).isError).toBe(true);
-      expect((await h.client.callTool({ name: 'create_trip', arguments: { title: 'Negative', reminder_days: -1 } })).isError).toBe(true);
-      expect(testDb.prepare('SELECT COUNT(*) as c FROM trips').get()).toEqual({ c: 0 });
+      expect(
+        (await h.client.callTool({ name: 'create_trip', arguments: { title: 'Early', reminder_days: 31 } })).isError,
+      ).toBe(true);
+      expect(
+        (await h.client.callTool({ name: 'create_trip', arguments: { title: 'Negative', reminder_days: -1 } })).isError,
+      ).toBe(true);
+      expect(await countRows(orm, Trips)).toBe(0);
     });
   });
 
   it('gives a trip without a currency the display currency from the settings, not EUR', async () => {
-    const { user } = createUser(testDb);
-    testDb.prepare("INSERT INTO settings (user_id, key, value) VALUES (?, 'default_currency', ?)").run(user.id, JSON.stringify('USD'));
+    const { user } = await makeUser(orm);
+    await setUserSetting(orm, user.id, 'default_currency', JSON.stringify('USD'));
     await withHarness(user.id, async (h) => {
-      const fromSettings = parseToolResult(await h.client.callTool({ name: 'create_trip', arguments: { title: 'Road trip' } })) as any;
+      const fromSettings = parseToolResult(
+        await h.client.callTool({ name: 'create_trip', arguments: { title: 'Road trip' } }),
+      ) as any;
       expect(fromSettings.trip.currency).toBe('USD');
-      const explicit = parseToolResult(await h.client.callTool({ name: 'create_trip', arguments: { title: 'Tokyo', currency: 'JPY' } })) as any;
+      const explicit = parseToolResult(
+        await h.client.callTool({ name: 'create_trip', arguments: { title: 'Tokyo', currency: 'JPY' } }),
+      ) as any;
       expect(explicit.trip.currency).toBe('JPY');
     });
   });
 
   it('falls back to EUR when neither the user nor the admin set a display currency', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      const data = parseToolResult(await h.client.callTool({ name: 'create_trip', arguments: { title: 'Plain' } })) as any;
+      const data = parseToolResult(
+        await h.client.callTool({ name: 'create_trip', arguments: { title: 'Plain' } }),
+      ) as any;
       expect(data.trip.currency).toBe('EUR');
     });
   });
@@ -231,39 +275,72 @@ describe('Tool: create_trip', () => {
 
 describe('Tool: update_trip', () => {
   it('updates trip title', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Old Title' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Old Title' });
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'New Title' } });
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, title: 'New Title' },
+      });
       const data = parseToolResult(result) as any;
       expect(data.trip.title).toBe('New Title');
     });
   });
 
   it('partial update preserves unspecified fields', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'My Trip', description: 'A great trip' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'My Trip', description: 'A great trip' });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'Renamed' } });
-      const updated = testDb.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id) as any;
+      const updated = await tripRow(trip.id);
       expect(updated.title).toBe('Renamed');
       expect(updated.description).toBe('A great trip');
     });
   });
 
   it('broadcasts trip:updated event', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'Updated' } });
       expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'trip:updated', expect.any(Object));
     });
   });
 
+  it('a day added before the start moves the road trip day boundaries with their days and announces them (#3119)', async () => {
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-05-10', end_date: '2026-05-12' });
+    const day2 = await findRow(orm, Days, { trip: trip.id, day_number: 2 });
+    if (!day2) throw new Error('the trip has no second day');
+    const place = await makePlace(orm, trip.id, { name: 'Viewpoint' });
+    const stop = await makeDayAssignment(orm, day2.id, place.id);
+    await insertRow(orm, RoadtripDayBoundaries, {
+      trip: trip.id,
+      day_number: 2,
+      fromAssignment: stop.id,
+      fraction: 0.5,
+    });
+    await withHarness(user.id, async (h) => {
+      await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, start_date: '2026-05-09', end_date: '2026-05-12' },
+      });
+    });
+    const boundaries = await findRows(orm, RoadtripDayBoundaries, { trip: trip.id });
+    expect(boundaries.map((b) => b.day_number)).toEqual([3]);
+    expect(broadcastMock).toHaveBeenCalledWith(
+      trip.id,
+      'roadtripBoundary:changed',
+      expect.objectContaining({
+        boundaries: [expect.objectContaining({ day_number: 3, from_assignment_id: stop.id })],
+      }),
+    );
+  });
+
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'Hack' } });
       expect(result.isError).toBe(true);
@@ -272,8 +349,8 @@ describe('Tool: update_trip', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'New' } });
       expect(result.isError).toBe(true);
@@ -281,18 +358,13 @@ describe('Tool: update_trip', () => {
   });
 
   it('shifts owner vacay entries when update_trip moves trip window by fixed offset', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-08-01', end_date: '2026-08-09' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-08-01', end_date: '2026-08-09' });
 
     // Materialize active vacay plan for owner and entries in old trip window.
-    const planRes = testDb.prepare('INSERT INTO vacay_plans (owner_id) VALUES (?)').run(user.id);
-    const planId = Number(planRes.lastInsertRowid);
-    testDb.prepare('INSERT INTO vacay_years (plan_id, year) VALUES (?, ?)').run(planId, 2026);
-    testDb.prepare(
-        'INSERT INTO vacay_user_years (user_id, plan_id, year, vacation_days, carried_over) VALUES (?, ?, ?, 30, 0)'
-    ).run(user.id, planId, 2026);
+    const planId = await vacayPlanWithYear(user.id);
     for (const d of ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07']) {
-      testDb.prepare('INSERT INTO vacay_entries (plan_id, user_id, date, note) VALUES (?, ?, ?, ?)').run(planId, user.id, d, '');
+      await makeVacayEntry(orm, planId, user.id, d, { note: '' });
     }
 
     await withHarness(user.id, async (h) => {
@@ -305,43 +377,24 @@ describe('Tool: update_trip', () => {
       expect(data.trip.end_date).toBe('2026-08-16');
     });
 
-    const oldWindow = testDb.prepare(
-        "SELECT date FROM vacay_entries WHERE plan_id = ? AND user_id = ? AND date BETWEEN '2026-08-01' AND '2026-08-09'"
-    ).all(planId, user.id) as { date: string }[];
+    const oldWindow = await vacayDatesBetween(planId, user.id, '2026-08-01', '2026-08-09');
     expect(oldWindow).toHaveLength(0);
 
-    const shifted = testDb.prepare(
-        "SELECT date FROM vacay_entries WHERE plan_id = ? AND user_id = ? AND date BETWEEN '2026-08-08' AND '2026-08-16' ORDER BY date"
-    ).all(planId, user.id) as { date: string }[];
-    expect(shifted.map(r => r.date)).toEqual([
-      '2026-08-10',
-      '2026-08-11',
-      '2026-08-12',
-      '2026-08-13',
-      '2026-08-14',
-    ]);
+    const shifted = await vacayDatesBetween(planId, user.id, '2026-08-08', '2026-08-16');
+    expect(shifted).toEqual(['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14']);
   });
 
-  it('shifts entries from the owners own plan even if another vacay plan is active', async () => {
-    const { user } = createUser(testDb);
-    const { user: otherOwner } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-09-01', end_date: '2026-09-07' });
+  it('shifts the owner entries in the plan they are active in, a shared plan they joined included (#2604)', async () => {
+    const { user } = await makeUser(orm);
+    const { user: otherOwner } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-09-01', end_date: '2026-09-07' });
 
-    // Own plan with entries that should be shifted.
-    const ownPlanRes = testDb.prepare('INSERT INTO vacay_plans (owner_id) VALUES (?)').run(user.id);
-    const ownPlanId = Number(ownPlanRes.lastInsertRowid);
-    testDb.prepare('INSERT INTO vacay_years (plan_id, year) VALUES (?, ?)').run(ownPlanId, 2026);
-    testDb.prepare(
-        'INSERT INTO vacay_user_years (user_id, plan_id, year, vacation_days, carried_over) VALUES (?, ?, ?, 30, 0)'
-    ).run(user.id, ownPlanId, 2026);
+    // Joining a plan moves the owner's days into it, so that is where they live.
+    const { id: sharedPlanId } = await makeVacayPlan(orm, otherOwner.id);
+    await addVacayPlanMember(orm, sharedPlanId, user.id, 'accepted');
     for (const d of ['2026-09-02', '2026-09-03']) {
-      testDb.prepare('INSERT INTO vacay_entries (plan_id, user_id, date, note) VALUES (?, ?, ?, ?)').run(ownPlanId, user.id, d, '');
+      await makeVacayEntry(orm, sharedPlanId, user.id, d, { note: '' });
     }
-
-    // Different accepted plan becomes "active" for the owner.
-    const foreignPlanRes = testDb.prepare('INSERT INTO vacay_plans (owner_id) VALUES (?)').run(otherOwner.id);
-    const foreignPlanId = Number(foreignPlanRes.lastInsertRowid);
-    testDb.prepare('INSERT INTO vacay_plan_members (plan_id, user_id, status) VALUES (?, ?, ?)').run(foreignPlanId, user.id, 'accepted');
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -351,153 +404,170 @@ describe('Tool: update_trip', () => {
       expect(result.isError).toBeFalsy();
     });
 
-    const oldWindow = testDb.prepare(
-        "SELECT date FROM vacay_entries WHERE plan_id = ? AND user_id = ? AND date BETWEEN '2026-09-01' AND '2026-09-07' ORDER BY date"
-    ).all(ownPlanId, user.id) as { date: string }[];
+    const oldWindow = await vacayDatesBetween(sharedPlanId, user.id, '2026-09-01', '2026-09-07');
     expect(oldWindow).toHaveLength(0);
 
-    const shifted = testDb.prepare(
-        "SELECT date FROM vacay_entries WHERE plan_id = ? AND user_id = ? AND date BETWEEN '2026-09-08' AND '2026-09-14' ORDER BY date"
-    ).all(ownPlanId, user.id) as { date: string }[];
-    expect(shifted.map(r => r.date)).toEqual(['2026-09-09', '2026-09-10']);
+    const shifted = await vacayDatesBetween(sharedPlanId, user.id, '2026-09-08', '2026-09-14');
+    expect(shifted).toEqual(['2026-09-09', '2026-09-10']);
   });
 
   it('clear_dates turns a dated trip back into a dateless one and un-dates its days', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, clear_dates: true } });
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, clear_dates: true },
+      });
       expect(result.isError).toBeFalsy();
-      const row = testDb.prepare('SELECT start_date, end_date FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = await tripRow(trip.id);
       expect(row.start_date).toBeNull();
       expect(row.end_date).toBeNull();
-      const dated = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ? AND date IS NOT NULL').get(trip.id) as { c: number };
-      expect(dated.c).toBe(0);
+      const dated = await countRows(orm, Days, { trip: trip.id, date: { $ne: null } });
+      expect(dated).toBe(0);
     });
   });
 
   it('clear_dates with a day_count resizes the now dateless trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, clear_dates: true, day_count: 3 } });
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(trip.id) as { c: number };
-      expect(days.c).toBe(3);
+      const days = await countRows(orm, Days, { trip: trip.id });
+      expect(days).toBe(3);
     });
   });
 
   it('refuses clear_dates alongside a start_date and leaves the trip untouched', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'update_trip',
         arguments: { tripId: trip.id, clear_dates: true, start_date: '2026-08-01' },
       });
       expect(result.isError).toBe(true);
-      const row = testDb.prepare('SELECT start_date FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = await tripRow(trip.id);
       expect(row.start_date).toBe('2026-07-01');
     });
   });
 
   it('resizes a dateless trip with day_count', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    testDb.prepare('INSERT INTO days (trip_id, day_number, date) VALUES (?, 1, NULL), (?, 2, NULL)').run(trip.id, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await insertRows(orm, Days, [
+      { trip: trip.id, day_number: 1, date: null },
+      { trip: trip.id, day_number: 2, date: null },
+    ]);
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, day_count: 6 } });
-      const days = testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(trip.id) as { c: number };
-      expect(days.c).toBe(6);
+      const days = await countRows(orm, Days, { trip: trip.id });
+      expect(days).toBe(6);
     });
   });
 
   it('refuses a day_count outside 1..MAX_TRIP_DAYS', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Untouched' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Untouched' });
     await withHarness(user.id, async (h) => {
-      expect((await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, day_count: 0 } })).isError).toBe(true);
-      expect((await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, day_count: MAX_TRIP_DAYS + 1 } })).isError).toBe(true);
-      expect(testDb.prepare('SELECT COUNT(*) as c FROM days WHERE trip_id = ?').get(trip.id)).toEqual({ c: 0 });
+      expect(
+        (await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, day_count: 0 } })).isError,
+      ).toBe(true);
+      expect(
+        (await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, day_count: MAX_TRIP_DAYS + 1 } }))
+          .isError,
+      ).toBe(true);
+      expect(await countRows(orm, Days, { trip: trip.id })).toBe(0);
     });
   });
 
   it('says in its description what shortening a dated trip takes, and where the result lists it', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
-      const tool = (await h.client.listTools()).tools.find(t => t.name === 'update_trip');
+      const tool = (await h.client.listTools()).tools.find((t) => t.name === 'update_trip');
       expect(tool?.description).toContain('Shortening a dated trip deletes its last days by position');
       expect(tool?.description).toContain('removed_days');
     });
   });
 
   it('lists the days an earlier end removed, as they stood before, and none for a rename', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
-    const days = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY day_number').all(trip.id) as { id: number }[];
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2026-07-01', end_date: '2026-07-05' });
+    const days = await findRows(orm, Days, { trip: trip.id }, { day_number: 'asc' });
     await withHarness(user.id, async (h) => {
       type Answer = { trip: { end_date: string; title: string }; removed_days?: unknown[] };
-      const shortened = parseToolResult(await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, end_date: '2026-07-03' } })) as Answer;
+      const shortened = parseToolResult(
+        await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, end_date: '2026-07-03' } }),
+      ) as Answer;
       expect(shortened.trip.end_date).toBe('2026-07-03');
       expect(shortened.removed_days).toEqual([
         { id: days[3].id, day_number: 4, date: '2026-07-04', reason: 'overflow' },
         { id: days[4].id, day_number: 5, date: '2026-07-05', reason: 'overflow' },
       ]);
-      const renamed = parseToolResult(await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'Shorter' } })) as Answer;
+      const renamed = parseToolResult(
+        await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'Shorter' } }),
+      ) as Answer;
       expect(renamed.trip.title).toBe('Shorter');
       expect(renamed).not.toHaveProperty('removed_days');
     });
   });
 
   it('refuses a date range longer than MAX_TRIP_DAYS and leaves the trip untouched', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Untouched', start_date: '2026-07-01', end_date: '2026-07-07' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Untouched', start_date: '2026-07-01', end_date: '2026-07-07' });
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, end_date: '2036-07-01' } });
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, end_date: '2036-07-01' },
+      });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result.content)).toContain(`at most ${MAX_TRIP_DAYS} days`);
-      const row = testDb.prepare('SELECT end_date FROM trips WHERE id = ?').get(trip.id) as { end_date: string };
+      const row = await tripRow(trip.id);
       expect(row.end_date).toBe('2026-07-07');
     });
   });
 
   it('changes reminder_days and can turn the reminder off', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, reminder_days: 10 } });
-      expect((testDb.prepare('SELECT reminder_days FROM trips WHERE id = ?').get(trip.id) as any).reminder_days).toBe(10);
+      expect((await tripRow(trip.id)).reminder_days).toBe(10);
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, reminder_days: 0 } });
-      expect((testDb.prepare('SELECT reminder_days FROM trips WHERE id = ?').get(trip.id) as any).reminder_days).toBe(0);
+      expect((await tripRow(trip.id)).reminder_days).toBe(0);
     });
   });
 
   it('refuses a reminder_days outside 0..30 and keeps the stored value', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, reminder_days: 31 } });
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, reminder_days: 31 },
+      });
       expect(result.isError).toBe(true);
-      expect((testDb.prepare('SELECT reminder_days FROM trips WHERE id = ?').get(trip.id) as any).reminder_days).toBe(3);
+      expect((await tripRow(trip.id)).reminder_days).toBe(3);
     });
   });
 
   it('clears the description with an explicit null', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { description: 'A great trip' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { description: 'A great trip' });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, description: null } });
-      const row = testDb.prepare('SELECT description FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = await tripRow(trip.id);
       expect(row.description).toBeNull();
     });
   });
 
   it('clears the cover image with an explicit null', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    testDb.prepare('UPDATE trips SET cover_image = ? WHERE id = ?').run('/uploads/covers/old.jpg', trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await updateRows(orm, Trips, { id: trip.id }, { cover_image: '/uploads/covers/old.jpg' });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, cover_image: null } });
-      const row = testDb.prepare('SELECT cover_image FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = await tripRow(trip.id);
       expect(row.cover_image).toBeNull();
     });
   });
@@ -509,23 +579,31 @@ describe('Tool: update_trip', () => {
 
 describe('Tool: search_cover_images', () => {
   function stubUnsplash(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: init.ok ?? true,
-      status: init.status ?? 200,
-      json: async () => body,
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: init.ok ?? true,
+        status: init.status ?? 200,
+        json: async () => body,
+      })),
+    );
   }
 
   it('returns the photo candidates for a query', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     stubUnsplash({
-      results: [{
-        id: 'p1',
-        urls: { regular: 'https://images.unsplash.com/photo-1.jpg', small: 'https://images.unsplash.com/thumb-1.jpg' },
-        alt_description: 'Rooftops at sunset',
-        user: { name: 'Ada L.' },
-        links: { html: 'https://unsplash.com/photos/p1' },
-      }],
+      results: [
+        {
+          id: 'p1',
+          urls: {
+            regular: 'https://images.unsplash.com/photo-1.jpg',
+            small: 'https://images.unsplash.com/thumb-1.jpg',
+          },
+          alt_description: 'Rooftops at sunset',
+          user: { name: 'Ada L.' },
+          links: { html: 'https://unsplash.com/photos/p1' },
+        },
+      ],
     });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_cover_images', arguments: { query: 'Lisbon rooftops' } });
@@ -537,7 +615,7 @@ describe('Tool: search_cover_images', () => {
   });
 
   it('reports an upstream failure as a tool error', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     stubUnsplash({ errors: ['Rate Limit Exceeded'] }, { ok: false, status: 429 });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_cover_images', arguments: { query: 'Lisbon' } });
@@ -547,7 +625,7 @@ describe('Tool: search_cover_images', () => {
   });
 
   it('refuses an empty query without reaching Unsplash', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     await withHarness(user.id, async (h) => {
@@ -558,12 +636,12 @@ describe('Tool: search_cover_images', () => {
   });
 
   it('saves nothing on the trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     stubUnsplash({ results: [] });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'search_cover_images', arguments: { query: 'Lisbon' } });
-      const row = testDb.prepare('SELECT cover_image FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = await tripRow(trip.id);
       expect(row.cover_image).toBeNull();
     });
   });
@@ -575,34 +653,34 @@ describe('Tool: search_cover_images', () => {
 
 describe('Tool: delete_trip', () => {
   it('owner can delete trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'delete_trip', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
       expect(data.success).toBe(true);
-      const gone = testDb.prepare('SELECT id FROM trips WHERE id = ?').get(trip.id);
-      expect(gone).toBeUndefined();
+      const gone = await findRow(orm, Trips, { id: trip.id });
+      expect(gone).toBeNull();
     });
   });
 
   it('non-owner member cannot delete trip', async () => {
-    const { user } = createUser(testDb);
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, user.id);
+    const { user } = await makeUser(orm);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'delete_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
-      const stillExists = testDb.prepare('SELECT id FROM trips WHERE id = ?').get(trip.id);
+      const stillExists = await findRow(orm, Trips, { id: trip.id });
       expect(stillExists).toBeTruthy();
     });
   });
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'delete_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -616,12 +694,12 @@ describe('Tool: delete_trip', () => {
 
 describe('Tool: list_trips', () => {
   it('returns owned and member trips', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'My Trip' });
-    const shared = createTrip(testDb, other.id, { title: 'Shared' });
-    addTripMember(testDb, shared.id, user.id);
-    createTrip(testDb, other.id, { title: 'Inaccessible' });
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'My Trip' });
+    const shared = await makeTrip(orm, other.id, { title: 'Shared' });
+    await addTripMember(orm, shared.id, user.id);
+    await makeTrip(orm, other.id, { title: 'Inaccessible' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_trips', arguments: {} });
@@ -634,10 +712,10 @@ describe('Tool: list_trips', () => {
   });
 
   it('excludes archived trips by default', async () => {
-    const { user } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'Active' });
-    const archived = createTrip(testDb, user.id, { title: 'Archived' });
-    testDb.prepare('UPDATE trips SET is_archived = 1 WHERE id = ?').run(archived.id);
+    const { user } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'Active' });
+    const archived = await makeTrip(orm, user.id, { title: 'Archived' });
+    await updateRows(orm, Trips, { id: archived.id }, { is_archived: 1 });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_trips', arguments: {} });
@@ -648,10 +726,10 @@ describe('Tool: list_trips', () => {
   });
 
   it('includes archived trips when include_archived is true', async () => {
-    const { user } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'Active' });
-    const archived = createTrip(testDb, user.id, { title: 'Archived' });
-    testDb.prepare('UPDATE trips SET is_archived = 1 WHERE id = ?').run(archived.id);
+    const { user } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'Active' });
+    const archived = await makeTrip(orm, user.id, { title: 'Archived' });
+    await updateRows(orm, Trips, { id: archived.id }, { is_archived: 1 });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_trips', arguments: { include_archived: true } });
@@ -667,18 +745,18 @@ describe('Tool: list_trips', () => {
 
 describe('Tool: get_trip_summary', () => {
   it('returns full denormalized trip snapshot', async () => {
-    const { user } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Full Trip' });
-    addTripMember(testDb, trip.id, member.id);
-    const day = createDay(testDb, trip.id);
-    const place = createPlace(testDb, trip.id, { name: 'Colosseum' });
-    const assignment = createDayAssignment(testDb, day.id, place.id);
-    createDayNote(testDb, day.id, trip.id, { text: 'Check in' });
-    createBudgetItem(testDb, trip.id, { name: 'Hotel', total_price: 300 });
-    createPackingItem(testDb, trip.id, { name: 'Passport' });
-    createReservation(testDb, trip.id, { title: 'Flight', type: 'flight' });
-    createCollabNote(testDb, trip.id, user.id, { title: 'Plan' });
+    const { user } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Full Trip' });
+    await addTripMember(orm, trip.id, member.id);
+    const day = await makeDay(orm, trip.id);
+    const place = await makePlace(orm, trip.id, { name: 'Colosseum' });
+    const assignment = await makeDayAssignment(orm, day.id, place.id);
+    await makeDayNote(orm, day.id, trip.id, { text: 'Check in' });
+    await makeBudgetItem(orm, trip.id, { name: 'Hotel', total_price: 300 });
+    await makePackingItem(orm, trip.id, { name: 'Passport' });
+    await makeReservation(orm, trip.id, { title: 'Flight', type: 'flight' });
+    await makeCollabNote(orm, trip.id, user.id, { title: 'Plan' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
@@ -698,9 +776,9 @@ describe('Tool: get_trip_summary', () => {
   });
 
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
@@ -710,8 +788,8 @@ describe('Tool: get_trip_summary', () => {
 
   it('is not blocked for demo user (read-only tool)', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id, { title: 'Demo Trip' });
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id, { title: 'Demo Trip' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
@@ -722,8 +800,8 @@ describe('Tool: get_trip_summary', () => {
   });
 
   it('includes todos, files, pollCount, messageCount in response', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Summary Test' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Summary Test' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
@@ -738,16 +816,16 @@ describe('Tool: get_trip_summary', () => {
   // member emails, the itinerary, or accommodations. The tool stays registered for
   // navigation but only surfaces the trip id + title.
   it('withholds members, days and accommodations from a token without trips:read', async () => {
-    const { user } = createUser(testDb, { email: 'owner@test.example.com' });
-    const { user: member } = createUser(testDb, { email: 'member@test.example.com' });
-    const trip = createTrip(testDb, user.id, { title: 'Confidential Trip' });
-    addTripMember(testDb, trip.id, member.id);
-    const day = createDay(testDb, trip.id);
-    const place = createPlace(testDb, trip.id, { name: 'Colosseum', lat: 41.89, lng: 12.49 });
-    createDayAssignment(testDb, day.id, place.id);
-    createDayAccommodation(testDb, trip.id, place.id, day.id, day.id);
+    const { user } = await makeUser(orm, { email: 'owner@test.example.com' });
+    const { user: member } = await makeUser(orm, { email: 'member@test.example.com' });
+    const trip = await makeTrip(orm, user.id, { title: 'Confidential Trip' });
+    await addTripMember(orm, trip.id, member.id);
+    const day = await makeDay(orm, trip.id);
+    const place = await makePlace(orm, trip.id, { name: 'Colosseum', lat: 41.89, lng: 12.49 });
+    await makeDayAssignment(orm, day.id, place.id);
+    await makeDayAccommodation(orm, trip.id, place.id, day.id, day.id);
 
-    const h = await createMcpHarness({ userId: user.id, withResources: false, scopes: ['weather:read'] });
+    const h = await createMcpHarness({ realtime, userId: user.id, withResources: false, scopes: ['weather:read'] });
     try {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -767,13 +845,13 @@ describe('Tool: get_trip_summary', () => {
   });
 
   it('returns the full core bucket for a token that has trips:read', async () => {
-    const { user } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Scoped Trip' });
-    addTripMember(testDb, trip.id, member.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Scoped Trip' });
+    await addTripMember(orm, trip.id, member.id);
+    await makeDay(orm, trip.id);
 
-    const h = await createMcpHarness({ userId: user.id, withResources: false, scopes: ['trips:read'] });
+    const h = await createMcpHarness({ realtime, userId: user.id, withResources: false, scopes: ['trips:read'] });
     try {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -787,20 +865,32 @@ describe('Tool: get_trip_summary', () => {
   });
 
   // Regression: get_trip_summary must hide another member's private packing items (#858).
-  it('hides another member\'s private packing item from the summary', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id, { title: 'Shared Trip' });
-    addTripMember(testDb, trip.id, member.id);
-    testDb.prepare("INSERT INTO packing_items (trip_id, name, category, checked, is_private, owner_id) VALUES (?, 'Secret gift', 'Misc', 0, 1, ?)").run(trip.id, owner.id);
-    testDb.prepare("INSERT INTO packing_items (trip_id, name, category, checked, is_private, owner_id) VALUES (?, 'Sunscreen', 'Misc', 0, 0, ?)").run(trip.id, owner.id);
+  it("hides another member's private packing item from the summary", async () => {
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id, { title: 'Shared Trip' });
+    await addTripMember(orm, trip.id, member.id);
+    await makePackingItem(orm, trip.id, {
+      name: 'Secret gift',
+      category: 'Misc',
+      checked: 0,
+      is_private: 1,
+      owner: owner.id,
+    });
+    await makePackingItem(orm, trip.id, {
+      name: 'Sunscreen',
+      category: 'Misc',
+      checked: 0,
+      is_private: 0,
+      owner: owner.id,
+    });
 
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_trip_summary', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
       const names = (data.packing?.items || []).map((i: any) => i.name);
-      expect(names).toContain('Sunscreen');       // common item visible
-      expect(names).not.toContain('Secret gift');  // owner's private item hidden from the member
+      expect(names).toContain('Sunscreen'); // common item visible
+      expect(names).not.toContain('Secret gift'); // owner's private item hidden from the member
     });
   });
 });
@@ -812,13 +902,13 @@ describe('Tool: get_trip_summary', () => {
 
 describe('Resource: trek://trips', () => {
   it('returns all trips the user owns or is a member of', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'My Trip' });
-    const sharedTrip = createTrip(testDb, other.id, { title: 'Shared Trip' });
-    addTripMember(testDb, sharedTrip.id, user.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'My Trip' });
+    const sharedTrip = await makeTrip(orm, other.id, { title: 'Shared Trip' });
+    await addTripMember(orm, sharedTrip.id, user.id);
     // Trip from another user (not accessible)
-    createTrip(testDb, other.id, { title: 'Other Trip' });
+    await makeTrip(orm, other.id, { title: 'Other Trip' });
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: 'trek://trips' });
@@ -832,10 +922,10 @@ describe('Resource: trek://trips', () => {
   });
 
   it('excludes archived trips', async () => {
-    const { user } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'Active Trip' });
-    const archived = createTrip(testDb, user.id, { title: 'Archived Trip' });
-    testDb.prepare('UPDATE trips SET is_archived = 1 WHERE id = ?').run(archived.id);
+    const { user } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'Active Trip' });
+    const archived = await makeTrip(orm, user.id, { title: 'Archived Trip' });
+    await updateRows(orm, Trips, { id: archived.id }, { is_archived: 1 });
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: 'trek://trips' });
@@ -846,7 +936,7 @@ describe('Resource: trek://trips', () => {
   });
 
   it('returns empty array when user has no trips', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: 'trek://trips' });
       const trips = parseResourceResult(result) as any[];
@@ -857,8 +947,8 @@ describe('Resource: trek://trips', () => {
 
 describe('Resource: trek://trips/{tripId}', () => {
   it('returns trip data for an accessible trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Paris Trip' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Paris Trip' });
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: `trek://trips/${trip.id}` });
@@ -869,9 +959,9 @@ describe('Resource: trek://trips/{tripId}', () => {
   });
 
   it('returns access denied for inaccessible trip', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const otherTrip = createTrip(testDb, other.id, { title: 'Private' });
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const otherTrip = await makeTrip(orm, other.id, { title: 'Private' });
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: `trek://trips/${otherTrip.id}` });
@@ -881,7 +971,7 @@ describe('Resource: trek://trips/{tripId}', () => {
   });
 
   it('returns access denied for non-existent ID', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: 'trek://trips/99999' });
       const data = parseResourceResult(result) as any;
@@ -892,10 +982,10 @@ describe('Resource: trek://trips/{tripId}', () => {
 
 describe('Resource: trek://trips/{tripId}/members', () => {
   it('returns owner and collaborators', async () => {
-    const { user } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await addTripMember(orm, trip.id, member.id);
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: `trek://trips/${trip.id}/members` });
@@ -908,9 +998,9 @@ describe('Resource: trek://trips/{tripId}/members', () => {
   });
 
   it('returns access denied for unauthorized trip', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
 
     await withHarness(user.id, async (harness) => {
       const result = await harness.client.readResource({ uri: `trek://trips/${trip.id}/members` });
@@ -926,8 +1016,8 @@ describe('Resource: trek://trips/{tripId}/members', () => {
 
 describe('static-token deprecation notice', () => {
   it('list_trips surfaces the notice exactly once and still carries the payload', async () => {
-    const { user } = createUser(testDb);
-    createTrip(testDb, user.id, { title: 'Noticed' });
+    const { user } = await makeUser(orm);
+    await makeTrip(orm, user.id, { title: 'Noticed' });
     // Mirror the fire-once closure built per session in src/mcp/index.ts.
     let emitted = false;
     const getDeprecationNotice = () => {
@@ -935,7 +1025,13 @@ describe('static-token deprecation notice', () => {
       emitted = true;
       return 'static tokens are deprecated';
     };
-    const h = await createMcpHarness({ userId: user.id, withResources: false, isStaticToken: true, getDeprecationNotice });
+    const h = await createMcpHarness({
+      realtime,
+      userId: user.id,
+      withResources: false,
+      isStaticToken: true,
+      getDeprecationNotice,
+    });
     try {
       const first = await h.client.callTool({ name: 'list_trips', arguments: {} });
       expect(first.isError).toBe(true);
@@ -960,7 +1056,7 @@ describe('static-token deprecation notice', () => {
 
 describe('scope gating', () => {
   async function toolNames(scopes: string[] | null): Promise<string[]> {
-    const h = await createMcpHarness({ userId: 1, withResources: false, scopes });
+    const h = await createMcpHarness({ realtime, userId: 1, withResources: false, scopes });
     try {
       const { tools } = await h.client.listTools();
       return tools.map((t) => t.name);
@@ -969,7 +1065,14 @@ describe('scope gating', () => {
     }
   }
 
-  const WRITE_TOOLS = ['create_trip', 'update_trip', 'add_trip_member', 'remove_trip_member', 'leave_trip', 'copy_trip'];
+  const WRITE_TOOLS = [
+    'create_trip',
+    'update_trip',
+    'add_trip_member',
+    'remove_trip_member',
+    'leave_trip',
+    'copy_trip',
+  ];
   const READ_TOOLS = ['list_trip_members', 'export_trip_ics', 'search_cover_images'];
   const NAV_TOOLS = ['list_trips', 'get_trip_summary'];
   const SHARE_TOOLS = ['get_share_link', 'create_share_link', 'delete_share_link'];
@@ -1004,5 +1107,125 @@ describe('scope gating', () => {
     const names = await toolNames(['weather:read']);
     for (const t of NAV_TOOLS) expect(names).toContain(t);
     for (const t of [...WRITE_TOOLS, ...READ_TOOLS, 'delete_trip', ...SHARE_TOOLS]) expect(names).not.toContain(t);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The trip writes REST shares (TripWritesService) and the rights PUT
+// /api/trips/:id checks field by field.
+// ---------------------------------------------------------------------------
+
+describe('Trip writes, as REST makes them', () => {
+  /** Lower or raise a configurable action the way the admin permission panel does. */
+  async function setPermission(action: string, level: string): Promise<void> {
+    await setAppSetting(orm, `perm_${action}`, level);
+    await invalidatePermissionsCache();
+  }
+
+  beforeEach(() => {
+    realtime.broadcastToUserMock.mockClear();
+  });
+
+  afterEach(async () => {
+    await invalidatePermissionsCache();
+  });
+
+  it('MCP-TRIPS-001: create_trip and copy_trip tell every tab of the owner that the trip list changed', async () => {
+    const { user } = await makeUser(orm);
+    await withHarness(user.id, async (h) => {
+      const created = parseToolResult(
+        await h.client.callTool({ name: 'create_trip', arguments: { title: 'Lisbon' } }),
+      ) as { trip: { id: number } };
+      await h.client.callTool({ name: 'copy_trip', arguments: { tripId: created.trip.id } });
+    });
+    expect(realtime.broadcastToUserMock.mock.calls).toEqual([
+      [user.id, { type: 'trips:changed' }, undefined],
+      [user.id, { type: 'trips:changed' }, undefined],
+    ]);
+  });
+
+  it('MCP-TRIPS-002: create_trip and copy_trip are refused without trip_create, as the routes refuse them', async () => {
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await setPermission('trip_create', 'admin');
+    await withHarness(user.id, async (h) => {
+      const created = await h.client.callTool({ name: 'create_trip', arguments: { title: 'Lisbon' } });
+      const copied = await h.client.callTool({ name: 'copy_trip', arguments: { tripId: trip.id } });
+      for (const result of [created, copied]) {
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain('You do not have permission to create trips.');
+      }
+    });
+    expect(await countRows(orm, Trips, { user: user.id })).toBe(1);
+    expect(realtime.broadcastToUserMock).not.toHaveBeenCalled();
+  });
+
+  it('MCP-TRIPS-003: delete_trip tells the room the trip is gone, as the route does', async () => {
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await withHarness(user.id, async (h) => {
+      await h.client.callTool({ name: 'delete_trip', arguments: { tripId: trip.id } });
+    });
+    expect(broadcastMock.mock.calls).toEqual([[trip.id, 'trip:deleted', { id: trip.id, _source: 'mcp' }]]);
+  });
+
+  it('MCP-TRIPS-004: update_trip asks trip_archive and trip_cover_upload for those fields, not trip_edit alone', async () => {
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id, { title: 'Before' });
+    await addTripMember(orm, trip.id, member.id);
+    await setPermission('trip_edit', 'trip_member');
+    await withHarness(member.id, async (h) => {
+      const archive = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, is_archived: true },
+      });
+      const cover = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, cover_image: null } });
+      expect(archive.isError).toBe(true);
+      expect(cover.isError).toBe(true);
+      expect((await tripRow(trip.id)).is_archived).toBe(0);
+      const rename = await h.client.callTool({ name: 'update_trip', arguments: { tripId: trip.id, title: 'After' } });
+      expect(rename.isError).toBeFalsy();
+    });
+    await setPermission('trip_archive', 'trip_member');
+    await withHarness(member.id, async (h) => {
+      const archive = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, is_archived: true },
+      });
+      expect(archive.isError).toBeFalsy();
+    });
+    expect(await tripRow(trip.id)).toMatchObject({ title: 'After', is_archived: 1 });
+  });
+
+  it('MCP-TRIPS-005: update_trip sets the costs mode on budget_edit, as the route does (#1714)', async () => {
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
+    expect((await tripRow(trip.id)).costs_mode).toBe('split');
+    // A member may edit the costs by default, though not the trip's own details.
+    await withHarness(member.id, async (h) => {
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, costs_mode: 'totals' },
+      });
+      expect(result.isError).toBeFalsy();
+      expect((parseToolResult(result) as { trip: { costs_mode: string } }).trip.costs_mode).toBe('totals');
+    });
+    await setPermission('budget_edit', 'trip_owner');
+    await withHarness(member.id, async (h) => {
+      const result = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, costs_mode: 'split' },
+      });
+      expect(result.isError).toBe(true);
+      const bogus = await h.client.callTool({
+        name: 'update_trip',
+        arguments: { tripId: trip.id, costs_mode: 'shares' },
+      });
+      expect(bogus.isError).toBe(true);
+    });
+    expect((await tripRow(trip.id)).costs_mode).toBe('totals');
   });
 });

@@ -1,35 +1,19 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Headers,
-  HttpCode,
-  HttpException,
-  Param,
-  Patch,
-  Post,
-  Put,
-  Query,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { isDemoWriteBlocked, DEMO_WRITE_ERROR } from '../common/demo-write';
-import { RuntimeEnvService } from '../app-config/runtime-env.service';
-import type { Options } from 'multer';
-import path from 'path';
+import { ADDON_IDS } from '../../addons';
 import type { User } from '../../types';
-import { CollectionsService } from './collections.service';
 import { AddonGuard } from '../addons/addon.guard';
 import { RequireAddon } from '../addons/require-addon.decorator';
-import { ADDON_IDS } from '../../addons';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { RuntimeEnvService } from '../app-config/runtime-env.service';
+import { CurrentUser } from '../auth-core/current-user.decorator';
+import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
+import { isDemoWriteBlocked, DEMO_WRITE_ERROR } from '../common/demo-write';
 import { PLACE_IMAGE_FILE_FILTER } from '../common/place-image-upload';
-import { StorageService } from '../storage/storage.service';
+import { ResponseContract } from '../common/response-contract';
+import { rowId } from '../common/row-id.pipe';
+import { SpoolCleanupInterceptor } from '../common/spool-cleanup.interceptor';
+import { CollectionGpxError } from '../place-import/place-import.types';
 import { placeImageUrl } from '../places/place-image';
+import { PlaceRatingDto } from '../places/places.dto';
+import { StorageService } from '../storage/storage.service';
 import {
   CollectionCreateDto,
   CollectionUpdateDto,
@@ -55,8 +39,29 @@ import {
   CollectionImportIntoDto,
   CollectionGpxReadDto,
 } from './collections.dto';
-import { PlaceRatingDto } from '../places/places.dto';
-import { CollectionGpxError } from './collection-gpx.helpers';
+import { CollectionsService } from './collections.service';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpException,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { collectionKmlExportSchema } from '@trek/shared';
+
+import type { Options } from 'multer';
+import path from 'path';
 
 export const MAX_COVER_SIZE = 20 * 1024 * 1024;
 // Duplicated on purpose from trips.controller.ts (historical parity — no
@@ -84,7 +89,11 @@ const COVER_FILE_FILTER: Options['fileFilter'] = (_req, file, cb) => {
 @UseGuards(AddonGuard, JwtAuthGuard)
 @RequireAddon(ADDON_IDS.COLLECTIONS, 'Collections')
 export class CollectionsController {
-  constructor(private readonly collections: CollectionsService, private readonly env: RuntimeEnvService, private readonly storage: StorageService) {}
+  constructor(
+    private readonly collections: CollectionsService,
+    private readonly env: RuntimeEnvService,
+    private readonly storage: StorageService,
+  ) {}
 
   // ── Lists ─────────────────────────────────────────────────────────────────
   @Get()
@@ -93,96 +102,142 @@ export class CollectionsController {
   }
 
   @Post()
-  create(@CurrentUser() user: User, @Body() body: CollectionCreateDto) {
-    return this.collections.createCollection(user.id, body);
+  create(@CurrentUser() user: User, @Body() body: CollectionCreateDto, @Headers('x-socket-id') socketId?: string) {
+    return this.collections.createCollection(user.id, body, socketId);
   }
 
   @Post('reorder')
   @HttpCode(200)
-  reorder(@CurrentUser() user: User, @Body() body: CollectionReorderDto) {
-    this.collections.reorderCollections(user.id, body.orderedIds);
+  async reorder(
+    @CurrentUser() user: User,
+    @Body() body: CollectionReorderDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.reorderCollections(user.id, body.orderedIds, socketId);
     return { success: true };
   }
 
   // ── Places (static prefixes before /:id) ────────────────────────────────────
   @Post('places')
   @HttpCode(200)
-  savePlace(@CurrentUser() user: User, @Body() body: CollectionSavePlaceDto, @Headers('x-socket-id') socketId?: string) {
+  savePlace(
+    @CurrentUser() user: User,
+    @Body() body: CollectionSavePlaceDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
     return this.collections.savePlace(user.id, body, socketId);
   }
 
   @Post('places/from-trip')
   @HttpCode(200)
-  saveFromTrip(@CurrentUser() user: User, @Body() body: CollectionSaveFromTripDto, @Headers('x-socket-id') socketId?: string) {
-    return this.collections.saveFromTripPlace(user.id, body.collection_id, body.source_trip_id, body.source_place_id, body.force, socketId);
+  saveFromTrip(
+    @CurrentUser() user: User,
+    @Body() body: CollectionSaveFromTripDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.saveFromTripPlace(
+      user.id,
+      body.collection_id,
+      body.source_trip_id,
+      body.source_place_id,
+      body.force,
+      socketId,
+    );
   }
 
   @Post('places/from-trip-many')
   @HttpCode(200)
-  saveFromTripMany(@CurrentUser() user: User, @Body() body: CollectionSaveFromTripManyDto, @Headers('x-socket-id') socketId?: string) {
-    return this.collections.saveFromTripPlaces(user.id, body.collection_id, body.source_trip_id, body.source_place_ids, body.force, socketId);
+  saveFromTripMany(
+    @CurrentUser() user: User,
+    @Body() body: CollectionSaveFromTripManyDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.saveFromTripPlaces(
+      user.id,
+      body.collection_id,
+      body.source_trip_id,
+      body.source_place_ids,
+      body.force,
+      socketId,
+    );
   }
 
   @Post('places/delete-many')
   @HttpCode(200)
-  async deleteMany(@CurrentUser() user: User, @Body() body: CollectionDeleteManyDto, @Headers('x-socket-id') socketId?: string) {
+  async deleteMany(
+    @CurrentUser() user: User,
+    @Body() body: CollectionDeleteManyDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
     return { deleted: await this.collections.deletePlacesMany(user.id, body.ids, socketId) };
   }
 
   @Post('places/status-many')
   @HttpCode(200)
-  setStatusMany(@CurrentUser() user: User, @Body() body: CollectionSetStatusManyDto, @Headers('x-socket-id') socketId?: string) {
+  setStatusMany(
+    @CurrentUser() user: User,
+    @Body() body: CollectionSetStatusManyDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
     return this.collections.setStatusMany(user.id, body.ids, body.status, socketId);
   }
 
   @Post('places/status-from-trip')
   @HttpCode(200)
-  setStatusFromTrip(@CurrentUser() user: User, @Body() body: CollectionSetStatusFromTripDto, @Headers('x-socket-id') socketId?: string) {
+  setStatusFromTrip(
+    @CurrentUser() user: User,
+    @Body() body: CollectionSetStatusFromTripDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
     return this.collections.setStatusFromTrip(user.id, body.trip_id, body.place_ids, body.status, socketId);
   }
 
   @Patch('places/:pid')
   updatePlace(
     @CurrentUser() user: User,
-    @Param('pid') pid: string,
+    @Param('pid', rowId('Place not found')) pid: number,
     @Body() body: CollectionPlaceUpdateDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    return this.collections.updatePlace(user.id, Number(pid), body, socketId);
+    return this.collections.updatePlace(user.id, pid, body, socketId);
   }
 
   @Post('places/:pid/status')
   @HttpCode(200)
   setStatus(
     @CurrentUser() user: User,
-    @Param('pid') pid: string,
+    @Param('pid', rowId('Place not found')) pid: number,
     @Body() body: CollectionSetStatusDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    return this.collections.setStatus(user.id, Number(pid), body.status, socketId);
+    return this.collections.setStatus(user.id, pid, body.status, socketId);
   }
 
   @Put('places/:pid/rating')
   setRating(
     @CurrentUser() user: User,
-    @Param('pid') pid: string,
+    @Param('pid', rowId('Place not found')) pid: number,
     @Body() body: PlaceRatingDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    return this.collections.setRating(user.id, Number(pid), body.rating, socketId);
+    return this.collections.setRating(user.id, pid, body.rating, socketId);
   }
 
   @Delete('places/:pid/rating')
-  clearRating(@CurrentUser() user: User, @Param('pid') pid: string, @Headers('x-socket-id') socketId?: string) {
-    return this.collections.setRating(user.id, Number(pid), null, socketId);
+  clearRating(
+    @CurrentUser() user: User,
+    @Param('pid', rowId('Place not found')) pid: number,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.setRating(user.id, pid, null, socketId);
   }
 
   @Post('places/:pid/image')
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor('image', { fileFilter: PLACE_IMAGE_FILE_FILTER }))
+  @UseInterceptors(FileInterceptor('image', { fileFilter: PLACE_IMAGE_FILE_FILTER }), SpoolCleanupInterceptor)
   async uploadPlaceImage(
     @CurrentUser() user: User,
-    @Param('pid') pid: string,
+    @Param('pid', rowId('Place not found')) pid: number,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Headers('x-socket-id') socketId?: string,
   ) {
@@ -193,12 +248,16 @@ export class CollectionsController {
     // Commit the spooled upload to its final storage location (atomic
     // same-volume rename) before the DB row references the final path.
     await this.storage.put('places', file.filename, { tmpPath: file.path });
-    return this.collections.setPlaceImage(user.id, Number(pid), placeImageUrl(file.filename), socketId);
+    return this.collections.setPlaceImage(user.id, pid, placeImageUrl(file.filename), socketId);
   }
 
   @Delete('places/:pid')
-  async deletePlace(@CurrentUser() user: User, @Param('pid') pid: string, @Headers('x-socket-id') socketId?: string) {
-    await this.collections.deletePlace(user.id, Number(pid), socketId);
+  async deletePlace(
+    @CurrentUser() user: User,
+    @Param('pid', rowId('Place not found')) pid: number,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.deletePlace(user.id, pid, socketId);
     return { success: true };
   }
 
@@ -210,8 +269,12 @@ export class CollectionsController {
    * are @HttpCode(200) because they act on one that already exists.
    */
   @Post('import')
-  importCollection(@CurrentUser() user: User, @Body() body: CollectionImportDto) {
-    return this.collections.importCollection(user.id, body);
+  importCollection(
+    @CurrentUser() user: User,
+    @Body() body: CollectionImportDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.importCollection(user.id, body, socketId);
   }
 
   /**
@@ -234,8 +297,12 @@ export class CollectionsController {
 
   @Post('copy-to-trip')
   @HttpCode(200)
-  copyToTrip(@CurrentUser() user: User, @Body() body: CollectionCopyToTripDto) {
-    return this.collections.copyToTrip(user.id, body);
+  copyToTrip(
+    @CurrentUser() user: User,
+    @Body() body: CollectionCopyToTripDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.copyToTrip(user.id, body, this.collections.tripEvents(body.trip_id, socketId));
   }
 
   // ── Labels (per-collection custom labels; static prefixes before /:id) ───────
@@ -252,16 +319,20 @@ export class CollectionsController {
   @Patch('labels/:lid')
   updateLabel(
     @CurrentUser() user: User,
-    @Param('lid') lid: string,
+    @Param('lid', rowId('Label not found')) lid: number,
     @Body() body: CollectionLabelUpdateDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    return this.collections.updateLabel(user.id, Number(lid), body, socketId);
+    return this.collections.updateLabel(user.id, lid, body, socketId);
   }
 
   @Delete('labels/:lid')
-  deleteLabel(@CurrentUser() user: User, @Param('lid') lid: string, @Headers('x-socket-id') socketId?: string) {
-    this.collections.deleteLabel(user.id, Number(lid), socketId);
+  async deleteLabel(
+    @CurrentUser() user: User,
+    @Param('lid', rowId('Label not found')) lid: number,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.deleteLabel(user.id, lid, socketId);
     return { success: true };
   }
 
@@ -307,88 +378,108 @@ export class CollectionsController {
   // ── Fusion invitations ──────────────────────────────────────────────────────
   @Post('invite')
   @HttpCode(200)
-  invite(@CurrentUser() user: User, @Body() body: CollectionInviteDto) {
-    this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible (no enumeration)
-    if (!this.collections.isOwner(user.id, body.collection_id)) {
+  async invite(
+    @CurrentUser() user: User,
+    @Body() body: CollectionInviteDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible (no enumeration)
+    if (!(await this.collections.isOwner(user.id, body.collection_id))) {
       throw new HttpException({ error: 'Only the owner can invite' }, 403);
     }
-    const result = this.collections.sendInvite(body.collection_id, user.id, user.username, user.email, body.user_id, body.role);
-    if (result.error) {
-      throw new HttpException({ error: result.error }, result.status!);
-    }
+    const { collection_id, user_id, role } = body;
+    await this.collections.sendInvite(collection_id, user.id, user.username, user_id, role, socketId);
     return { success: true };
   }
 
   @Post('invite/accept')
   @HttpCode(200)
-  acceptInvite(@CurrentUser() user: User, @Body() body: CollectionInviteActionDto, @Headers('x-socket-id') socketId?: string) {
-    const result = this.collections.acceptInvite(user.id, body.collection_id, socketId);
-    if (result.error) {
-      throw new HttpException({ error: result.error }, result.status!);
-    }
+  async acceptInvite(
+    @CurrentUser() user: User,
+    @Body() body: CollectionInviteActionDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.acceptInvite(user.id, body.collection_id, socketId);
     return { success: true };
   }
 
   @Post('invite/decline')
   @HttpCode(200)
-  declineInvite(@CurrentUser() user: User, @Body() body: CollectionInviteActionDto, @Headers('x-socket-id') socketId?: string) {
-    this.collections.declineInvite(user.id, body.collection_id, socketId);
+  async declineInvite(
+    @CurrentUser() user: User,
+    @Body() body: CollectionInviteActionDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.declineInvite(user.id, body.collection_id, socketId);
     return { success: true };
   }
 
   @Post('invite/cancel')
   @HttpCode(200)
-  cancelInvite(@CurrentUser() user: User, @Body() body: CollectionInviteCancelDto) {
-    this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
-    if (!this.collections.isOwner(user.id, body.collection_id)) {
+  async cancelInvite(
+    @CurrentUser() user: User,
+    @Body() body: CollectionInviteCancelDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
+    if (!(await this.collections.isOwner(user.id, body.collection_id))) {
       throw new HttpException({ error: 'Only the owner can cancel invites' }, 403);
     }
-    this.collections.cancelInvite(body.collection_id, user.id, body.user_id);
+    await this.collections.cancelInvite(body.collection_id, user.id, body.user_id, socketId);
     return { success: true };
   }
 
   @Post('leave')
   @HttpCode(200)
-  leave(@CurrentUser() user: User, @Body() body: CollectionInviteActionDto, @Headers('x-socket-id') socketId?: string) {
-    this.collections.leaveCollection(user.id, body.collection_id, socketId);
+  async leave(
+    @CurrentUser() user: User,
+    @Body() body: CollectionInviteActionDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.leaveCollection(user.id, body.collection_id, socketId);
     return { success: true };
   }
 
   @Post('members/remove')
   @HttpCode(200)
-  removeMember(@CurrentUser() user: User, @Body() body: CollectionRemoveMemberDto) {
-    this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
-    if (!this.collections.isOwner(user.id, body.collection_id)) {
+  async removeMember(@CurrentUser() user: User, @Body() body: CollectionRemoveMemberDto) {
+    await this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
+    if (!(await this.collections.isOwner(user.id, body.collection_id))) {
       throw new HttpException({ error: 'Only the owner can remove members' }, 403);
     }
-    this.collections.removeMember(user.id, body.collection_id, body.user_id);
+    await this.collections.removeMember(user.id, body.collection_id, body.user_id);
     return { success: true };
   }
 
   @Post('members/role')
   @HttpCode(200)
-  setMemberRole(@CurrentUser() user: User, @Body() body: CollectionSetMemberRoleDto) {
-    this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
-    if (!this.collections.isOwner(user.id, body.collection_id)) {
+  async setMemberRole(@CurrentUser() user: User, @Body() body: CollectionSetMemberRoleDto) {
+    await this.collections.assertAccess(user.id, body.collection_id); // 404 if not visible
+    if (!(await this.collections.isOwner(user.id, body.collection_id))) {
       throw new HttpException({ error: 'Only the owner can change member roles' }, 403);
     }
-    this.collections.setMemberRole(user.id, body.collection_id, body.user_id, body.role);
+    await this.collections.setMemberRole(user.id, body.collection_id, body.user_id, body.role);
     return { success: true };
   }
 
   // ── /:id (declared last so static prefixes win) ─────────────────────────────
   @Get(':id/available-users')
-  availableUsers(@CurrentUser() user: User, @Param('id') id: string) {
-    this.collections.assertAccess(user.id, Number(id)); // 404 if not visible (no enumeration)
-    if (!this.collections.isOwner(user.id, Number(id))) {
+  async availableUsers(@CurrentUser() user: User, @Param('id', rowId('Collection not found')) id: number) {
+    await this.collections.assertAccess(user.id, id); // 404 if not visible (no enumeration)
+    if (!(await this.collections.isOwner(user.id, id))) {
       throw new HttpException({ error: 'Only the owner can manage members' }, 403);
     }
-    return { users: this.collections.availableUsers(user.id, Number(id)) };
+    return { users: await this.collections.availableUsers(user.id, id) };
   }
 
   @Post(':id/cover')
-  @UseInterceptors(FileInterceptor('cover', { fileFilter: COVER_FILE_FILTER }))
-  async uploadCover(@CurrentUser() user: User, @Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined, @Headers('x-socket-id') socketId?: string) {
+  @UseInterceptors(FileInterceptor('cover', { fileFilter: COVER_FILE_FILTER }), SpoolCleanupInterceptor)
+  async uploadCover(
+    @CurrentUser() user: User,
+    @Param('id', rowId('Collection not found')) id: number,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
     if (isDemoWriteBlocked(this.env, user.email)) {
       throw new HttpException(DEMO_WRITE_ERROR, 403);
     }
@@ -397,7 +488,7 @@ export class CollectionsController {
     // same-volume rename) before the DB row references the final path.
     await this.storage.put('covers', file.filename, { tmpPath: file.path });
     const coverUrl = `/uploads/covers/${file.filename}`;
-    return this.collections.setCollectionCover(user.id, Number(id), coverUrl, socketId);
+    return this.collections.setCollectionCover(user.id, id, coverUrl, socketId);
   }
 
   /** Preview for the bulk trip import: the trip's places plus, per place, the same
@@ -409,8 +500,8 @@ export class CollectionsController {
    * filename decided by the server.
    */
   @Get(':id/export')
-  exportCollection(@CurrentUser() user: User, @Param('id') id: string) {
-    return this.collections.exportCollection(user.id, Number(id));
+  exportCollection(@CurrentUser() user: User, @Param('id', rowId('Collection not found')) id: number) {
+    return this.collections.exportCollection(user.id, id);
   }
 
   /**
@@ -420,8 +511,15 @@ export class CollectionsController {
    * no coordinates and were left out.
    */
   @Get(':id/export/gpx')
-  exportCollectionGpx(@CurrentUser() user: User, @Param('id') id: string) {
-    return this.collections.exportCollectionGpx(user.id, Number(id));
+  exportCollectionGpx(@CurrentUser() user: User, @Param('id', rowId('Collection not found')) id: number) {
+    return this.collections.exportCollectionGpx(user.id, id);
+  }
+
+  /** The list as KML for Google My Maps (#1866), wrapped in JSON like the GPX above, for the same reasons. */
+  @Get(':id/export/kml')
+  @ResponseContract(collectionKmlExportSchema)
+  exportCollectionKml(@CurrentUser() user: User, @Param('id', rowId('Collection not found')) id: number) {
+    return this.collections.exportCollectionKml(user.id, id);
   }
 
   /**
@@ -435,31 +533,44 @@ export class CollectionsController {
   @HttpCode(200)
   importIntoCollection(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param('id', rowId('Collection not found')) id: number,
     @Body() body: CollectionImportIntoDto,
     @Headers('x-socket-id') socketId?: string,
   ) {
-    return this.collections.importIntoCollection(user.id, Number(id), body, socketId);
+    return this.collections.importIntoCollection(user.id, id, body, socketId);
   }
 
   @Get(':id/importable/:tripId')
-  importable(@CurrentUser() user: User, @Param('id') id: string, @Param('tripId') tripId: string) {
-    return this.collections.importablePlaces(user.id, Number(id), Number(tripId));
+  importable(
+    @CurrentUser() user: User,
+    @Param('id', rowId('Collection not found')) id: number,
+    @Param('tripId', rowId('Trip not found')) tripId: number,
+  ) {
+    return this.collections.importablePlaces(user.id, id, tripId);
   }
 
   @Get(':id')
-  get(@CurrentUser() user: User, @Param('id') id: string) {
-    return this.collections.getCollection(user.id, Number(id));
+  get(@CurrentUser() user: User, @Param('id', rowId('Collection not found')) id: number) {
+    return this.collections.getCollection(user.id, id);
   }
 
   @Patch(':id')
-  update(@CurrentUser() user: User, @Param('id') id: string, @Body() body: CollectionUpdateDto, @Headers('x-socket-id') socketId?: string) {
-    return this.collections.updateCollection(user.id, Number(id), body, socketId);
+  update(
+    @CurrentUser() user: User,
+    @Param('id', rowId('Collection not found')) id: number,
+    @Body() body: CollectionUpdateDto,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    return this.collections.updateCollection(user.id, id, body, socketId);
   }
 
   @Delete(':id')
-  remove(@CurrentUser() user: User, @Param('id') id: string) {
-    this.collections.deleteCollection(user.id, Number(id));
+  async remove(
+    @CurrentUser() user: User,
+    @Param('id', rowId('Collection not found')) id: number,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    await this.collections.deleteCollection(user.id, id, socketId);
     return { success: true };
   }
 }

@@ -1,23 +1,34 @@
-import { MAX_TRIP_DAYS, tripSpanDays, type TripCreateRequest } from '@trek/shared';
-import { Bell, Calendar, Camera, Search, UserPlus, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { addIsoDays, MAX_TRIP_DAYS, tripSpanDays, type TripCreateRequest } from '@trek/shared';
+import { CalendarDays, Camera, Image as ImageIcon, Pencil, Plane, Search, Type, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { authApi, tripsApi } from '../../api/client';
 import { useTripRangeGuard, type RangeCheck } from '../../hooks/useTripRangeGuard';
 import { useTranslation } from '../../i18n';
+import { tripChangeNeedsConnection } from '../../repo/tripRepo';
 import { useAuthStore } from '../../store/authStore';
 import { useCanDo } from '../../store/permissionsStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { getApiErrorMessage, type Trip } from '../../types';
-import { normalizeImageFile } from '../../utils/convertHeic';
-import CurrencySelect from '../shared/CurrencySelect';
+import { isEffectivelyOffline } from '../../sync/networkMode';
+import { type Trip } from '../../types';
 import type { ShiftMode } from '../../utils/dayImpactLines';
-import { currenciesWith, SYMBOLS } from '../Budget/BudgetPanel.constants';
+import CurrencySelect from '../shared/CurrencySelect';
 import { CustomDatePicker } from '../shared/CustomDateTimePicker';
 import CustomSelect from '../shared/CustomSelect';
-import Modal from '../shared/Modal';
+import {
+  DialogButton,
+  DialogFooter,
+  DialogHeader,
+  DialogShell,
+  DialogTile,
+  FooterSpacer,
+  NEUTRAL_TINT,
+} from '../shared/DialogShell';
 import { NumericInput } from '../shared/NumericInput';
 import { useToast } from '../shared/Toast';
+import { CardHead, INPUT, LABEL, PANEL } from '../shared/dialogParts';
 import TripDateReview, { dateReviewIsWide } from './TripDateReview';
+import { tripFormError } from './tripFormModel';
+import { useTripCoverPicker } from './useTripCoverPicker';
 
 type DateShiftMode = ShiftMode;
 type TripPayload = TripCreateRequest & { date_shift_mode?: DateShiftMode };
@@ -41,23 +52,28 @@ interface TripFormModalProps {
   onSave: (data: TripCreateRequest & { date_shift_mode?: DateShiftMode }) => Promise<{ trip?: Trip } | void> | void;
   trip: Trip | null;
   onCoverUpdate?: (tripId: number, coverUrl: string | null) => void;
+  /**
+   * Drawn inside the trip settings rather than as a dialog of its own (#2811): no
+   * frame and no Cancel, the settings around it close it. One column there, since
+   * beside the settings' own side column two would cut the dates and wrap the chips.
+   */
+  embedded?: boolean;
+  /** Embedded, told while the date question is up, so the dialog around it keeps Escape and its backdrop off. */
+  onReviewChange?: (reviewing: boolean) => void;
 }
 
-interface CoverSearchPhoto {
-  id: string;
-  url: string;
-  thumb: string;
-  description?: string | null;
-  photographer?: string | null;
-  link?: string | null;
-}
-
-export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUpdate }: TripFormModalProps) {
+export default function TripFormModal({
+  isOpen,
+  onClose,
+  onSave,
+  trip,
+  onCoverUpdate,
+  embedded = false,
+  onReviewChange,
+}: TripFormModalProps) {
   const isEditing = !!trip;
+  const labelId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
-  const coverSearchSeq = useRef(0);
-  // The staged cover lives on as an object URL until it is replaced or the modal goes.
-  const previewUrlRef = useRef<string | null>(null);
   const toast = useToast();
   const { t } = useTranslation();
   const currentUser = useAuthStore((s) => s.user);
@@ -80,14 +96,16 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
   const [customReminder, setCustomReminder] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [pendingCoverFile, setPendingCoverFile] = useState<File | null>(null);
-  const [pendingUnsplashUrl, setPendingUnsplashUrl] = useState<string | null>(null);
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const [coverSearchQuery, setCoverSearchQuery] = useState('');
-  const [coverSearchResults, setCoverSearchResults] = useState<CoverSearchPhoto[]>([]);
-  const [coverSearchError, setCoverSearchError] = useState('');
-  const [searchingCover, setSearchingCover] = useState(false);
+  const cover = useTripCoverPicker({ trip, title: formData.title, onCoverUpdate, releasePreviewOnChange: false });
+  const {
+    coverPreview,
+    uploadingCover,
+    searchQuery: coverSearchQuery,
+    setSearchQuery: setCoverSearchQuery,
+    searchResults: coverSearchResults,
+    searchError: coverSearchError,
+    searching: searchingCover,
+  } = cover;
   // Drives the drop zone's hover look. Used to be four handlers writing
   // element.style directly, which is how the indigo dragover colour survived
   // the move to a configurable accent.
@@ -114,8 +132,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
         day_count: trip.day_count || 7,
       });
       setCustomReminder(![0, 1, 3, 9].includes(rd));
-      setCoverPreview(trip.cover_image || null);
-      setCoverSearchQuery('');
+      cover.resetCover(trip.cover_image || null);
     } else {
       setFormData({
         title: '',
@@ -127,17 +144,8 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
         day_count: 7,
       });
       setCustomReminder(false);
-      setCoverPreview(null);
-      setCoverSearchQuery('');
+      cover.resetCover(null);
     }
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = null;
-    }
-    setPendingCoverFile(null);
-    setPendingUnsplashUrl(null);
-    setCoverSearchResults([]);
-    setCoverSearchError('');
     setSelectedMembers([]);
     setPendingReview(null);
     setDateShiftMode('keep_bookings');
@@ -152,18 +160,20 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
           if (c?.trip_reminders_enabled !== undefined) setTripRemindersEnabled(c.trip_reminders_enabled);
         })
         .catch(() => {});
-      authApi
-        .listUsers()
-        .then((d) => setAllUsers(d.users || []))
-        .catch(() => {});
-      if (trip) {
-        tripsApi
-          .getMembers(trip.id)
-          .then((d) => setExistingMembers(d.members || []))
+      // The members block is not drawn inside the trip settings, whose People area holds them.
+      if (!embedded) {
+        authApi
+          .listUsers()
+          .then((d) => setAllUsers(d.users || []))
           .catch(() => {});
+        if (trip)
+          tripsApi
+            .getMembers(trip.id)
+            .then((d) => setExistingMembers(d.members || []))
+            .catch(() => {});
       }
     }
-  }, [trip, isOpen]);
+  }, [trip, isOpen, embedded]);
 
   useEffect(() => {
     if (!trip && isOpen) {
@@ -171,36 +181,17 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
     }
   }, [tripRemindersEnabled]);
 
-  // A staged cover that never got uploaded would otherwise pin the full image for
-  // as long as the tab lives.
-  useEffect(
-    () => () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    },
-    []
-  );
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!formData.title.trim()) {
-      setError(t('dashboard.titleRequired'));
+    const formError = tripFormError(
+      { title: formData.title, startDate: formData.start_date, endDate: formData.end_date },
+      trip,
+      t
+    );
+    if (formError) {
+      setError(formError);
       return;
-    }
-    if (formData.start_date && formData.end_date) {
-      const span = tripSpanDays(formData.start_date, formData.end_date);
-      if (span < 1) {
-        setError(t('dashboard.endDateError'));
-        return;
-      }
-      // Only a range being set is held to the limit, as on the server: a trip that
-      // already carries a longer one can still be renamed.
-      const datesTouched =
-        !trip || formData.start_date !== (trip.start_date || '') || formData.end_date !== (trip.end_date || '');
-      if (datesTouched && span > MAX_TRIP_DAYS) {
-        setError(t('dashboard.tripTooLong', { days: MAX_TRIP_DAYS }));
-        return;
-      }
     }
     if (!formData.start_date && !formData.end_date) {
       const dc = Number(formData.day_count);
@@ -227,6 +218,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
     // Moving the start of a dated trip shifts the whole day grid, so let the user
     // choose how bookings follow before anything is saved (#1288). End-date-only
     // changes don't shift days and dateless transitions have nothing to shift.
+    if (refusedOffline(payload)) return;
     const askShift = !!(
       isEditing &&
       trip?.start_date &&
@@ -246,7 +238,16 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
     await performSave(payload);
   };
 
+  // A new trip, new dates or a new currency are made by the server; a new name
+  // or description waits in the queue offline like any other change.
+  const refusedOffline = (payload: TripPayload): boolean => {
+    if (!isEffectivelyOffline() || (isEditing && !tripChangeNeedsConnection(trip ?? undefined, payload))) return false;
+    setError(t(isEditing ? 'dashboard.tripChangeNeedsConnection' : 'common.needsConnection'));
+    return true;
+  };
+
   const performSave = async (payload: TripPayload) => {
+    if (refusedOffline(payload)) return;
     setIsLoading(true);
     try {
       const result = await onSave(payload);
@@ -267,24 +268,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
         if (memberAddFailed) toast.error(t('trips.memberAddError'));
       }
       // Upload pending cover for newly created trips
-      if (pendingCoverFile && createdTrip?.id) {
-        try {
-          const fd = new FormData();
-          fd.append('cover', pendingCoverFile);
-          const data = await tripsApi.uploadCover(createdTrip.id, fd);
-          onCoverUpdate?.(createdTrip.id, data.cover_image);
-        } catch {
-          // Cover upload failed but trip was created — surface it without blocking the create
-          toast.error(t('dashboard.coverUploadError'));
-        }
-      } else if (pendingUnsplashUrl && createdTrip?.id) {
-        try {
-          await tripsApi.update(createdTrip.id, { cover_image: pendingUnsplashUrl });
-          onCoverUpdate?.(createdTrip.id, pendingUnsplashUrl);
-        } catch {
-          toast.error(t('dashboard.coverSaveError'));
-        }
-      }
+      await cover.applyToCreatedTrip(createdTrip?.id);
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('places.saveError'));
@@ -293,106 +277,16 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
     }
   };
 
-  const handleCoverSelect = async (file: File | null | undefined) => {
-    if (!file) return;
-    // HEIC/HEIF from iOS can't be rendered or stored as-is — convert to JPEG first
-    const normalized = await normalizeImageFile(file);
-    setPendingUnsplashUrl(null);
-    if (isEditing && trip?.id) {
-      // Existing trip: upload immediately
-      uploadCoverNow(normalized);
-    } else {
-      // New trip: stage for upload after creation
-      setPendingCoverFile(normalized);
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = URL.createObjectURL(normalized);
-      setCoverPreview(previewUrlRef.current);
-    }
-  };
+  const handleCoverSelect = cover.selectFile;
 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleCoverSelect(e.target.files?.[0]);
+    void handleCoverSelect(e.target.files?.[0]);
     e.target.value = '';
   };
 
-  const uploadCoverNow = async (file: File) => {
-    setUploadingCover(true);
-    try {
-      const fd = new FormData();
-      fd.append('cover', file);
-      const data = await tripsApi.uploadCover(trip.id, fd);
-      setCoverPreview(data.cover_image);
-      onCoverUpdate?.(trip.id, data.cover_image);
-      toast.success(t('dashboard.coverSaved'));
-    } catch {
-      toast.error(t('dashboard.coverUploadError'));
-    } finally {
-      setUploadingCover(false);
-    }
-  };
-
-  const handleCoverSearch = async () => {
-    const query = coverSearchQuery.trim() || formData.title.trim();
-    if (!query) {
-      setCoverSearchError(t('dashboard.unsplashQueryRequired'));
-      return;
-    }
-    // Guard against out-of-order responses: only the latest search applies its
-    // results, so a slow earlier query can't overwrite a newer one. #1277 review
-    const seq = ++coverSearchSeq.current;
-    setSearchingCover(true);
-    setCoverSearchError('');
-    try {
-      const data = await tripsApi.searchCoverImages(query);
-      if (seq !== coverSearchSeq.current) return;
-      const photos = data.photos || [];
-      setCoverSearchResults(photos);
-      if (photos.length === 0) setCoverSearchError(t('dashboard.unsplashNoResults'));
-    } catch (err: unknown) {
-      if (seq !== coverSearchSeq.current) return;
-      setCoverSearchError(getApiErrorMessage(err, t('dashboard.coverSearchError')));
-    } finally {
-      if (seq === coverSearchSeq.current) setSearchingCover(false);
-    }
-  };
-
-  const handleUnsplashSelect = async (photo: CoverSearchPhoto) => {
-    if (!photo.url) return;
-    setPendingCoverFile(null);
-    if (isEditing && trip?.id) {
-      setUploadingCover(true);
-      try {
-        await tripsApi.update(trip.id, { cover_image: photo.url });
-        setCoverPreview(photo.url);
-        onCoverUpdate?.(trip.id, photo.url);
-        toast.success(t('dashboard.coverSaved'));
-      } catch (err: unknown) {
-        toast.error(getApiErrorMessage(err, t('dashboard.coverSaveError')));
-      } finally {
-        setUploadingCover(false);
-      }
-    } else {
-      setPendingUnsplashUrl(photo.url);
-      setCoverPreview(photo.url);
-    }
-  };
-
-  const handleRemoveCover = async () => {
-    if (pendingCoverFile || pendingUnsplashUrl) {
-      setPendingCoverFile(null);
-      setPendingUnsplashUrl(null);
-      setCoverPreview(null);
-      return;
-    }
-    // Nothing pending left, so the preview is a saved trip's stored cover.
-    try {
-      await tripsApi.update(trip.id, { cover_image: null });
-      setCoverPreview(null);
-      onCoverUpdate?.(trip.id, null);
-    } catch {
-      toast.error(t('dashboard.coverRemoveError'));
-    }
-  };
+  const handleCoverSearch = cover.search;
+  const handleUnsplashSelect = cover.selectPhoto;
+  const handleRemoveCover = cover.removeCover;
 
   // Paste support for cover image
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -403,130 +297,86 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
       if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
-        if (file) handleCoverSelect(file);
+        if (file) void handleCoverSelect(file);
         return;
       }
     }
   };
 
-  const update = (field, value) =>
+  // An edit answers whatever the last save complained about, so the complaint
+  // goes with it rather than standing over the fixed field until the next save.
+  const update = (field, value) => {
+    setError('');
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
       if (field === 'start_date' && value) {
         if (!prev.end_date || prev.end_date < value) {
           next.end_date = value;
         } else if (prev.start_date) {
-          const oldStart = new Date(prev.start_date + 'T00:00:00Z');
-          const oldEnd = new Date(prev.end_date + 'T00:00:00Z');
-          const duration = Math.round((oldEnd.getTime() - oldStart.getTime()) / 86400000);
-          const newEnd = new Date(value + 'T00:00:00Z');
-          newEnd.setDate(newEnd.getDate() + duration);
-          next.end_date = newEnd.toISOString().split('T')[0];
+          // Keep the trip's length, counted in UTC calendar days: a local-time
+          // shift across a DST change used to drop or add a day.
+          next.end_date = addIsoDays(value, tripSpanDays(prev.start_date, prev.end_date) - 1);
         }
       }
       return next;
     });
+  };
 
   /* The dashboard's shapes, in the app's own tokens.
      `.trek-dash` deliberately scopes its palette to that page, so none of its
      variables are reachable from here — what carries over is the geometry:
      generous radii, grouped panels instead of a single stack of labelled
      fields, and overline captions rather than sentence-case labels. */
-  const inputCls =
-    'w-full px-3.5 py-2.5 border border-edge rounded-xl bg-surface-input text-content placeholder:text-content-faint focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent text-body transition-shadow';
-  const labelCls =
-    'flex items-center gap-1 text-caption font-semibold uppercase tracking-[0.14em] text-content-faint mb-2';
-  const ghostBtnCls =
-    'px-4 py-2.5 text-body font-medium text-content-secondary hover:text-content border border-edge rounded-xl hover:bg-surface-hover transition-colors';
-  const primaryBtnCls =
-    'px-5 py-2.5 text-body font-medium bg-accent hover:bg-accent-hover disabled:opacity-50 text-accent-text rounded-xl shadow-card transition-colors flex items-center gap-2';
-  const dangerBtnCls =
-    'px-5 py-2.5 text-body font-medium whitespace-nowrap bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded-xl shadow-card transition-opacity flex items-center gap-2';
+  // The dialogs' own language: their fields, eyebrows, panels and buttons, so the
+  // form reads alike on its own and inside the trip settings.
+  const inputCls = INPUT;
+  const labelCls = `${LABEL.replace('block ', '')} flex items-center gap-1`;
   /* Two columns once there is room for them: the form had grown to eight stacked
      blocks and the create button sat a full screen below the title. Left is what
      the trip looks like, right is when and with whom. One column below md. */
   const columnCls = 'flex flex-col gap-4';
-  const panelCls = 'rounded-2xl border border-edge bg-surface-secondary p-4 space-y-3.5';
+  const panelCls = PANEL;
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      // In the review step Escape, the close button and a click beside the
-      // dialog go back to the form, like Back, instead of throwing the whole
-      // edit away. Outside that step they close the dialog as before.
-      onClose={
-        pendingReview
-          ? () => {
-              if (!busy) setPendingReview(null);
-            }
-          : onClose
-      }
-      title={
-        pendingReview
-          ? t(pendingReview.askShift ? 'dashboard.dateShiftTitle' : 'dashboard.shrinkTitle')
-          : isEditing
-            ? t('dashboard.editTrip')
-            : t('dashboard.createTrip')
-      }
-      /* The review step is a few radio buttons and a short list; alone, either
-         takes the width of the day dialog, where the same list stands. With both,
-         they stand side by side at the form's own width. */
-      size={pendingReview && !dateReviewIsWide(pendingReview.askShift, pendingReview.removal) ? 'lg' : '2xl'}
-      footer={
-        <div className="flex justify-end gap-3">
-          {pendingReview ? (
-            <>
-              <button type="button" onClick={() => setPendingReview(null)} disabled={busy} className={ghostBtnCls}>
-                {t('common.back')}
-              </button>
-              {/* Removing days with something on them is the one save here that
-                  loses work, so it asks in the danger tone and says so. */}
-              <button
-                type="button"
-                onClick={() =>
-                  performSave(
-                    pendingReview.askShift
-                      ? { ...pendingReview.payload, date_shift_mode: dateShiftMode }
-                      : pendingReview.payload
-                  )
-                }
-                disabled={busy}
-                className={pendingReview.removal ? dangerBtnCls : primaryBtnCls}
-              >
-                {isLoading ? (
-                  <>
-                    <div
-                      className={`h-4 w-4 animate-spin rounded-full border-2 ${pendingReview.removal ? 'border-white/30 border-t-white' : 'border-accent-text/30 border-t-accent-text'}`}
-                    />
-                    {t('common.saving')}
-                  </>
-                ) : (
-                  t(pendingReview.removal ? 'dashboard.shrinkConfirm' : 'common.update')
-                )}
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={onClose} className={ghostBtnCls}>
-                {t('common.cancel')}
-              </button>
-              <button type="button" onClick={handleSubmit} disabled={busy} className={primaryBtnCls}>
-                {busy ? (
-                  <>
-                    <div className="border-accent-text/30 h-4 w-4 animate-spin rounded-full border-2 border-t-accent-text" />
-                    {t('common.saving')}
-                  </>
-                ) : isEditing ? (
-                  t('common.update')
-                ) : (
-                  t('dashboard.createTrip')
-                )}
-              </button>
-            </>
-          )}
-        </div>
-      }
-    >
+  // Escape in the date question goes back to the form; embedded, the settings around it must not close on it.
+  const reviewing = pendingReview != null;
+  useEffect(() => {
+    onReviewChange?.(reviewing);
+  }, [reviewing, onReviewChange]);
+
+  const reviewTitle = pendingReview
+    ? t(pendingReview.askShift ? 'dashboard.dateShiftTitle' : 'dashboard.shrinkTitle')
+    : '';
+  const buttons = pendingReview ? (
+    <>
+      <DialogButton onClick={() => setPendingReview(null)} disabled={busy}>
+        {t('common.back')}
+      </DialogButton>
+      {/* Removing days with something on them is the one save here that
+          loses work, so it asks in the danger tone and says so. */}
+      <DialogButton
+        variant={pendingReview.removal ? 'danger' : 'primary'}
+        disabled={busy}
+        onClick={() =>
+          performSave(
+            pendingReview.askShift
+              ? { ...pendingReview.payload, date_shift_mode: dateShiftMode }
+              : pendingReview.payload
+          )
+        }
+      >
+        {isLoading ? t('common.saving') : t(pendingReview.removal ? 'dashboard.shrinkConfirm' : 'common.update')}
+      </DialogButton>
+    </>
+  ) : (
+    <>
+      {!embedded && <DialogButton onClick={onClose}>{t('common.cancel')}</DialogButton>}
+      <DialogButton variant="primary" onClick={handleSubmit} disabled={busy}>
+        {busy ? t('common.saving') : isEditing ? t('common.update') : t('dashboard.createTrip')}
+      </DialogButton>
+    </>
+  );
+  const content = (
+    <>
       {pendingReview && (
         <TripDateReview
           askShift={pendingReview.askShift}
@@ -541,20 +391,24 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
           <div className="border-danger/30 rounded-xl border bg-danger-soft p-3 text-body text-danger">{error}</div>
         )}
 
-        <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 md:grid-cols-2">
+        <div className={`grid grid-cols-1 items-start gap-x-6 gap-y-4 ${embedded ? '' : 'md:grid-cols-2'}`}>
           {/* Left column — what the trip is: its picture, its name, what it is about. */}
           <div className={columnCls}>
             {/* Cover image — gated by trip_cover_upload permission */}
             {canUploadCover && (
               <div className={panelCls}>
-                <label className={labelCls}>{t('dashboard.coverImage')}</label>
+                <CardHead
+                  icon={<ImageIcon size={16} strokeWidth={2} />}
+                  title={t('trip.form.coverTitle')}
+                  hint={t('trip.form.coverHint')}
+                />
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
                 {coverPreview ? (
-                  <div className="relative h-[130px] overflow-hidden rounded-xl">
+                  <div className={`relative h-[110px] overflow-hidden rounded-xl`}>
                     <img src={coverPreview} alt="" className="h-full w-full object-cover" />
-                    <div className="absolute bottom-2 right-2 flex gap-1.5">
+                    <div className="absolute bottom-2 end-2 flex gap-1.5">
                       {/* Chrome sitting on top of a photo, so it is deliberately dark in
-                    both themes rather than following the surface tokens. */}
+                  both themes rather than following the surface tokens. */}
                       <button
                         type="button"
                         onClick={() => fileRef.current?.click()}
@@ -587,9 +441,9 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                       e.preventDefault();
                       setCoverDragActive(false);
                       const file = e.dataTransfer.files?.[0];
-                      if (file?.type.startsWith('image/')) handleCoverSelect(file);
+                      if (file?.type.startsWith('image/')) void handleCoverSelect(file);
                     }}
-                    className={`flex h-[130px] w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 text-body transition-colors ${
+                    className={`flex h-11 w-full items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed px-4 text-[length:calc(13px*var(--fs-scale-body,1))] transition-colors ${
                       coverDragActive
                         ? 'border-accent bg-accent-subtle text-content'
                         : 'border-edge text-content-faint hover:border-edge-secondary hover:text-content-muted'
@@ -606,7 +460,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handleCoverSearch();
+                        void handleCoverSearch();
                       }
                     }}
                     placeholder={t('dashboard.unsplashSearchPlaceholder')}
@@ -616,7 +470,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                     type="button"
                     onClick={handleCoverSearch}
                     disabled={searchingCover || (!coverSearchQuery.trim() && !formData.title.trim())}
-                    className="flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-edge px-3 py-2 text-body text-content-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex flex-none items-center gap-1.5 whitespace-nowrap rounded-[10px] bg-accent px-4 py-2 text-[length:calc(13px*var(--fs-scale-body,1))] font-medium text-accent-text hover:opacity-90 disabled:cursor-default disabled:opacity-50"
                   >
                     {searchingCover ? (
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-edge border-t-content-muted" />
@@ -656,6 +510,11 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
             )}
 
             <div className={`${panelCls} flex-1`}>
+              <CardHead
+                icon={<Type size={16} strokeWidth={2} />}
+                title={t('trip.form.aboutTitle')}
+                hint={t('trip.form.aboutHint')}
+              />
               <div>
                 <label className={labelCls}>
                   {t('dashboard.tripTitle')} <span className="text-danger">*</span>
@@ -689,15 +548,18 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
           {/* Right column — when it happens, in what currency, with whom. */}
           <div className={columnCls}>
             <div className={panelCls}>
+              <CardHead
+                icon={<CalendarDays size={16} strokeWidth={2} />}
+                title={t('trip.form.whenTitle')}
+                hint={t('trip.form.whenHint')}
+              />
+
               {/* min-w-0 on both cells: a grid item defaults to min-width:auto, so a
-            long date ("12. Sept. 2026" and the keyboard button beside it) pushed
-            the cell past its track and the two columns overlapped (#2267). */}
+          long date ("12. Sept. 2026" and the keyboard button beside it) pushed
+          the cell past its track and the two columns overlapped (#2267). */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="min-w-0">
-                  <label className={labelCls}>
-                    <Calendar className="h-3.5 w-3.5" />
-                    {t('dashboard.startDate')}
-                  </label>
+                  <label className={labelCls}>{t('dashboard.startDate')}</label>
                   <CustomDatePicker
                     value={formData.start_date}
                     onChange={(v) => update('start_date', v)}
@@ -705,10 +567,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                   />
                 </div>
                 <div className="min-w-0">
-                  <label className={labelCls}>
-                    <Calendar className="h-3.5 w-3.5" />
-                    {t('dashboard.endDate')}
-                  </label>
+                  <label className={labelCls}>{t('dashboard.endDate')}</label>
                   <CustomDatePicker
                     value={formData.end_date}
                     onChange={(v) => update('end_date', v)}
@@ -750,10 +609,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
               {/* Reminder — only visible to owner (or when creating) */}
               {(!isEditing || trip?.user_id === currentUser?.id || currentUser?.role === 'admin') && (
                 <div className={!tripRemindersEnabled ? 'opacity-50' : ''}>
-                  <label className={labelCls}>
-                    <Bell className="h-3.5 w-3.5" />
-                    {t('trips.reminder')}
-                  </label>
+                  <label className={labelCls}>{t('trips.reminder')}</label>
                   {!tripRemindersEnabled ? (
                     <p className="rounded-xl bg-surface p-3 text-caption text-content-faint">
                       {t('trips.reminderDisabledHint')}
@@ -817,13 +673,10 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                 </div>
               )}
 
-              {/* Members */}
-              {allUsers.filter((u) => u.id !== currentUser?.id).length > 0 && (
+              {/* Members. Not inside the trip settings, whose People area is where they are managed. */}
+              {!embedded && allUsers.filter((u) => u.id !== currentUser?.id).length > 0 && (
                 <div>
-                  <label className={labelCls}>
-                    <UserPlus className="h-3.5 w-3.5" />
-                    {t('dashboard.addMembers')}
-                  </label>
+                  <label className={labelCls}>{t('dashboard.addMembers')}</label>
                   {/* Existing members (editing mode) */}
                   {isEditing && existingMembers.length > 0 && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
@@ -832,9 +685,13 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                           type="button"
                           key={m.id}
                           disabled={m.id === currentUser?.id}
-                          className="flex items-center gap-1.5 rounded-full border border-edge bg-surface px-2.5 py-1 text-body font-medium text-content"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-surface-card px-2.5 py-[3px] text-[length:calc(12px*var(--fs-scale-body,1))] font-medium text-content shadow-sm ring-1 ring-edge-faint"
                           onClick={async () => {
                             if (m.id === currentUser?.id) return;
+                            if (isEffectivelyOffline()) {
+                              toast.error(t('common.needsConnection'));
+                              return;
+                            }
                             try {
                               await tripsApi.removeMember(trip!.id, m.id);
                               setExistingMembers((prev) => prev.filter((x) => x.id !== m.id));
@@ -861,7 +718,7 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                             type="button"
                             key={uid}
                             onClick={() => setSelectedMembers((prev) => prev.filter((id) => id !== uid))}
-                            className="flex cursor-pointer items-center gap-1.5 rounded-full border border-edge bg-surface px-2.5 py-1 text-body font-medium text-content"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-surface-card px-2.5 py-[3px] text-[length:calc(12px*var(--fs-scale-body,1))] font-medium text-content shadow-sm ring-1 ring-edge-faint"
                           >
                             {user.username}
                             <X size={11} className="text-content-faint" />
@@ -876,7 +733,9 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
                       onChange={async (value) => {
                         if (isEditing && trip?.id) {
                           const user = allUsers.find((u) => u.id === Number(value));
-                          if (user) {
+                          if (user && isEffectivelyOffline()) {
+                            toast.error(t('common.needsConnection'));
+                          } else if (user) {
                             try {
                               await tripsApi.addMember(trip.id, user.username);
                               setExistingMembers((prev) => [...prev, { id: user.id, username: user.username }]);
@@ -914,6 +773,71 @@ export default function TripFormModal({ isOpen, onClose, onSave, trip, onCoverUp
         </div>
         {/* /two-column grid */}
       </form>
-    </Modal>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="flex flex-col gap-4">
+        {pendingReview && <h4 className="m-0 text-subtitle font-semibold text-content">{reviewTitle}</h4>}
+        {content}
+        <div className="flex justify-end gap-2">{buttons}</div>
+      </div>
+    );
+  }
+
+  return (
+    <DialogShell
+      open={isOpen}
+      // In the review step Escape, the close button and a click beside the
+      // dialog go back to the form, like Back, instead of throwing the whole
+      // edit away. Outside that step they close the dialog as before.
+      onClose={
+        pendingReview
+          ? () => {
+              if (!busy) setPendingReview(null);
+            }
+          : onClose
+      }
+      labelledBy={labelId}
+      /* The review step is a few radio buttons and a short list; alone, either
+         takes the width of the day dialog, where the same list stands. With both,
+         they stand side by side at the form's own width. */
+      width={pendingReview && !dateReviewIsWide(pendingReview.askShift, pendingReview.removal) ? 'detail' : 'wide'}
+      header={
+        <DialogHeader
+          tile={
+            <DialogTile>
+              {isEditing ? (
+                <Pencil size={20} strokeWidth={1.9} className="text-content-muted" />
+              ) : (
+                <Plane size={20} strokeWidth={1.9} className="text-content-muted" />
+              )}
+            </DialogTile>
+          }
+          tint={NEUTRAL_TINT}
+          labelId={labelId}
+          onClose={
+            pendingReview
+              ? () => {
+                  if (!busy) setPendingReview(null);
+                }
+              : onClose
+          }
+          eyebrow={pendingReview ? undefined : isEditing ? t('dashboard.editTrip') : undefined}
+          title={
+            pendingReview ? reviewTitle : isEditing ? trip?.title || t('dashboard.editTrip') : t('dashboard.createTrip')
+          }
+        />
+      }
+      footer={
+        <DialogFooter>
+          <FooterSpacer />
+          {buttons}
+        </DialogFooter>
+      }
+    >
+      {content}
+    </DialogShell>
   );
 }

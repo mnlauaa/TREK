@@ -1,3 +1,7 @@
+{{- $db := default dict .Values.database }}
+{{- if and $db.url (not $db.existingSecret) .Values.existingSecret }}
+{{- fail "database.url is written into the chart's own Secret, which existingSecret replaces. Put TREK_DB_URL in your Secret and set database.existingSecret instead." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,11 +9,13 @@ metadata:
   labels:
     app: {{ include "trek.name" . }}
 spec:
+  # One replica. Its rate limits, pending codes, permission cache and WebSocket
+  # connections live in the process's memory, so a second pod would not share them. That
+  # holds with database.url (PostgreSQL) too; see updateStrategy in values.yaml.
   replicas: 1
-  # TREK is a single-writer SQLite app on a ReadWriteOnce PVC, so the default
-  # RollingUpdate would start a second pod holding the same volume before the old one
-  # exits — a Multi-Attach deadlock, or two processes on one travel.db. Recreate tears
-  # the old pod down first. Override to RollingUpdate only with a ReadWriteMany volume.
+  # The default RollingUpdate would start a second pod on the same ReadWriteOnce PVC
+  # before the old one exits: a Multi-Attach deadlock, or two processes on one travel.db.
+  # Recreate tears the old pod down first. Keep it, see updateStrategy in values.yaml.
   strategy:
     type: {{ .Values.updateStrategy | default "Recreate" }}
   selector:
@@ -29,21 +35,31 @@ spec:
         - name: {{ .name }}
         {{- end }}
       {{- end }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        fsGroup: 1000
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: trek
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            - containerPort: 3000
+            - name: http
+              containerPort: {{ .Values.env.PORT | default 3000 }}
           envFrom:
             - configMapRef:
                 name: {{ include "trek.fullname" . }}-config
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: ENCRYPTION_KEY
               valueFrom:
@@ -51,6 +67,14 @@ spec:
                   name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
                   key: {{ .Values.existingSecretKey | default "ENCRYPTION_KEY" }}
                   optional: true
+            {{- if or $db.url $db.existingSecret }}
+            # Required when set: a missing key stops the pod rather than starting it on SQLite.
+            - name: TREK_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) $db.existingSecret }}
+                  key: {{ if $db.existingSecret }}{{ $db.existingSecretKey | default "TREK_DB_URL" }}{{ else }}TREK_DB_URL{{ end }}
+            {{- end }}
             - name: ADMIN_EMAIL
               valueFrom:
                 secretKeyRef:
@@ -75,6 +99,18 @@ spec:
                   name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
                   key: UNSPLASH_ACCESS_KEY
                   optional: true
+            - name: PLACES_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: PLACES_API_KEY
+                  optional: true
+            - name: TREK_SERVICES_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: TREK_SERVICES_KEY
+                  optional: true
             - name: AMAP_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -87,11 +123,51 @@ spec:
                   name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
                   key: AMAP_API_SECRET
                   optional: true
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: VAPID_PRIVATE_KEY
+                  optional: true
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: SMTP_PASS
+                  optional: true
+            - name: MAPBOX_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: MAPBOX_ACCESS_TOKEN
+                  optional: true
+            - name: CARTO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: CARTO_API_KEY
+                  optional: true
+            - name: DEMO_ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-secret" (include "trek.fullname" .)) .Values.existingSecret }}
+                  key: DEMO_ADMIN_PASS
+                  optional: true
+          {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /app/data
             - name: uploads
               mountPath: /app/uploads
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with (default dict .Values.probes).startup }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with (default dict .Values.probes).liveness }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -115,3 +191,6 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

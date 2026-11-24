@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const ca: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const ca: NotificationLocale = {
     booking_change: (p) => ({
       title: `Reserva nova: ${p.booking}`,
       body: `${p.actor} va afegir una reserva "${p.booking}" (${p.type}) a "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} ha enlairat`,
+      body: `${p.flight} de ${p.from} a ${p.to} és a l'aire.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} va amb retard`,
+      body: `${p.flight} de ${p.from} a ${p.to} porta uns ${p.delay} minuts de retard.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} ha aterrat`,
+      body: `${p.flight} des de ${p.from} ha aterrat a ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Recordatori: ${p.trip}`,
@@ -33,8 +46,11 @@ const ca: NotificationLocale = {
       body: `${p.actor} va compartir el seu calendari de vacances amb tu. Obre TREK per veure'l.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} fotos compartides`,
-      body: `${p.actor} va compartir ${p.count} foto(s) a "${p.trip}".`,
+      title: pluralForm(p.count, 'ca', { one: `${p.count} foto compartida`, other: `${p.count} fotos compartides` }),
+      body: pluralForm(p.count, 'ca', {
+        one: `${p.actor} va compartir ${p.count} foto a "${p.trip}".`,
+        other: `${p.actor} va compartir ${p.count} fotos a "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Missatge nou a "${p.trip}"`,
@@ -52,7 +68,16 @@ const ca: NotificationLocale = {
       title: "Error de rèplica d'emmagatzematge",
       body:
         `L'escriptura a la rèplica '${p.backend}' ha fallat: ${p.op} de ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` S'han suprimit ${p.suppressed} errors més des de l'última notificació.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'ca', {
+              one: ` S'ha suprimit ${p.suppressed} error més des de l'última notificació.`,
+              other: ` S'han suprimit ${p.suppressed} errors més des de l'última notificació.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Regió de caiac demanada',
+      body: `${p.actor} planifica una ruta en caiac a ${p.region}. Carrega o rebutja les seves dades d'aigua a l'administració, a Complements.`,
     }),
     synology_session_cleared: () => ({
       title: 'Sessió de Synology tancada',
@@ -61,6 +86,30 @@ const ca: NotificationLocale = {
     collection_invite: (p) => ({
       title: 'Invitació a una col·lecció',
       body: `${p.actor} t'ha convidat a compartir una col·lecció. Obre TREK per acceptar-la o rebutjar-la.`,
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Camí de wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `«${p.tour}» a «${p.trip}» s'ha canviat a wanderer. Obre el recorregut i comprova'n la font per veure tots els canvis. Res del viatge canvia sol.`
+          : p.state === 'unverifiable'
+            ? `«${p.tour}» a «${p.trip}» ja no es pot comprovar a wanderer. El recorregut del teu viatge es queda com està.`
+            : `«${p.tour}» a «${p.trip}» pot haver canviat a wanderer. Obre el recorregut i comprova'n la font per saber-ho. Res del viatge canvia sol.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Afegit des d’un correu: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} ha afegit «${p.booking}» a «${p.trip}» des d’un correu reenviat.`
+          : `«${p.booking}» del teu correu reenviat s’ha afegit a «${p.trip}». Pots desfer-ho a TREK durant 7 dies.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Reserves reenviades per revisar',
+      body: `Reserves reenviades pendents a TREK: ${p.count}. Cadascuna diu per què no s’ha afegit sola.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Importació de correus en pausa',
+      body: 'De moment TREK no accepta correus de reserva reenviats, així que espera abans de reenviar-ne. Les teves adreces es mantenen i tornaran a funcionar quan torni la importació, i les reserves ja afegides continuen als teus viatges.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

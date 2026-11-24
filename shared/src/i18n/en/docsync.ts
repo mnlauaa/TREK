@@ -70,6 +70,7 @@ const docsync: TranslationStrings = {
   'docsync.state.scope_drift': 'Moved out of the folder',
 
   'docsync.conflict.resolve': 'Resolve {count}',
+  'docsync.conflict.resolve.one': 'Resolve {count}',
 
   'docsync.conflict.title': 'Both copies changed',
   'docsync.conflict.keepTrek': 'Keep the TREK version',
@@ -177,6 +178,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'Paused: an administrator has switched this provider off. Syncing resumes once it is back on.',
   'docsync.binding.reconnect': 'Reconnect',
+  'docsync.connection.title': 'Connection',
+  'docsync.connection.hint': 'The address and login TREK uses for this store.',
+  'docsync.connection.edit': 'Edit connection',
+  'docsync.connection.remove': 'Remove connection',
+  'docsync.connection.confirmRemove':
+    'TREK forgets the address and login for this store, and every sync of this trip through it stops. Documents stay in TREK and at the store.',
 };
 
 export default docsync;

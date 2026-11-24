@@ -1,14 +1,16 @@
-import { http, HttpResponse } from 'msw';
+import React from 'react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Route, Routes } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { fireEvent, render, screen, waitFor, within } from '../../../helpers/render';
+import { setSizeClass } from '../../../helpers/sizeClass';
+import { server } from '../../../helpers/msw/server';
+import { resetAllStores, seedStore } from '../../../helpers/store';
+import { buildAdmin } from '../../../helpers/factories';
+import { useAuthStore } from '../../../../src/store/authStore';
+import { useAddonStore } from '../../../../src/store/addonStore';
 import { ToastContainer } from '../../../../src/components/shared/Toast';
 import MAdmin from '../../../../src/mobile/screens/admin/MAdmin';
-import { useAddonStore } from '../../../../src/store/addonStore';
-import { useAuthStore } from '../../../../src/store/authStore';
-import { buildAdmin } from '../../../helpers/factories';
-import { server } from '../../../helpers/msw/server';
-import { fireEvent, render, screen, waitFor } from '../../../helpers/render';
-import { resetAllStores, seedStore } from '../../../helpers/store';
 
 // FE-MOB-ADMIN-001 onwards
 
@@ -45,7 +47,9 @@ vi.mock('../../../../src/mobile/screens/admin/MAdminMcpTokensPanel', () => ({
   default: () => <div data-testid="mcp-tokens-panel" />,
 }));
 vi.mock('../../../../src/mobile/screens/admin/MAdminAuditLogPanel', () => ({
-  default: ({ serverTimezone }: { serverTimezone?: string }) => <div data-testid="audit-panel">{serverTimezone}</div>,
+  default: ({ serverTimezone }: { serverTimezone?: string }) => (
+    <div data-testid="audit-panel">{serverTimezone}</div>
+  ),
 }));
 vi.mock('../../../../src/mobile/screens/admin/MAdminGitHubPanel', () => ({
   default: ({ isPrerelease }: { isPrerelease: boolean }) => (
@@ -71,17 +75,11 @@ vi.mock('../../../../src/mobile/screens/admin/MAdminAddonManager', () => ({
   }) => (
     <div>
       <span data-testid="bag-state">{String(bagTrackingEnabled)}</span>
-      <button type="button" onClick={onToggleBagTracking}>
-        toggle bag
-      </button>
+      <button type="button" onClick={onToggleBagTracking}>toggle bag</button>
       <span data-testid="chat-state">{String(collabFeatures.chat)}</span>
-      <button type="button" onClick={() => onToggleCollabFeature('chat')}>
-        toggle chat
-      </button>
+      <button type="button" onClick={() => onToggleCollabFeature('chat')}>toggle chat</button>
       <span data-testid="notes-state">{String(collabFeatures.notes)}</span>
-      <button type="button" onClick={() => onToggleCollabFeature('notes')}>
-        toggle notes
-      </button>
+      <button type="button" onClick={() => onToggleCollabFeature('notes')}>toggle notes</button>
     </div>
   ),
 }));
@@ -95,7 +93,7 @@ function renderAdmin() {
         <Route path="/dashboard" element={<div>dashboard page</div>} />
       </Routes>
     </>,
-    { initialEntries: ['/admin'] }
+    { initialEntries: ['/admin'] },
   );
 }
 
@@ -109,12 +107,12 @@ beforeEach(() => {
   seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
   server.use(
     http.get('/api/admin/collab-features', () =>
-      HttpResponse.json({ chat: true, notes: true, polls: true, whatsnext: true })
+      HttpResponse.json({ chat: true, notes: true, polls: true, whatsnext: true }),
     ),
     http.get('/api/admin/places-photos', () => HttpResponse.json({ enabled: false })),
     http.get('/api/admin/places-autocomplete', () => HttpResponse.json({ enabled: false })),
     http.get('/api/admin/places-details', () => HttpResponse.json({ enabled: false })),
-    http.get('/api/admin/invites/trips', () => HttpResponse.json({ trips: [] }))
+    http.get('/api/admin/invites/trips', () => HttpResponse.json({ trips: [] })),
   );
 });
 
@@ -136,7 +134,7 @@ describe('MAdmin', () => {
     expect(screen.getByText('8')).toBeInTheDocument();
   });
 
-  it('FE-MOB-ADMIN-002: the section dropdown switches to the settings section', async () => {
+  it('FE-MOB-ADMIN-002: the section dropdown switches to the security section', async () => {
     render(<MAdmin />);
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
@@ -144,15 +142,27 @@ describe('MAdmin', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Administration' }));
 
     // All standard sections are listed
-    expect(screen.getByRole('button', { name: 'User Defaults' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Defaults' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Backup' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Audit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Services' })).toBeInTheDocument();
+    // Under the desktop sidebar's group headings
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
+    expect(screen.getByText('Maintenance')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Security' }));
 
-    // Settings section renders the auth methods card, user list is gone
+    // Security renders the auth methods card, user list is gone
     await waitFor(() => expect(screen.getByText('Authentication Methods')).toBeInTheDocument());
     expect(screen.queryByText('alice')).not.toBeInTheDocument();
+  });
+
+  it('FE-MOB-ADMIN-002b: a link to a desktop tab opens the same section, an old Settings link Security', async () => {
+    for (const [tab, card] of [['security', 'Authentication Methods'], ['settings', 'Authentication Methods'], ['services', 'API Keys']]) {
+      const { unmount } = render(<MAdmin />, { initialEntries: [`/admin?tab=${tab}`] });
+      await waitFor(() => expect(screen.getByText(card)).toBeInTheDocument());
+      unmount();
+    }
   });
 
   it('FE-MOB-ADMIN-003: the back button leaves for the dashboard', async () => {
@@ -179,7 +189,7 @@ describe('MAdmin', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Administration' }));
 
-    expect(screen.queryByRole('button', { name: 'MCP Access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'MCP' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Dev: Notifications' })).not.toBeInTheDocument();
   });
 
@@ -192,7 +202,7 @@ describe('MAdmin', () => {
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-    await openSection('MCP Access');
+    await openSection('MCP');
 
     expect(screen.getByTestId('mcp-tokens-panel')).toBeInTheDocument();
   });
@@ -211,12 +221,16 @@ describe('MAdmin', () => {
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-    await openSection('User Defaults');
+    await openSection('Defaults');
     expect(screen.getByTestId('default-user-settings')).toBeInTheDocument();
 
     await openSection('Personalization');
     expect(screen.getByTestId('packing-templates')).toBeInTheDocument();
     expect(screen.getByTestId('category-manager')).toBeInTheDocument();
+
+    await openSection('Addons');
+    // The paddle water data, live flights and booking mails are rows inside the addon groups now.
+    expect(screen.getByTestId('bag-state')).toBeInTheDocument();
 
     await openSection('Plugins');
     expect(screen.getByTestId('plugins-panel')).toBeInTheDocument();
@@ -231,7 +245,7 @@ describe('MAdmin', () => {
     expect(screen.getByTestId('backup-panel')).toBeInTheDocument();
   });
 
-  it('FE-MOB-ADMIN-009: audit gets the server timezone and upstream support navigation is absent', async () => {
+  it('FE-MOB-ADMIN-009: the audit and GitHub panels get the server timezone and prerelease flag', async () => {
     server.use(
       http.get('/api/admin/version-check', () =>
         HttpResponse.json({
@@ -240,8 +254,8 @@ describe('MAdmin', () => {
           current: '3.4.0',
           is_prerelease: true,
           is_docker: true,
-        })
-      )
+        }),
+      ),
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), serverTimezone: 'Europe/Berlin' });
     renderAdmin();
@@ -250,15 +264,15 @@ describe('MAdmin', () => {
     await openSection('Audit');
     expect(screen.getByTestId('audit-panel')).toHaveTextContent('Europe/Berlin');
 
-    expect(screen.queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
-    expect(screen.queryByTestId('github-panel')).not.toBeInTheDocument();
+    await openSection('GitHub');
+    await waitFor(() => expect(screen.getByTestId('github-panel')).toHaveTextContent('true'));
   });
 
   it('FE-MOB-ADMIN-010: the update banner opens the how-to-update sheet', async () => {
     server.use(
       http.get('/api/admin/version-check', () =>
-        HttpResponse.json({ update_available: true, latest: '3.5.0', current: '3.4.0', is_docker: true })
-      )
+        HttpResponse.json({ update_available: true, latest: '3.5.0', current: '3.4.0', is_docker: true }),
+      ),
     );
     renderAdmin();
 
@@ -283,7 +297,7 @@ describe('MAdmin', () => {
       http.post('/api/admin/save-demo-baseline', () => {
         saved = true;
         return HttpResponse.json({ success: true });
-      })
+      }),
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), demoMode: true });
     renderAdmin();
@@ -298,8 +312,8 @@ describe('MAdmin', () => {
   it('FE-MOB-ADMIN-013: a failing baseline save surfaces the server message', async () => {
     server.use(
       http.post('/api/admin/save-demo-baseline', () =>
-        HttpResponse.json({ error: 'Not a demo instance' }, { status: 400 })
-      )
+        HttpResponse.json({ error: 'Not a demo instance' }, { status: 400 }),
+      ),
     );
     seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), demoMode: true });
     renderAdmin();
@@ -318,7 +332,7 @@ describe('MAdmin', () => {
         return bodies.length === 1
           ? HttpResponse.json({ enabled: true })
           : HttpResponse.json({ error: 'boom' }, { status: 500 });
-      })
+      }),
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -340,7 +354,7 @@ describe('MAdmin', () => {
       http.put('/api/admin/collab-features', async ({ request }) => {
         sent = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ ...sent });
-      })
+      }),
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -354,7 +368,9 @@ describe('MAdmin', () => {
   });
 
   it('FE-MOB-ADMIN-016: a failing collab update restores the previous flags', async () => {
-    server.use(http.put('/api/admin/collab-features', () => HttpResponse.json({ error: 'boom' }, { status: 500 })));
+    server.use(
+      http.put('/api/admin/collab-features', () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
+    );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
     await openSection('Addons');
@@ -371,13 +387,11 @@ describe('MAdmin', () => {
       http.put('/api/admin/collab-features', async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         if ('chat' in body) {
-          await new Promise<void>((resolve) => {
-            releaseChat = resolve;
-          });
+          await new Promise<void>((resolve) => { releaseChat = resolve; });
           return HttpResponse.json({ error: 'boom' }, { status: 500 });
         }
         return HttpResponse.json({ ...body });
-      })
+      }),
     );
     renderAdmin();
     await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
@@ -397,7 +411,9 @@ describe('MAdmin', () => {
 
   it('FE-MOB-ADMIN-017: the stats grid falls back to zero files', async () => {
     server.use(
-      http.get('/api/admin/stats', () => HttpResponse.json({ totalUsers: 3, totalTrips: 7, totalPlaces: 11 }))
+      http.get('/api/admin/stats', () =>
+        HttpResponse.json({ totalUsers: 3, totalTrips: 7, totalPlaces: 11 }),
+      ),
     );
     renderAdmin();
 
@@ -423,5 +439,23 @@ describe('MAdmin', () => {
     renderAdmin();
     fireEvent.click(await screen.findByRole('button', { name: 'Administration' }));
     expect(screen.queryByRole('button', { name: 'Storage' })).not.toBeInTheDocument();
+  });
+
+  it('FE-MOB-ADMIN-019: with room for two panes the sections stand in a list beside the page', async () => {
+    setSizeClass('split');
+    render(<MAdmin />);
+    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+    const sections = screen.getByRole('navigation', { name: 'Administration' });
+    expect(within(sections).getByRole('button', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+    // No dropdown pill on top of the page: the list beside it is the switcher.
+    expect(screen.queryByRole('button', { name: 'Administration', expanded: false })).not.toBeInTheDocument();
+
+    fireEvent.click(within(sections).getByRole('button', { name: 'Security' }));
+    await waitFor(() => expect(screen.getByText('Authentication Methods')).toBeInTheDocument());
+    expect(within(sections).getByRole('button', { name: 'Security' })).toHaveAttribute('aria-current', 'page');
+
+    fireEvent.click(within(sections).getByRole('button', { name: 'Create User' }));
+    expect(screen.getByRole('dialog', { name: 'Create User' })).toBeInTheDocument();
   });
 });

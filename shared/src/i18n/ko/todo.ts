@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': '목록 없음',
   'todo.namePlaceholder': '작업 이름',
   'todo.descriptionPlaceholder': '설명 (선택)',
+  'todo.editDescription': '클릭하여 편집, 링크는 바로 열립니다',
   'todo.unassigned': '미배정',
   'todo.noCategory': '목록 없음',
   'todo.hasDescription': '설명 있음',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': '우선순위',
   'todo.detail.noPriority': '없음',
   'todo.detail.create': '작업 만들기',
+  'todo.progressCount': '{total}개 중 {done}개 완료',
+  'todo.allDone': '모두 완료!',
+  'todo.filter.myShort': '내 할 일',
 };
 export default todo;

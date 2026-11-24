@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const fr: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const fr: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nouvelle réservation : ${p.booking}`,
       body: `${p.actor} a ajouté une réservation "${p.booking}" (${p.type}) à "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} a décollé`,
+      body: `${p.flight} de ${p.from} à ${p.to} est en vol.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} est en retard`,
+      body: `${p.flight} de ${p.from} à ${p.to} a environ ${p.delay} minutes de retard.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} a atterri`,
+      body: `${p.flight} en provenance de ${p.from} a atterri à ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Rappel de voyage : ${p.trip}`,
@@ -37,8 +50,11 @@ const fr: NotificationLocale = {
       body: `${p.actor} vous invite à partager une collection. Ouvrez TREK pour accepter ou refuser.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} photos partagées`,
-      body: `${p.actor} a partagé ${p.count} photo(s) dans "${p.trip}".`,
+      title: pluralForm(p.count, 'fr', { one: `${p.count} photo partagée`, other: `${p.count} photos partagées` }),
+      body: pluralForm(p.count, 'fr', {
+        one: `${p.actor} a partagé ${p.count} photo dans "${p.trip}".`,
+        other: `${p.actor} a partagé ${p.count} photos dans "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nouveau message dans "${p.trip}"`,
@@ -57,12 +73,43 @@ const fr: NotificationLocale = {
       body:
         `Échec de l'écriture sur la réplique '${p.backend}' : ${p.op} de ${p.key} — ${p.error}.` +
         (p.suppressed !== '0'
-          ? ` ${p.suppressed} erreurs supplémentaires ont été supprimées depuis la dernière notification.`
+          ? pluralForm(p.suppressed, 'fr', {
+              one: ` ${p.suppressed} autre échec n'a pas été signalé depuis la dernière notification.`,
+              other: ` ${p.suppressed} autres échecs n'ont pas été signalés depuis la dernière notification.`,
+            })
           : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Région de pagaie demandée',
+      body: `${p.actor} planifie une sortie en canoë dans ${p.region}. Charge ou refuse ses données d'eau dans l'administration, sous Modules.`,
     }),
     synology_session_cleared: () => ({
       title: 'Session Synology effacée',
       body: 'Votre compte ou URL Synology a changé. Vous avez été déconnecté de Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Sentier wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `« ${p.tour} » dans « ${p.trip} » a été modifié dans wanderer. Ouvrez le parcours et vérifiez sa source pour voir tous les changements. Rien ne change de lui-même dans le voyage.`
+          : p.state === 'unverifiable'
+            ? `« ${p.tour} » dans « ${p.trip} » ne peut plus être vérifié dans wanderer. Le parcours de votre voyage reste tel quel.`
+            : `« ${p.tour} » dans « ${p.trip} » a peut-être changé dans wanderer. Ouvrez le parcours et vérifiez sa source pour le savoir. Rien ne change de lui-même dans le voyage.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Ajouté depuis un e-mail : ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} a ajouté « ${p.booking} » à « ${p.trip} » depuis un e-mail transféré.`
+          : `« ${p.booking} » de votre e-mail transféré a été ajouté à « ${p.trip} ». Vous pouvez l’annuler dans TREK pendant 7 jours.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Réservations transférées à vérifier',
+      body: `Réservations transférées en attente dans TREK : ${p.count}. Chacune indique pourquoi elle n’a pas été ajoutée automatiquement.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Import des e-mails en pause',
+      body: 'TREK n’accepte pas les e-mails de réservation transférés pour le moment, attendez donc avant d’en transférer. Vos adresses restent et fonctionneront de nouveau au retour de l’import, et les réservations déjà ajoutées restent dans vos voyages.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

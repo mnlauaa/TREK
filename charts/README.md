@@ -5,9 +5,10 @@ This is a minimal Helm chart for deploying the TREK app.
 ## Features
 - Deploys the TREK container
 - Exposes port 3000 via Service
-- Optional persistent storage for `/app/data` and `/app/uploads`
+- Optional persistent storage for `/app/data` and `/app/uploads`, plus extra volumes and mounts
 - Configurable environment variables and secrets
 - Optional generic Ingress support
+- Optional Gateway API HTTPRoute support
 - Configurable health checks (liveness/readiness probes) on `/api/health`
 
 ## Helm Repository
@@ -27,7 +28,7 @@ helm install trek trek/trek
 Or install directly from the local chart:
 
 ```sh
-helm install trek ./chart \
+helm install trek ./charts/trek \
   --set ingress.enabled=true \
   --set ingress.hosts[0].host=yourdomain.com
 ```
@@ -42,15 +43,20 @@ See `values.yaml` for more options.
 ## Notes
 - Ingress is off by default. Enable and configure hosts for your domain.
 - PVCs use the cluster's default StorageClass. Set `persistence.data.storageClassName` and/or `persistence.uploads.storageClassName` to bind a specific class.
-- To use your own PVCs, set `persistence.data.existingClaim` and/or `persistence.uploads.existingClaim`. The other values for that volume (size, storageClassName, annotations) are then ignored.
+- Both PVCs are `ReadWriteOnce`. Set `persistence.data.accessModes` and/or `persistence.uploads.accessModes` to override, for example `[ReadWriteMany]` so a backup pod can mount the volume. On the data volume such a pod may only read: SQLite corrupts `travel.db` when a second process writes it over a network filesystem.
+- To use your own PVCs, set `persistence.data.existingClaim` and/or `persistence.uploads.existingClaim`. The other values for that volume (size, storageClassName, accessModes, annotations) are then ignored.
 - With `persistence.enabled: false`, the data and uploads volumes use an `emptyDir` — storage is ephemeral and lost on pod restart. Intended for testing only.
+- `database.url` runs TREK on a PostgreSQL database instead of the SQLite file. The chart writes it into its Secret as `TREK_DB_URL`; `database.existingSecret` and `database.existingSecretKey` read it from a Secret you manage. Leave both empty for SQLite. Keep `replicas: 1` either way. See the wiki page `Database-Postgres`.
 - `JWT_SECRET` is managed entirely by the server — auto-generated into the data PVC on first start and rotatable via the admin panel (Settings → Danger Zone). No Helm configuration needed.
 - `ENCRYPTION_KEY` encrypts stored secrets (API keys, MFA, SMTP, OIDC) at rest. Recommended: set via `secretEnv.ENCRYPTION_KEY` or `existingSecret`. If left empty, the server falls back automatically: existing installs use `data/.jwt_secret` (no action needed on upgrade); fresh installs auto-generate a key persisted to the data PVC.
 - Liveness and readiness probes are configurable under `probes`. Overrides are merged over the defaults, so `--set probes.liveness.initialDelaySeconds=60` keeps the `httpGet` handler. When switching to `exec` or `tcpSocket`, clear `httpGet` in the same override. Set `probes.liveness: null` to remove a probe.
-- If using ingress, you must manually keep `env.ALLOWED_ORIGINS` and `ingress.hosts` in sync to ensure CORS works correctly. The chart does not sync these automatically.
+- If exposing TREK through an Ingress or HTTPRoute, set `env.ALLOWED_ORIGINS` and `env.APP_URL` to the public URL. The chart does not sync these automatically.
 - Set `env.ALLOW_INTERNAL_NETWORK: "true"` if Immich or other integrated services are hosted on a private/RFC-1918 address (e.g. a pod on the same cluster or a NAS on your LAN). Loopback (`127.x`) and link-local/metadata addresses (`169.254.x`) remain blocked regardless.
 - Set `env.ALLOW_LINK_LOCAL_IPS` to a single link-local address (e.g. `"169.254.1.2"`) only when a service TREK needs sits behind one, such as a host gateway. Cloud metadata addresses (`169.254.169.x`, `169.254.170.x`) cannot be listed.
 - `FORCE_HTTPS` is optional. Set `env.FORCE_HTTPS: "true"` only when ingress (or another proxy) terminates TLS. It enables HTTPS redirects, HSTS, CSP `upgrade-insecure-requests`, and forces the session cookie `secure` flag. Requires `TRUST_PROXY` to be set.
 - Set `env.TRUST_PROXY: "1"` (or the number of proxy hops) when running behind ingress or a load balancer. Required for `FORCE_HTTPS` to detect the forwarded protocol correctly. In production it defaults to `1` automatically.
 - `COOKIE_SECURE` is auto-derived (on when `NODE_ENV=production` or `FORCE_HTTPS=true`). Set `env.COOKIE_SECURE: "false"` only during local testing without TLS. **Not recommended for production.**
+- Web Push needs no chart settings: TREK generates its key pair on first start and keeps it in the database on the data PVC. To bring your own pair, set `env.VAPID_PUBLIC_KEY` and `secretEnv.VAPID_PRIVATE_KEY` together (and optionally `env.VAPID_SUBJECT`); changing the pair later means every device has to turn push on again.
 - Set `env.OIDC_DISCOVERY_URL` to override the auto-constructed OIDC discovery endpoint. Required for providers (e.g. Authentik) that expose it at a non-standard path.
+- `podSecurityContext` defaults to `fsGroup: 1000` with `fsGroupChangePolicy: OnRootMismatch`, and `securityContext` (the container's) is empty. The container then starts as root, hands `/app/data` and `/app/uploads` to `node` (uid 1000) if the directory or anything directly inside it is not owned by `node` yet, and drops to `node`. Deeper files are not checked. Only the owning user is changed (plus a `root` group), so a different `fsGroup` stays in place. A volume that refuses `chown` (NFS with `root_squash`) logs a warning instead; set `runAsUser: 1000` then. To run as `node` from the start, for example under the `restricted` Pod Security Standard, set `podSecurityContext.runAsUser: 1000` and `runAsGroup: 1000`; the image then skips that step and the privilege drop. See the example in `values.yaml`.
+- Use `extraVolumes` and `extraVolumeMounts` to add your own volumes to the pod. To give the booking import more KItinerary extractors, mount a ConfigMap at `/usr/local/share/kitinerary/extractors`, with one `.json` and one `.js` key for each extractor; see the example in `values.yaml`.

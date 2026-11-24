@@ -1,0 +1,111 @@
+import { useEffect, useRef } from 'react';
+
+import { isDeepLinkableTripTab } from '../../constants/tripTabs';
+import { useAssistantStore } from '../../store/assistantStore';
+import type { Day } from '../../types';
+import type { PlannerSearchParams } from './plannerTypes';
+
+interface AssistantDeepLinkOptions {
+  searchParams: PlannerSearchParams[0];
+  setSearchParams: PlannerSearchParams[1];
+  tripId: number;
+  /** The days the store holds, which may still be the last trip's for a moment. */
+  days: readonly Day[];
+  selectDay: (dayId: number) => void;
+}
+
+/**
+ * The assistant's two ways into the planner. `?assistant=1` opens it on this
+ * trip: the AI settings card's "Open the assistant" lands here with it.
+ * `?day=<id>` selects that day: the chat's "Show on map" for a change that
+ * lives on a day, a note or a stop; one about a place uses `?place=` instead.
+ *
+ * Like `?place=`, a link is taken once and then leaves the URL, so a reload or
+ * the way back does not repeat it. A day waits until the trip's days are there,
+ * and one the trip does not hold is dropped without a word.
+ */
+export function useAssistantDeepLink({
+  searchParams,
+  setSearchParams,
+  tripId,
+  days,
+  selectDay,
+}: AssistantDeepLinkOptions): void {
+  const openRequested = searchParams.get('assistant') === '1';
+  const requestedDay = searchParams.get('day');
+  const tripDays = days.filter((day) => day.trip_id === tripId);
+  const known = requestedDay !== null && tripDays.some((day) => day.id === Number(requestedDay));
+  const dayDone = requestedDay !== null && (known || tripDays.length > 0);
+
+  const taken = useRef<URLSearchParams | null>(null);
+
+  useEffect(() => {
+    if (!openRequested && !dayDone) return;
+    // Once per URL: React Router lands the cleaned URL as a transition, and
+    // until it does the link must not be taken again (see useAssistantTabLink).
+    if (taken.current === searchParams) return;
+    taken.current = searchParams;
+    if (openRequested) useAssistantStore.getState().open();
+    if (known) selectDay(Number(requestedDay));
+    setSearchParams(
+      (params) => {
+        if (openRequested) params.delete('assistant');
+        if (dayDone) params.delete('day');
+        return params;
+      },
+      { replace: true }
+    );
+  }, [searchParams, openRequested, requestedDay, known, dayDone, selectDay, setSearchParams]);
+}
+
+interface AssistantTabLinkOptions {
+  searchParams: PlannerSearchParams[0];
+  setSearchParams: PlannerSearchParams[1];
+  /** The tab on screen. */
+  activeTab: string;
+  /** Switches the planner's tab the way its tab bar does. */
+  selectTab: (tabId: string) => void;
+  /** Told about every link it took, so a shell can open the part of the tab a link means. */
+  onLinked?: (tabId: string) => void;
+}
+
+/**
+ * `?tab=<id>` from a notification or a card in the chat, including while the
+ * planner is already open. Both desktop and mobile take the requested tab
+ * once and then drop it from the URL. A tab the planner does not have is
+ * dropped too, so it does not linger in the address bar. What the tab reads
+ * beside it stays for that tab to take (`?tab=finanzplan&expense=7`, for example).
+ */
+export function useAssistantTabLink({
+  searchParams,
+  setSearchParams,
+  activeTab,
+  selectTab,
+  onLinked,
+}: AssistantTabLinkOptions): void {
+  const requested = searchParams.get('tab');
+  const linkable = requested !== null && isDeepLinkableTripTab(requested);
+  const taken = useRef<URLSearchParams | null>(null);
+
+  useEffect(() => {
+    if (requested === null) return;
+    // Once per URL. React Router lands the URL without the link as a
+    // transition, so the renders before it still read the link; selectTab is a
+    // new function on each of them and onLinked sets state, and taking the link
+    // again on every one of them rendered the planner into React's update limit
+    // (a ?tab= link on an iPad or an unfolded Duo).
+    if (taken.current === searchParams) return;
+    taken.current = searchParams;
+    if (linkable) {
+      if (requested !== activeTab) selectTab(requested);
+      onLinked?.(requested);
+    }
+    setSearchParams(
+      (params) => {
+        params.delete('tab');
+        return params;
+      },
+      { replace: true }
+    );
+  }, [searchParams, linkable, requested, activeTab, selectTab, onLinked, setSearchParams]);
+}

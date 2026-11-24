@@ -84,6 +84,13 @@ export interface RoadtripStop {
   checkInTime?: string | null;
   /** A booked night's stop on its check-in day, whether or not the booking names an hour. */
   night?: boolean;
+  /**
+   * The stay whose booking wrote this stop (`day_assignments.accommodation_id`), rather
+   * than the traveller placing the hotel on the day. Days hides such a stop and draws the
+   * stay at the day's edges instead; `seatNightBookends` does the same once it seats that
+   * stay at the end of the day.
+   */
+  bookedNightId?: number | null;
   endDay?: boolean;
 
   legMode: string | null;
@@ -255,14 +262,13 @@ export interface RoadtripRoutes {
   lineDays: number[];
 
   /**
-   * Which of `lines` is the drive INTO the following day rather than a drive within the
+   * Which of `lines` is the drive in from the PREVIOUS day rather than a drive within the
    * day it is drawn as, parallel to `lines` and `lineDays`.
    *
    * With "connect the days" on, the leg from one day's last stop to the next day's first
-   * is drawn in the colour of the day it leaves, so on a map showing the whole drive it
-   * reads as that day continuing. A surface showing ONE day has to tell the two apart:
-   * the connection leads off the day on screen and belongs to the next one, and drawn
-   * there it is a line to a place that day never visits.
+   * is drawn as the day it arrives on, the day whose distance counts it (#3123). A surface
+   * showing ONE day has to tell the two apart: the connection starts at a place the day on
+   * screen never visits.
    */
   lineJoins: boolean[];
 

@@ -4,71 +4,72 @@
  * create_trip_guest, rename_trip_guest, delete_trip_guest,
  * copy_trip, export_trip_ics, get_share_link, create_share_link, delete_share_link.
  */
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: any, userId: number) =>
-      db.prepare(`SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`).get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-}));
-
-const { broadcastMock } = vi.hoisted(() => ({ broadcastMock: vi.fn() }));
-vi.mock('../../../src/websocket', () => ({ broadcast: broadcastMock }));
-
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { resetTestDb } from '../../helpers/test-db';
+import { BudgetItems } from '../../../src/db/entities/BudgetItems.entity';
+import { Days } from '../../../src/db/entities/Days.entity';
+import { ShareTokens } from '../../../src/db/entities/ShareTokens.entity';
+import { TripMembers } from '../../../src/db/entities/TripMembers.entity';
+import { Trips } from '../../../src/db/entities/Trips.entity';
+import { Users } from '../../../src/db/entities/Users.entity';
+import { GUEST_HAS_PAYMENTS } from '../../../src/nest/budget/budget-departure.helpers';
+import { NotificationsService } from '../../../src/nest/notifications/notifications.service';
 import { invalidatePermissionsCache } from '../../../src/nest/permissions/permissions-cache';
-import { createUser, createAdmin, createTrip, addTripMember } from '../../helpers/factories';
+import { addBudgetItemMember, addBudgetItemPayer, makeBudgetItem } from '../../helpers/factories/budget';
+import { makeDayNote } from '../../helpers/factories/itinerary';
+import { countRows, findRow, findRows, updateRows } from '../../helpers/factories/rows';
+import { setAppSetting } from '../../helpers/factories/settings';
+import { addTripMember, makeShareToken, makeTrip } from '../../helpers/factories/trips';
+import { makeAdmin, makeUser } from '../../helpers/factories/users';
+import { FakeRealtimeService } from '../../helpers/fake-realtime';
 import { createMcpHarness, parseToolResult, type McpHarness } from '../../helpers/mcp-harness';
+import { resetDatabase } from '../../helpers/reset-database';
+import { bootTestApp } from '../../helpers/test-app';
+import { MikroORM } from '@mikro-orm/core';
 
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+
+const realtime = new FakeRealtimeService();
+const broadcastMock = realtime.broadcastMock;
+
+let orm: MikroORM;
+
+beforeAll(async () => {
+  orm = (await bootTestApp(realtime)).get(MikroORM);
 });
 
-beforeEach(() => {
-  resetTestDb(testDb);
+function memberRow(tripId: number, userId: number) {
+  return findRow(orm, TripMembers, { trip: tripId, user: userId });
+}
+
+async function userRow(id: number) {
+  return (await findRow(orm, Users, { id }))!;
+}
+
+beforeEach(async () => {
+  await resetDatabase(orm);
   broadcastMock.mockClear();
   delete process.env.DEMO_MODE;
-  // resetTestDb truncates app_settings, but the permission cache is module-scoped
+  // resetDatabase truncates app_settings, but the permission cache is module-scoped
   // and would keep serving whatever the previous case configured.
-  invalidatePermissionsCache();
+  await invalidatePermissionsCache();
 });
 
-afterAll(() => {
-  testDb.close();
+afterAll(async () => {
+  await (await bootTestApp(realtime)).close();
 });
 
 async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>) {
-  const h = await createMcpHarness({ userId, withResources: false });
-  try { await fn(h); } finally { await h.cleanup(); }
+  const h = await createMcpHarness({ realtime, userId, withResources: false });
+  try {
+    await fn(h);
+  } finally {
+    await h.cleanup();
+  }
 }
 
 /** Lower a configurable action the way the admin permission panel does. */
-function setPermission(action: string, level: string) {
-  testDb.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(`perm_${action}`, level);
-  invalidatePermissionsCache();
+async function setPermission(action: string, level: string): Promise<void> {
+  await setAppSetting(orm, `perm_${action}`, level);
+  await invalidatePermissionsCache();
 }
 
 // ---------------------------------------------------------------------------
@@ -77,8 +78,8 @@ function setPermission(action: string, level: string) {
 
 describe('Tool: list_trip_members', () => {
   it('returns owner and empty members list for own trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_trip_members', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -89,9 +90,9 @@ describe('Tool: list_trip_members', () => {
   });
 
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_trip_members', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -105,9 +106,9 @@ describe('Tool: list_trip_members', () => {
 
 describe('Tool: add_trip_member', () => {
   it('adds a member by username', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
@@ -120,9 +121,9 @@ describe('Tool: add_trip_member', () => {
   });
 
   it('broadcasts member:added event', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       await h.client.callTool({
         name: 'add_trip_member',
@@ -133,8 +134,8 @@ describe('Tool: add_trip_member', () => {
   });
 
   it('returns error when user not found', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
@@ -145,11 +146,11 @@ describe('Tool: add_trip_member', () => {
   });
 
   it('returns error when non-owner tries to add', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const { user: outsider } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const { user: outsider } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
@@ -161,8 +162,8 @@ describe('Tool: add_trip_member', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
@@ -173,53 +174,53 @@ describe('Tool: add_trip_member', () => {
   });
 
   it('lets a collaborator add when member_manage sits at trip_member', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const { user: outsider } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
-    setPermission('member_manage', 'trip_member');
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const { user: outsider } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
+    await setPermission('member_manage', 'trip_member');
     await withHarness(collaborator.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
         arguments: { tripId: trip.id, identifier: outsider.username },
       });
       expect(result.isError).toBeFalsy();
-      const row = testDb.prepare('SELECT invited_by FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, outsider.id) as any;
+      const row = await memberRow(trip.id, outsider.id);
       expect(row).toBeTruthy();
-      expect(row.invited_by).toBe(collaborator.id);
+      expect(row!.invited_by).toBe(collaborator.id);
     });
   });
 
   it('lets a site admin on the trip add a member without owning it', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: admin } = createAdmin(testDb);
-    const { user: outsider } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, admin.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: admin } = await makeAdmin(orm);
+    const { user: outsider } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, admin.id);
     await withHarness(admin.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
         arguments: { tripId: trip.id, identifier: outsider.username },
       });
       expect(result.isError).toBeFalsy();
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, outsider.id)).toBeTruthy();
+      expect(await memberRow(trip.id, outsider.id)).toBeTruthy();
     });
   });
 
   it('still refuses a collaborator while member_manage sits at its trip_owner default', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const { user: outsider } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const { user: outsider } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     await withHarness(collaborator.id, async (h) => {
       const result = await h.client.callTool({
         name: 'add_trip_member',
         arguments: { tripId: trip.id, identifier: outsider.username },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, outsider.id)).toBeUndefined();
+      expect(await memberRow(trip.id, outsider.id)).toBeNull();
     });
   });
 });
@@ -230,10 +231,10 @@ describe('Tool: add_trip_member', () => {
 
 describe('Tool: remove_trip_member', () => {
   it('removes a member', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
@@ -241,16 +242,16 @@ describe('Tool: remove_trip_member', () => {
       });
       const data = parseToolResult(result) as any;
       expect(data.success).toBe(true);
-      const row = testDb.prepare('SELECT * FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, member.id);
-      expect(row).toBeUndefined();
+      const row = await memberRow(trip.id, member.id);
+      expect(row).toBeNull();
     });
   });
 
   it('broadcasts member:removed event', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(owner.id, async (h) => {
       await h.client.callTool({ name: 'remove_trip_member', arguments: { tripId: trip.id, memberId: member.id } });
       expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'member:removed', expect.any(Object));
@@ -258,10 +259,10 @@ describe('Tool: remove_trip_member', () => {
   });
 
   it('returns error when non-owner tries to remove', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
@@ -272,69 +273,69 @@ describe('Tool: remove_trip_member', () => {
   });
 
   it('leaves another member in place when a collaborator has no member_manage', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
-    addTripMember(testDb, trip.id, other.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
+    await addTripMember(orm, trip.id, other.id);
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
         arguments: { tripId: trip.id, memberId: other.id },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, other.id)).toBeTruthy();
+      expect(await memberRow(trip.id, other.id)).toBeTruthy();
     });
   });
 
   it('lets a collaborator remove another member when member_manage sits at trip_member', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
-    addTripMember(testDb, trip.id, other.id);
-    setPermission('member_manage', 'trip_member');
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
+    await addTripMember(orm, trip.id, other.id);
+    await setPermission('member_manage', 'trip_member');
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
         arguments: { tripId: trip.id, memberId: other.id },
       });
       expect(result.isError).toBeFalsy();
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, other.id)).toBeUndefined();
+      expect(await memberRow(trip.id, other.id)).toBeNull();
     });
   });
 
   it('lets a site admin on the trip remove a member without owning it', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: admin } = createAdmin(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, admin.id);
-    addTripMember(testDb, trip.id, other.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: admin } = await makeAdmin(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, admin.id);
+    await addTripMember(orm, trip.id, other.id);
     await withHarness(admin.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
         arguments: { tripId: trip.id, memberId: other.id },
       });
       expect(result.isError).toBeFalsy();
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, other.id)).toBeUndefined();
+      expect(await memberRow(trip.id, other.id)).toBeNull();
     });
   });
 
   it('lets a member remove themselves without member_manage', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({
         name: 'remove_trip_member',
         arguments: { tripId: trip.id, memberId: member.id },
       });
       expect((parseToolResult(result) as any).success).toBe(true);
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, member.id)).toBeUndefined();
+      expect(await memberRow(trip.id, member.id)).toBeNull();
     });
   });
 });
@@ -345,57 +346,61 @@ describe('Tool: remove_trip_member', () => {
 
 describe('Tool: leave_trip', () => {
   it('drops the caller from the roster', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(member.id, async (h) => {
       const result = await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
       expect((parseToolResult(result) as any).success).toBe(true);
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, member.id)).toBeUndefined();
-      expect(testDb.prepare('SELECT id FROM trips WHERE id = ?').get(trip.id)).toBeTruthy();
+      expect(await memberRow(trip.id, member.id)).toBeNull();
+      expect(await findRow(orm, Trips, { id: trip.id })).toBeTruthy();
     });
   });
 
   it('broadcasts member:removed for the leaving user', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
     await withHarness(member.id, async (h) => {
       await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
-      expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'member:removed', expect.objectContaining({ userId: member.id }));
+      expect(broadcastMock).toHaveBeenCalledWith(
+        trip.id,
+        'member:removed',
+        expect.objectContaining({ userId: member.id }),
+      );
     });
   });
 
   it('leaves the other members alone', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: member } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, member.id);
-    addTripMember(testDb, trip.id, other.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: member } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, member.id);
+    await addTripMember(orm, trip.id, other.id);
     await withHarness(member.id, async (h) => {
       await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, other.id)).toBeTruthy();
+      expect(await memberRow(trip.id, other.id)).toBeTruthy();
     });
   });
 
   it('refuses the owner and keeps the trip theirs', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
-      const row = testDb.prepare('SELECT user_id FROM trips WHERE id = ?').get(trip.id) as any;
+      const row = (await findRow(orm, Trips, { id: trip.id }))!;
       expect(row.user_id).toBe(owner.id);
     });
   });
 
   it('returns access denied for a non-member', async () => {
-    const { user: outsider } = createUser(testDb);
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: outsider } = await makeUser(orm);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(outsider.id, async (h) => {
       const result = await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -404,14 +409,14 @@ describe('Tool: leave_trip', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user: owner } = createUser(testDb);
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, user.id);
+    const { user: owner } = await makeUser(orm);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'leave_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(trip.id, user.id)).toBeTruthy();
+      expect(await memberRow(trip.id, user.id)).toBeTruthy();
     });
   });
 });
@@ -422,32 +427,32 @@ describe('Tool: leave_trip', () => {
 
 describe('Tool: copy_trip', () => {
   it('duplicates a trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Original', start_date: '2025-01-01', end_date: '2025-01-03' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Original', start_date: '2025-01-01', end_date: '2025-01-03' });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'copy_trip', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
       expect(data.trip).toBeTruthy();
       // New trip should be a different row
-      const count = testDb.prepare('SELECT COUNT(*) as cnt FROM trips').get() as any;
-      expect(count.cnt).toBe(2);
+      const count = await countRows(orm, Trips);
+      expect(count).toBe(2);
     });
   });
 
   it('uses custom title when provided', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Original' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { title: 'Original' });
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'copy_trip', arguments: { tripId: trip.id, title: 'My Copy' } });
-      const newTrip = testDb.prepare("SELECT * FROM trips WHERE title = 'My Copy'").get() as any;
+      const newTrip = await findRow(orm, Trips, { title: 'My Copy' });
       expect(newTrip).toBeTruthy();
     });
   });
 
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'copy_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -456,8 +461,8 @@ describe('Tool: copy_trip', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'copy_trip', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -471,8 +476,12 @@ describe('Tool: copy_trip', () => {
 
 describe('Tool: export_trip_ics', () => {
   it('returns ICS content for a trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: 'Paris Trip', start_date: '2025-06-01', end_date: '2025-06-05' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, {
+      title: 'Paris Trip',
+      start_date: '2025-06-01',
+      end_date: '2025-06-05',
+    });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'export_trip_ics', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -482,10 +491,34 @@ describe('Tool: export_trip_ics', () => {
     });
   });
 
+  it('leaves the per-day summaries out with dayEvents false, like days=0 on the route (#2602)', async () => {
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, {
+      title: 'Paris Trip',
+      start_date: '2025-06-01',
+      end_date: '2025-06-05',
+    });
+    // A dated trip comes with its days; the first one is the 1st of June.
+    const [day] = await findRows(orm, Days, { trip: trip.id }, { id: 'asc' });
+    await makeDayNote(orm, day.id, trip.id, { text: 'Pick up the museum pass' });
+    await withHarness(user.id, async (h) => {
+      const call = async (args: Record<string, unknown>) =>
+        (
+          parseToolResult(
+            await h.client.callTool({ name: 'export_trip_ics', arguments: { tripId: trip.id, ...args } }),
+          ) as { ics: string }
+        ).ics;
+      expect(await call({})).toContain('SUMMARY:Day 1');
+      const lean = await call({ dayEvents: false });
+      expect(lean).not.toContain('SUMMARY:Day 1');
+      expect(lean).toContain('SUMMARY:Paris Trip');
+    });
+  });
+
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'export_trip_ics', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -495,8 +528,12 @@ describe('Tool: export_trip_ics', () => {
   // Same calendar filename as the REST route (#2165): U+3000 used to slip
   // through the \s keep-class and crash the header there; it folds to _ now.
   it('folds header-hostile whitespace out of the filename', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { title: '沖縄　4泊5日', start_date: '2025-06-01', end_date: '2025-06-05' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, {
+      title: '沖縄　4泊5日',
+      start_date: '2025-06-01',
+      end_date: '2025-06-05',
+    });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'export_trip_ics', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as { filename: string };
@@ -511,8 +548,8 @@ describe('Tool: export_trip_ics', () => {
 
 describe('Tool: get_share_link', () => {
   it('returns null when no share link exists', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_share_link', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -521,12 +558,17 @@ describe('Tool: get_share_link', () => {
   });
 
   it('returns share link info when it exists', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     // Create a share link directly
-    testDb.prepare(
-      'INSERT INTO share_tokens (trip_id, token, created_by, share_map, share_bookings, share_packing, share_budget, share_collab) VALUES (?, ?, ?, 1, 1, 0, 0, 0)'
-    ).run(trip.id, 'test-token-123', user.id);
+    await makeShareToken(orm, trip.id, user.id, {
+      token: 'test-token-123',
+      share_map: 1,
+      share_bookings: 1,
+      share_packing: 0,
+      share_budget: 0,
+      share_collab: 0,
+    });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_share_link', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
@@ -538,8 +580,8 @@ describe('Tool: get_share_link', () => {
 
 describe('Tool: create_share_link', () => {
   it('creates a new share link', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_share_link',
@@ -552,11 +594,16 @@ describe('Tool: create_share_link', () => {
   });
 
   it('updates existing share link permissions', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    testDb.prepare(
-      'INSERT INTO share_tokens (trip_id, token, created_by, share_map, share_bookings, share_packing, share_budget, share_collab) VALUES (?, ?, ?, 1, 1, 0, 0, 0)'
-    ).run(trip.id, 'existing-token', user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeShareToken(orm, trip.id, user.id, {
+      token: 'existing-token',
+      share_map: 1,
+      share_bookings: 1,
+      share_packing: 0,
+      share_budget: 0,
+      share_collab: 0,
+    });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_share_link',
@@ -569,8 +616,8 @@ describe('Tool: create_share_link', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_share_link', arguments: { tripId: trip.id } });
       expect(result.isError).toBe(true);
@@ -580,17 +627,22 @@ describe('Tool: create_share_link', () => {
 
 describe('Tool: delete_share_link', () => {
   it('revokes the share link', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    testDb.prepare(
-      'INSERT INTO share_tokens (trip_id, token, created_by, share_map, share_bookings, share_packing, share_budget, share_collab) VALUES (?, ?, ?, 1, 1, 0, 0, 0)'
-    ).run(trip.id, 'to-delete', user.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeShareToken(orm, trip.id, user.id, {
+      token: 'to-delete',
+      share_map: 1,
+      share_bookings: 1,
+      share_packing: 0,
+      share_budget: 0,
+      share_collab: 0,
+    });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'delete_share_link', arguments: { tripId: trip.id } });
       const data = parseToolResult(result) as any;
       expect(data.success).toBe(true);
-      const row = testDb.prepare('SELECT token FROM share_tokens WHERE trip_id = ?').get(trip.id);
-      expect(row).toBeUndefined();
+      const row = await findRow(orm, ShareTokens, { trip: trip.id });
+      expect(row).toBeNull();
     });
   });
 });
@@ -612,8 +664,8 @@ async function makeGuest(h: McpHarness, tripId: number, name: string): Promise<n
 
 describe('Tool: create_trip_guest', () => {
   it('creates a credential-less guest and returns the display name', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip_guest',
@@ -624,7 +676,7 @@ describe('Tool: create_trip_guest', () => {
       expect(data.member.role).toBe('member');
       expect(data.member.is_guest).toBe(true);
 
-      const row = testDb.prepare('SELECT is_guest, password_hash, display_name, email FROM users WHERE id = ?').get(data.member.id) as any;
+      const row = await userRow(data.member.id);
       expect(row.is_guest).toBe(1);
       expect(row.password_hash).toBe('');
       expect(row.display_name).toBe('Anna');
@@ -634,8 +686,8 @@ describe('Tool: create_trip_guest', () => {
   });
 
   it('joins the guest into the trip roster', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       await makeGuest(h, trip.id, 'Jake');
       const listed = await h.client.callTool({ name: 'list_trip_members', arguments: { tripId: trip.id } });
@@ -645,8 +697,8 @@ describe('Tool: create_trip_guest', () => {
   });
 
   it('broadcasts member:added event', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       await makeGuest(h, trip.id, 'Anna');
       expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'member:added', expect.any(Object));
@@ -654,23 +706,23 @@ describe('Tool: create_trip_guest', () => {
   });
 
   it('rejects a whitespace-only name', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip_guest',
         arguments: { tripId: trip.id, name: '   ' },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1').get()).toEqual({ n: 0 });
+      expect(await countRows(orm, Users, { is_guest: 1 })).toBe(0);
     });
   });
 
   it('returns error when a member who is not the owner tries to add a guest', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     await withHarness(collaborator.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip_guest',
@@ -681,9 +733,9 @@ describe('Tool: create_trip_guest', () => {
   });
 
   it('returns access denied for a non-member', async () => {
-    const { user: outsider } = createUser(testDb);
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: outsider } = await makeUser(orm);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(outsider.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip_guest',
@@ -695,8 +747,8 @@ describe('Tool: create_trip_guest', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_trip_guest',
@@ -709,8 +761,8 @@ describe('Tool: create_trip_guest', () => {
 
 describe('Tool: rename_trip_guest', () => {
   it('renames the guest', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, trip.id, 'Anna');
       const result = await h.client.callTool({
@@ -718,14 +770,14 @@ describe('Tool: rename_trip_guest', () => {
         arguments: { tripId: trip.id, guestId, name: 'Anna B.' },
       });
       expect((parseToolResult(result) as any).success).toBe(true);
-      const row = testDb.prepare('SELECT display_name FROM users WHERE id = ?').get(guestId) as any;
+      const row = await userRow(guestId);
       expect(row.display_name).toBe('Anna B.');
     });
   });
 
   it('rejects a whitespace-only name', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, trip.id, 'Anna');
       const result = await h.client.callTool({
@@ -733,34 +785,39 @@ describe('Tool: rename_trip_guest', () => {
         arguments: { tripId: trip.id, guestId, name: '  ' },
       });
       expect(result.isError).toBe(true);
-      const row = testDb.prepare('SELECT display_name FROM users WHERE id = ?').get(guestId) as any;
+      const row = await userRow(guestId);
       expect(row.display_name).toBe('Anna');
     });
   });
 
   it('will not rename a guest of another trip', async () => {
-    const { user: owner } = createUser(testDb);
-    const ownTrip = createTrip(testDb, owner.id);
-    const otherTrip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const ownTrip = await makeTrip(orm, owner.id);
+    const otherTrip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, otherTrip.id, 'Anna');
+      broadcastMock.mockClear();
       const result = await h.client.callTool({
         name: 'rename_trip_guest',
         arguments: { tripId: ownTrip.id, guestId, name: 'Renamed' },
       });
       expect(result.isError).toBe(true);
-      const row = testDb.prepare('SELECT display_name FROM users WHERE id = ?').get(guestId) as any;
+      const row = await userRow(guestId);
       expect(row.display_name).toBe('Anna');
+      // A refused rename announces nothing, on either trip.
+      expect(broadcastMock).not.toHaveBeenCalledWith(expect.anything(), 'member:updated', expect.anything());
     });
   });
 
   it('returns error when a member who is not the owner tries to rename', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     let guestId = 0;
-    await withHarness(owner.id, async (h) => { guestId = await makeGuest(h, trip.id, 'Anna'); });
+    await withHarness(owner.id, async (h) => {
+      guestId = await makeGuest(h, trip.id, 'Anna');
+    });
     await withHarness(collaborator.id, async (h) => {
       const result = await h.client.callTool({
         name: 'rename_trip_guest',
@@ -772,8 +829,8 @@ describe('Tool: rename_trip_guest', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'rename_trip_guest',
@@ -786,8 +843,8 @@ describe('Tool: rename_trip_guest', () => {
 
 describe('Tool: delete_trip_guest', () => {
   it('deletes the guest outright', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, trip.id, 'Anna');
       const result = await h.client.callTool({
@@ -795,26 +852,47 @@ describe('Tool: delete_trip_guest', () => {
         arguments: { tripId: trip.id, guestId },
       });
       expect((parseToolResult(result) as any).success).toBe(true);
-      expect(testDb.prepare('SELECT id FROM users WHERE id = ?').get(guestId)).toBeUndefined();
-      expect(testDb.prepare('SELECT user_id FROM trip_members WHERE user_id = ?').get(guestId)).toBeUndefined();
+      expect(await findRow(orm, Users, { id: guestId })).toBeNull();
+      expect(await findRow(orm, TripMembers, { user: guestId })).toBeNull();
     });
   });
 
   it('broadcasts member:removed event', async () => {
-    const { user: owner } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, trip.id, 'Anna');
       broadcastMock.mockClear();
       await h.client.callTool({ name: 'delete_trip_guest', arguments: { tripId: trip.id, guestId } });
-      expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'member:removed', expect.objectContaining({ userId: guestId }));
+      expect(broadcastMock).toHaveBeenCalledWith(
+        trip.id,
+        'member:removed',
+        expect.objectContaining({ userId: guestId }),
+      );
+    });
+  });
+
+  it('refuses a guest who paid an expense, with the same text REST answers (#2604)', async () => {
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await withHarness(owner.id, async (h) => {
+      const guestId = await makeGuest(h, trip.id, 'Anna');
+      const item = await makeBudgetItem(orm, trip.id, { total_price: 60 });
+      await addBudgetItemPayer(orm, item.id, guestId, 60);
+      broadcastMock.mockClear();
+      const result = await h.client.callTool({ name: 'delete_trip_guest', arguments: { tripId: trip.id, guestId } });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain(GUEST_HAS_PAYMENTS);
+      expect(await findRow(orm, Users, { id: guestId })).not.toBeNull();
+      expect(broadcastMock).not.toHaveBeenCalledWith(trip.id, 'member:removed', expect.anything());
+      expect(broadcastMock).not.toHaveBeenCalledWith(trip.id, 'budget:updated', expect.anything());
     });
   });
 
   it('will not delete a guest of another trip', async () => {
-    const { user: owner } = createUser(testDb);
-    const ownTrip = createTrip(testDb, owner.id);
-    const otherTrip = createTrip(testDb, owner.id);
+    const { user: owner } = await makeUser(orm);
+    const ownTrip = await makeTrip(orm, owner.id);
+    const otherTrip = await makeTrip(orm, owner.id);
     await withHarness(owner.id, async (h) => {
       const guestId = await makeGuest(h, otherTrip.id, 'Anna');
       const result = await h.client.callTool({
@@ -822,46 +900,48 @@ describe('Tool: delete_trip_guest', () => {
         arguments: { tripId: ownTrip.id, guestId },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT id FROM users WHERE id = ?').get(guestId)).toBeDefined();
+      expect(await findRow(orm, Users, { id: guestId })).not.toBeNull();
     });
   });
 
   it('will not delete a real member through the guest route', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     await withHarness(owner.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_trip_guest',
         arguments: { tripId: trip.id, guestId: collaborator.id },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT id FROM users WHERE id = ?').get(collaborator.id)).toBeDefined();
+      expect(await findRow(orm, Users, { id: collaborator.id })).not.toBeNull();
     });
   });
 
   it('returns error when a member who is not the owner tries to delete', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     let guestId = 0;
-    await withHarness(owner.id, async (h) => { guestId = await makeGuest(h, trip.id, 'Anna'); });
+    await withHarness(owner.id, async (h) => {
+      guestId = await makeGuest(h, trip.id, 'Anna');
+    });
     await withHarness(collaborator.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_trip_guest',
         arguments: { tripId: trip.id, guestId },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT id FROM users WHERE id = ?').get(guestId)).toBeDefined();
+      expect(await findRow(orm, Users, { id: guestId })).not.toBeNull();
     });
   });
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_trip_guest',
@@ -881,28 +961,128 @@ describe('Tool: delete_trip_guest', () => {
 
 describe('Guest tools stay owner-only', () => {
   it('refuses a collaborator all three guest tools even with member_manage at trip_member', async () => {
-    const { user: owner } = createUser(testDb);
-    const { user: collaborator } = createUser(testDb);
-    const trip = createTrip(testDb, owner.id);
-    addTripMember(testDb, trip.id, collaborator.id);
+    const { user: owner } = await makeUser(orm);
+    const { user: collaborator } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await addTripMember(orm, trip.id, collaborator.id);
     let guestId = 0;
-    await withHarness(owner.id, async (h) => { guestId = await makeGuest(h, trip.id, 'Anna'); });
-
-    setPermission('member_manage', 'trip_member');
-    await withHarness(collaborator.id, async (h) => {
-      expect((await h.client.callTool({
-        name: 'create_trip_guest', arguments: { tripId: trip.id, name: 'Bea' },
-      })).isError).toBe(true);
-      expect((await h.client.callTool({
-        name: 'rename_trip_guest', arguments: { tripId: trip.id, guestId, name: 'Renamed' },
-      })).isError).toBe(true);
-      expect((await h.client.callTool({
-        name: 'delete_trip_guest', arguments: { tripId: trip.id, guestId },
-      })).isError).toBe(true);
+    await withHarness(owner.id, async (h) => {
+      guestId = await makeGuest(h, trip.id, 'Anna');
     });
 
-    const row = testDb.prepare('SELECT display_name FROM users WHERE id = ?').get(guestId) as any;
+    await setPermission('member_manage', 'trip_member');
+    await withHarness(collaborator.id, async (h) => {
+      expect(
+        (
+          await h.client.callTool({
+            name: 'create_trip_guest',
+            arguments: { tripId: trip.id, name: 'Bea' },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(
+        (
+          await h.client.callTool({
+            name: 'rename_trip_guest',
+            arguments: { tripId: trip.id, guestId, name: 'Renamed' },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(
+        (
+          await h.client.callTool({
+            name: 'delete_trip_guest',
+            arguments: { tripId: trip.id, guestId },
+          })
+        ).isError,
+      ).toBe(true);
+    });
+
+    const row = await userRow(guestId);
     expect(row.display_name).toBe('Anna');
-    expect(testDb.prepare('SELECT COUNT(*) AS n FROM users WHERE is_guest = 1').get()).toEqual({ n: 1 });
+    expect(await countRows(orm, Users, { is_guest: 1 })).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The roster use cases REST shares (TripMemberWritesService): what each tool
+// sends besides its member event.
+// ---------------------------------------------------------------------------
+
+describe('Roster writes, as REST makes them', () => {
+  it('MCP-MEMBERS-001: add_trip_member sends the invitation the planner sends, naming the inviter by name', async () => {
+    const { user: owner } = await makeUser(orm);
+    const { user: invitee } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    const send = vi
+      .spyOn((await bootTestApp(realtime)).get(NotificationsService), 'send')
+      .mockResolvedValue({ attempted: 0, delivered: 0 });
+    try {
+      await withHarness(owner.id, async (h) => {
+        await h.client.callTool({ name: 'add_trip_member', arguments: { tripId: trip.id, identifier: invitee.email } });
+      });
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'trip_invite',
+          actorId: owner.id,
+          scope: 'user',
+          targetId: invitee.id,
+          params: expect.objectContaining({ actor: owner.username, invitee: invitee.email, tripId: String(trip.id) }),
+        }),
+      );
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it('MCP-MEMBERS-002: rename_trip_guest tells the room the new name, and nothing else of the row', async () => {
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await withHarness(owner.id, async (h) => {
+      const guestId = await makeGuest(h, trip.id, 'Anna');
+      broadcastMock.mockClear();
+      await h.client.callTool({
+        name: 'rename_trip_guest',
+        arguments: { tripId: trip.id, guestId, name: ' Anna B. ' },
+      });
+      expect(broadcastMock.mock.calls).toEqual([
+        [trip.id, 'member:updated', { member: { id: guestId, username: 'Anna B.' }, _source: 'mcp' }],
+      ]);
+    });
+  });
+
+  it('MCP-MEMBERS-003: delete_trip_guest sends each expense the guest shared again, split among the rest, after the member', async () => {
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await withHarness(owner.id, async (h) => {
+      const guestId = await makeGuest(h, trip.id, 'Anna');
+      const shared = await makeBudgetItem(orm, trip.id, { total_price: 60 });
+      await addBudgetItemMember(orm, shared.id, owner.id);
+      await addBudgetItemMember(orm, shared.id, guestId);
+      await makeBudgetItem(orm, trip.id, { total_price: 10 });
+      broadcastMock.mockClear();
+      await h.client.callTool({ name: 'delete_trip_guest', arguments: { tripId: trip.id, guestId } });
+      expect(broadcastMock.mock.calls.map((call) => call[1])).toEqual(['member:removed', 'budget:updated']);
+      const [, , payload] = broadcastMock.mock.calls[1];
+      const item = payload.item as { id: number; members: { user_id: number }[] };
+      expect(item.id).toBe(shared.id);
+      expect(item.members.map((m) => m.user_id)).toEqual([owner.id]);
+    });
+  });
+
+  it('MCP-MEMBERS-004: delete_trip_guest also sends an expense the guest was only the legacy payer of, cleared', async () => {
+    const { user: owner } = await makeUser(orm);
+    const trip = await makeTrip(orm, owner.id);
+    await withHarness(owner.id, async (h) => {
+      const guestId = await makeGuest(h, trip.id, 'Anna');
+      const legacy = await makeBudgetItem(orm, trip.id, { total_price: 40 });
+      await updateRows(orm, BudgetItems, { id: legacy.id }, { paidByUser: guestId });
+      broadcastMock.mockClear();
+      await h.client.callTool({ name: 'delete_trip_guest', arguments: { tripId: trip.id, guestId } });
+      expect(broadcastMock.mock.calls.map((call) => call[1])).toEqual(['member:removed', 'budget:updated']);
+      const item = broadcastMock.mock.calls[1][2].item as { id: number; paid_by_user_id: number | null };
+      expect(item.id).toBe(legacy.id);
+      expect(item.paid_by_user_id).toBeNull();
+    });
   });
 });

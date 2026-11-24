@@ -7,14 +7,20 @@ import type {
   McpDynamicTool,
   McpDynamicToolSource,
   McpEntry,
+  McpEntryKind,
+  McpErrorMapper,
+  McpInputMapper,
   McpRegistryListing,
+  McpToolGate,
   PromptOptions,
   ResourceOptions,
   ResourceTemplateOptions,
   ToolOptions,
 } from './types';
 import { ResourceTemplate as SdkResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types';
+
 import { z } from 'zod';
 
 interface BoundEntry {
@@ -33,12 +39,64 @@ function strictInputSchema(schema: ToolOptions['inputSchema']): unknown {
   return z.strictObject(schema);
 }
 
+/** The fields of an object schema by name; undefined for any other schema. */
+function shapeOf(schema: unknown): Record<string, z.ZodType> | undefined {
+  const shape = (schema as { shape?: unknown } | undefined)?.shape;
+  return shape && typeof shape === 'object' ? (shape as Record<string, z.ZodType>) : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Runs the host's input mapper over what the SDK parsed. The SDK validated the
+ * fields before the mapper changed them, so each field it changed is validated
+ * again against its own schema: a name of nothing but dropped characters must
+ * fail its min(1) here as it does over REST, not reach the handler empty. A
+ * field the mapper left as it was is not parsed twice. The issues are worded
+ * as the SDK words its own.
+ */
+function mapValidated(
+  mapper: McpInputMapper,
+  input: unknown,
+  shape: Record<string, z.ZodType> | undefined,
+  refuse: (message: string) => Error,
+): unknown {
+  const mapped = mapper(input);
+  if (mapped === input || !shape || !isRecord(input) || !isRecord(mapped)) return mapped;
+  const messages = Object.entries(mapped).flatMap(([key, value]) => {
+    const field = shape[key];
+    if (!field || value === input[key]) return [];
+    const result = field.safeParse(value);
+    if (result.success) return [];
+    return result.error.issues.map((issue) => `${issue.message} at ${[key, ...issue.path].map(String).join('.')}`);
+  });
+  if (messages.length > 0) throw refuse(messages.join('\n'));
+  return mapped;
+}
+
 export interface McpRegistryOptions {
   accessPolicy?: McpAccessPolicy;
   validateAccess?: McpAccessValidator;
+  /** Runs before every registered tool handler; see `McpToolGate`. */
+  toolGate?: McpToolGate;
+  /** Turns an error a registered tool handler threw into its result; see `McpErrorMapper`. */
+  errorMapper?: McpErrorMapper;
+  /** Rewrites what a client sends before any handler sees it; see `McpInputMapper`. */
+  inputMapper?: McpInputMapper;
 }
 
 type AnyHandler = (this: unknown, ...handlerArgs: unknown[]) => unknown;
+
+/** Run one handler call through the host's `around` wrapper when it set one. */
+function invoke(
+  opts: McpAttachOptions | undefined,
+  info: { kind: McpEntryKind; name: string },
+  call: () => unknown,
+): unknown {
+  return opts?.around ? opts.around(info, call) : call();
+}
 
 /**
  * Structural view of the SDK registration surface. The SDK's real signatures
@@ -96,12 +154,18 @@ export class McpRegistry {
   private readonly bound: BoundEntry[] = [];
   private readonly accessPolicy?: McpAccessPolicy;
   private readonly validateAccess?: McpAccessValidator;
+  private readonly toolGate?: McpToolGate;
+  private readonly errorMapper?: McpErrorMapper;
+  private readonly inputMapper: McpInputMapper;
   /** Memoised `reservedNames()`; dropped by register() so it can never go stale. */
   private reserved?: ReadonlySet<string>;
 
   constructor(options: McpRegistryOptions = {}) {
     this.accessPolicy = options.accessPolicy;
     this.validateAccess = options.validateAccess;
+    this.toolGate = options.toolGate;
+    this.errorMapper = options.errorMapper;
+    this.inputMapper = options.inputMapper ?? ((input) => input);
   }
 
   /**
@@ -127,14 +191,22 @@ export class McpRegistry {
    * `ctx` as the handler's last argument (in the SDK `extra` slot). `opts`
    * carries per-session hooks — see `McpAttachOptions`.
    */
-  attach(server: McpServer, ctx: McpContext, opts?: McpAttachOptions): void {
+  async attach(server: McpServer, ctx: McpContext, opts?: McpAttachOptions): Promise<void> {
     const registrar = server as unknown as LooseRegistrar;
     for (const { entry, instance } of this.bound) {
-      if (!this.allowed(entry, ctx, instance)) continue;
+      if (opts?.include && !opts.include(entry.kind, entry.options.name)) continue;
+      if (!(await this.allowed(entry, ctx, instance))) continue;
       const handler = (instance as unknown as Record<string, AnyHandler>)[entry.methodName];
       switch (entry.kind) {
         case 'tool':
-          this.attachTool(registrar, entry.options, instance, handler, ctx, opts);
+          this.attachTool(
+            registrar,
+            entry.options,
+            instance,
+            this.mapped(this.gated(entry.options, handler, ctx)),
+            ctx,
+            opts,
+          );
           break;
         case 'resource':
           this.attachResource(registrar, entry.options, instance, handler, ctx, opts);
@@ -154,7 +226,7 @@ export class McpRegistry {
     // tools/list is insertion-ordered, so host-contributed tools sort last,
     // which is the right priority signal in a long list; and it reads the way
     // it works — the registry, then whatever this session added on top.
-    if (opts?.dynamicTools) this.attachDynamicTools(registrar, ctx, opts, opts.dynamicTools);
+    if (opts?.dynamicTools) await this.attachDynamicTools(registrar, ctx, opts, opts.dynamicTools);
   }
 
   /**
@@ -173,15 +245,15 @@ export class McpRegistry {
     return this.reserved;
   }
 
-  private attachDynamicTools(
+  private async attachDynamicTools(
     registrar: LooseRegistrar,
     ctx: McpContext,
     opts: McpAttachOptions,
     source: McpDynamicToolSource,
-  ): void {
+  ): Promise<void> {
     let tools: readonly McpDynamicTool[];
     try {
-      tools = source(ctx) ?? [];
+      tools = (await source(ctx)) ?? [];
     } catch (err) {
       // A session with no dynamic tools is degraded; a session that throws here
       // is a 500 on initialize, because hosts call attach() outside their try.
@@ -203,13 +275,14 @@ export class McpRegistry {
         // Claimed before the gate, so a denied entry still owns its name and a
         // later duplicate cannot slip in behind it.
         claimed.add(name);
+        if (opts.include && !opts.include('tool', name)) continue;
         const owner = tool.owner ?? NO_OWNER;
         // allowed() is inside the try because it is the second live throw site:
         // declarative access with no configured accessPolicy. Registered
         // entries only avoid it because validate() pre-checks them at boot, and
         // a per-session source has no boot to be checked at.
         const entry: McpEntry = { kind: 'tool', methodName: DYNAMIC_METHOD_NAME, options: tool.options };
-        if (!this.allowed(entry, ctx, owner)) continue;
+        if (!(await this.allowed(entry, ctx, owner))) continue;
         this.attachTool(registrar, tool.options, owner, tool.handler as AnyHandler, ctx, opts);
       } catch (err) {
         console.warn(`[nest-mcp] skipped dynamic tool "${String(name)}": ${describeError(err)}`);
@@ -275,12 +348,12 @@ export class McpRegistry {
     };
   }
 
-  private allowed(entry: McpEntry, ctx: McpContext, instance: object): boolean {
+  private async allowed(entry: McpEntry, ctx: McpContext, instance: object): Promise<boolean> {
     // The declaring instance goes in so the gate can read an injected
     // collaborator. It is resolved here, at attach, rather than captured when
     // the options object was built — the class body runs long before the
     // container exists.
-    if (entry.options.when && !entry.options.when(ctx, instance)) return false;
+    if (entry.options.when && !(await entry.options.when(ctx, instance))) return false;
     const access = entry.options.access;
     if (access === undefined) return true;
     if (typeof access === 'function') return access(ctx);
@@ -295,6 +368,48 @@ export class McpRegistry {
     return this.accessPolicy(access, ctx);
   }
 
+  /**
+   * The handler as the session calls it: behind the host's tool gate when one
+   * is configured. Only registered tools come through here; a dynamic tool's
+   * source owns its own checks.
+   */
+  private gated(options: ToolOptions, handler: AnyHandler, ctx: McpContext): AnyHandler {
+    const gate = this.toolGate;
+    if (!gate) return handler;
+    return async function (this: unknown, ...handlerArgs: unknown[]) {
+      const refusal = await gate(options, ctx, handlerArgs[0]);
+      return refusal !== undefined ? refusal : handler.apply(this, handlerArgs);
+    };
+  }
+
+  /**
+   * The handler with the host's error mapper around it, when one is configured:
+   * an error the mapper recognises becomes the call's result, anything else
+   * propagates as before. Registered tools only, like the gate.
+   */
+  private mapped(handler: AnyHandler): AnyHandler {
+    const mapError = this.errorMapper;
+    if (!mapError) return handler;
+    return async function (this: unknown, ...handlerArgs: unknown[]) {
+      try {
+        return await handler.apply(this, handlerArgs);
+      } catch (err) {
+        const result = mapError(err);
+        if (result !== undefined) return result;
+        throw err;
+      }
+    };
+  }
+
+  // D6: this callback is invoked from inside McpTransportController's @Post/@Get/
+  // @Delete handlers (mcp-transport.controller.ts), which are ordinary Nest routes —
+  // `@Public()` only exempts the auth guard, and the raw-body parser exemption in
+  // bootstrap.ts only exempts Express's JSON/urlencoded parsers. Neither opts /mcp out
+  // of the per-request EntityManager fork bootstrap.ts mounts as a pathless middleware
+  // before app.init() (mikroOrmRequestContext), which runs before any controller
+  // method. So a tool handler here already runs inside a request context; do not
+  // wrap it in withRequestContext (task-2-review.md's non-HTTP caller table
+  // confirms this path is already covered).
   private attachTool(
     registrar: LooseRegistrar,
     options: ToolOptions,
@@ -303,10 +418,11 @@ export class McpRegistry {
     ctx: McpContext,
     opts?: McpAttachOptions,
   ): void {
+    const inputSchema = strictInputSchema(options.inputSchema);
     const config: Record<string, unknown> = {
       title: options.title,
       description: options.description,
-      inputSchema: strictInputSchema(options.inputSchema),
+      inputSchema,
       outputSchema: options.outputSchema,
       annotations: options.annotations,
       _meta: options._meta,
@@ -314,15 +430,20 @@ export class McpRegistry {
     // The SDK invokes the callback as (args, extra) when inputSchema is
     // present (even an empty shape) and as (extra) otherwise — normalize so
     // the decorated method always receives (args, ctx).
+    // The arguments go through the host's input mapper first.
     const cb =
       options.inputSchema !== undefined
         ? (args: unknown, _extra: unknown) => {
+            const input = mapValidated(this.inputMapper, args, shapeOf(inputSchema), (message) => {
+              const text = `Input validation error: Invalid arguments for tool ${options.name}: ${message}`;
+              return new McpError(ErrorCode.InvalidParams, text);
+            });
             opts?.onInvoke?.({ kind: 'tool', name: options.name });
-            return handler.call(instance, args, ctx);
+            return invoke(opts, { kind: 'tool', name: options.name }, () => handler.call(instance, input, ctx));
           }
         : (_extra: unknown) => {
             opts?.onInvoke?.({ kind: 'tool', name: options.name });
-            return handler.call(instance, {}, ctx);
+            return invoke(opts, { kind: 'tool', name: options.name }, () => handler.call(instance, {}, ctx));
           };
     registrar.registerTool(options.name, config, cb);
   }
@@ -343,7 +464,7 @@ export class McpRegistry {
     };
     registrar.registerResource(options.name, options.uri, metadata, (uri: unknown, _extra: unknown) => {
       opts?.onInvoke?.({ kind: 'resource', name: options.name });
-      return handler.call(instance, uri, ctx);
+      return invoke(opts, { kind: 'resource', name: options.name }, () => handler.call(instance, uri, ctx));
     });
   }
 
@@ -367,7 +488,9 @@ export class McpRegistry {
       metadata,
       (uri: unknown, variables: unknown, _extra: unknown) => {
         opts?.onInvoke?.({ kind: 'resourceTemplate', name: options.name });
-        return handler.call(instance, uri, variables, ctx);
+        return invoke(opts, { kind: 'resourceTemplate', name: options.name }, () =>
+          handler.call(instance, uri, this.inputMapper(variables), ctx),
+        );
       },
     );
   }
@@ -394,13 +517,22 @@ export class McpRegistry {
     const cb =
       argsSchema !== undefined
         ? (args: unknown, _extra: unknown) => {
+            const input = mapValidated(this.inputMapper, args, argsSchema, (message) => {
+              const text = `Invalid arguments for prompt ${options.name}: ${message}`;
+              return new McpError(ErrorCode.InvalidParams, text);
+            });
             opts?.onInvoke?.({ kind: 'prompt', name: options.name });
-            return handler.call(instance, args, ctx);
+            return invoke(opts, { kind: 'prompt', name: options.name }, () => handler.call(instance, input, ctx));
           }
         : (_extra: unknown) => {
             opts?.onInvoke?.({ kind: 'prompt', name: options.name });
-            return handler.call(instance, {}, ctx);
+            return invoke(opts, { kind: 'prompt', name: options.name }, () => handler.call(instance, {}, ctx));
           };
     registrar.registerPrompt(options.name, config, cb);
   }
+}
+
+/** A server of its own for a client in the same process (the assistant's tool session), to attach a registry to. */
+export function createLocalMcpServer(name: string): McpServer {
+  return new McpServer({ name, version: '1.0.0' });
 }

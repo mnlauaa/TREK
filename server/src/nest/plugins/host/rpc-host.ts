@@ -1,3 +1,6 @@
+import type { PluginDataStore } from '../../../db/engine/plugin-data';
+import { BadParams, ForbiddenResource } from '../../../nest-rpc/rpc-errors';
+import type { PluginRpcRegistry } from '../../../nest-rpc/rpc-kit/registry';
 import {
   KNOWN_METHODS,
   METHOD_PERMISSION,
@@ -6,10 +9,8 @@ import {
   type RpcRequest,
   type RpcResponse,
 } from '../protocol/envelope';
-import type { PluginDataDb } from './plugin-data.service';
+import { shapePluginOutput } from '../protocol/output-contract';
 import { auditResource, isAuditable } from './plugin-audit';
-import { BadParams, ForbiddenResource } from './rpc-errors';
-import type { PluginRpcRegistry } from './rpc-kit/registry';
 
 // Both used to be declared here. They now live in rpc-errors.ts so decorated
 // *.rpc.ts handlers can throw them without importing the router, and are re-exported
@@ -24,11 +25,12 @@ export { BadParams, ForbiddenResource };
  * plugin cannot "call it anyway" — there is no shared object, only messages, and
  * the host is the sole holder of the trek.db handle and the broadcast fns.
  *
- * The handlers themselves no longer live here. Every one of the 113 wire methods is
+ * The handlers themselves no longer live here. Every one of the 115 wire methods is
  * a `@PluginMethod` / `@PluginOpenMethod` on a `@PluginController()` provider in its
  * own domain, and the registry binds the granted subset into the map below. What is
  * left is the part that was never domain-specific: build the map, dispatch into it,
- * audit the call, and map a thrown error onto a wire code.
+ * apply the output contract to the result, audit the call, and map a thrown error
+ * onto a wire code.
  *
  * Runs in the HOST (parent) process.
  */
@@ -36,19 +38,25 @@ export { BadParams, ForbiddenResource };
 /** What the router needs that is neither a domain service nor a permission check. */
 export interface HostDeps {
   /**
-   * The plugin's own sqlite (db:own). A GETTER on the factory side, resolved per
-   * access: disable()/re-enable builds a NEW host while the old one's dispose() may
+   * The plugin's own database (db:own): a SQLite file or a Postgres schema. A GETTER
+   * on the factory side, resolved per access: disable()/re-enable builds a NEW host while the old one's dispose() may
    * still be closing the handle, so a captured one leaves the new host throwing
    * 'database connection is not open'.
    */
-  data: PluginDataDb;
+  data: PluginDataStore;
   /** Call an export on another plugin (this host's plugin is the caller). Authorizes
    * the dependency edge + the target's `provides` allowlist, forwards the acting user. */
   callPlugin(targetId: string, fn: string, args: unknown, actingUserId: number | undefined): Promise<unknown>;
   /** Publish an event from this host's plugin to its subscribed dependents. */
-  emitPluginEvent(event: string, payload: unknown): void;
+  emitPluginEvent(event: string, payload: unknown): Promise<void>;
   /** Optional sink for the capability audit log (host-side, hash-chained). */
-  audit?(entry: { pluginId: string; actingUserId?: number; method: string; resource: string | null; code: string }): void;
+  audit?(entry: {
+    pluginId: string;
+    actingUserId?: number;
+    method: string;
+    resource: string | null;
+    code: string;
+  }): Promise<void>;
 }
 
 type Handler = (params: Record<string, unknown>, actingUserId: number | undefined) => unknown;
@@ -98,7 +106,7 @@ export class PluginRpcHost {
     // Audit the core-data / broadcast surface (incl. denials) at the boundary.
     if (this.deps.audit && isAuditable(req.method)) {
       try {
-        this.deps.audit({
+        await this.deps.audit({
           pluginId: this.pluginId,
           actingUserId,
           method: req.method,
@@ -129,7 +137,10 @@ export class PluginRpcHost {
       );
     }
     try {
-      const result = await handler(params, actingUserId);
+      // The output contract (protocol/output-contract.ts): every result leaves through
+      // here, so an entity read hands the plugin its published fields only, whatever
+      // the query behind it selected. Other methods' results pass through unchanged.
+      const result = shapePluginOutput(req.method, await handler(params, actingUserId));
       return { k: 'res', id: req.id, ok: true, result };
     } catch (e) {
       if (e instanceof BadParams) return this.err(req.id, 'BAD_PARAMS', e.message);

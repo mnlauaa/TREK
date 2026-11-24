@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Tanpa daftar',
   'todo.namePlaceholder': 'Nama tugas',
   'todo.descriptionPlaceholder': 'Deskripsi (opsional)',
+  'todo.editDescription': 'Klik untuk mengedit, tautan langsung terbuka',
   'todo.unassigned': 'Belum ditugaskan',
   'todo.noCategory': 'Tanpa daftar',
   'todo.hasDescription': 'Ada deskripsi',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Prioritas',
   'todo.detail.noPriority': 'Tidak ada',
   'todo.detail.create': 'Buat tugas',
+  'todo.progressCount': '{done} dari {total} selesai',
+  'todo.allDone': 'Semua selesai!',
+  'todo.filter.myShort': 'Milik saya',
 };
 export default todo;

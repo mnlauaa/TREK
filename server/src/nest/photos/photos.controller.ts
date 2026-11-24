@@ -1,9 +1,11 @@
-import { Controller, Get, Headers, HttpException, Param, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
 import type { User } from '../../types';
+import { CurrentUser } from '../auth-core/current-user.decorator';
+import { JwtAuthGuard } from '../auth-core/jwt-auth.guard';
+import { toRowId } from '../common/row-id';
 import { PhotosService } from './photos.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { Controller, Get, Headers, HttpException, Param, Res, UseGuards } from '@nestjs/common';
+
+import type { Response } from 'express';
 
 /**
  * /api/photos/:id/{thumbnail,original,info} — global (not trip-scoped) photo
@@ -11,7 +13,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
  * to the response via the resolver service.
  *
  * Byte-identical to the legacy Express route (server/src/routes/photos.ts):
- * a finite-id guard (400), the canAccessTrekPhoto check (403), then stream or
+ * a row-id guard (400), the canAccessTrekPhoto check (403), then stream or
  * the provider info (404 inside the service / mapped error for info).
  */
 @Controller('api/photos')
@@ -19,12 +21,13 @@ import { CurrentUser } from '../auth/current-user.decorator';
 export class PhotosController {
   constructor(private readonly photos: PhotosService) {}
 
-  private requireAccess(user: User, rawId: string): number {
-    const photoId = Number(rawId);
-    if (!Number.isFinite(photoId)) {
+  private async requireAccess(user: User, rawId: string): Promise<number> {
+    // toRowId: Number() read '0x1' and '1e0' as photo 1, and 1e20 reached Postgres as an out of range bigint.
+    const photoId = toRowId(rawId);
+    if (photoId === null) {
       throw new HttpException({ error: 'Invalid photo ID' }, 400);
     }
-    if (!this.photos.canAccess(user.id, photoId)) {
+    if (!(await this.photos.canAccess(user.id, photoId))) {
       throw new HttpException({ error: 'Forbidden' }, 403);
     }
     return photoId;
@@ -32,19 +35,24 @@ export class PhotosController {
 
   @Get(':id/thumbnail')
   async thumbnail(@CurrentUser() user: User, @Param('id') id: string, @Res() res: Response): Promise<void> {
-    const photoId = this.requireAccess(user, id);
+    const photoId = await this.requireAccess(user, id);
     await this.photos.stream(res, user.id, photoId, 'thumbnail');
   }
 
   @Get(':id/original')
-  async original(@CurrentUser() user: User, @Param('id') id: string, @Res() res: Response, @Headers('range') range?: string): Promise<void> {
-    const photoId = this.requireAccess(user, id);
+  async original(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Res() res: Response,
+    @Headers('range') range?: string,
+  ): Promise<void> {
+    const photoId = await this.requireAccess(user, id);
     await this.photos.stream(res, user.id, photoId, 'original', range);
   }
 
   @Get(':id/info')
   async info(@CurrentUser() user: User, @Param('id') id: string, @Res() res: Response): Promise<void> {
-    const photoId = this.requireAccess(user, id);
+    const photoId = await this.requireAccess(user, id);
     const result = await this.photos.info(user.id, photoId);
     if ('error' in result) {
       res.status(result.error.status).json({ error: result.error.message });

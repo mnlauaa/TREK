@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const de: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const de: NotificationLocale = {
     booking_change: (p) => ({
       title: `Neue Buchung: ${p.booking}`,
       body: `${p.actor} hat eine neue Buchung "${p.booking}" (${p.type}) zu "${p.trip}" hinzugefügt.`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} ist gestartet`,
+      body: `${p.flight} von ${p.from} nach ${p.to} ist in der Luft.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} hat Verspätung`,
+      body: `${p.flight} von ${p.from} nach ${p.to} liegt etwa ${p.delay} Minuten hinter dem Flugplan.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} ist gelandet`,
+      body: `${p.flight} aus ${p.from} ist in ${p.to} gelandet.`,
     }),
     trip_reminder: (p) => ({
       title: `Reiseerinnerung: ${p.trip}`,
@@ -37,8 +50,11 @@ const de: NotificationLocale = {
       body: `${p.actor} hat dich eingeladen, eine Sammlung zu teilen. Öffne TREK um anzunehmen oder abzulehnen.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} Fotos geteilt`,
-      body: `${p.actor} hat ${p.count} Foto(s) in "${p.trip}" geteilt.`,
+      title: pluralForm(p.count, 'de', { one: `${p.count} Foto geteilt`, other: `${p.count} Fotos geteilt` }),
+      body: pluralForm(p.count, 'de', {
+        one: `${p.actor} hat ${p.count} Foto in "${p.trip}" geteilt.`,
+        other: `${p.actor} hat ${p.count} Fotos in "${p.trip}" geteilt.`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Neue Nachricht in "${p.trip}"`,
@@ -57,12 +73,43 @@ const de: NotificationLocale = {
       body:
         `Schreibvorgang auf Replik '${p.backend}' fehlgeschlagen: ${p.op} von ${p.key} — ${p.error}.` +
         (p.suppressed !== '0'
-          ? ` Seit der letzten Benachrichtigung wurden ${p.suppressed} weitere Fehler unterdrückt.`
+          ? pluralForm(p.suppressed, 'de', {
+              one: ` Seit der letzten Benachrichtigung wurde ${p.suppressed} weiterer Fehler unterdrückt.`,
+              other: ` Seit der letzten Benachrichtigung wurden ${p.suppressed} weitere Fehler unterdrückt.`,
+            })
           : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Paddel-Region angefragt',
+      body: `${p.actor} plant eine Paddeltour in ${p.region}. Im Admin-Bereich unter Addons kannst du die Gewässerdaten laden oder ablehnen.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology-Sitzung beendet',
       body: 'Dein Synology-Konto oder die URL hat sich geändert. Du wurdest von Synology Photos abgemeldet.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer-Trail: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `„${p.tour}“ in „${p.trip}“ wurde in wanderer geändert. Öffne die Tour und prüfe ihre Quelle, um alle Änderungen zu sehen. In der Reise ändert sich nichts von selbst.`
+          : p.state === 'unverifiable'
+            ? `„${p.tour}“ in „${p.trip}“ lässt sich in wanderer nicht mehr prüfen. Die Tour in deiner Reise bleibt, wie sie ist.`
+            : `„${p.tour}“ in „${p.trip}“ hat sich in wanderer möglicherweise geändert. Öffne die Tour und prüfe ihre Quelle, um es zu sehen. In der Reise ändert sich nichts von selbst.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Aus einer Mail eingetragen: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} hat „${p.booking}“ aus einer weitergeleiteten Mail in „${p.trip}“ eingetragen.`
+          : `„${p.booking}“ aus deiner weitergeleiteten Mail wurde in „${p.trip}“ eingetragen. Du kannst das 7 Tage lang in TREK rückgängig machen.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Weitergeleitete Buchungen prüfen',
+      body: `In TREK warten weitergeleitete Buchungen auf dich: ${p.count}. Bei jeder steht, warum sie nicht von selbst eingetragen wurde.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Mail-Import pausiert',
+      body: 'TREK nimmt weitergeleitete Buchungsmails vorerst nicht an, leite also gerade keine weiter. Deine Adressen bleiben und funktionieren wieder, sobald der Import zurück ist, und bereits eingetragene Buchungen bleiben in deinen Reisen.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

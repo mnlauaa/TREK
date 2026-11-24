@@ -1,15 +1,19 @@
 import { useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { Eyebrow } from './PlSheetChrome'
+import { Eyebrow, FIELD_CLS } from './PlSheetChrome'
 import CustomTimePicker from '../../../../components/shared/CustomTimePicker'
+import { VisitStayInput } from '../../../../components/Planner/VisitStayInput'
+import { timeCollisions } from '../../../../components/Planner/PlaceFormModal.helpers'
 import type { Assignment } from '../../../../types'
+import { TourEndHint } from '../../../../components/Tours/TourDayTimeParts'
 import type { TripPlanner } from '../MTripShell'
 
 interface PlTimeFieldsProps {
   planner: TripPlanner
   startTime: string
   endTime: string
-  onChange: (field: 'place_time' | 'end_time', value: string) => void
+  stay?: string
+  onChange: (field: 'place_time' | 'end_time' | 'assignment_stay', value: string) => void
   /** The assignment whose times are being edited (times live per assignment). */
   assignmentId: number
   dayAssignments: Assignment[]
@@ -26,30 +30,22 @@ const WARNING_CLS =
  * places of the same day.
  */
 export default function PlTimeFields({
-  planner, startTime, endTime, onChange, assignmentId, dayAssignments, hasTimeError,
+  planner, startTime, endTime, stay, onChange, assignmentId, dayAssignments, hasTimeError,
 }: PlTimeFieldsProps) {
   const { t } = planner
   // Opened from the road trip tab, where the End of a visit is when the drive leaves it.
   // The plan tab reads the day as Days does, and there End stays a plain label.
   const endIsLeave = planner.activeTab === 'roadtrip'
 
-  const collisions = useMemo(() => {
-    if (!startTime || startTime.length < 5) return []
-    const current = dayAssignments.find(a => a.id === assignmentId)
-    if (!current) return []
-    const myEnd = endTime && endTime.length >= 5 ? endTime : null
-    return dayAssignments.filter(a => {
-      if (a.id === assignmentId || a.day_id !== current.day_id) return false
-      const otherStart = a.place?.place_time
-      const otherEnd = a.place?.end_time
-      if (!otherStart) return false
-      const s1 = startTime
-      const e1 = myEnd || startTime
-      const s2 = otherStart
-      const e2 = otherEnd || otherStart
-      return s1 < (e2 || '23:59') && s2 < (e1 || '23:59') && s1 !== e2 && s2 !== e1
-    })
-  }, [assignmentId, dayAssignments, startTime, endTime])
+  // The other visits of the same day whose times overlap this one's, as the desktop form warns.
+  const collisions = useMemo(
+    () => timeCollisions(assignmentId, dayAssignments, startTime, endTime),
+    [assignmentId, dayAssignments, startTime, endTime],
+  )
+  // TIME-02: a tour's end follows from its start and its time while none is typed.
+  const assignment = dayAssignments.find(a => a.id === assignmentId)
+  const stayLabel = `${t('roadtrip.stop.stayShort')} (${t('roadtrip.limit.minutes')})`
+  const tour = assignment ? planner.tours.find(item => item.place_id === assignment.place_id) : undefined
 
   return (
     <div className="mt-3">
@@ -61,11 +57,24 @@ export default function PlTimeFields({
         <div className="min-w-0 flex-1">
           <Eyebrow className="mb-[5px] uppercase">{t('places.endTime')}</Eyebrow>
           <CustomTimePicker value={endTime} onChange={v => onChange('end_time', v)} />
-          {endIsLeave && (
-            <div className="mt-[5px] font-geist text-[0.65625rem] leading-snug text-m-faint">{t('roadtrip.stop.endIsLeave')}</div>
+          {(endIsLeave || !tour) && (
+            <div className="mt-[5px] font-geist text-[0.65625rem] leading-snug text-m-faint">{t(endIsLeave ? 'roadtrip.stop.endIsLeave' : 'timing.fixedEndHint')}</div>
           )}
         </div>
       </div>
+      {assignment && (
+        <div className="mt-2">
+          <Eyebrow className="mb-[5px] uppercase">{stayLabel}</Eyebrow>
+          <VisitStayInput
+            assignment={assignment}
+            label={stayLabel}
+            value={stay}
+            onChange={value => onChange('assignment_stay', value)}
+            className={FIELD_CLS}
+          />
+        </div>
+      )}
+      <TourEndHint start={startTime} end={endTime} assignment={assignment} tour={tour} mobile />
       {hasTimeError && (
         <div className={WARNING_CLS}>
           <AlertTriangle size={13} strokeWidth={2} className="mt-px flex-none" />

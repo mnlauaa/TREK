@@ -166,7 +166,8 @@ describe('AdminPage', () => {
       // Other tabs
       expect(screen.getByRole('button', { name: /personalization/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /addons/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^security$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^services$/i })).toBeInTheDocument();
     });
   });
 
@@ -250,15 +251,16 @@ describe('AdminPage', () => {
     });
   });
 
-  describe('FE-PAGE-ADMIN-011: upstream support navigation is removed', () => {
-    it('does not render the GitHub/support tab', async () => {
+  describe('FE-PAGE-ADMIN-011: GitHub tab renders GitHubPanel', () => {
+    it('clicking GitHub tab shows github-panel', async () => {
       seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
 
-      expect(screen.queryByRole('button', { name: /^github$/i })).not.toBeInTheDocument();
-      expect(screen.queryByTestId('github-panel')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /^github$/i }));
+
+      expect(screen.getByTestId('github-panel')).toBeInTheDocument();
     });
   });
 
@@ -300,7 +302,7 @@ describe('AdminPage', () => {
 
       fireEvent.change(screen.getByPlaceholderText('Username'), { target: { value: 'newuser' } });
       fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'newuser@example.com' } });
-      fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'securepassword123' } });
+      fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'SecurePassw0rd!23' } });
 
       // The modal footer has a second "Create User" button
       const createButtons = screen.getAllByRole('button', { name: /create user/i });
@@ -320,7 +322,7 @@ describe('AdminPage', () => {
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
       // MSW returns [admin, alice] — alice's edit button is at index 1
-      const editButtons = screen.getAllByTitle('Edit User');
+      const editButtons = screen.getAllByLabelText('Edit User');
       fireEvent.click(editButtons[1]);
 
       await waitFor(() => {
@@ -353,7 +355,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
 
-      expect(screen.queryByRole('button', { name: /mcp access/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^mcp$/i })).not.toBeInTheDocument();
     });
 
     it('shows MCP Tokens tab button when MCP addon is enabled', async () => {
@@ -369,7 +371,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /mcp access/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^mcp$/i })).toBeInTheDocument();
       });
     });
   });
@@ -389,10 +391,10 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
 
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       const heading = await screen.findByRole('heading', { name: /authentication methods/i });
-      const card = heading.closest<HTMLElement>('.bg-white');
+      const card = heading.closest<HTMLElement>('section');
       const toggles = within(card!).getAllByRole('button');
       fireEvent.click(toggles[0]); // First toggle = password_login
 
@@ -437,8 +439,11 @@ describe('AdminPage', () => {
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
       // MSW returns [admin, alice]; alice's delete button is index 1
-      const deleteButtons = screen.getAllByTitle(/delete/i);
+      const deleteButtons = screen.getAllByLabelText(/delete/i);
       fireEvent.click(deleteButtons[1]);
+      // The desktop tab asks in its own dialog; its confirm button renders last.
+      const confirmButtons = await screen.findAllByRole('button', { name: /^delete$/i });
+      fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
       await waitFor(() => {
         expect(screen.queryByText('alice')).not.toBeInTheDocument();
@@ -453,7 +458,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      const editButtons = screen.getAllByTitle('Edit User');
+      const editButtons = screen.getAllByLabelText('Edit User');
       fireEvent.click(editButtons[1]);
 
       await waitFor(() => expect(screen.getByDisplayValue('alice')).toBeInTheDocument());
@@ -475,7 +480,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      const editButtons = screen.getAllByTitle('Edit User');
+      const editButtons = screen.getAllByLabelText('Edit User');
       fireEvent.click(editButtons[1]);
 
       await waitFor(() => expect(screen.getByDisplayValue('alice')).toBeInTheDocument());
@@ -503,12 +508,12 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
-      const mfaHeading = await screen.findByRole('heading', { name: /require two-factor/i });
-      const mfaCard = mfaHeading.closest<HTMLElement>('.bg-white');
-      const mfaToggle = within(mfaCard!).getByRole('button');
-      fireEvent.click(mfaToggle);
+      // The 2FA rule is a row of the sign-in card: its label left, its switch right.
+      const mfaLabel = await screen.findByText('Require 2FA', { selector: 'label' });
+      const mfaRow = mfaLabel.closest<HTMLElement>('.flex-wrap');
+      fireEvent.click(within(mfaRow!).getByRole('button'));
 
       await waitFor(() => {
         expect(capturedBody).toEqual(expect.objectContaining({ require_mfa: true }));
@@ -522,7 +527,7 @@ describe('AdminPage', () => {
    * role and label the way the native select was.
    */
   function transitTrigger(): HTMLElement {
-    const block = screen.getByText('Transit Provider').closest<HTMLElement>('.rounded-xl');
+    const block = screen.getByText('Transit Provider').closest<HTMLElement>('section');
     return within(block!).getByRole('button');
   }
 
@@ -542,7 +547,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       await screen.findByText('Transit Provider');
       await waitFor(() => expect(transitTrigger()).toHaveTextContent('Transitous'));
@@ -568,7 +573,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
       await screen.findByText('Transit Provider');
 
       // A real change first, so the counter is proven to move at all.
@@ -597,7 +602,7 @@ describe('AdminPage', () => {
       seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
       render(<AdminPage />);
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
       await screen.findByText('Transit Provider');
       await waitFor(() => expect(transitTrigger()).toHaveTextContent('Google'));
     }
@@ -625,7 +630,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       const rotateBtn = await screen.findByRole('button', { name: /^rotate$/i });
       fireEvent.click(rotateBtn);
@@ -697,7 +702,10 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText(/abcdef123456/)).toBeInTheDocument());
 
-      fireEvent.click(screen.getByTitle('Delete'));
+      fireEvent.click(screen.getByLabelText('Delete'));
+      // The invite is only deleted once the confirm dialog is answered; its button renders last.
+      const confirmButtons = await screen.findAllByRole('button', { name: /^delete$/i });
+      fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
       await waitFor(() => {
         expect(screen.queryByText(/abcdef123456/)).not.toBeInTheDocument();
@@ -736,7 +744,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText(/abcdef123456/)).toBeInTheDocument());
 
-      fireEvent.click(screen.getByTitle(/copy link/i));
+      fireEvent.click(screen.getByLabelText(/copy link/i));
 
       await waitFor(() => {
         expect(writeTextSpy).toHaveBeenCalledWith(expect.stringContaining('abcdef123456789'));
@@ -793,9 +801,9 @@ describe('AdminPage', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
       fireEvent.click(screen.getByRole('button', { name: /^notifications$/i }));
 
-      // AdminNotificationsPanel heading for admin notifications
+      // The admin matrix sits in the admin alerts card, under its targets
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /^notifications$/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /^admin alerts$/i })).toBeInTheDocument();
       });
     });
   });
@@ -814,9 +822,9 @@ describe('AdminPage', () => {
       seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
       render(<AdminPage />);
 
-      await waitFor(() => expect(screen.getByRole('button', { name: /mcp access/i })).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByRole('button', { name: /^mcp$/i })).toBeInTheDocument());
 
-      fireEvent.click(screen.getByRole('button', { name: /mcp access/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^mcp$/i }));
 
       expect(screen.getByTestId('mcp-tokens-panel')).toBeInTheDocument();
     });
@@ -869,7 +877,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       // Maps is the first 'Enter key...' input (Unsplash is the second).
       const keyInput = (await screen.findAllByPlaceholderText('Enter key...'))[0];
@@ -900,7 +908,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       // Find the file types input by placeholder
       const fileTypesInput = await screen.findByPlaceholderText(/jpg,png,pdf/i);
@@ -908,7 +916,7 @@ describe('AdminPage', () => {
 
       // Find and click the Save button in the file types section
       const fileTypesHeading = screen.getByRole('heading', { name: /allowed file types/i });
-      const fileTypesCard = fileTypesHeading.closest<HTMLElement>('.bg-white');
+      const fileTypesCard = fileTypesHeading.closest<HTMLElement>('section');
       const saveBtn = within(fileTypesCard!).getByRole('button', { name: /save/i });
       fireEvent.click(saveBtn);
 
@@ -930,14 +938,14 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       // Wait for OIDC section to appear
       const oidcHeading = await screen.findByRole('heading', { name: /single sign-on/i });
-      const oidcCard = oidcHeading.closest<HTMLElement>('.bg-white');
+      const oidcCard = oidcHeading.closest<HTMLElement>('section');
 
-      // Type in the display name field (placeholder is 'z.B. Google, Authentik, Keycloak')
-      const displayNameInput = within(oidcCard!).getByPlaceholderText('z.B. Google, Authentik, Keycloak');
+      // Type in the display name field (placeholder is 'e.g. Google, Authentik, Keycloak')
+      const displayNameInput = within(oidcCard!).getByPlaceholderText('e.g. Google, Authentik, Keycloak');
       fireEvent.change(displayNameInput, { target: { value: 'Google' } });
 
       // Click the Save button in the OIDC section
@@ -969,7 +977,7 @@ describe('AdminPage', () => {
 
       // The Email (SMTP) panel header has the enable toggle
       const emailHeading = await screen.findByRole('heading', { name: /email \(smtp\)/i });
-      const emailPanel = emailHeading.closest<HTMLElement>('.bg-white');
+      const emailPanel = emailHeading.closest<HTMLElement>('section');
       const emailToggle = within(emailPanel!).getAllByRole('button')[0];
       fireEvent.click(emailToggle);
 
@@ -1011,7 +1019,7 @@ describe('AdminPage', () => {
 
       // Click Save in the email panel
       const emailHeading = screen.getByRole('heading', { name: /email \(smtp\)/i });
-      const emailPanel = emailHeading.closest<HTMLElement>('.bg-white');
+      const emailPanel = emailHeading.closest<HTMLElement>('section');
       const saveBtn = within(emailPanel!).getByRole('button', { name: /^save$/i });
       fireEvent.click(saveBtn);
 
@@ -1061,8 +1069,9 @@ describe('AdminPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /how to update/i }));
       await waitFor(() => expect(screen.getByText(/docker pull/i)).toBeInTheDocument());
 
-      // Click the Close button to dismiss the modal
-      fireEvent.click(screen.getByRole('button', { name: /close/i }));
+      // Click the footer's Close button to dismiss the modal (the head band's X is the other one)
+      const closeButtons = screen.getAllByRole('button', { name: /^close$/i });
+      fireEvent.click(closeButtons[closeButtons.length - 1]);
 
       await waitFor(() => {
         expect(screen.queryByText(/docker pull/i)).not.toBeInTheDocument();
@@ -1076,7 +1085,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       const rotateBtn = await screen.findByRole('button', { name: /^rotate$/i });
       fireEvent.click(rotateBtn);
@@ -1100,7 +1109,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      const editButtons = screen.getAllByTitle('Edit User');
+      const editButtons = screen.getAllByLabelText('Edit User');
       fireEvent.click(editButtons[1]);
 
       await waitFor(() => expect(screen.getByDisplayValue('alice')).toBeInTheDocument());
@@ -1130,11 +1139,11 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       // Wait for the API Keys section to appear
       const apiKeysHeading = await screen.findByRole('heading', { name: /^api keys$/i });
-      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('.rounded-xl');
+      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('section');
 
       // Type in the maps key field (type="password" by default)
       const keyInputs = within(apiKeysCard!).getAllByPlaceholderText('Enter key...');
@@ -1162,10 +1171,10 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       const apiKeysHeading = await screen.findByRole('heading', { name: /^api keys$/i });
-      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('.rounded-xl');
+      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('section');
 
       // By accessible name, not by position: the card gained an Amap field
       // between Maps and Unsplash, and an index would have kept passing while
@@ -1196,10 +1205,10 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       const apiKeysHeading = await screen.findByRole('heading', { name: /^api keys$/i });
-      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('.rounded-xl');
+      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('section');
 
       const amapToggle = within(apiKeysCard!).getByLabelText(/Amap/);
       fireEvent.change(amapToggle.parentElement!.querySelector('input')!, {
@@ -1228,11 +1237,11 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^services$/i }));
 
       // Wait for the API Keys section
       const apiKeysHeading = await screen.findByRole('heading', { name: /^api keys$/i });
-      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('.rounded-xl');
+      const apiKeysCard = apiKeysHeading.closest<HTMLElement>('section');
 
       // Type a key value to enable the Test button
       const keyInputs = within(apiKeysCard!).getAllByPlaceholderText('Enter key...');
@@ -1256,7 +1265,7 @@ describe('AdminPage', () => {
 
       await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
 
-      const editButtons = screen.getAllByTitle('Edit User');
+      const editButtons = screen.getAllByLabelText('Edit User');
       fireEvent.click(editButtons[1]); // click alice's edit button
 
       await waitFor(() => expect(screen.getByDisplayValue('alice')).toBeInTheDocument());
@@ -1294,8 +1303,10 @@ describe('AdminPage', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(true);
 
       // Click delete for alice (second user — non-self)
-      const deleteButtons = screen.getAllByTitle('Delete user');
+      const deleteButtons = screen.getAllByLabelText('Delete user');
       fireEvent.click(deleteButtons[deleteButtons.length - 1]); // last button = alice
+      const confirmButtons = await screen.findAllByRole('button', { name: /^delete$/i });
+      fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
       await waitFor(() => {
         expect(deletedId).toBeDefined();
@@ -1319,7 +1330,7 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       const rotateBtn = await screen.findByRole('button', { name: /^rotate$/i });
       fireEvent.click(rotateBtn);
@@ -1403,7 +1414,7 @@ describe('AdminPage', () => {
 
       // Find the email panel and click its "Send test email" button (scoped to avoid admin webhook panel)
       const emailHeading = screen.getByRole('heading', { name: /email \(smtp\)/i });
-      const emailPanel = emailHeading.closest<HTMLElement>('.bg-white');
+      const emailPanel = emailHeading.closest<HTMLElement>('section');
       const testBtn = within(emailPanel!).getByRole('button', { name: /send test email/i });
       fireEvent.click(testBtn);
 
@@ -1438,12 +1449,9 @@ describe('AdminPage', () => {
       // Wait for notifications tab to load
       await screen.findByPlaceholderText('mail.example.com');
 
-      // Find the webhook panel heading ('Webhook') — exact match to avoid 'Admin Webhook'
-      const webhookHeading = screen.getByRole('heading', { name: /^webhook$/i });
-      const webhookCard = webhookHeading.closest<HTMLElement>('.bg-white');
-      // Find the toggle button in webhook card
-      const webhookToggle = within(webhookCard!).getByRole('button');
-      fireEvent.click(webhookToggle);
+      // Each channel is a row of the channels card, its switch named after it;
+      // the exact name keeps it apart from the Admin Webhook target.
+      fireEvent.click(screen.getByRole('button', { name: /^webhook$/i }));
 
       await waitFor(() => {
         expect(appSettingsCalled).toBe(true);
@@ -1478,7 +1486,7 @@ describe('AdminPage', () => {
 
       // Find the Save button in the admin webhook panel
       const adminWebhookHeading = screen.getByRole('heading', { name: /admin webhook/i });
-      const adminWebhookCard = adminWebhookHeading.closest<HTMLElement>('.bg-white');
+      const adminWebhookCard = adminWebhookHeading.closest<HTMLElement>('section');
       const saveBtn = within(adminWebhookCard!).getByRole('button', { name: /save/i });
       fireEvent.click(saveBtn);
 
@@ -1520,18 +1528,15 @@ describe('AdminPage', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
       fireEvent.click(screen.getByRole('button', { name: /^notifications$/i }));
 
-      // Wait for the AdminNotificationsPanel matrix to appear
-      // The panel heading is t('admin.tabs.notifications') = 'Notifications'
-      // The channel column header is t('settings.notificationPreferences.email') = 'Email' (CSS uppercases it)
-      // Find the AdminNotificationsPanel by its h2 heading role='heading'
-      const matrixHeading = await screen.findByRole('heading', { name: /^notifications$/i });
-      const matrixCard = matrixHeading.closest<HTMLElement>('.bg-white');
+      // Wait for the AdminNotificationsPanel matrix to appear. It sits bare in the
+      // admin alerts card (t('admin.notifications.adminAlerts') = 'Admin alerts'),
+      // whose h2 heading finds it.
+      const matrixHeading = await screen.findByRole('heading', { name: /^admin alerts$/i });
+      const matrixCard = matrixHeading.closest<HTMLElement>('section');
 
-      // The matrix toggle button is inside the card (not a checkbox — it's a button toggle)
-      const matrixToggle = matrixCard?.querySelector('button');
-      if (matrixToggle) {
-        fireEvent.click(matrixToggle);
-      }
+      // The matrix switch is named after its event and channel; the card's first
+      // buttons belong to the webhook and ntfy targets above the matrix.
+      fireEvent.click(within(matrixCard!).getByRole('button', { name: /, email$/i }));
 
       await waitFor(() => {
         expect(prefUpdateCalled).toBe(true);
@@ -1545,11 +1550,11 @@ describe('AdminPage', () => {
       render(<AdminPage />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /^users$/i })).toBeInTheDocument());
-      fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^security$/i }));
 
       // Wait for the OIDC section — heading is 'Single Sign-On (OIDC)'
       const oidcHeading = await screen.findByRole('heading', { name: /single sign-on/i });
-      const oidcCard = oidcHeading.closest<HTMLElement>('.bg-white');
+      const oidcCard = oidcHeading.closest<HTMLElement>('section');
 
       // Issuer field (placeholder: https://accounts.google.com)
       const issuerInput = within(oidcCard!).getByPlaceholderText('https://accounts.google.com');
@@ -1776,7 +1781,7 @@ describe('AdminPage', () => {
       fireEvent.click(screen.getByRole('button', { name: /^plugins$/i }));
       expect(screen.getByTestId('plugins-panel')).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('button', { name: /user defaults/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^defaults$/i }));
       expect(screen.getByTestId('default-user-settings')).toBeInTheDocument();
     });
   });
@@ -1784,14 +1789,16 @@ describe('AdminPage', () => {
   describe('FE-PAGE-ADMIN-059: Stats fallbacks', () => {
     it('shows a zero file count when the API omits totalFiles', async () => {
       server.use(
-        http.get('/api/admin/stats', () => HttpResponse.json({ totalUsers: 3, totalTrips: 11, totalPlaces: 42 }))
+        http.get('/api/admin/stats', () =>
+          HttpResponse.json({ totalUsers: 3, totalTrips: 11, totalPlaces: 42 })
+        )
       );
 
       seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
       render(<AdminPage />);
 
       const filesLabel = await screen.findByText('Files');
-      expect(within(filesLabel.closest<HTMLElement>('div.rounded-xl')!).getByText('0')).toBeInTheDocument();
+      expect(within(filesLabel.parentElement!).getByText('0')).toBeInTheDocument();
     });
 
     it('hides the stats grid entirely when stats cannot be loaded', async () => {
@@ -1818,5 +1825,13 @@ describe('AdminPage', () => {
     render(<AdminPage />);
     await screen.findByRole('button', { name: /^users$/i });
     expect(screen.queryByRole('button', { name: /^storage$/i })).not.toBeInTheDocument();
+  });
+
+  it('FE-PAGE-ADMIN-STOR-003: managed mode hides the Plugins tab, and ?tab=plugins falls back to Users', async () => {
+    seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin(), managed: true });
+    render(<AdminPage />, { initialEntries: ['/admin?tab=plugins'] });
+    await screen.findByRole('button', { name: /^users$/i });
+    expect(screen.queryByRole('button', { name: /^plugins$/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: /plugins/i })).not.toBeInTheDocument());
   });
 });

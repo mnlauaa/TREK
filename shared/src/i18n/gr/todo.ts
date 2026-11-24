@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Χωρίς λίστα',
   'todo.namePlaceholder': 'Όνομα εργασίας',
   'todo.descriptionPlaceholder': 'Περιγραφή (προαιρετικό)',
+  'todo.editDescription': 'Κάντε κλικ για επεξεργασία, οι σύνδεσμοι ανοίγουν απευθείας',
   'todo.unassigned': 'Χωρίς ανάθεση',
   'todo.noCategory': 'Χωρίς λίστα',
   'todo.hasDescription': 'Έχει περιγραφή',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Προτεραιότητα',
   'todo.detail.noPriority': 'Καμία',
   'todo.detail.create': 'Δημιουργία εργασίας',
+  'todo.progressCount': '{done} από {total} ολοκληρώθηκαν',
+  'todo.allDone': 'Όλα έγιναν!',
+  'todo.filter.myShort': 'Δικές μου',
 };
 export default todo;

@@ -1,6 +1,19 @@
+import { DomainError } from '../common/domain-error';
+import type {
+  DawarichGeocodedPoint,
+  DawarichSlimPoint,
+  DawarichTrackFeature,
+  DawarichVisitRaw,
+  DawarichVisitedCountry,
+} from './dawarich.client';
+import {
+  DAWARICH_WINDOW_MAX_DAYS,
+  RECORDING_GAP_METERS,
+  type DawarichTrackDay,
+  type DawarichTrackSegment,
+} from '@trek/shared';
+
 import { createHash } from 'crypto';
-import type { DawarichTrackDay, DawarichTrackSegment } from '@trek/shared';
-import type { DawarichSlimPoint, DawarichTrackFeature, DawarichVisitRaw, DawarichVisitedCountry } from './dawarich.client';
 
 /**
  * Pure helpers for the Dawarich integration — no database, no HTTP, no
@@ -35,9 +48,9 @@ export function offsetMinutesOf(iso: string): number {
   return sign * (Number(match[2]) * 60 + Number(match[3]));
 }
 
-/** Local wall-clock milliseconds — the instant shifted into the string's own offset. */
-function localMs(iso: string): number {
-  return Date.parse(iso) + offsetMinutesOf(iso) * 60_000;
+/** Local wall-clock milliseconds: the instant shifted into the string's own offset, or into `offset` when given. */
+function localMs(iso: string, offset?: number): number {
+  return Date.parse(iso) + (offset ?? offsetMinutesOf(iso)) * 60_000;
 }
 
 /** `YYYY-MM-DD` of a local wall-clock millisecond value. */
@@ -80,9 +93,7 @@ export function syncWindow(
   const from = new Date(start - lookbackDays * 86_400_000);
 
   const end = endDate ? Date.parse(`${endDate}T23:59:59Z`) : NaN;
-  const to = Number.isFinite(end)
-    ? new Date(Math.min(end + lookaheadDays * 86_400_000, now.getTime()))
-    : now;
+  const to = Number.isFinite(end) ? new Date(Math.min(end + lookaheadDays * 86_400_000, now.getTime())) : now;
 
   return to.getTime() > from.getTime() ? { from, to } : null;
 }
@@ -124,6 +135,72 @@ export function toNumber(value: unknown): number | null {
   return null;
 }
 
+/** What a stay is called when nothing names it. */
+export const UNNAMED_STAY = 'Unnamed stay';
+
+/**
+ * The names Dawarich gives a visit or a place when it knows nothing about
+ * either (`Visit::DEFAULT_NAME`, `Place::DEFAULT_NAME`). Since 1.22 the
+ * visit's `name` is its display name, so one of these arrives in place of
+ * nothing, and taken as a name it hid the address the recording does hold
+ * (#3105).
+ */
+const DAWARICH_PLACEHOLDER_NAMES = new Set(['unknown location', 'suggested place']);
+
+/** A name worth showing: set, and not one of Dawarich's placeholders. */
+function realName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || DAWARICH_PLACEHOLDER_NAMES.has(trimmed.toLowerCase())) return null;
+  return trimmed;
+}
+
+/**
+ * The best name the visit itself carries: its own, its place's, then the
+ * place's address. Null when there is none of them.
+ */
+function visitSourceName(visit: DawarichVisitRaw): string | null {
+  return realName(visit.name) ?? realName(visit.place?.name) ?? realName(visit.place?.address);
+}
+
+/**
+ * What a stay is stored as while its points are still to be read for a name:
+ * Dawarich's own placeholder, which is what the source said, and which the
+ * next sync recognises and tries again.
+ */
+export const STAY_NAME_PENDING = 'Unknown Location';
+
+/** True for a stored name that is one of Dawarich's placeholders, or none at all. */
+export function isPlaceholderName(name: string | null | undefined): boolean {
+  return realName(name) === null;
+}
+
+/**
+ * A stay named from the reverse-geocoded points recorded during it: the city
+ * most of them fall in with its country ("Cinisi, Italy"), or the country
+ * alone when no point has a city. Null when none was geocoded.
+ */
+export function nameFromGeocodedPoints(points: readonly DawarichGeocodedPoint[]): string | null {
+  const cities = new Map<string, { count: number; country: string | null }>();
+  const countries = new Map<string, number>();
+  for (const point of points) {
+    const city = realName(point.city);
+    const country = realName(point.country_name);
+    if (city) {
+      const seen = cities.get(city);
+      if (seen) seen.count++;
+      else cities.set(city, { count: 1, country });
+    }
+    if (country) countries.set(country, (countries.get(country) ?? 0) + 1);
+  }
+  let city: [string, { count: number; country: string | null }] | null = null;
+  for (const entry of cities) if (!city || entry[1].count > city[1].count) city = entry;
+  if (city) return city[1].country ? `${city[0]}, ${city[1].country}` : city[0];
+  let country: [string, number] | null = null;
+  for (const entry of countries) if (!country || entry[1] > country[1]) country = entry;
+  return country ? country[0] : null;
+}
+
 /**
  * A visit reduced to what TREK stores.
  *
@@ -134,6 +211,8 @@ export function toNumber(value: unknown): number | null {
 export function normalizeVisit(visit: DawarichVisitRaw): {
   sourceVisitId: string;
   name: string;
+  /** False when `name` is TREK's fallback because the source sent nothing that names the place. */
+  named: boolean;
   lat: number | null;
   lng: number | null;
   startedAt: string;
@@ -181,11 +260,18 @@ export function normalizeVisit(visit: DawarichVisitRaw): {
       : 0;
 
   const rawCode = visit.place?.country_code;
+  const name = visitSourceName(visit);
+  // A visit without a place or an area has no coordinate there; the middle of
+  // its own points, which newer builds send as `center`, is the next best one.
+  const placeLat = toNumber(visit.place?.latitude);
+  const placeLng = toNumber(visit.place?.longitude);
+  const fromPlace = placeLat !== null && placeLng !== null;
   return {
     sourceVisitId: String(visit.id),
-    name: (visit.name ?? '').trim() || 'Unnamed stay',
-    lat: toNumber(visit.place?.latitude),
-    lng: toNumber(visit.place?.longitude),
+    name: name ?? UNNAMED_STAY,
+    named: name !== null,
+    lat: fromPlace ? placeLat : toNumber(visit.center?.latitude),
+    lng: fromPlace ? placeLng : toNumber(visit.center?.longitude),
     startedAt: visit.started_at,
     endedAt,
     durationMinutes,
@@ -193,8 +279,7 @@ export function normalizeVisit(visit: DawarichVisitRaw): {
     status: visit.status === 'confirmed' ? 'confirmed' : 'suggested',
     confidence: toNumber(visit.confidence),
     confidenceBand: typeof visit.confidence_band === 'string' ? visit.confidence_band : null,
-    countryCodeFromSource:
-      typeof rawCode === 'string' && rawCode.length === 2 ? rawCode.toUpperCase() : null,
+    countryCodeFromSource: typeof rawCode === 'string' && rawCode.length === 2 ? rawCode.toUpperCase() : null,
   };
 }
 
@@ -248,11 +333,7 @@ export function simplify(points: Array<[number, number]>, epsilon: number): Arra
 }
 
 /** Perpendicular distance in degrees, longitude scaled so the metric is not latitude-skewed. */
-function perpendicularDistance(
-  point: [number, number],
-  start: [number, number],
-  end: [number, number],
-): number {
+function perpendicularDistance(point: [number, number], start: [number, number], end: [number, number]): number {
   const scale = Math.cos((point[0] * Math.PI) / 180) || 1;
   const px = point[1] * scale;
   const py = point[0];
@@ -308,9 +389,60 @@ interface BucketOptions {
   maxPointsPerDay: number;
   /** Simplification tolerance in degrees. ~5e-5 is roughly five metres. */
   epsilon: number;
+  /**
+   * Cut a day where the recording has a gap instead of drawing across it, and
+   * never join a day to the one before. Off for the live overlay, which has
+   * always joined its points up; on for a day a journey keeps (JRN-01).
+   */
+  gaps?: GapRule;
+  /**
+   * Cut tracks at midnight in this zone (minutes east of UTC) rather than in
+   * the one their own times carry.
+   */
+  offsetMinutes?: number;
 }
 
 const DEFAULT_BUCKET: BucketOptions = { maxPointsPerDay: 600, epsilon: 0.00005 };
+
+/** When two recorded points are too far apart, in time and in space, to have been one movement. */
+interface GapRule {
+  seconds: number;
+  meters: number;
+}
+
+/**
+ * Silence on its own is no gap: a phone that records only when it moves sends
+ * nothing for an hour at a café table and then goes on from the same spot.
+ * Silence that ends somewhere else is one, and the line between the two ends
+ * would be a way nobody can say was travelled.
+ */
+export const RECORDING_GAP: GapRule = { seconds: 15 * 60, meters: RECORDING_GAP_METERS };
+
+interface TimedPoint {
+  lat: number;
+  lng: number;
+  ts: number;
+}
+
+/** Points in time order → the runs between the gaps of the recording. */
+export function splitAtGaps<T extends TimedPoint>(points: T[], rule: GapRule): T[][] {
+  const runs: T[][] = [];
+  let run: T[] = [];
+  for (const point of points) {
+    const last = run[run.length - 1];
+    if (
+      last &&
+      point.ts - last.ts > rule.seconds &&
+      distanceMeters(last.lat, last.lng, point.lat, point.lng) > rule.meters
+    ) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(point);
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
 
 /**
  * Recorded points → one entry per local calendar day.
@@ -325,8 +457,8 @@ export function bucketPointsByDay(
   offsetMinutes: number,
   options: Partial<BucketOptions> = {},
 ): DawarichTrackDay[] {
-  const { maxPointsPerDay, epsilon } = { ...DEFAULT_BUCKET, ...options };
-  const byDay = new Map<string, Array<{ lat: number; lng: number; ts: number }>>();
+  const { maxPointsPerDay, epsilon, gaps } = { ...DEFAULT_BUCKET, ...options };
+  const byDay = new Map<string, TimedPoint[]>();
 
   for (const point of points) {
     const lat = toNumber(point.latitude);
@@ -347,13 +479,21 @@ export function bucketPointsByDay(
   for (let d = 0; d < dates.length; d++) {
     const date = dates[d]!;
     const own = byDay.get(date)!.sort((a, b) => a.ts - b.ts);
+    if (gaps) {
+      const segments = runsAsSegments(splitAtGaps(own, gaps), own.length, { maxPointsPerDay, epsilon });
+      if (segments.length > 0) days.push({ date, segments });
+      continue;
+    }
     // Stitch the previous day's last point on, so consecutive days join up
     // rather than showing a jump the traveller never made.
     const previous = d > 0 ? byDay.get(dates[d - 1]!) : undefined;
     const stitched = previous?.length ? [previous[previous.length - 1]!, ...own] : own;
 
     const line = capPoints(
-      simplify(stitched.map((p): [number, number] => [p.lat, p.lng]), epsilon),
+      simplify(
+        stitched.map((p): [number, number] => [p.lat, p.lng]),
+        epsilon,
+      ),
       maxPointsPerDay,
     );
     if (line.length < 2) continue;
@@ -376,6 +516,40 @@ export function bucketPointsByDay(
 }
 
 /**
+ * The runs of one day as drawable segments, the day's point budget shared out
+ * by how many points each run brought. A run that thins to a single point is
+ * a fix, not a way, and is left out.
+ */
+function runsAsSegments(
+  runs: TimedPoint[][],
+  total: number,
+  { maxPointsPerDay, epsilon }: Pick<BucketOptions, 'maxPointsPerDay' | 'epsilon'>,
+): DawarichTrackSegment[] {
+  const segments: DawarichTrackSegment[] = [];
+  for (const run of runs) {
+    const budget = Math.max(2, Math.floor((maxPointsPerDay * run.length) / total));
+    const line = capPoints(
+      simplify(
+        run.map((p): [number, number] => [p.lat, p.lng]),
+        epsilon,
+      ),
+      budget,
+    );
+    const first = run[0];
+    const last = run[run.length - 1];
+    if (line.length < 2 || !first || !last) continue;
+    segments.push({
+      points: line,
+      mode: null,
+      startedAt: new Date(first.ts * 1000).toISOString(),
+      endedAt: new Date(last.ts * 1000).toISOString(),
+      distanceMeters: null,
+    });
+  }
+  return segments;
+}
+
+/**
  * Dawarich tracks → one entry per local calendar day.
  *
  * A track has a start and an end but no per-point times, so a track that runs
@@ -389,7 +563,7 @@ export function bucketTracksByDay(
   features: DawarichTrackFeature[],
   options: Partial<BucketOptions> = {},
 ): DawarichTrackDay[] {
-  const { maxPointsPerDay, epsilon } = { ...DEFAULT_BUCKET, ...options };
+  const { maxPointsPerDay, epsilon, offsetMinutes } = { ...DEFAULT_BUCKET, ...options };
   const byDay = new Map<string, DawarichTrackSegment[]>();
 
   for (const feature of features) {
@@ -404,7 +578,7 @@ export function bucketTracksByDay(
     const mode = typeof props?.dominant_mode === 'string' ? props.dominant_mode : null;
     const distance = toNumber(props?.distance);
 
-    for (const piece of splitAtLocalMidnight(points, startedAt, endedAt)) {
+    for (const piece of splitAtLocalMidnight(points, startedAt, endedAt, offsetMinutes)) {
       const line = capPoints(simplify(piece.points, epsilon), maxPointsPerDay);
       if (line.length < 2) continue;
       const segment: DawarichTrackSegment = {
@@ -444,9 +618,10 @@ function splitAtLocalMidnight(
   points: Array<[number, number]>,
   startedAt: string,
   endedAt: string,
+  zone?: number,
 ): TrackPiece[] {
-  const startLocal = localMs(startedAt);
-  const endLocal = localMs(endedAt);
+  const startLocal = localMs(startedAt, zone);
+  const endLocal = localMs(endedAt, zone);
   const startDate = dateOfLocalMs(startLocal);
   const endDate = dateOfLocalMs(endLocal);
 
@@ -470,7 +645,7 @@ function splitAtLocalMidnight(
     return [{ date: startDate, points, startedAt, endedAt, whole: true }];
   }
 
-  const offset = offsetMinutesOf(startedAt) * 60_000;
+  const offset = (zone ?? offsetMinutesOf(startedAt)) * 60_000;
   const span = endLocal - startLocal;
   const pieces: TrackPiece[] = [];
   let cutIndex = 0;
@@ -510,10 +685,7 @@ function splitAtLocalMidnight(
 
 /** Total points across every day, for the "how much did we draw" report. */
 export function countPoints(days: DawarichTrackDay[]): number {
-  return days.reduce(
-    (total, day) => total + day.segments.reduce((sum, segment) => sum + segment.points.length, 0),
-    0,
-  );
+  return days.reduce((total, day) => total + day.segments.reduce((sum, segment) => sum + segment.points.length, 0), 0);
 }
 
 // ── Visited cities ───────────────────────────────────────────────────────────
@@ -599,4 +771,26 @@ function sumOf(a: unknown, b: unknown): number | undefined {
   const right = toNumber(b);
   if (left === null && right === null) return undefined;
   return (left ?? 0) + (right ?? 0);
+}
+
+// ── Windows ──────────────────────────────────────────────────────────────────
+
+/**
+ * An explicit instant window, read the one way for the REST routes and the
+ * MCP tools that take one. Both ends are required together: a half-open range
+ * would silently become "everything since the epoch" on one side, which is the
+ * request that makes an instance time out. A refusal is a 400 that REST and
+ * MCP answer with the same sentence.
+ */
+export function parseTimeWindow(from: string | undefined, to: string | undefined): { from: Date; to: Date } {
+  const start = from ? new Date(from) : null;
+  const end = to ? new Date(to) : null;
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+    throw new DomainError(400, 'from and to are required ISO timestamps');
+  }
+  if (end <= start) throw new DomainError(400, 'to must be after from');
+  if (end.getTime() - start.getTime() > DAWARICH_WINDOW_MAX_DAYS * 86_400_000) {
+    throw new DomainError(400, `Window must be ${DAWARICH_WINDOW_MAX_DAYS} days or less`);
+  }
+  return { from: start, to: end };
 }

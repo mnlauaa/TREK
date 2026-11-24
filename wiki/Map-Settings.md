@@ -10,6 +10,8 @@ The Map tab controls which map engine and tile source TREK uses in the Trip Plan
 
 Open the user menu in the top navigation bar, select **Settings**, then the **Map** tab. Unlike the General tab, changes here are not saved as you make them — click **Save Map** when you are done.
 
+Some map display options are not on this tab but on the **General** tab under **Travel & map**, and save as you change them: **Booking route labels**, **Always show booking routes**, **Compact markers for unplanned places** and **Explore places on the map**. See [Display-Settings](Display-Settings).
+
 ## Map provider
 
 Choose the rendering engine:
@@ -37,6 +39,8 @@ When Leaflet is selected, pick a preset or enter a custom tile URL.
 | CartoDB Light (needs a key) | `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png` |
 | CartoDB Dark (needs a key) | `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png` |
 | Stadia Smooth | `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png` |
+| 高德地图 (Amap) | `https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}` |
+| 高德卫星 (Amap Satellite) | `https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}` |
 
 **OpenFreeMap Positron is the default** and is what every map falls back to when the field is empty. It needs no key,
 no account and has no request limit, and it is a MapLibre *style* rather than an XYZ template — TREK renders it with
@@ -129,6 +133,10 @@ Enables pitch and 3D buildings on all styles. `Mapbox Standard` and `Standard Sa
 
 Enables antialiasing and globe projection for sharper edges. May impact performance on lower-end devices.
 
+### Hide Points of Interest
+
+`Mapbox Standard` and `Standard Satellite` label shops, restaurants and sights of their own. They look like your places but are part of the basemap: they cannot be clicked, and they sit a little off the same place added from the search. With this on, the trip map and the preview leave them out, so only your places stand out. It is off by default, applies to the Standard styles only (the other styles have no such switch), and takes effect without reloading the map.
+
 ## MapLibre GL — style
 
 MapLibre GL renders OpenFreeMap vector tiles and needs **no token at all**, so there is no token field on this provider — just a style.
@@ -143,7 +151,7 @@ MapLibre GL renders OpenFreeMap vector tiles and needs **no token at all**, so t
 
 You can also type any `https://tiles.openfreemap.org/…` style URL. A style that is not an OpenFreeMap URL is rejected and replaced with Liberty when you save.
 
-The **3D Buildings & Terrain** and **High Quality Mode** toggles are Mapbox-only and are not shown for MapLibre GL.
+The **3D Buildings & Terrain**, **High Quality Mode** and **Hide Points of Interest** toggles are Mapbox-only and are not shown for MapLibre GL.
 
 ## Where a map opens
 
@@ -159,8 +167,13 @@ For each trip map — Trip Planner, Collections and shared-trip links — TREK t
 
 The small map preview on this settings page is the exception: it stays on a fixed city (Paris) — zoom 16 on the two GL previews, city-level zoom 12 under Leaflet — so you can judge label density, 3D buildings and satellite texture. It is not a setting and no real map opens there.
 
+## Routing engines
+
+The routes TREK draws and the travel times between stops come from the Valhalla of the TREK services, with a public OSRM router for a day it cannot answer; without the TREK services from the public OSRM router, and the avoidance of toll roads, motorways and ferries from a public Valhalla server. An admin picks the **Routing service** and can point TREK at engines of their own with **Own routing engine** and **Own Valhalla instance**, next to the map defaults under **Admin → User Defaults**. They are not part of this tab. See [Admin-User-Defaults](Admin-User-Defaults#own-routing-engine) and [Road-Trip](Road-Trip#routing-engines).
+
 ## See also
 
 - [Map-Features](Map-Features)
+- [Display-Settings](Display-Settings)
 - [Admin-Panel-Overview](Admin-Panel-Overview)
 - [User-Settings](User-Settings)

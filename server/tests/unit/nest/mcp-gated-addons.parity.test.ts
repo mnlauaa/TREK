@@ -13,10 +13,11 @@
  * modules the caller happened to import, so it would pass in a suite that
  * imports none, which is exactly the shape of test that hid this.
  */
-import { describe, it, expect } from 'vitest';
+import { ADDON_IDS, MCP_GATED_ADDON_IDS } from '../../../src/addons';
+
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
-import { ADDON_IDS, MCP_GATED_ADDON_IDS } from '../../../src/addons';
+import { describe, it, expect } from 'vitest';
 
 const SRC = join(__dirname, '../../../src');
 
@@ -28,13 +29,13 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Every addon id named by an addonGate(...) or collabFeatureGate(...) call. */
+/** Every addon id named by an addonGate(...), instanceAddonGate(...) or collabFeatureGate(...) call. */
 function gatedInSource(): { ids: Set<string>; where: Map<string, string[]> } {
   const ids = new Set<string>();
   const where = new Map<string, string[]>();
   for (const file of walk(SRC)) {
     const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/\baddonGate\(\s*ADDON_IDS\.([A-Z_]+)\s*\)/g)) {
+    for (const m of text.matchAll(/\b(?:addonGate|instanceAddonGate)\(\s*ADDON_IDS\.([A-Z_]+)\s*\)/g)) {
       const id = (ADDON_IDS as Record<string, string>)[m[1]];
       if (!id) continue;
       ids.add(id);
@@ -54,12 +55,10 @@ describe('MCP-gated addons', () => {
     const { ids, where } = gatedInSource();
     const listed = new Set<string>(MCP_GATED_ADDON_IDS);
 
-    const missing = [...ids].filter(id => !listed.has(id)).sort();
+    const missing = [...ids].filter((id) => !listed.has(id)).sort();
     expect(
       missing,
-      missing.length
-        ? `gated but not listed: ${missing.map(id => `${id} (${where.get(id)?.[0]})`).join(', ')}`
-        : '',
+      missing.length ? `gated but not listed: ${missing.map((id) => `${id} (${where.get(id)?.[0]})`).join(', ')}` : '',
     ).toEqual([]);
   });
 
@@ -68,7 +67,7 @@ describe('MCP-gated addons', () => {
     // tears down every session for nothing. `mcp` is the exception: it gates the
     // whole surface rather than any single tool, so it appears in no gate call.
     const { ids } = gatedInSource();
-    const spurious = MCP_GATED_ADDON_IDS.filter(id => id !== ADDON_IDS.MCP && !ids.has(id)).sort();
+    const spurious = MCP_GATED_ADDON_IDS.filter((id) => id !== ADDON_IDS.MCP && !ids.has(id)).sort();
     expect(spurious, spurious.length ? `listed but nothing gates on it: ${spurious.join(', ')}` : '').toEqual([]);
   });
 
@@ -78,5 +77,6 @@ describe('MCP-gated addons', () => {
     const { ids } = gatedInSource();
     expect(ids.size).toBeGreaterThanOrEqual(5);
     expect(ids.has(ADDON_IDS.ROADTRIP)).toBe(true);
+    expect(ids.has(ADDON_IDS.DOCUMENTS)).toBe(true);
   });
 });

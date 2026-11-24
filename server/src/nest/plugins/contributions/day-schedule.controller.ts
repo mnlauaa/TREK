@@ -1,10 +1,15 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { DatabaseService } from '../../database/database.service';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { Days } from '../../../db/entities/Days.entity';
+import type { DaysRepository } from '../../../db/repositories/Days.repository';
+import { JwtAuthGuard } from '../../auth-core/jwt-auth.guard';
+import { toRowId } from '../../common/row-id';
+import { TripAccessService } from '../../trip-membership/trip-access.service';
 import { pluginsEnabled } from '../kill-switch';
 import { PluginHooks } from '../plugin-hooks.service';
 import { stripEmoji } from '../text-sanitize';
+import { InjectRepository } from '@mikro-orm/nestjs';
+import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+
+import type { Request } from 'express';
 
 /**
  * GET /api/day-schedule/:tripId — bounded time contributions plugins attach to the
@@ -58,7 +63,8 @@ function normalize(pluginId: string, tripDayIds: ReadonlySet<number>, raw: unkno
     const assignmentId = Number.isInteger(it.assignmentId) ? (it.assignmentId as number) : undefined;
     const reservationId = Number.isInteger(it.reservationId) ? (it.reservationId as number) : undefined;
     const minutesRaw = Number(it.minutes);
-    const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? Math.min(Math.round(minutesRaw), MAX_MINUTES) : undefined;
+    const minutes =
+      Number.isFinite(minutesRaw) && minutesRaw > 0 ? Math.min(Math.round(minutesRaw), MAX_MINUTES) : undefined;
     out.push({
       pluginId,
       id,
@@ -80,7 +86,9 @@ function normalize(pluginId: string, tripDayIds: ReadonlySet<number>, raw: unkno
 export class DayScheduleController {
   constructor(
     private readonly hooks: PluginHooks,
-    private readonly dbs: DatabaseService,
+    private readonly trips: TripAccessService,
+    // CT1 (Plan 3j Task 5) — the trip's day-id set, converted onto Days.repository.ts.
+    @InjectRepository(Days) private readonly days: DaysRepository,
   ) {}
 
   @Get(':tripId')
@@ -89,14 +97,14 @@ export class DayScheduleController {
     @Req() req: Request & { user?: { id: number } },
   ): Promise<{ items: DayScheduleItem[] }> {
     if (!pluginsEnabled()) return { items: [] };
-    const tripId = Number(tripIdRaw);
+    const tripId = toRowId(tripIdRaw);
     const userId = req.user?.id;
-    if (!Number.isFinite(tripId) || userId == null || !this.dbs.canAccessTrip(tripId, userId)) return { items: [] };
+    if (tripId === null || userId == null || !(await this.trips.findAccessible(tripId, userId))) return { items: [] };
 
     const ids = this.hooks.providersOf('dayScheduleProvider');
     if (ids.length === 0) return { items: [] };
-    const dayRows = this.dbs.connection.prepare('SELECT id FROM days WHERE trip_id = ?').all(tripId) as Array<{ id: number }>;
-    const tripDayIds: ReadonlySet<number> = new Set(dayRows.map((d) => d.id));
+    const dayIds = await this.days.listIdsByTrip(tripId); // CT1 — Plan 3j
+    const tripDayIds: ReadonlySet<number> = new Set(dayIds);
 
     const perProvider = await Promise.all(
       ids.map(async (id): Promise<DayScheduleItem[]> => {

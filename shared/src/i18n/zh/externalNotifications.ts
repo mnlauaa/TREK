@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const zh: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const zh: NotificationLocale = {
     booking_change: (p) => ({
       title: `新预订：${p.booking}`,
       body: `${p.actor} 在"${p.trip}"中添加了预订"${p.booking}"（${p.type}）。`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight}已起飞`,
+      body: `从${p.from}飞往${p.to}的${p.flight}已在空中。`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight}延误`,
+      body: `从${p.from}飞往${p.to}的${p.flight}比计划晚约${p.delay}分钟。`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight}已降落`,
+      body: `从${p.from}出发的${p.flight}已降落在${p.to}。`,
     }),
     trip_reminder: (p) => ({
       title: `旅行提醒：${p.trip}`,
@@ -37,8 +50,8 @@ const zh: NotificationLocale = {
       body: `${p.actor} 邀请你共享收藏。打开 TREK 接受或拒绝。`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} 张照片已分享`,
-      body: `${p.actor} 在"${p.trip}"中分享了 ${p.count} 张照片。`,
+      title: pluralForm(p.count, 'zh', { other: `${p.count} 张照片已分享` }),
+      body: pluralForm(p.count, 'zh', { other: `${p.actor} 在"${p.trip}"中分享了 ${p.count} 张照片。` }),
     }),
     collab_message: (p) => ({
       title: `"${p.trip}"中的新消息`,
@@ -56,11 +69,41 @@ const zh: NotificationLocale = {
       title: '存储副本故障',
       body:
         `写入副本 '${p.backend}' 失败：${p.op} / ${p.key} — ${p.error}。` +
-        (p.suppressed !== '0' ? `自上次通知以来，还有 ${p.suppressed} 个失败被抑制。` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'zh', { other: `自上次通知以来，另有 ${p.suppressed} 次失败未单独通知。` })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: '划桨区域申请',
+      body: `${p.actor} 正在 ${p.region} 规划划桨行程。请在管理后台的附加组件中加载或拒绝其水域数据。`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology 会话已清除',
       body: '您的 Synology 账户或 URL 已更改，您已退出 Synology Photos。',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer 路线: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `“${p.trip}”中的“${p.tour}”已在 wanderer 中更改。打开行程并检查其来源即可查看所有变化。旅行中的内容不会自行改变。`
+          : p.state === 'unverifiable'
+            ? `“${p.trip}”中的“${p.tour}”已无法在 wanderer 中检查。你旅行中的行程保持不变。`
+            : `“${p.trip}”中的“${p.tour}”可能已在 wanderer 中变化。请打开行程并检查其来源。旅行中的内容不会自行改变。`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `从邮件添加：${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} 从转发的邮件中将“${p.booking}”添加到“${p.trip}”。`
+          : `你转发的邮件中的“${p.booking}”已添加到“${p.trip}”。7 天内可以在 TREK 中撤销。`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: '待查看的转发预订',
+      body: `TREK 中等待你处理的转发预订：${p.count}。每一条都说明了为什么没有自动添加。`,
+    }),
+    mail_ingest_paused: () => ({
+      title: '邮件导入已暂停',
+      body: 'TREK 暂时不接收转发的预订邮件，请先不要转发。你的地址会保留，导入恢复后即可再次使用，已添加的预订仍保留在你的行程中。',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

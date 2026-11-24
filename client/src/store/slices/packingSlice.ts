@@ -5,6 +5,7 @@ import type { TripStoreState } from '../tripStore'
 import type { PackingItem } from '../../types'
 import { getApiErrorMessage } from '../../types'
 import { notify } from '../notify'
+import { resolvePackedState } from '@trek/shared'
 
 type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
@@ -14,11 +15,14 @@ export interface PackingSlice {
   updatePackingItem: (tripId: number | string, id: number, data: Partial<PackingItem>) => Promise<PackingItem>
   deletePackingItem: (tripId: number | string, id: number) => Promise<void>
   togglePackingItem: (tripId: number | string, id: number, checked: boolean) => Promise<void>
+  /** Count how many pieces of a multi-piece item are packed (#2296). */
+  setPackedCount: (tripId: number | string, id: number, count: number) => Promise<void>
   reorderPackingItems: (tripId: number | string, orderedIds: number[]) => Promise<void>
   // Three-tier sharing (#858)
   setPackingItemSharing: (tripId: number | string, id: number, visibility: 'common' | 'personal' | 'shared', recipientIds: number[]) => Promise<void>
   clonePackingItem: (tripId: number | string, id: number) => Promise<void>
-  addPackingContributor: (tripId: number | string, id: number) => Promise<void>
+  /** Without a userId the caller pledges themselves; with one, that member is put down as a bringer (#3098). */
+  addPackingContributor: (tripId: number | string, id: number, userId?: number) => Promise<void>
   removePackingContributor: (tripId: number | string, id: number, userId: number) => Promise<void>
 }
 
@@ -57,9 +61,11 @@ export const createPackingSlice = (set: SetState, get: GetState): PackingSlice =
   },
 
   togglePackingItem: async (tripId, id, checked) => {
+    const prev = get().packingItems.find(item => item.id === id)
+    // Ticking decides for the whole item, so a partial count goes with it (#2296).
     set(state => ({
       packingItems: state.packingItems.map(item =>
-        item.id === id ? { ...item, checked: checked ? 1 : 0 } : item
+        item.id === id ? { ...item, checked: checked ? 1 : 0, packed_quantity: null } : item
       )
     }))
     try {
@@ -69,9 +75,26 @@ export const createPackingSlice = (set: SetState, get: GetState): PackingSlice =
       // silently would just flip the checkbox with no explanation. Surface it.
       set(state => ({
         packingItems: state.packingItems.map(item =>
-          item.id === id ? { ...item, checked: checked ? 0 : 1 } : item
+          item.id === id ? { ...item, checked: checked ? 0 : 1, packed_quantity: prev?.packed_quantity ?? null } : item
         )
       }))
+      notify(getApiErrorMessage(err, 'Error updating item'), 'error')
+    }
+  },
+
+  setPackedCount: async (tripId, id, count) => {
+    const prev = get().packingItems.find(item => item.id === id)
+    if (!prev) return
+    // The server's own rule, run ahead of it so the counter answers at once.
+    const next = resolvePackedState(
+      { checked: prev.checked ? 1 : 0, packed_quantity: prev.packed_quantity ?? null },
+      { bodyKeys: ['packed_quantity'], packed_quantity: count, quantity: prev.quantity || 1 },
+    )
+    set(state => ({ packingItems: state.packingItems.map(item => item.id === id ? { ...item, ...next } : item) }))
+    try {
+      await packingRepo.update(tripId, id, { packed_quantity: count })
+    } catch (err: unknown) {
+      set(state => ({ packingItems: state.packingItems.map(item => item.id === id ? prev : item) }))
       notify(getApiErrorMessage(err, 'Error updating item'), 'error')
     }
   },
@@ -119,9 +142,9 @@ export const createPackingSlice = (set: SetState, get: GetState): PackingSlice =
     }
   },
 
-  addPackingContributor: async (tripId, id) => {
+  addPackingContributor: async (tripId, id, userId) => {
     try {
-      const result = await packingApi.addContributor(tripId, id)
+      const result = await packingApi.addContributor(tripId, id, userId)
       set(state => ({ packingItems: state.packingItems.map(i => i.id === id ? result.item : i) }))
     } catch (err: unknown) {
       notify(getApiErrorMessage(err, 'Error joining item'), 'error')

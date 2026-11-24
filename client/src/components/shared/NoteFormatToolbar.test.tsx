@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { render } from '../../../tests/helpers/render'
 import userEvent from '@testing-library/user-event'
 import { useRef, useState } from 'react'
@@ -10,12 +10,12 @@ import NoteFormatToolbar from './NoteFormatToolbar'
  * through a real textarea rather than asserting on a callback in isolation —
  * the selection handling is the part that breaks, and it only exists in the DOM.
  */
-function Harness({ initial = '', onValue }: { initial?: string; onValue?: (v: string) => void }) {
+function Harness({ initial = '', onValue, customTooltips }: { initial?: string; onValue?: (v: string) => void; customTooltips?: boolean }) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
   const [value, setValue] = useState(initial)
   return (
     <>
-      <NoteFormatToolbar textareaRef={ref} onChange={v => { setValue(v); onValue?.(v) }} />
+      <NoteFormatToolbar textareaRef={ref} onChange={v => { setValue(v); onValue?.(v) }} customTooltips={customTooltips} />
       <textarea ref={ref} aria-label="body" value={value} onChange={e => setValue(e.target.value)} />
     </>
   )
@@ -74,6 +74,34 @@ describe('NoteFormatToolbar', () => {
     expect(field().value).toBe('already a list')
   })
 
+  it('FE-NOTEBAR-010: pressing the numbered list button on each new line counts up instead of repeating 1.', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    const numbered = screen.getByRole('button', { name: /numbered list/i })
+    select(0, 0)
+
+    for (const [i, item] of ['Breakfast', 'Lunch', 'Dinner'].entries()) {
+      if (i > 0) await user.keyboard('{Enter}')
+      await user.click(numbered)
+      // The toolbar puts the caret back one frame later; typing before that
+      // frame would have it jump into the middle of the word.
+      await act(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+      await user.keyboard(item)
+    }
+
+    expect(field().value).toBe('1. Breakfast\n2. Lunch\n3. Dinner')
+  })
+
+  it('FE-NOTEBAR-011: a multi-line selection gets a marker on every line', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={'Breakfast\nLunch\nDinner'} />)
+    select(0, 22)
+
+    await user.click(screen.getByRole('button', { name: /numbered list/i }))
+
+    expect(field().value).toBe('1. Breakfast\n2. Lunch\n3. Dinner')
+  })
+
   it('FE-NOTEBAR-005: the link button leaves a placeholder URL to type over', async () => {
     const user = userEvent.setup()
     render(<Harness initial="opening hours" />)
@@ -109,5 +137,26 @@ describe('NoteFormatToolbar', () => {
     await user.click(screen.getByRole('button', { name: /bold/i }))
 
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('FE-NOTEBAR-008: keeps the native tooltip by default', () => {
+    render(<Harness />)
+
+    expect(screen.getByRole('button', { name: /bold/i })).toHaveAttribute('title', 'Bold')
+  })
+
+  it('FE-NOTEBAR-009: with customTooltips the name shows in the shared tooltip, and the button still keeps the focus off itself', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial="text" customTooltips />)
+    const bold = screen.getByRole('button', { name: /bold/i })
+    expect(bold).not.toHaveAttribute('title')
+
+    await user.hover(bold)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Bold')
+
+    select(0, 4)
+    await user.click(bold)
+    expect(field().value).toBe('**text**')
+    await waitFor(() => expect(document.activeElement).toBe(field()))
   })
 })

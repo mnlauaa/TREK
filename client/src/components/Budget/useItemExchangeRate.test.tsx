@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { budgetApi } from '../../api/client';
+import { exchangeRateRepo } from '../../repo/budgetRepo';
 import {
   displayRateToStored,
   formatDisplayRate,
@@ -9,8 +9,8 @@ import {
   useItemExchangeRate,
 } from './useItemExchangeRate';
 
-vi.mock('../../api/client', () => ({
-  budgetApi: { resolveExchangeRate: vi.fn() },
+vi.mock('../../repo/budgetRepo', () => ({
+  exchangeRateRepo: { resolve: vi.fn() },
 }));
 
 const resolved = (currency = 'USD', exchangeRate = 0.125) => ({
@@ -38,7 +38,7 @@ describe('useItemExchangeRate', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('shows an inherited Trip/Global rate on create but omits it from the write', async () => {
-    vi.mocked(budgetApi.resolveExchangeRate).mockResolvedValue(resolved());
+    vi.mocked(exchangeRateRepo.resolve).mockResolvedValue(resolved());
     const { result } = renderHook(() => useItemExchangeRate(1, 'USD', 'HKD'));
     await waitFor(() => expect(result.current.value).toBe('8'));
     expect(result.current.suggestion?.source).toBe('global');
@@ -59,11 +59,11 @@ describe('useItemExchangeRate', () => {
     expect(result.current.value).toBe('5');
     expect(result.current.note).toBe('locked at booking');
     expect(result.current.write).toEqual({});
-    expect(budgetApi.resolveExchangeRate).not.toHaveBeenCalled();
+    expect(exchangeRateRepo.resolve).not.toHaveBeenCalled();
   });
 
   it('sends a reciprocal explicit rate and note only after manual editing', async () => {
-    vi.mocked(budgetApi.resolveExchangeRate).mockResolvedValue(resolved());
+    vi.mocked(exchangeRateRepo.resolve).mockResolvedValue(resolved());
     const { result } = renderHook(() => useItemExchangeRate(1, 'USD', 'HKD'));
     await waitFor(() => expect(result.current.value).toBe('8'));
     act(() => {
@@ -77,7 +77,7 @@ describe('useItemExchangeRate', () => {
 
   it('resolves a new currency and never lets a late response overwrite manual input', async () => {
     let finish: (value: ReturnType<typeof resolved>) => void = () => {};
-    vi.mocked(budgetApi.resolveExchangeRate).mockReturnValue(
+    vi.mocked(exchangeRateRepo.resolve).mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       })
@@ -90,7 +90,7 @@ describe('useItemExchangeRate', () => {
   });
 
   it('requires a positive manual value when no inherited rate exists', async () => {
-    vi.mocked(budgetApi.resolveExchangeRate).mockRejectedValue(new Error('unavailable'));
+    vi.mocked(exchangeRateRepo.resolve).mockRejectedValue(new Error('unavailable'));
     const { result } = renderHook(() => useItemExchangeRate(1, 'USD', 'HKD'));
     await waitFor(() => expect(result.current.unavailable).toBe(true));
     expect(result.current.valid).toBe(false);

@@ -1,6 +1,6 @@
 import { COMMON_CURRENCIES_MAX, FRANKFURTER_CURRENCIES } from '@trek/shared';
 import { ArrowDown, ArrowUp, RotateCcw, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '../../i18n';
 import CustomSelect from '../shared/CustomSelect';
 import { useToast } from '../shared/Toast';
@@ -24,7 +24,11 @@ export default function CommonCurrenciesEditor({
   const [currencies, setCurrencies] = useState<string[]>([...value]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => setCurrencies([...value]), [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    setCurrencies([...value]);
+  }
 
   const persist = async (next: string[]) => {
     const previous = currencies;
@@ -35,6 +39,18 @@ export default function CommonCurrenciesEditor({
       if (saved) setCurrencies(saved);
     } catch (error) {
       setCurrencies(previous);
+      toast.error(error instanceof Error ? error.message : t('common.error'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = async () => {
+    if (!onReset) return;
+    setSaving(true);
+    try {
+      setCurrencies(await onReset());
+    } catch (error) {
       toast.error(error instanceof Error ? error.message : t('common.error'));
     } finally {
       setSaving(false);
@@ -70,7 +86,7 @@ export default function CommonCurrenciesEditor({
       />
       {currencies.map((code, index) => (
         <div key={code} className="flex items-center gap-2 rounded-lg border border-edge bg-surface-input px-3 py-2">
-          <span className="min-w-0 flex-1 truncate text-sm">{currencyOption(code, locale).label}</span>
+          <span className="min-w-0 flex-1 truncate text-body">{currencyOption(code, locale).label}</span>
           <button
             type="button"
             disabled={saving || index === 0}
@@ -100,7 +116,7 @@ export default function CommonCurrenciesEditor({
           </button>
         </div>
       ))}
-      <div className="flex gap-3 text-xs">
+      <div className="flex gap-3 text-caption">
         {currencies.length > 0 && (
           <button
             type="button"
@@ -115,25 +131,14 @@ export default function CommonCurrenciesEditor({
           <button
             type="button"
             disabled={saving}
-            onClick={async () => {
-              const previous = currencies;
-              setSaving(true);
-              try {
-                setCurrencies(await onReset());
-              } catch (error) {
-                setCurrencies(previous);
-                toast.error(error instanceof Error ? error.message : t('common.error'));
-              } finally {
-                setSaving(false);
-              }
-            }}
+            onClick={() => void reset()}
             className="inline-flex items-center gap-1 text-content-faint underline"
           >
             <RotateCcw size={12} /> {t('settings.commonCurrencies.reset')}
           </button>
         )}
       </div>
-      <p className="m-0 text-xs text-content-faint">
+      <p className="m-0 text-caption text-content-faint">
         {t('settings.commonCurrencies.count', { count: currencies.length, max: COMMON_CURRENCIES_MAX })}
       </p>
     </div>

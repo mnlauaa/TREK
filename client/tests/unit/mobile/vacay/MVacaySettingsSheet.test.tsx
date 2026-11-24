@@ -69,6 +69,19 @@ async function waitForCountries() {
   await waitFor(() => expect(screen.getAllByRole('option', { name: 'Germany' }).length).toBeGreaterThan(0));
 }
 
+// The hire date is the shared date picker (#2971): typed through its manual
+// field, cleared from its calendar.
+function typeDate(trigger: HTMLElement, value: string) {
+  fireEvent.click(within(trigger.parentElement as HTMLElement).getByRole('button', { name: /enterManually|Enter date manually/ }))
+  const input = screen.getByRole('textbox', { name: /enterManually|Enter date manually/ })
+  fireEvent.change(input, { target: { value } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+}
+function clearDate(trigger: HTMLElement) {
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('button', { name: /clearDate|Clear date/ }))
+}
+
 describe('MVacaySettingsSheet', () => {
   it('FE-MOB-MVACSET-001: renders nothing without a plan', () => {
     useVacayStore.setState({ plan: null });
@@ -93,10 +106,12 @@ describe('MVacaySettingsSheet', () => {
   it('FE-MOB-MVACSET-004: shows the weekend-day chips only while weekends are blocked', () => {
     renderSheet();
 
-    expect(screen.getByText('Weekend days')).toBeInTheDocument();
     const sat = screen.getByRole('button', { name: 'Sat' });
-    expect(sat.className).toContain('bg-m-act');
-    expect(screen.getByRole('button', { name: 'Wed' }).className).not.toContain('bg-m-act');
+    const chips = within(sat.parentElement as HTMLElement);
+    expect(chips.getAllByRole('button')).toHaveLength(7);
+    expect(sat).toHaveClass('bg-m-act');
+    expect(chips.getByRole('button', { name: 'Sun' })).toHaveClass('bg-m-act');
+    expect(chips.getByRole('button', { name: 'Wed' })).not.toHaveClass('bg-m-act');
   });
 
   it('FE-MOB-MVACSET-005: toggling block-weekends writes the inverted flag', () => {
@@ -112,7 +127,34 @@ describe('MVacaySettingsSheet', () => {
     seedPlan(buildPlan({ block_weekends: false }));
     renderSheet();
 
-    expect(screen.queryByText('Weekend days')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sat' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Wed' })).not.toBeInTheDocument();
+  });
+
+  it('FE-MOB-MVACSET-006b: switching weekend blocking off and on preserves custom weekend days', async () => {
+    let plan = buildPlan({ weekend_days: '5,6' });
+    const updates: Partial<VacayPlan>[] = [];
+    server.use(http.put('/api/addons/vacay/plan', async ({ request }) => {
+      const update = (await request.json()) as Partial<VacayPlan>;
+      updates.push(update);
+      plan = { ...plan, ...update };
+      return HttpResponse.json({ plan });
+    }));
+    seedPlan(plan);
+    renderSheet();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Block Weekends' }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Block Weekends' })).not.toBeChecked());
+    expect(screen.queryByRole('button', { name: 'Fri' })).not.toBeInTheDocument();
+    expect(useVacayStore.getState().plan?.weekend_days).toBe('5,6');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Block Weekends' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fri' })).toHaveClass('bg-m-act'));
+    const sat = screen.getByRole('button', { name: 'Sat' });
+    expect(sat).toHaveClass('bg-m-act');
+    expect(within(sat.parentElement as HTMLElement).getByRole('button', { name: 'Sun' })).not.toHaveClass('bg-m-act');
+    expect(updates).toEqual([{ block_weekends: false }, { block_weekends: true }]);
+    expect(useVacayStore.getState().plan?.weekend_days).toBe('5,6');
   });
 
   it('FE-MOB-MVACSET-007: weekend chips add and remove their day from the plan', () => {
@@ -217,15 +259,15 @@ describe('MVacaySettingsSheet', () => {
     });
     renderSheet();
 
-    const hire = screen.getByLabelText('Hire date');
-    expect(hire).toHaveValue('2020-09-14');
+    const hire = () => screen.getByRole('button', { name: /^Hire date: / });
+    expect(hire()).toHaveAccessibleName(/2020/);
 
-    fireEvent.change(hire, { target: { value: '2021-03-02' } });
+    typeDate(hire(), '2021-03-02');
     expect(updateYearSettings).toHaveBeenLastCalledWith({
       year_type: 'anniversary', year_start_month: 1, year_start_day: 1, hire_date: '2021-03-02',
     });
 
-    fireEvent.change(hire, { target: { value: '' } });
+    clearDate(hire());
     expect(updateYearSettings).toHaveBeenLastCalledWith({
       year_type: 'anniversary', year_start_month: 1, year_start_day: 1, hire_date: null,
     });
@@ -507,7 +549,7 @@ describe('MVacaySettingsSheet', () => {
     expect(screen.queryByText('Dissolve Fusion')).not.toBeInTheDocument();
   });
 
-  it('FE-MOB-MVACSET-027: dissolving lists the members, toasts and closes the sheet', async () => {
+  it('FE-MOB-MVACSET-027: dissolving lists the members, asks first, toasts and closes the sheet', async () => {
     const dissolve = vi.fn(async () => {});
     seedPlan(buildPlan(), {
       isFused: true,
@@ -520,7 +562,12 @@ describe('MVacaySettingsSheet', () => {
     expect(screen.getByText('alice')).toBeInTheDocument();
     expect(screen.getByText('bob')).toBeInTheDocument();
 
+    // The sheet's button only opens the confirm dialog, so nothing is dissolved yet.
     fireEvent.click(screen.getByRole('button', { name: 'Dissolve' }));
+    expect(dissolve).not.toHaveBeenCalled();
+    // The dialog is portalled after the sheet, so its confirm button is the second match.
+    const [, confirmButton] = screen.getAllByRole('button', { name: 'Dissolve' });
+    fireEvent.click(confirmButton);
     await waitFor(() => expect(dissolve).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(toasts).toEqual([{ type: 'success', message: 'Calendar separated' }]);

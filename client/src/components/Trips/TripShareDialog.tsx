@@ -1,0 +1,526 @@
+import GuestIdentityTransferModal from './GuestIdentityTransferModal'
+import { useId, useState, type ComponentProps, type ReactNode } from 'react'
+import { Check, Copy, Crown, Link2, LogOut, Pencil, Plus, Puzzle, Settings, Trash2, UserMinus, UserPlus, UserRound, Users } from 'lucide-react'
+import { useTranslation } from '../../i18n'
+import CustomSelect from '../shared/CustomSelect'
+import ConfirmDialog from '../shared/ConfirmDialog'
+import ToggleSwitch from '../Settings/ToggleSwitch'
+import { Tooltip } from '../shared/Tooltip'
+import { DialogButton, DialogHeader, DialogSection, DialogShell, DialogTile, NEUTRAL_TINT, PILL, fs } from '../shared/DialogShell'
+import { AddRowButton, CardHead, INPUT, LABEL, PANEL } from '../shared/dialogParts'
+import { LinkedJournalIcon } from './LinkedJournalIcon'
+import type { Trip } from '../../types'
+import TripFormModal from './TripFormModal'
+import { TripJournalLinkSection } from './TripJournalLinkSection'
+import { TripMemberAvatar } from './TripMemberAvatar'
+import { useTripJournalSectionVisible } from './useTripJournalLink'
+import { useTripAddonRows } from './useTripAddonRows'
+import { SHARE_OPTIONS, useShareLink, useTripInviteLink, useTripMembers, type TripMembersState } from './useTripShare'
+
+interface TripShareDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  tripId: number
+  tripTitle: string
+  onMembersChanged?: () => void
+  /**
+   * What the trip's own form needs, shown as the dialog's last area (#2811);
+   * left out for someone who may not edit the trip.
+   */
+  editTrip?: TripSettingsForm
+}
+
+/** The trip and how its form saves, for the Edit trip area. */
+export interface TripSettingsForm {
+  trip: Trip
+  onSave: ComponentProps<typeof TripFormModal>['onSave']
+  onCoverUpdate?: ComponentProps<typeof TripFormModal>['onCoverUpdate']
+}
+
+/** A question the dialog asks before it acts, answered in a ConfirmDialog over it. */
+interface Ask {
+  title: string
+  message: string
+  confirmLabel: string
+  run: () => void
+}
+
+const COUNT = 'rounded-full bg-surface-tertiary px-2 py-[2px] font-geist font-bold text-content-muted'
+const ROWS = 'flex flex-col gap-0.5 rounded-[14px] border border-edge-faint bg-surface-secondary p-1.5'
+const ROW = 'flex min-h-[48px] items-center gap-3 rounded-[10px] px-2.5 py-1.5 hover:bg-surface-card'
+const BADGE = 'inline-flex flex-none items-center gap-1 rounded-full px-2 py-[2px] font-semibold'
+/**
+ * A fixed height on a wide screen, so the dialog does not jump when another area is picked.
+ * Not flex-1 there: its zero basis won over the height and every area sized the dialog anew.
+ */
+const BODY = 'flex min-h-0 flex-1 max-md:flex-col md:h-[min(640px,calc(100dvh-240px))] md:flex-none'
+const NAV = 'flex flex-none gap-1 border-edge-faint bg-surface-secondary p-3 md:w-[236px] md:flex-col md:border-e max-md:overflow-x-auto max-md:border-b'
+const NAV_ENTRY = 'flex flex-none items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-start transition-colors'
+const NAV_ENTRY_OFF = 'text-content-muted hover:bg-surface-hover hover:text-content'
+
+/**
+ * The trip's Settings on the desktop: who is on the trip, its guests, the two
+ * links that let others in, the journal the trip shows, and for the owner
+ * which addons the trip uses.
+ */
+export default function TripShareDialog(props: TripShareDialogProps) {
+  return props.isOpen ? <OpenDialog {...props} /> : null
+}
+
+type Area = 'people' | 'sharing' | 'journal' | 'addons' | 'trip'
+
+/** The areas of the dialog, each with its icon, its name and the line under the name. */
+const AREAS: { id: Area; icon: (on: boolean) => ReactNode; labelKey: string; hintKey: string }[] = [
+  { id: 'people', icon: () => <Users size={16} strokeWidth={2} />, labelKey: 'trip.settings.people', hintKey: 'trip.settings.peopleHint' },
+  { id: 'sharing', icon: () => <Link2 size={16} strokeWidth={2} />, labelKey: 'trip.settings.sharing', hintKey: 'trip.settings.sharingHint' },
+  { id: 'journal', icon: () => <LinkedJournalIcon size={16} />, labelKey: 'trip.journal.title', hintKey: 'trip.journal.hint' },
+  { id: 'addons', icon: () => <Puzzle size={16} strokeWidth={2} />, labelKey: 'trip.settings.addons', hintKey: 'trip.settings.addonsHint' },
+  { id: 'trip', icon: () => <Pencil size={16} strokeWidth={2} />, labelKey: 'dashboard.editTrip', hintKey: 'trip.settings.editTripHint' },
+]
+
+function OpenDialog({ onClose, tripId, tripTitle, onMembersChanged, editTrip }: TripShareDialogProps) {
+  const { t } = useTranslation()
+  const labelId = useId()
+  const m = useTripMembers({ isOpen: true, tripId, onClose, onMembersChanged })
+  const [identityOpen, setIdentityOpen] = useState(false)
+  const [ask, setAsk] = useState<Ask | null>(null)
+  const [area, setArea] = useState<Area>('people')
+  const [tripReviewing, setTripReviewing] = useState(false)
+  const journalSection = useTripJournalSectionVisible(tripId)
+  const shows: Record<Area, boolean> = { people: true, sharing: m.canManageShare, journal: journalSection, addons: m.isCurrentOwner, trip: !!editTrip }
+  const areas = AREAS.filter(a => shows[a.id])
+  const current = areas.find(a => a.id === area) ?? areas[0]
+  const panelOf = (id: Area) => areas.find(a => a.id === id)
+  const persons = `${m.realMembers.length} ${t('members.persons', { count: m.realMembers.length })}`
+  const withNav = areas.length > 1
+
+  return (
+    <>
+      <DialogShell
+        onClose={onClose}
+        labelledBy={labelId}
+        width={withNav ? 'wide' : 'detail'}
+        blocked={!!ask || tripReviewing || identityOpen}
+        bodyClassName={BODY}
+        header={(
+          <DialogHeader
+            tile={<DialogTile><Settings size={20} strokeWidth={1.9} className="text-content-muted" /></DialogTile>}
+            tint={NEUTRAL_TINT}
+            labelId={labelId}
+            onClose={onClose}
+            eyebrow={t('trip.settings.title')}
+            title={tripTitle}
+            pills={m.loading ? undefined : (
+              <>
+                <span className={PILL}><Users size={13} strokeWidth={2.2} />{persons}</span>
+                {m.guests.length > 0 && <span className={PILL}><UserRound size={13} strokeWidth={2.2} />{t('members.guests')} {m.guests.length}</span>}
+              </>
+            )}
+          />
+        )}
+      >
+        {withNav && <AreaNav areas={areas} current={current.id} onPick={setArea} />}
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-7 pt-6 max-sm:px-5">
+          {/* Every area stays mounted, so its links and lists are loaded by the time it is picked. */}
+          <AreaPanel area={panelOf('people')} shown={current.id === 'people'} titled={withNav}>
+            {m.canManageMembers && <InviteUser m={m} />}
+            <MembersList m={m} onAsk={setAsk} />
+            {(m.isCurrentOwner || m.guests.length > 0) && <GuestsList m={m} onAsk={setAsk} />}
+            {!m.isCurrentOwner && m.guests.length > 0 && (
+              <DialogButton onClick={() => setIdentityOpen(true)}>{t('members.identityTransfer.thisIsMe')}</DialogButton>
+            )}
+
+          </AreaPanel>
+          {m.canManageShare && (
+            <AreaPanel area={panelOf('sharing')} shown={current.id === 'sharing'} titled>
+              <PublicLink tripId={tripId} />
+              <InviteLink tripId={tripId} />
+            </AreaPanel>
+          )}
+          {journalSection && (
+            <AreaPanel area={panelOf('journal')} shown={current.id === 'journal'} titled>
+              <TripJournalLinkSection tripId={tripId} framed={false} />
+            </AreaPanel>
+          )}
+          {m.isCurrentOwner && (
+            <AreaPanel area={panelOf('addons')} shown={current.id === 'addons'} titled>
+              <TripAddonsList tripId={tripId} />
+            </AreaPanel>
+          )}
+          {editTrip && (
+            <AreaPanel area={panelOf('trip')} shown={current.id === 'trip'} titled>
+              <TripFormModal embedded isOpen onClose={onClose} onReviewChange={setTripReviewing} {...editTrip} />
+            </AreaPanel>
+          )}
+        </div>
+      </DialogShell>
+      <GuestIdentityTransferModal tripId={tripId} open={identityOpen}
+              onClose={() => setIdentityOpen(false)}
+              onTransferred={() => { onMembersChanged?.(); onClose() }} />
+      <ConfirmDialog
+        isOpen={!!ask}
+        onClose={() => setAsk(null)}
+        onConfirm={() => { ask?.run(); setAsk(null) }}
+        title={ask?.title}
+        message={ask?.message}
+        confirmLabel={ask?.confirmLabel}
+      />
+    </>
+  )
+}
+
+/**
+ * The areas down the side on a wide screen, a row of pills above the content on a narrow one.
+ * Edit trip is one of them, after the areas about who is on the trip.
+ */
+function AreaNav({ areas, current, onPick }: { areas: typeof AREAS; current: Area; onPick: (area: Area) => void }) {
+  const { t } = useTranslation()
+  return (
+    <nav aria-label={t('trip.settings.title')} className={NAV}>
+      {areas.map(a => {
+        const on = a.id === current
+        return (
+          <button key={a.id} type="button" aria-current={on ? 'page' : undefined} aria-label={t(a.labelKey)} onClick={() => onPick(a.id)}
+            className={`${NAV_ENTRY} ${on ? 'bg-surface-card text-content shadow-sm ring-1 ring-edge-faint' : NAV_ENTRY_OFF}`}>
+            <NavEntryText icon={a.icon(on)} on={on} label={t(a.labelKey)} />
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+/** An entry's tile and its name; what the area is for heads the area itself. */
+function NavEntryText({ icon, on, label }: { icon: ReactNode; on: boolean; label: string }) {
+  return (
+    <>
+      <span className={`grid h-8 w-8 flex-none place-items-center rounded-[9px] ${on ? 'bg-accent text-accent-text' : 'bg-surface-tertiary'}`}>{icon}</span>
+      <span className="min-w-0 truncate font-semibold" style={fs(13, 'body')}>{label}</span>
+    </>
+  )
+}
+
+/** One area: its name and what it is for, then its parts. Hidden rather than unmounted while another one shows. */
+function AreaPanel({ area, shown, titled, children }: { area: (typeof AREAS)[number] | undefined; shown: boolean; titled: boolean; children: ReactNode }) {
+  const { t } = useTranslation()
+  return (
+    // The class, not the hidden attribute alone: flex would win over the attribute's display:none.
+    <section hidden={!shown} className={shown ? 'flex flex-col gap-5' : 'hidden'}>
+      {titled && area && (
+        <header>
+          <h3 className="m-0 font-semibold text-content" style={fs(17, 'subtitle')}>{t(area.labelKey)}</h3>
+          <p className="m-0 mt-1 max-w-[560px] leading-normal text-content-muted" style={fs(12.5, 'body')}>{t(area.hintKey)}</p>
+        </header>
+      )}
+      {children}
+    </section>
+  )
+}
+
+function InviteUser({ m }: { m: TripMembersState }) {
+  const { t } = useTranslation()
+  return (
+    <DialogSection label={t('members.inviteUser')}>
+      <div className="flex items-center gap-2">
+        <CustomSelect
+          value={m.selectedUserId}
+          onChange={value => m.setSelectedUserId(String(value))}
+          placeholder={t('members.selectUser')}
+          options={[
+            { value: '', label: t('members.selectUser') },
+            // As a string: the select compares values strictly and the pick is kept as one.
+            ...m.availableUsers.map(u => ({ value: String(u.id), label: u.username })),
+          ]}
+          searchable
+          style={{ flex: 1 }}
+          size="sm"
+        />
+        <DialogButton variant="primary" onClick={() => void m.add()} disabled={m.adding || !m.selectedUserId} icon={<UserPlus size={14} strokeWidth={2.2} />}>
+          {m.adding ? '...' : t('members.invite')}
+        </DialogButton>
+      </div>
+      {m.availableUsers.length === 0 && m.allUsers.length > 0 && (
+        <p className="m-0 mt-2 text-content-faint" style={fs(11.5)}>{t('members.allHaveAccess')}</p>
+      )}
+    </DialogSection>
+  )
+}
+
+/** A round icon button of a row, named by its tooltip; faint until the pointer is on it. */
+function RowAction({ label, onClick, disabled, danger, children }: { label: string; onClick: () => void; disabled?: boolean; danger?: boolean; children: ReactNode }) {
+  return (
+    <Tooltip label={label}>
+      <button type="button" onClick={onClick} disabled={disabled} aria-label={label}
+        className={`grid h-8 w-8 flex-none place-items-center rounded-[9px] text-content-faint hover:bg-surface-secondary disabled:opacity-40 ${danger ? 'hover:text-danger' : 'hover:text-content'}`}>
+        {children}
+      </button>
+    </Tooltip>
+  )
+}
+
+function SectionLabel({ text, count }: { text: string; count?: number }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      {text}
+      {count != null && <span className={COUNT} style={fs(10)}>{count}</span>}
+    </span>
+  )
+}
+
+function MembersList({ m, onAsk }: { m: TripMembersState; onAsk: (ask: Ask) => void }) {
+  const { t } = useTranslation()
+  return (
+    <DialogSection label={<SectionLabel text={t('members.access')} count={m.loading ? undefined : m.realMembers.length} />}>
+      {m.loading ? (
+        <div className={ROWS}>
+          {[1, 2].map(i => <div key={i} className="h-12 animate-pulse rounded-[10px] bg-surface-tertiary" />)}
+        </div>
+      ) : (
+        <div className={ROWS}>
+          {m.realMembers.map(member => {
+            const isSelf = member.id === m.user?.id
+            const isOwner = member.role === 'owner'
+            const canRemove = isSelf || (m.canManageMembers && !isOwner)
+            return (
+              <div key={member.id} className={ROW}>
+                <TripMemberAvatar username={member.username} avatarUrl={member.avatar_url ?? null} />
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <span className="truncate font-semibold text-content" style={fs(13, 'body')}>{member.username}</span>
+                  {isSelf && <span className={`${BADGE} bg-surface-tertiary text-content-muted`} style={fs(10.5)}>{t('members.you')}</span>}
+                  {isOwner && (
+                    <span className={`${BADGE} bg-warning-soft text-warning`} style={fs(10.5)}>
+                      <Crown size={10} strokeWidth={2.4} />{t('members.owner')}
+                    </span>
+                  )}
+                </div>
+                {m.isCurrentOwner && !isOwner && (
+                  <RowAction label={t('members.makeOwner')} disabled={m.transferringId === member.id}
+                    onClick={() => onAsk({
+                      title: t('members.makeOwner'),
+                      message: t('members.confirmTransfer', { name: member.username }),
+                      confirmLabel: t('common.confirm'),
+                      run: () => void m.transfer(member.id),
+                    })}>
+                    <Crown size={15} />
+                  </RowAction>
+                )}
+                {canRemove && (
+                  <RowAction label={isSelf ? t('members.leaveTrip') : t('members.removeAccess')} danger disabled={m.removingId === member.id}
+                    onClick={() => onAsk({
+                      title: isSelf ? t('members.leaveTrip') : t('members.removeAccess'),
+                      message: isSelf ? t('members.confirmLeave') : t('members.confirmRemove'),
+                      confirmLabel: t('common.confirm'),
+                      run: () => void m.remove(member.id, isSelf),
+                    })}>
+                    {isSelf ? <LogOut size={15} /> : <UserMinus size={15} />}
+                  </RowAction>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </DialogSection>
+  )
+}
+
+/** Accountless participants (#1362): the owner names, renames and removes them. */
+function GuestsList({ m, onAsk }: { m: TripMembersState; onAsk: (ask: Ask) => void }) {
+  const { t } = useTranslation()
+  return (
+    <DialogSection label={<SectionLabel text={t('members.guests')} count={m.guests.length || undefined} />}>
+      <p className="m-0 mb-2.5 leading-normal text-content-faint" style={fs(11.5)}>{t('members.guestsHint')}</p>
+      {m.guests.length > 0 && (
+        <div className={`${ROWS} mb-2.5`}>
+          {m.guests.map(g => (
+            <div key={g.id} className={ROW}>
+              <TripMemberAvatar username={g.username} avatarUrl={null} />
+              {m.renamingGuestId === g.id ? (
+                <input
+                  autoFocus
+                  value={m.renameValue}
+                  onChange={e => m.setRenameValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') void m.commitRename(g.id)
+                    // Escape ends the rename, not the dialog.
+                    if (e.key === 'Escape') { e.preventDefault(); m.cancelRename() }
+                  }}
+                  onBlur={() => void m.commitRename(g.id)}
+                  maxLength={50}
+                  aria-label={t('common.rename')}
+                  className={`${INPUT} flex-1`}
+                />
+              ) : (
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <span className="truncate font-semibold text-content" style={fs(13, 'body')}>{g.username}</span>
+                  <span className={`${BADGE} bg-surface-tertiary text-content-muted`} style={fs(10.5)}>
+                    <UserRound size={10} strokeWidth={2.4} />{t('members.guest')}
+                  </span>
+                </div>
+              )}
+              {m.isCurrentOwner && m.renamingGuestId !== g.id && (
+                <>
+                  <RowAction label={t('common.rename')} onClick={() => m.startRename(g)}>
+                    <Pencil size={14} />
+                  </RowAction>
+                  <RowAction label={t('members.removeAccess')} danger disabled={m.removingId === g.id}
+                    onClick={() => onAsk({
+                      title: t('members.removeAccess'),
+                      message: t('members.confirmRemoveGuest'),
+                      confirmLabel: t('common.delete'),
+                      run: () => void m.removeGuest(g.id),
+                    })}>
+                    <Trash2 size={14} />
+                  </RowAction>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {m.isCurrentOwner && (
+        <div className="flex items-center gap-2">
+          <input
+            value={m.newGuestName}
+            onChange={e => m.setNewGuestName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void m.addGuest() }}
+            placeholder={t('members.guestNamePlaceholder')}
+            aria-label={t('members.guestNamePlaceholder')}
+            maxLength={50}
+            className={`${INPUT} flex-1`}
+          />
+          <DialogButton variant="primary" onClick={() => void m.addGuest()} disabled={m.addingGuest || !m.newGuestName.trim()} icon={<Plus size={14} strokeWidth={2.2} />}>
+            {m.addingGuest ? '...' : t('members.addGuest')}
+          </DialogButton>
+        </div>
+      )}
+    </DialogSection>
+  )
+}
+
+/** A link as a read-only line with its copy button, the way the calendar feed shows its addresses. */
+function LinkLine({ url, copied, onCopy }: { url: string; copied: boolean; onCopy: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-edge bg-surface-input py-1 ps-3 pe-1">
+      <input type="text" value={url} readOnly aria-label={url} onFocus={e => e.currentTarget.select()}
+        className="min-w-0 flex-1 truncate border-0 bg-transparent font-mono text-content outline-none" style={fs(11.5)} />
+      <button type="button" onClick={onCopy}
+        className={`inline-flex flex-none items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 font-semibold ${copied ? 'bg-success-soft text-success' : 'bg-accent text-accent-text hover:opacity-90'}`}
+        style={fs(11.5, 'body')}>
+        {copied ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2.2} />}
+        {copied ? t('common.copied') : t('common.copy')}
+      </button>
+    </div>
+  )
+}
+
+export function LinkCard({ icon, title, hint, children }: { icon: ReactNode; title: string; hint: string; children: ReactNode }) {
+  return (
+    <section className={PANEL}>
+      <CardHead icon={icon} title={title} hint={hint} />
+      {children}
+    </section>
+  )
+}
+
+/** One toggle of the link, a filled pill with a tick while it is on. */
+function PermChip({ on, disabled, label, hint, onToggle }: { on: boolean; disabled?: boolean; label: string; hint?: string; onToggle: () => void }) {
+  const chip = (
+    <button type="button" aria-pressed={on} disabled={disabled} onClick={onToggle}
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold disabled:cursor-default ${on ? 'bg-accent text-accent-text disabled:opacity-70' : 'bg-surface-card text-content-muted ring-1 ring-edge-faint hover:text-content'}`}
+      style={fs(11.5, 'body')}>
+      {on && <Check size={11} strokeWidth={2.6} />}{label}
+    </button>
+  )
+  return hint ? <Tooltip label={hint}>{chip}</Tooltip> : chip
+}
+
+/** The trip addons, each with its switch; a badge marks the ones the owner set apart from the instance. */
+function TripAddonsList({ tripId }: { tripId: number }) {
+  const { t } = useTranslation()
+  const { rows, loading } = useTripAddonRows(tripId)
+  if (loading) return <div className="h-[120px] animate-pulse rounded-[14px] bg-surface-secondary" />
+  return (
+    <div className={ROWS}>
+      {rows.map(row => (
+        <div key={row.id} className={ROW}>
+          <span className={`flex h-8 w-8 flex-none items-center justify-center rounded-[10px] bg-surface-tertiary ${row.enabled ? 'text-content' : 'text-content-faint'}`}>
+            <row.Icon size={16} strokeWidth={2} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate font-semibold text-content" style={fs(13.5, 'body')}>{row.name}</span>
+              {row.ownChoice && <span className={`${BADGE} bg-surface-tertiary text-content-muted`} style={fs(10.5, 'caption')}>{t('trip.addons.thisTripOnly')}</span>}
+            </div>
+            {row.description && <p className="m-0 truncate text-content-muted" style={fs(12, 'caption')}>{row.description}</p>}
+          </div>
+          <ToggleSwitch on={row.enabled} onToggle={row.toggle} label={row.name} disabled={row.busy} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The read-only public link, and which parts of the trip it shows. */
+function PublicLink({ tripId }: { tripId: number }) {
+  const { t } = useTranslation()
+  const link = useShareLink(tripId)
+  if (link.loading) return null
+  return (
+    <LinkCard icon={<Link2 size={15} strokeWidth={2.2} />} title={t('share.linkTitle')} hint={t('share.linkHint')}>
+      {/* What the link shows and how, in one group under one eyebrow. */}
+      <div>
+        <span className={LABEL}>{t('share.options')}</span>
+        <div className="flex flex-wrap gap-1.5">
+          {link.sections.map(opt => (
+            <PermChip key={opt.key} on={link.perms[opt.key]} disabled={opt.always} label={t(opt.label)}
+              onToggle={() => void link.setPerm(opt.key, !link.perms[opt.key])} />
+          ))}
+          {SHARE_OPTIONS.map(opt => (
+            <PermChip key={opt.key} on={link.perms[opt.key]} label={t(opt.label)} hint={t(`${opt.label}Hint`)}
+              onToggle={() => void link.setPerm(opt.key, !link.perms[opt.key])} />
+          ))}
+        </div>
+      </div>
+      {link.url ? (
+        <>
+          <LinkLine url={link.url} copied={link.copied} onCopy={() => void link.copy()} />
+          <div>
+            <DialogButton variant="danger" onClick={() => void link.remove()} icon={<Trash2 size={14} strokeWidth={2.2} />}>
+              {t('share.deleteLink')}
+            </DialogButton>
+          </div>
+        </>
+      ) : (
+        <AddRowButton onClick={() => void link.create()}>{t('share.createLink')}</AddRowButton>
+      )}
+    </LinkCard>
+  )
+}
+
+/** The link an existing user opens to join as a member (#1143). */
+function InviteLink({ tripId }: { tripId: number }) {
+  const { t } = useTranslation()
+  const link = useTripInviteLink(tripId)
+  if (link.loading) return null
+  return (
+    <LinkCard icon={<UserPlus size={15} strokeWidth={2.2} />} title={t('trip.invite.linkTitle')} hint={t('trip.invite.linkHint')}>
+      {link.url ? (
+        <>
+          <LinkLine url={link.url} copied={link.copied} onCopy={() => void link.copy()} />
+          <div className="flex flex-wrap gap-2">
+            <DialogButton variant="primary" onClick={() => void link.create()} disabled={link.busy} icon={<Link2 size={14} strokeWidth={2.2} />}>
+              {t('trip.invite.regenerate')}
+            </DialogButton>
+            <DialogButton variant="danger" onClick={() => void link.remove()} disabled={link.busy} icon={<Trash2 size={14} strokeWidth={2.2} />}>
+              {t('trip.invite.disable')}
+            </DialogButton>
+          </div>
+        </>
+      ) : (
+        <AddRowButton onClick={() => void link.create()} disabled={link.busy}>{t('trip.invite.create')}</AddRowButton>
+      )}
+    </LinkCard>
+  )
+}

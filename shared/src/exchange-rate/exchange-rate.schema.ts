@@ -64,3 +64,30 @@ export const applyTripExchangeRateRequestSchema = z.object({
   selected: z.array(exchangeRateBatchSelectionSchema),
 });
 export type ApplyTripExchangeRateRequest = z.infer<typeof applyTripExchangeRateRequestSchema>;
+
+export const exchangeRateBatchPreviewRowSchema = exchangeRateBatchSelectionSchema.extend({
+  currency: z.string().length(3),
+  amount: z.number(),
+  source: exchangeRateSourceSchema,
+  old_exchange_rate: z.number().positive(),
+  new_exchange_rate: z.number().positive(),
+  old_trip_value: z.number().nullable(),
+  new_trip_value: z.number(),
+  trip_value_delta: z.number().nullable(),
+  selected: z.boolean(),
+});
+
+export const exchangeRateBatchPreviewSchema = z.object({
+  preview_id: z.string(),
+  trip_id: z.number(),
+  currency: z.string().length(3),
+  exchange_rate: z.number().positive(),
+  rows: z.array(exchangeRateBatchPreviewRowSchema),
+});
+export type ExchangeRateBatchPreview = z.infer<typeof exchangeRateBatchPreviewSchema>;
+
+export const exchangeRateBatchApplyResultSchema = z.object({
+  rate: tripExchangeRateSchema,
+  updated: z.array(exchangeRateBatchSelectionSchema),
+});
+export type ExchangeRateBatchApplyResult = z.infer<typeof exchangeRateBatchApplyResultSchema>;

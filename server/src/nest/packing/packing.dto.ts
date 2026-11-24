@@ -1,8 +1,9 @@
-import { createZodDto } from 'nestjs-zod';
 import {
+  adminTemplateNameRequestSchema,
   packingCreateItemRequestSchema,
   packingUpdateItemRequestSchema,
   packingSetSharingRequestSchema,
+  packingAddContributorRequestSchema,
   packingImportRequestSchema,
   packingReorderRequestSchema,
   packingCreateBagRequestSchema,
@@ -13,6 +14,8 @@ import {
   packingCategoryAssigneesRequestSchema,
 } from '@trek/shared';
 
+import { createZodDto } from 'nestjs-zod';
+
 /**
  * Server-side createZodDto wrappers over the @trek/shared packing contracts.
  * The global ZodValidationPipe (APP_PIPE in app.module.ts) validates any
@@ -22,6 +25,7 @@ import {
 export class PackingCreateItemDto extends createZodDto(packingCreateItemRequestSchema) {}
 export class PackingUpdateItemDto extends createZodDto(packingUpdateItemRequestSchema) {}
 export class PackingSetSharingDto extends createZodDto(packingSetSharingRequestSchema) {}
+export class PackingAddContributorDto extends createZodDto(packingAddContributorRequestSchema) {}
 export class PackingImportDto extends createZodDto(packingImportRequestSchema) {}
 export class PackingReorderDto extends createZodDto(packingReorderRequestSchema) {}
 export class PackingCreateBagDto extends createZodDto(packingCreateBagRequestSchema) {}
@@ -30,3 +34,6 @@ export class PackingBagMembersDto extends createZodDto(packingBagMembersRequestS
 export class PackingSaveTemplateDto extends createZodDto(packingSaveTemplateRequestSchema) {}
 export class PackingApplyTemplateDto extends createZodDto(packingApplyTemplateRequestSchema) {}
 export class PackingCategoryAssigneesDto extends createZodDto(packingCategoryAssigneesRequestSchema) {}
+
+/** The six packing-template create/update routes of AdminPackingTemplatesController share this body. */
+export class AdminTemplateNameDto extends createZodDto(adminTemplateNameRequestSchema) {}

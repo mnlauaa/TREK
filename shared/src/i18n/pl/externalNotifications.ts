@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const pl: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const pl: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nowa rezerwacja: ${p.booking}`,
       body: `${p.actor} dodał rezerwację "${p.booking}" (${p.type}) do "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} wystartował`,
+      body: `${p.flight} z ${p.from} do ${p.to} jest w powietrzu.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} jest opóźniony`,
+      body: `${p.flight} z ${p.from} do ${p.to} ma około ${p.delay} minut opóźnienia.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} wylądował`,
+      body: `${p.flight} z ${p.from} wylądował w ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Przypomnienie o podróży: ${p.trip}`,
@@ -37,8 +50,18 @@ const pl: NotificationLocale = {
       body: `${p.actor} zaprosił Cię do udostępnienia kolekcji. Otwórz TREK, aby zaakceptować lub odrzucić.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} zdjęć udostępnionych`,
-      body: `${p.actor} udostępnił ${p.count} zdjęcie/zdjęcia w "${p.trip}".`,
+      title: pluralForm(p.count, 'pl', {
+        one: `Udostępniono ${p.count} zdjęcie`,
+        few: `Udostępniono ${p.count} zdjęcia`,
+        many: `Udostępniono ${p.count} zdjęć`,
+        other: `Udostępniono ${p.count} zdjęcia`,
+      }),
+      body: pluralForm(p.count, 'pl', {
+        one: `${p.actor} udostępnił ${p.count} zdjęcie w "${p.trip}".`,
+        few: `${p.actor} udostępnił ${p.count} zdjęcia w "${p.trip}".`,
+        many: `${p.actor} udostępnił ${p.count} zdjęć w "${p.trip}".`,
+        other: `${p.actor} udostępnił ${p.count} zdjęcia w "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nowa wiadomość w "${p.trip}"`,
@@ -56,11 +79,46 @@ const pl: NotificationLocale = {
       title: 'Awaria repliki magazynu',
       body:
         `Zapis do repliki '${p.backend}' nie powiódł się: ${p.op} dla ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Od ostatniego powiadomienia ukryto ${p.suppressed} kolejnych błędów.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'pl', {
+              one: ` Od ostatniego powiadomienia ukryto ${p.suppressed} kolejny błąd.`,
+              few: ` Od ostatniego powiadomienia ukryto ${p.suppressed} kolejne błędy.`,
+              many: ` Od ostatniego powiadomienia ukryto ${p.suppressed} kolejnych błędów.`,
+              other: ` Od ostatniego powiadomienia ukryto ${p.suppressed} kolejnego błędu.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Prośba o region wodny',
+      body: `${p.actor} planuje spływ w regionie ${p.region}. Wczytaj lub odrzuć jego dane wodne w panelu administratora w sekcji Dodatki.`,
     }),
     synology_session_cleared: () => ({
       title: 'Sesja Synology wyczyszczona',
       body: 'Twoje konto lub URL Synology uległo zmianie. Zostałeś wylogowany z Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Szlak wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `„${p.tour}” w „${p.trip}” został zmieniony w wanderer. Otwórz trasę i sprawdź jej źródło, aby zobaczyć wszystkie zmiany. W podróży nic nie zmienia się samo.`
+          : p.state === 'unverifiable'
+            ? `„${p.tour}” w „${p.trip}” nie da się już sprawdzić w wanderer. Trasa w twojej podróży pozostaje bez zmian.`
+            : `„${p.tour}” w „${p.trip}” mógł się zmienić w wanderer. Otwórz trasę i sprawdź jej źródło. W podróży nic nie zmienia się samo.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Dodano z wiadomości: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} dodał(a) „${p.booking}” do „${p.trip}” z przekazanej wiadomości.`
+          : `„${p.booking}” z Twojej przekazanej wiadomości dodano do „${p.trip}”. Możesz to cofnąć w TREK przez 7 dni.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Przekazane rezerwacje do sprawdzenia',
+      body: `Przekazane rezerwacje czekające na Ciebie w TREK: ${p.count}. Przy każdej podano, dlaczego nie została dodana automatycznie.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Import e-maili wstrzymany',
+      body: 'TREK na razie nie przyjmuje przekazanych e-maili z rezerwacjami, więc wstrzymaj się z ich przekazywaniem. Twoje adresy zostają i znów zadziałają, gdy import wróci, a dodane już rezerwacje zostają w Twoich podróżach.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

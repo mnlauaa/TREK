@@ -3,86 +3,78 @@
  * Covers GET /api/settings, PUT /api/settings, POST /api/settings/bulk.
  */
 import { buildApp } from '../../src/bootstrap';
-import { runMigrations } from '../../src/db/migrations';
-import { createTables } from '../../src/db/schema';
 import { authCookie } from '../helpers/auth';
-import { createUser } from '../helpers/factories';
-import { resetTestDb, resetRateLimits } from '../helpers/test-db';
+import type { FactoryOrm } from '../helpers/factories/context';
+import { makeUser } from '../helpers/factories/users';
+import { resetDatabase } from '../helpers/reset-database';
+import { resetRateLimits } from '../helpers/test-db';
+import { MikroORM } from '@mikro-orm/core';
 import type { INestApplication } from '@nestjs/common';
 
 import type { Application } from 'express';
 import request from 'supertest';
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: any, userId: number) =>
-      db
-        .prepare(
-          `SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`,
-        )
-        .get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-vi.mock('../../src/db/database', () => dbMock);
-vi.mock('../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-  SESSION_DURATION: '24h',
-  SESSION_DURATION_MS: 86400000,
-  SESSION_DURATION_SECONDS: 86400,
-  DEFAULT_LANGUAGE: 'en',
-}));
-vi.mock('../../src/websocket', () => ({ broadcast: vi.fn(), broadcastToUser: vi.fn() }));
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 
 let nestApp: INestApplication;
 let app: Application;
+// The booted app's own ORM, the one the requests write through.
+let orm: FactoryOrm;
 
 beforeAll(async () => {
-  createTables(testDb);
-  runMigrations(testDb);
   nestApp = await buildApp();
+  orm = nestApp.get(MikroORM);
   app = nestApp.getHttpAdapter().getInstance();
 });
 
-beforeEach(() => {
-  resetTestDb(testDb);
-  resetRateLimits(nestApp);
+beforeEach(async () => {
+  await resetDatabase(orm);
+  await resetRateLimits(nestApp);
 });
 
 afterAll(async () => {
   await nestApp.close();
-  testDb.close();
 });
 
 describe('Settings', () => {
-  it('SET-001: GET /api/settings returns built-in Common currencies for new user', async () => {
-    const { user } = createUser(testDb);
+  it('SET-001: GET /api/settings returns the built-in currency shortcut list for a new user', async () => {
+    const { user } = await makeUser(orm);
     const res = await request(app).get('/api/settings').set('Cookie', authCookie(user.id));
     expect(res.status).toBe(200);
     expect(res.body.settings).toBeDefined();
     expect(typeof res.body.settings).toBe('object');
-    // New users have no custom rows, but the effective Settings contract always
-    // includes the built-in empty Common currency list.
     expect(res.body.settings).toEqual({ common_currencies: [] });
   });
 
+  it('inherits ordered common currencies, preserves an explicit empty override, and resets to the admin default', async () => {
+    const { user } = await makeUser(orm);
+    const { user: admin } = await makeUser(orm, { role: 'admin' });
+    const setDefaults = await request(app)
+      .put('/api/admin/default-user-settings')
+      .set('Cookie', authCookie(admin.id))
+      .send({ common_currencies: [' jpy ', 'USD'] });
+    expect(setDefaults.status).toBe(200);
+    const get = () => request(app).get('/api/settings').set('Cookie', authCookie(user.id));
+    expect((await get()).body.settings.common_currencies).toEqual(['JPY', 'USD']);
+
+    const set = await request(app)
+      .put('/api/settings')
+      .set('Cookie', authCookie(user.id))
+      .send({ key: 'common_currencies', value: [] });
+    expect(set.status).toBe(200);
+    expect((await get()).body.settings.common_currencies).toEqual([]);
+
+    const invalid = await request(app)
+      .post('/api/settings/bulk')
+      .set('Cookie', authCookie(user.id))
+      .send({ settings: { common_currencies: ['JPY', 'jpy'] } });
+    expect(invalid.status).toBe(400);
+    const reset = await request(app).delete('/api/settings/common_currencies').set('Cookie', authCookie(user.id));
+    expect(reset.body).toEqual({ success: true, key: 'common_currencies', value: ['JPY', 'USD'] });
+    expect((await get()).body.settings.common_currencies).toEqual(['JPY', 'USD']);
+  });
+
   it('SET-002: PUT /api/settings sets a key/value pair', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const res = await request(app)
       .put('/api/settings')
       .set('Cookie', authCookie(user.id))
@@ -94,7 +86,7 @@ describe('Settings', () => {
   });
 
   it('SET-003: PUT /api/settings updates an existing key', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await request(app).put('/api/settings').set('Cookie', authCookie(user.id)).send({ key: 'theme', value: 'dark' });
 
     const res = await request(app)
@@ -111,7 +103,7 @@ describe('Settings', () => {
   });
 
   it('SET-004: POST /api/settings/bulk upserts multiple settings', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const res = await request(app)
       .post('/api/settings/bulk')
       .set('Cookie', authCookie(user.id))
@@ -122,7 +114,7 @@ describe('Settings', () => {
   });
 
   it('SET-005: GET /api/settings reflects previously upserted values', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await request(app)
       .post('/api/settings/bulk')
       .set('Cookie', authCookie(user.id))
@@ -140,14 +132,14 @@ describe('Settings', () => {
   });
 
   it('SET-007: PUT /api/settings without key returns 400', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const res = await request(app).put('/api/settings').set('Cookie', authCookie(user.id)).send({ value: 'dark' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBeDefined();
   });
 
   it('SET-008: PUT /api/settings with masked value is ignored (no-op)', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     // First set a real value
     await request(app)
       .put('/api/settings')
@@ -164,7 +156,7 @@ describe('Settings', () => {
   });
 
   it('SET-009: POST /api/settings/bulk without settings object returns 400', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const res = await request(app)
       .post('/api/settings/bulk')
       .set('Cookie', authCookie(user.id))
@@ -173,8 +165,8 @@ describe('Settings', () => {
   });
 
   it('SET-010: settings are user-scoped (user A cannot see user B settings)', async () => {
-    const { user: userA } = createUser(testDb);
-    const { user: userB } = createUser(testDb);
+    const { user: userA } = await makeUser(orm);
+    const { user: userB } = await makeUser(orm);
 
     await request(app)
       .put('/api/settings')

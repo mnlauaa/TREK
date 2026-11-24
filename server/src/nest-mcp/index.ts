@@ -1,8 +1,10 @@
 export { McpController, Prompt, Resource, ResourceTemplate, Tool } from './decorators';
 export {
+  combineToolGates,
   demoDenied,
   errorResult,
   ok,
+  okCompact,
   TOOL_ANNOTATIONS_DELETE,
   TOOL_ANNOTATIONS_NON_IDEMPOTENT,
   TOOL_ANNOTATIONS_OPEN_WORLD_NON_IDEMPOTENT,
@@ -13,10 +15,9 @@ export {
 } from './helpers';
 export { McpRegistryService } from './mcp-registry.service';
 export { McpModule } from './mcp.module';
-export { McpRegistry, type McpRegistryOptions } from './registry';
+export { createLocalMcpServer, McpRegistry, type McpRegistryOptions } from './registry';
 export { createTestRegistry } from './testing';
 export {
-  MCP_MODULE_OPTIONS,
   type McpAccess,
   type McpAccessGroup,
   type McpAccessGroupRegistry,
@@ -32,8 +33,11 @@ export {
   type McpDynamicToolSource,
   type McpEntry,
   type McpEntryKind,
+  type McpErrorMapper,
+  type McpInputMapper,
   type McpModuleOptions,
   type McpRegistryListing,
+  type McpToolGate,
   type McpZodSchema,
   type PromptArgsShape,
   type PromptOptions,

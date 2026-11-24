@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # Deliver direct Web Push with TREK-managed VAPID
+
+Superseded on 2026-11-09 by the user-directed adoption of official v5.1.1 browser/native push. See [the cutover record](../upgrades/v5.1.1.md#upstream-push-cutover). The following text records the historical fork design, not current runtime behavior.
 
 TREK delivers standards-based Web Push as its own notification channel, using one durable, encrypted VAPID identity and account-owned Device subscriptions bound to the installation's canonical origin. Keys are generated automatically with complete environment overrides for advanced operators; subscriptions from another origin cannot deliver until explicitly re-enabled. This avoids Firebase or ntfy lock-in while keeping ntfy as an independent channel and preserving TREK's existing recipient, localization, and event-preference model.
 

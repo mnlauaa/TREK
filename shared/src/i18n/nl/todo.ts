@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Geen lijst',
   'todo.namePlaceholder': 'Taaknaam',
   'todo.descriptionPlaceholder': 'Beschrijving (optioneel)',
+  'todo.editDescription': 'Klik om te bewerken, links openen direct',
   'todo.unassigned': 'Niet toegewezen',
   'todo.noCategory': 'Geen lijst',
   'todo.hasDescription': 'Heeft beschrijving',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Prioriteit',
   'todo.detail.noPriority': 'Geen',
   'todo.sortByPrio': 'Prioriteit',
+  'todo.progressCount': '{done} van {total} klaar',
+  'todo.allDone': 'Alles klaar!',
+  'todo.filter.myShort': 'Mijn',
 };
 export default todo;

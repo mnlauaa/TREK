@@ -1,23 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, Minus, Plus } from 'lucide-react'
 import MSheet from '../../../components/MSheet'
 import MChip from '../../../components/MChip'
+import { NumericInput } from '../../../../components/shared/NumericInput'
 import type { MTripSheetsProps } from '../MTripShell'
 import { useTranslation } from '../../../../i18n'
 import { useSettingsStore } from '../../../../store/settingsStore'
-import { formatClock, formatDurationShort, parseClock } from '../../../../components/Roadtrip/roadtripModel'
+import { formatDurationShort } from '../../../../components/Roadtrip/roadtripModel'
 import { stageOf } from '../../../../components/Roadtrip/roadtripRowModel'
 import { isStoredStop } from '@trek/shared/roadtrip'
 import { locateStop, missedLeaveOf } from '../../../../components/Roadtrip/stayReading'
 import { useLeaveMode, type LeaveMode } from '../../../../components/Roadtrip/useLeaveMode'
-import { formatClockTime } from '../../../../utils/formatters'
+import {
+  STAY_MAX as MAX, STAY_PRESETS as PRESETS, STAY_STEP as STEP, clampStay as clampMinutes, useStayDraft,
+} from '../../../../components/Roadtrip/useStayDraft'
 import { FormSheetHeader } from '../sheets/PlSheetChrome'
 import { INNER_CLS, displayTime } from '../sheets/MTripSheetUi'
 
 /** What the chain hands over when a stop's stay is tapped. */
 interface RtStaySheetPayload {
+  fromItinerary?: boolean
+  arrival?: string | null
   placeId?: number
-  /** The stay the place carries right now; absent and zero mean the same thing. */
+  /** The resolved stay for this visit. */
   minutes?: number | null
   name?: string
   /** Where the stop sheet was standing, so saving can hand the traveller back to it. */
@@ -25,38 +30,14 @@ interface RtStaySheetPayload {
   assignmentId?: number
 }
 
-/** The step the two buttons move in. Same five minutes as the desktop dialog. */
-const STEP = 5
-
-const DAY_MINUTES = 24 * 60
-
-/**
- * As far as a stay goes, in minutes: a full day, like the desktop slider.
- *
- * Kept even though there is no slider here: the plus button has to stop somewhere, and
- * a stay longer than a day is a second day rather than a longer stop.
- */
-const MAX = DAY_MINUTES
-
-/**
- * The lengths a stop usually takes, so the common answer is one tap.
- *
- * The same eight the desktop offers. They are the whole of the coarse control here: the
- * desktop's slider runs 0 to 1440, which on a 343px phone row is four minutes a pixel,
- * and a control that cannot hit the value it is dragged to is worse than no control.
- */
-const PRESETS = [15, 30, 45, 60, 90, 120, 480, 720]
-
-const clampMinutes = (value: number): number => Math.min(MAX, Math.max(0, Math.round(value)))
-
 /**
  * How long the traveller stays at one stop, on the phone ('rtstay', payload
  * { placeId, minutes, name }).
  *
- * Writes `places.duration_minutes` through `planner.setRoadtripStay`, which is the same
- * single write the desktop dialog makes. Zero rather than null clears it: the update
- * statement folds a null into "leave it alone", so a null could give a stop a stay but
- * never take one away.
+ * Writes the stay of the visit it was opened on through `planner.setRoadtripStay`, which
+ * is the same single write the desktop dialog makes, so two visits of one place keep
+ * their own lengths (#3092). Zero rather than null clears it: a null would hand the visit
+ * back to the place's stay instead of taking the stay away.
  *
  * Two things this sheet deliberately does not do:
  *
@@ -73,27 +54,19 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
   const open = shell.sheet?.id === 'rtstay'
   const payload = (shell.sheet?.payload ?? {}) as RtStaySheetPayload
   const is12h = useSettingsStore(s => s.settings.time_format) === '12h'
-  const canEdit = planner.can('place_edit', planner.trip)
+  // A visit's stay is part of the day plan; only a stop with no saved visit writes the place.
+  const onVisit = typeof payload.assignmentId === 'number' && payload.assignmentId > 0
+  const canEdit = planner.can(onVisit ? 'day_edit' : 'place_edit', planner.trip)
 
   // Hold the last payload so the name and the number survive the exit animation
   // instead of blinking out while the sheet slides away.
-  const heldRef = useRef<RtStaySheetPayload | null>(null)
-  if (open && typeof payload.placeId === 'number') heldRef.current = payload
-  const stop = open && typeof payload.placeId === 'number' ? payload : heldRef.current
+  const [held, setHeld] = useState<RtStaySheetPayload | null>(null)
+  const active = open && typeof payload.placeId === 'number'
+  if (active && held !== payload) setHeld(payload)
+  const stop = active ? payload : held
 
   /** What the place carries now: the value the draft starts from and falls back to. */
   const stored = clampMinutes(stop?.minutes ?? 0)
-
-  const [minutes, setMinutes] = useState(stored)
-  const [saving, setSaving] = useState(false)
-
-  // Reopened on a different stop, so it starts from that stop's own value rather than
-  // from whatever the last one was left on.
-  useEffect(() => {
-    if (!open) return
-    setMinutes(clampMinutes(payload.minutes ?? 0))
-    setSaving(false)
-  }, [open, payload.placeId, payload.minutes])
 
   /**
    * When the drive gets here.
@@ -108,7 +81,9 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
   // The visit itself when the stop sheet named it, read off the same stage: its end time
   // decides whether there is a stay to choose here at all.
   const located = stage && stop?.assignmentId != null ? locateStop([stage], stop.assignmentId) : null
+  const itineraryArrival = payload.fromItinerary ? payload.arrival ?? null : undefined
   const arrival = useMemo(() => {
+    if (itineraryArrival !== undefined) return itineraryArrival
     if (located) return located.entry?.arrival ?? null
     if (!stage || stopPlaceId == null) return null
     // A stored stop at the place: the hotel a day sets out from shares the place of the
@@ -116,7 +91,22 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     const index = stage.stops.findIndex(s => isStoredStop(s) && s.placeId === stopPlaceId)
     if (index === -1) return null
     return stage.schedule.entries[index]?.arrival ?? null
-  }, [located, stage, stopPlaceId])
+  }, [located, stage, stopPlaceId, itineraryArrival])
+  // What the stay does to this stop: the arrival is fixed by the drive, the departure is
+  // the one end this sheet moves.
+  const { minutes, setMinutes, saving, setSaving, nudge, preview } = useStayDraft({
+    arrival, is12h, initial: stored, wholeMinutes: true,
+  })
+
+  // Reopened on a different stop, so it starts from that stop's own value rather than
+  // from whatever the last one was left on.
+  useEffect(() => {
+    if (!open) return
+    setMinutes(clampMinutes(payload.minutes ?? 0))
+    setSaving(false)
+  }, [open, payload.placeId, payload.minutes, setMinutes, setSaving])
+
+
   const leave = useLeaveMode(located && {
     leaveAt: located.stop.leaveAt,
     arrival: located.entry?.arrival,
@@ -126,33 +116,12 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     dayId: located.stop.ownerDayId,
   })
 
-  // What the stay does to this stop: the arrival is fixed by the drive, the departure is
-  // the one end this sheet moves.
-  const preview = useMemo(() => {
-    const at = parseClock(arrival)
-    if (at === null) return null
-    return {
-      arrive: formatClockTime(formatClock(at), is12h),
-      leave: formatClockTime(formatClock(at + minutes), is12h),
-      // `formatClock` wraps modulo 24 h, so a stay running past midnight reads as a small
-      // number again. Without the carry the sheet would quietly promise "leave 01:00" for
-      // a departure the chain places on the next day.
-      carry: Math.floor((at + minutes) / DAY_MINUTES) - Math.floor(at / DAY_MINUTES),
-    }
-  }, [arrival, minutes, is12h])
-
-  const nudge = (delta: number) => setMinutes(m => clampMinutes(m + delta))
-
   /**
    * Writes the draft, then hands the traveller back to the stop they came from.
    *
    * Reopening 'rtstop' is the point of the save: the times that just moved are shown
    * there, in the chain's own reading, so the change lands where it was asked for.
    * Closing without saving deliberately does not reopen it: nothing moved.
-   *
-   * `setRoadtripStay` reports its own failures and resolves either way, so the catch is
-   * the second line rather than the first: what it guards is the sheet being left showing
-   * a number the place does not have.
    */
   const save = async () => {
     const placeId = stop?.placeId
@@ -160,11 +129,11 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
     const value = minutes
     setSaving(true)
     try {
-      await planner.setRoadtripStay(placeId, value)
+      await planner.setRoadtripStay(placeId, value, payload.assignmentId)
       // 'rtstop' is located by day and assignment, not by place: spreading this sheet's own
       // payload into it opened a sheet that resolved to nothing, drew nothing, and still
       // counted as open, which blocks the day swipe until something else closes it.
-      if (stop?.dayId != null && stop.assignmentId != null) {
+      if (!stop?.fromItinerary && stop?.dayId != null && stop.assignmentId != null) {
         shell.openSheet('rtstop', { dayId: stop.dayId, assignmentId: stop.assignmentId })
       } else {
         shell.closeSheet()
@@ -186,7 +155,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
       open={open && !!stop}
       onClose={shell.closeSheet}
       variant="bottom"
-      material="opaque"
+      material="glass"
       // Named for what it holds: a stop left at a set time has no stay to add.
       ariaLabel={leave.until ? t('roadtrip.stop.stay') : t('roadtrip.stay.add')}
     >
@@ -202,15 +171,12 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
           />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-1">
-            {/* Which stop, and what the number actually attaches to. The stay is a column
-                on the place, not on the day's assignment, so a place planned twice keeps
-                one stay for both, and saying so here is cheaper than the surprise. */}
             {stop.name && (
               <div className="truncate text-[0.875rem] font-semibold text-m-ink">{stop.name}</div>
             )}
-            <div className="mt-[3px] font-geist text-[0.65625rem] leading-snug text-m-faint">
+            {stop.assignmentId == null && <div className="mt-[3px] font-geist text-[0.65625rem] leading-snug text-m-faint">
               {t('mobileTrip.rtStayScope')}
-            </div>
+            </div>}
 
             {/* The number, the way a timer shows one, with minus and plus either side so a
                 value can be nudged without a control to aim at. */}
@@ -225,12 +191,14 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
                 <Minus size={17} strokeWidth={2.2} aria-hidden="true" />
               </button>
               <div className="flex min-w-[6rem] flex-col items-center">
-                <span
-                  aria-live="polite"
-                  className="text-[2.5rem] font-extrabold leading-none tabular-nums text-m-ink"
-                >
-                  {minutes}
-                </span>
+                <NumericInput
+                  aria-label={`${t('roadtrip.stop.stayShort')} (${t('roadtrip.limit.minutes')})`}
+                  className="w-[8rem] rounded-xl border border-[color:var(--m-rowbr)] bg-[color:var(--m-ic)] px-2 py-1 text-center text-[2rem] font-extrabold leading-none tabular-nums text-m-ink"
+                  value={minutes}
+                  onValueChange={next => setMinutes(clampMinutes(Number(next)))}
+                  readOnly={!canEdit}
+                  disabled={saving}
+                />
                 <span className="mt-[7px] font-geist text-[0.625rem] font-bold uppercase tracking-[.09em] text-m-faint">
                   {t('roadtrip.stay.custom')}
                 </span>
@@ -304,7 +272,7 @@ export default function MRtStaySheet({ planner, shell }: MTripSheetsProps) {
               type="button"
               onClick={() => { void save() }}
               disabled={!canEdit || saving}
-              className="ml-auto inline-flex h-11 items-center rounded-full bg-m-act px-[18px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-40"
+              className="ms-auto inline-flex h-11 items-center rounded-full bg-m-act px-[18px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-40"
             >
               {t('common.save')}
             </button>
@@ -345,7 +313,7 @@ function RtLeaveTime({ name, leave, arrival, departure, onClose }: {
         {leave.missedBy !== null ? (
           <div className="mt-[10px] flex items-center justify-center gap-1.5 text-center text-[0.8125rem] font-medium leading-snug text-[color:var(--m-st-pending)]">
             <AlertTriangle size={14} strokeWidth={2} className="flex-none" aria-hidden="true" />
-            {t('roadtrip.warn.missedLeave', { minutes: leave.missedBy })}
+            {t('roadtrip.warn.missedLeave', { count: leave.missedBy })}
           </div>
         ) : (
           <div className="mt-[10px] text-center text-[0.8125rem] leading-snug text-m-muted">
@@ -376,7 +344,7 @@ function RtLeaveTime({ name, leave, arrival, departure, onClose }: {
             type="button"
             onClick={() => { void leave.remove?.() }}
             disabled={leave.removing}
-            className="ml-auto inline-flex h-11 items-center rounded-full bg-m-act px-[18px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-40"
+            className="ms-auto inline-flex h-11 items-center rounded-full bg-m-act px-[18px] text-[0.8125rem] font-semibold text-m-actfg disabled:opacity-40"
           >
             {t('roadtrip.stay.clearLeave')}
           </button>

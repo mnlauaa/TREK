@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const ar: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const ar: NotificationLocale = {
     booking_change: (p) => ({
       title: `حجز جديد: ${p.booking}`,
       body: `${p.actor} أضاف حجز "${p.booking}" (${p.type}) إلى "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `أقلعت الرحلة ${p.flight}`,
+      body: `الرحلة ${p.flight} من ${p.from} إلى ${p.to} في الجو.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `الرحلة ${p.flight} متأخرة`,
+      body: `الرحلة ${p.flight} من ${p.from} إلى ${p.to} متأخرة نحو ${p.delay} دقيقة عن الموعد.`,
+    }),
+    flight_landed: (p) => ({
+      title: `هبطت الرحلة ${p.flight}`,
+      body: `هبطت الرحلة ${p.flight} القادمة من ${p.from} في ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `تذكير: ${p.trip}`,
@@ -37,8 +50,22 @@ const ar: NotificationLocale = {
       body: `${p.actor} يدعوك لمشاركة مجموعة. افتح TREK للقبول أو الرفض.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} صور مشتركة`,
-      body: `${p.actor} شارك ${p.count} صورة في "${p.trip}".`,
+      title: pluralForm(p.count, 'ar', {
+        zero: 'لم تتم مشاركة أي صورة',
+        one: 'تمت مشاركة صورة واحدة',
+        two: 'تمت مشاركة صورتين',
+        few: `تمت مشاركة ${p.count} صور`,
+        many: `تمت مشاركة ${p.count} صورة`,
+        other: `تمت مشاركة ${p.count} صورة`,
+      }),
+      body: pluralForm(p.count, 'ar', {
+        zero: `${p.actor} لم يشارك أي صورة في "${p.trip}".`,
+        one: `${p.actor} شارك صورة واحدة في "${p.trip}".`,
+        two: `${p.actor} شارك صورتين في "${p.trip}".`,
+        few: `${p.actor} شارك ${p.count} صور في "${p.trip}".`,
+        many: `${p.actor} شارك ${p.count} صورة في "${p.trip}".`,
+        other: `${p.actor} شارك ${p.count} صورة في "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `رسالة جديدة في "${p.trip}"`,
@@ -56,11 +83,48 @@ const ar: NotificationLocale = {
       title: 'فشل النسخة المتماثلة للتخزين',
       body:
         `فشلت الكتابة على النسخة المتماثلة '${p.backend}': ${p.op} لـ ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` تم تجاهل ${p.suppressed} فشل إضافي منذ آخر إشعار.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'ar', {
+              zero: ' لم يتم تجاهل أي حالة فشل إضافية منذ آخر إشعار.',
+              one: ' تم تجاهل حالة فشل إضافية واحدة منذ آخر إشعار.',
+              two: ' تم تجاهل حالتَي فشل إضافيتين منذ آخر إشعار.',
+              few: ` تم تجاهل ${p.suppressed} حالات فشل إضافية منذ آخر إشعار.`,
+              many: ` تم تجاهل ${p.suppressed} حالة فشل إضافية منذ آخر إشعار.`,
+              other: ` تم تجاهل ${p.suppressed} حالة فشل إضافية منذ آخر إشعار.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'طلب منطقة تجديف',
+      body: `${p.actor} يخطط لرحلة تجديف في ${p.region}. حمّل بياناتها المائية أو ارفضها في لوحة الإدارة ضمن الإضافات.`,
     }),
     synology_session_cleared: () => ({
       title: 'تمت إعادة تعيين جلسة Synology',
       body: 'تغيّر حسابك أو رابط Synology. تم تسجيل خروجك من Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `درب wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `تغيّر «${p.tour}» في «${p.trip}» على wanderer. افتح الجولة وتحقق من مصدرها لترى كل التغييرات. لا يتغير شيء في الرحلة من تلقاء نفسه.`
+          : p.state === 'unverifiable'
+            ? `لم يعد بالإمكان التحقق من «${p.tour}» في «${p.trip}» على wanderer. تبقى الجولة في رحلتك كما هي.`
+            : `ربما تغيّر «${p.tour}» في «${p.trip}» على wanderer. افتح الجولة وتحقق من مصدرها. لا يتغير شيء في الرحلة من تلقاء نفسه.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `أُضيف من بريد: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `أضاف ${p.actor} الحجز "${p.booking}" إلى "${p.trip}" من بريد مُعاد توجيهه.`
+          : `تمت إضافة "${p.booking}" من بريدك المُعاد توجيهه إلى "${p.trip}". يمكنك التراجع عن ذلك في TREK لمدة 7 أيام.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'حجوزات مُعاد توجيهها للمراجعة',
+      body: `حجوزات مُعاد توجيهها بانتظارك في TREK: ${p.count}. يذكر كل منها سبب عدم إضافته تلقائيًا.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'تم إيقاف استيراد البريد مؤقتًا',
+      body: 'لا يقبل TREK رسائل الحجز المُعاد توجيهها في الوقت الحالي، لذا انتظر قبل إعادة توجيهها. تبقى عناوينك وستعمل مجددًا عند عودة الاستيراد، وتبقى الحجوزات المضافة بالفعل في رحلاتك.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

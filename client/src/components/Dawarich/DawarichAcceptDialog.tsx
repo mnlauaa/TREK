@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react'
+import React, { useId, useMemo, useState } from 'react'
 import { Gauge, Hourglass, CircleDashed, Star } from 'lucide-react'
 import type { DawarichAccept, DawarichSuggestion, DawarichSuggestionTarget } from '@trek/shared'
 import { DAWARICH_BUCKET_MATCH_MIN_MINUTES, DAWARICH_BUCKET_MATCH_RADIUS_M } from '@trek/shared'
 import { useTranslation } from '../../i18n'
-import Modal from '../shared/Modal'
+import { useFormatDate } from '../../hooks/useDateFormat'
+import { DialogButton, DialogFooter, DialogHeader, DialogShell, FooterSpacer, NEUTRAL_TINT } from '../shared/DialogShell'
 import MSheet from '../../mobile/components/MSheet'
 import { FormSheetFooter, FormSheetHeader } from '../../mobile/screens/trip/sheets/PlSheetChrome'
 import { useIsPhone } from '../../mobile/useIsPhone'
@@ -18,6 +19,8 @@ export interface AcceptTargetOption {
   label: string
   /** Secondary half of the label — a day's date beside its number. */
   badge?: string
+  /** A day's ISO date, so the day the stay fell on can be preselected (#3068). */
+  date?: string
 }
 
 export interface DawarichAcceptDialogProps {
@@ -64,7 +67,9 @@ export default function DawarichAcceptDialog({
   onConfirm,
 }: DawarichAcceptDialogProps): React.ReactElement | null {
   const { t, locale } = useTranslation()
+  const { formatDateTime } = useFormatDate()
   const phone = useIsPhone()
+  const labelId = useId()
 
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
@@ -78,6 +83,14 @@ export default function DawarichAcceptDialog({
   // always describe the row the user just pressed rather than the previous one.
   const [seededFor, setSeededFor] = useState<number | null>(null)
 
+  // The stay already knows the date it was recorded on, so the day picker opens
+  // on the trip day that matches it (#3068). Without one it stays unplanned:
+  // a guessed day would be worse than none.
+  function dayOfStay(forTrip: number | '', localDate: string): number | '' {
+    if (typeof forTrip !== 'number' || !daysForTrip) return ''
+    return daysForTrip(forTrip).find(day => day.date === localDate)?.id ?? ''
+  }
+
   if (suggestion && seededFor !== suggestion.id) {
     setSeededFor(suggestion.id)
     setName(suggestion.name)
@@ -85,8 +98,9 @@ export default function DawarichAcceptDialog({
     setDate(suggestion.localDate)
     setTime(clockOf(suggestion.startedAt))
     setEndTime(clockOf(suggestion.endedAt))
-    setTripId(suggestion.tripId ?? (trips[0]?.id ?? ''))
-    setDayId('')
+    const seededTrip = suggestion.tripId ?? (trips[0]?.id ?? '')
+    setTripId(seededTrip)
+    setDayId(dayOfStay(seededTrip, suggestion.localDate))
     setJournalId(journals[0]?.id ?? '')
   }
 
@@ -139,14 +153,14 @@ export default function DawarichAcceptDialog({
             </span>
             <p className="min-w-0 flex-1 text-caption text-content">
               {t('dawarich.accept.recorded', {
-                from: new Date(suggestion.startedAt).toLocaleString(locale),
+                from: formatDateTime(new Date(suggestion.startedAt)),
                 to: new Date(suggestion.endedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
               })}
             </p>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1">
             <DawarichBadge icon={Hourglass} size="sm">
-              {t('dawarich.accept.duration', { minutes: suggestion.durationMinutes })}
+              {t('dawarich.accept.duration', { count: suggestion.durationMinutes })}
             </DawarichBadge>
             {/* The source's own verdict, shown here rather than on every row of
                 the list: since Dawarich 1.12.0 "unconfirmed" is the normal state
@@ -179,7 +193,7 @@ export default function DawarichAcceptDialog({
               {' — '}
               {t('dawarich.bucket.rule', {
                 meters: DAWARICH_BUCKET_MATCH_RADIUS_M,
-                minutes: DAWARICH_BUCKET_MATCH_MIN_MINUTES,
+                count: DAWARICH_BUCKET_MATCH_MIN_MINUTES,
               })}
             </span>
           </p>
@@ -269,7 +283,13 @@ export default function DawarichAcceptDialog({
               </span>
               <CustomSelect
                 value={tripId}
-                onChange={next => { setTripId(typeof next === 'number' ? next : ''); setDayId('') }}
+                onChange={next => {
+                  const nextTrip = typeof next === 'number' ? next : ''
+                  setTripId(nextTrip)
+                  // The old day belongs to the old trip; the new trip's own day
+                  // for the stay takes its place, if it has one.
+                  setDayId(dayOfStay(nextTrip, suggestion.localDate))
+                }}
                 options={trips.map(trip => ({ value: trip.id, label: trip.label }))}
                 placeholder={t('dawarich.accept.pickTrip')}
                 style={{ width: '100%' }}
@@ -350,33 +370,34 @@ export default function DawarichAcceptDialog({
   }
 
   return (
-    <Modal
-      isOpen
+    <DialogShell
       onClose={onCancel}
-      size="lg"
-      title={title}
-      footer={
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-body border border-edge text-content-secondary"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={confirm}
-            disabled={busy || missingTarget}
-            className="px-4 py-2 rounded-lg text-body font-medium bg-accent text-accent-text hover:bg-accent-hover disabled:opacity-50"
-          >
+      labelledBy={labelId}
+      width="detail"
+      header={(
+        <DialogHeader
+          // The mark fills its tile, rounded like the phone's: a small logo in a
+          // grey square reads as a placeholder.
+          tile={<span className="flex h-[46px] w-[46px] flex-none overflow-hidden rounded-[14px] shadow-sm"><DawarichIcon size={46} /></span>}
+          tint={NEUTRAL_TINT}
+          labelId={labelId}
+          onClose={onCancel}
+          eyebrow={t('dawarich.title')}
+          title={title}
+        />
+      )}
+      footer={(
+        <DialogFooter>
+          <FooterSpacer />
+          <DialogButton onClick={onCancel}>{t('common.cancel')}</DialogButton>
+          <DialogButton variant="primary" onClick={confirm} disabled={busy || missingTarget}>
             {t(`dawarich.accept.confirm.${target}`)}
-          </button>
-        </div>
-      }
+          </DialogButton>
+        </DialogFooter>
+      )}
     >
       {fields}
-    </Modal>
+    </DialogShell>
   )
 }
 

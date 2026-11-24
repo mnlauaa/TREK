@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const tr: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const tr: NotificationLocale = {
     booking_change: (p) => ({
       title: `Yeni rezervasyon: ${p.booking}`,
       body: `${p.actor}, "${p.trip}" seyahatine "${p.booking}" (${p.type}) rezervasyonu ekledi.`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} kalktı`,
+      body: `${p.from} çıkışlı ${p.to} varışlı ${p.flight} havada.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} rötarlı`,
+      body: `${p.from} çıkışlı ${p.to} varışlı ${p.flight} yaklaşık ${p.delay} dakika rötarlı.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} indi`,
+      body: `${p.from} çıkışlı ${p.flight} ${p.to} varış noktasına indi.`,
     }),
     trip_reminder: (p) => ({
       title: `Seyahat hatırlatıcısı: ${p.trip}`,
@@ -37,8 +50,14 @@ const tr: NotificationLocale = {
       body: `${p.actor} sizi bir koleksiyonu paylaşmaya davet etti. Kabul etmek veya reddetmek için TREK’i açın.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} fotoğraf paylaşıldı`,
-      body: `${p.actor}, "${p.trip}" içinde ${p.count} fotoğraf paylaştı.`,
+      title: pluralForm(p.count, 'tr', {
+        one: `${p.count} fotoğraf paylaşıldı`,
+        other: `${p.count} fotoğraf paylaşıldı`,
+      }),
+      body: pluralForm(p.count, 'tr', {
+        one: `${p.actor}, "${p.trip}" içinde ${p.count} fotoğraf paylaştı.`,
+        other: `${p.actor}, "${p.trip}" içinde ${p.count} fotoğraf paylaştı.`,
+      }),
     }),
     collab_message: (p) => ({
       title: `"${p.trip}" içinde yeni mesaj`,
@@ -56,11 +75,44 @@ const tr: NotificationLocale = {
       title: 'Depolama kopyası hatası',
       body:
         `'${p.backend}' kopyasına yazma başarısız oldu: ${p.op} (${p.key}) — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Son bildirimden bu yana ${p.suppressed} hata daha bastırıldı.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'tr', {
+              one: ` Son bildirimden bu yana ${p.suppressed} hata daha bastırıldı.`,
+              other: ` Son bildirimden bu yana ${p.suppressed} hata daha bastırıldı.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Kürek bölgesi istendi',
+      body: `${p.actor}, ${p.region} bölgesinde kürek turu planlıyor. Su verisini yönetim alanında Eklentiler altında yükle ya da reddet.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology oturumu temizlendi',
       body: 'Synology hesabınız veya URL değişti. Synology Photos oturumunuz kapatıldı.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer rotası: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `"${p.trip}" içindeki "${p.tour}" wanderer'da değiştirildi. Tüm değişiklikleri görmek için turu aç ve kaynağını denetle. Gezide hiçbir şey kendiliğinden değişmez.`
+          : p.state === 'unverifiable'
+            ? `"${p.trip}" içindeki "${p.tour}" artık wanderer'da denetlenemiyor. Gezindeki tur olduğu gibi kalır.`
+            : `"${p.trip}" içindeki "${p.tour}" wanderer'da değişmiş olabilir. Turu aç ve kaynağını denetle. Gezide hiçbir şey kendiliğinden değişmez.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `E-postadan eklendi: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor}, iletilen bir e-postadaki "${p.booking}" rezervasyonunu "${p.trip}" seyahatine ekledi.`
+          : `İlettiğin e-postadaki "${p.booking}" rezervasyonu "${p.trip}" seyahatine eklendi. Bunu TREK içinde 7 gün boyunca geri alabilirsin.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'İncelenecek iletilen rezervasyonlar',
+      body: `TREK içinde seni bekleyen iletilen rezervasyonlar: ${p.count}. Her birinde neden kendiliğinden eklenmediği yazıyor.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'E-posta içe aktarımı duraklatıldı',
+      body: 'TREK şimdilik iletilen rezervasyon e-postalarını kabul etmiyor, bu yüzden şimdilik iletme. Adreslerin kalıyor ve içe aktarım geri geldiğinde yeniden çalışacak, zaten eklenmiş rezervasyonlar da seyahatlerinde kalıyor.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

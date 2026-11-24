@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '../../tests/helpers/msw/server'
 import { dayRepo } from './dayRepo'
 import { offlineDb, clearAll } from '../db/offlineDb'
-import { buildDay, buildTrip } from '../../tests/helpers/factories'
+import { buildDay, buildTrip, buildAssignment } from '../../tests/helpers/factories'
 
 function setOnline(v: boolean): void {
   Object.defineProperty(navigator, 'onLine', { value: v, writable: true, configurable: true })
@@ -141,3 +141,44 @@ describe('dayRepo.appendDated', () => {
     await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('Offline cache not updated after adding a day:', expect.any(Error)))
   })
 })
+
+it('queues day timing and exact travel endpoints offline without changing visits', async () => {
+  const day = buildDay({ id: 81, trip_id: 5, assignments: [] })
+  await offlineDb.days.put(day)
+  setOnline(false)
+  const timing = { enabled: true, start: '09:00', travel: [{ from: 'assignment:1', to: 'assignment:2', mode: 'walking', minutes: 0 }] }
+  await dayRepo.setTiming(5, day, timing)
+  expect((await offlineDb.days.get(81))?.timing).toEqual(timing)
+  expect(await offlineDb.mutationQueue.toArray()).toEqual([expect.objectContaining({
+    url: '/trips/5/days/81/timing', method: 'PUT', body: timing, resource: 'days', entityId: 81,
+  })])
+})
+
+
+it('keeps newer cached visits when an earlier timing response arrives', async () => {
+  const oldVisit = buildAssignment({ id: 1, day_id: 81, stay_minutes: 30 })
+  const day = buildDay({ id: 81, trip_id: 5, assignments: [oldVisit] })
+  const timing = { enabled: true, start: '10:00', travel: [] }
+  const response = deferred()
+  const started = deferred()
+  server.use(http.put('/api/trips/5/days/81/timing', async () => {
+    started.resolve()
+    await response.promise
+    return HttpResponse.json({ day: { ...day, timing } })
+  }))
+  await offlineDb.days.put(day)
+  const saving = dayRepo.setTiming(5, day, timing)
+  await started.promise
+  const updated = { ...oldVisit, stay_minutes: 120, assignment_time: '11:00', times_explicit: true }
+  await offlineDb.days.update(81, { assignments: [updated] })
+  response.resolve()
+  await saving
+  await vi.waitFor(async () => expect((await offlineDb.days.get(81))?.timing).toEqual(timing))
+  expect((await offlineDb.days.get(81))?.assignments).toEqual([updated])
+})
+
+function deferred() {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}

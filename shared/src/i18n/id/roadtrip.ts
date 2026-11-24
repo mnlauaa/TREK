@@ -1,6 +1,21 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': 'Waktu otomatis',
+  'timing.fixedStart': 'Mulai tetap',
+  'timing.fixedEnd': 'Selesai tetap',
+  'timing.help': 'Kedatangan dan keberangkatan dihitung dari durasi kunjungan dan perjalanan.',
+  'timing.fixedEndHint': 'Waktu selesai menentukan durasi kunjungan. Kosongkan waktu selesai untuk mengedit durasi.',
+  'timing.travelMissing': 'Waktu perjalanan belum diatur',
+  'timing.arrival': 'Perkiraan tiba',
+  'timing.departure': 'Perkiraan berangkat',
+  'timing.fixed': 'Tetapkan waktu',
+  'timing.unknown': 'Belum diketahui',
+  'timing.bookingConflict': 'Waktu kunjungan tidak mencakup waktu reservasi ini.',
+  'timing.booking': 'Lihat reservasi',
+  'timing.travel': 'Perjalanan dalam menit',
+  'timing.dayOffset': '+{count} hari',
+
   'roadtrip.stay.portals': 'Cari penginapan',
   'roadtrip.stay.portalHint': 'Periksa tujuan, tanggal, dan tamu di portal. Cari secara manual di CHECK24.',
   'roadtrip.charging.available': 'tersedia',
@@ -56,7 +71,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.window.conflict':
     'Waktu tetap bertentangan dengan perjalanan dan jeda. Waktu manual tidak berubah; perencanaan otomatis dijeda.',
   'roadtrip.window.tooLong':
-    'Waktu ini memerlukan lebih dari {days} hari tambahan. Pilih rentang waktu harian yang lebih panjang.',
+    'Waktu ini memerlukan lebih dari {count} hari tambahan. Pilih rentang waktu harian yang lebih panjang.',
   'roadtrip.mode.roadtrip': 'Perjalanan darat',
   'roadtrip.mode.days': 'Hari',
   'roadtrip.mode.label': 'Tampilan rencana',
@@ -69,7 +84,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.poi.scope': 'Hari',
   'roadtrip.poi.looking': 'Mencari',
   'roadtrip.poi.searchingHint': 'Mencari di sepanjang rute…',
-  'roadtrip.poi.found': '{count} di jalan',
+  'roadtrip.poi.found': '{count} di rute',
   'roadtrip.poi.fuel': 'Bahan bakar',
   'roadtrip.poi.charging': 'Pengisian daya',
   'roadtrip.stop.offRoad': '{distance} dari jalan',
@@ -102,8 +117,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.limit.minutes': 'mnt',
   'roadtrip.limit.off': 'mati',
   'roadtrip.limit.blockNote': 'Satu blok = {distance}',
-  'roadtrip.limit.echoOver': '{over} dari {days} hari melebihi batasmu.',
-  'roadtrip.limit.echoNone': 'Semua {days} hari dalam batasmu.',
+  'roadtrip.limit.echoOver': '{over} dari {count} hari melebihi batasmu.',
+  'roadtrip.limit.echoNone': 'Semua {count} hari dalam batasmu.',
   'roadtrip.limit.echoDry': '{count} ruas tanpa perhentian terjangkau.',
   'roadtrip.limit.echoEmpty': 'Buka sebuah road trip untuk melihat efeknya.',
   'roadtrip.limit.specToggle': 'Hitung dari data mobil',
@@ -174,9 +189,9 @@ const roadtrip: TranslationStrings = {
     'Perjalanan ditarik ke jalur dengan beberapa titik lintas. Titik lintas yang ada di etape tersebut akan diganti.',
   'roadtrip.track.action': 'Ikuti jalur ini',
   'roadtrip.track.working': 'Menyesuaikan perjalanan dengan jalur, putaran {round}',
-  'roadtrip.track.done': '{count} titik lintas ditempatkan. Perjalanan tetap dalam {distance} dari jalur.',
+  'roadtrip.track.done': '{count} titik lintas ditempatkan. Perjalanan tetap dalam jarak {distance} dari jalur.',
   'roadtrip.track.capped':
-    '{count} titik lintas ditempatkan. Di titik terlebar, perjalanan berjarak {distance} dari jalur.',
+    '{count} titik lintas ditempatkan. Di titik terjauh, perjalanan berjarak {distance} dari jalur.',
   'roadtrip.track.already': 'Perjalanan sudah mengikuti jalur ini.',
   'roadtrip.track.errorRoute': 'Layanan rute tidak menjawab.',
   'roadtrip.track.errorSave': 'Titik lintas tidak dapat disimpan.',
@@ -192,11 +207,11 @@ const roadtrip: TranslationStrings = {
   'roadtrip.poi.noneMatchFilters': 'Tidak ada di sepanjang rute yang cocok dengan filter ini.',
   'roadtrip.poi.foundFiltered': '{count} dari {total} di rute',
   'roadtrip.poi.truncated':
-    'Di {count} ruas ada lebih banyak daripada yang muat dalam satu jawaban — persempit koridor untuk melihat sisanya.',
+    'Di {count} ruas ada lebih banyak hasil daripada yang muat dalam satu jawaban. Persempit koridor untuk melihat sisanya.',
   'roadtrip.poi.search': 'Cari',
   'roadtrip.poi.searching': 'Mencari {done} dari {total}',
   'roadtrip.poi.capped': 'Rute panjang — hanya bagian pertama yang dicari.',
-  'roadtrip.poi.partial': '{count} ruas tidak dapat dicari — pencarian tempat tidak merespons.',
+  'roadtrip.poi.partial': '{count} ruas tidak dapat dicari. Pencarian tempat tidak merespons.',
   'roadtrip.poi.failed': 'Pencarian tempat sedang tidak merespons.',
   'roadtrip.poi.empty': 'Pilih yang Anda butuhkan lalu cari.',
   'roadtrip.poi.add': 'Tambah',
@@ -205,7 +220,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.poi.alongRoute': 'setelah {distance}',
   'roadtrip.poi.clearResults': 'Hapus hasil',
   'roadtrip.poi.addManual': 'Tambah manual',
-  'roadtrip.poi.addManualShort': 'Manual',
+  'roadtrip.poi.addManualShort': 'Manual', // same-as-en
   'roadtrip.poi.manualHint':
     'Pencarian tempat tidak menemukan setiap pengisian daya atau pompa bahan bakar. Cari satu menurut nama dan tentukan di bagian perjalanan mana ia ditempatkan.',
   'roadtrip.poi.addBetween': 'Tambahkan di antara',
@@ -238,8 +253,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.alt.standIn':
     'Mesin penghindaran tidak menjawab untuk ruas ini, jadi mesin utama yang menggambarnya. Mesin penghindaran sedang ditanya lagi.',
   'roadtrip.day': 'Hari {number}',
-  'roadtrip.quietDay.empty': 'Belum ada perhentian — jatuhkan di sini',
-  'roadtrip.quietDay.one': 'Sejauh ini hanya {name} — jatuhkan perhentian di sini',
+  'roadtrip.quietDay.empty': 'Belum ada perhentian, jatuhkan di sini',
+  'roadtrip.quietDay.one': 'Sejauh ini hanya {name}, jatuhkan perhentian di sini',
   'roadtrip.leg.driveText': '{distance} dalam {time}',
   'roadtrip.day.stopCount': '{count} perhentian',
   'roadtrip.day.fold': 'Lipat',
@@ -262,8 +277,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.stop.computed': 'Dihitung dari waktu berkendara',
   'roadtrip.stop.endIsLeave': 'Dalam perjalanan darat, keberangkatan pada waktu ini.',
   'roadtrip.via.hint': 'Seret untuk mengubah rute, klik kanan untuk menghapus',
-  'roadtrip.warn.late': 'Tiba {minutes} menit setelah waktu yang ditetapkan',
-  'roadtrip.warn.missedLeave': 'Tiba {minutes} menit setelah waktu berangkat yang ditetapkan',
+  'roadtrip.warn.late': 'Tiba {count} menit setelah waktu yang ditetapkan',
+  'roadtrip.warn.missedLeave': 'Tiba {count} menit setelah waktu berangkat yang ditetapkan',
   'roadtrip.warn.overnight': 'Hari berikutnya',
   'roadtrip.spill.title': 'Dari hari {number}',
   'roadtrip.spill.departs': 'berangkat {time}',
@@ -296,9 +311,8 @@ const roadtrip: TranslationStrings = {
     'Pemesanan {title} tidak berada di hari mana pun dalam perjalanan ini, jadi perjalanan tidak memperhitungkannya.',
   'roadtrip.bookings.loose': 'Juga dipesan hari ini',
   'roadtrip.ride.departureFlight': 'Berangkat {time}',
-  'roadtrip.ride.duration': 'Durasi sesuai pemesanan',
-  'roadtrip.ride.checkIn': 'Check-in',
-  'roadtrip.ride.boarding': 'Boarding',
+  'roadtrip.ride.checkIn': 'Check-in', // same-as-en
+  'roadtrip.ride.boarding': 'Naik',
   'roadtrip.ride.missed': 'Terlewat',
   'roadtrip.ride.lateBy': 'terlambat {time}',
   'roadtrip.ride.reachedAt': 'baru tiba {time}',
@@ -316,12 +330,14 @@ const roadtrip: TranslationStrings = {
   'roadtrip.day.rideMissed.ferry': 'Feri terlewat',
   'roadtrip.day.rideMissed.cruise': 'Kapal pesiar terlewat',
   'roadtrip.day.rideMissed.bus': 'Bus terlewat',
-  'roadtrip.bookend.checkOut': 'Check-out',
+  'roadtrip.bookend.checkOut': 'Check-out', // same-as-en
   'roadtrip.bookend.from': 'Awal hari',
   'roadtrip.bookend.back': 'Menginap',
-  'roadtrip.bookend.checkIn': 'Check-in',
+  'roadtrip.bookend.checkIn': 'Check-in', // same-as-en
   'roadtrip.bookend.afterCheckOut': 'Berangkat setelah check-out',
   'roadtrip.bookend.noVia':
     'Titik lintas tidak bisa ditaruh di perjalanan ke atau dari penginapan Anda. Tambahkan perhentian di sana.',
+  'roadtrip.stay.untilHint':
+    'Berangkat pukul {time} karena kunjungan ini punya waktu selesai. Buka dan pilih Hapus waktu selesai untuk menetapkan lama singgah.',
 };
 export default roadtrip;

@@ -1,0 +1,392 @@
+import type { CostCategory } from '@trek/shared';
+import { liveQuery } from 'dexie';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+
+import { useExchangeRates, withFallbackFx } from '../../hooks/useExchangeRates';
+import { useNetworkMode } from '../../hooks/useNetworkMode';
+import { useTranslation } from '../../i18n';
+import { budgetRepo, type SettlementWriteResult } from '../../repo/budgetRepo';
+import { useAuthStore } from '../../store/authStore';
+import { useTripStore, type TripStoreState } from '../../store/tripStore';
+import { useServerPing } from '../../sync/useServerPing';
+import type { BudgetItem, Trip } from '../../types';
+import { downloadBlob } from '../../utils/fileDownload';
+import { localToday } from '../Planner/today';
+import { COST_CAT_META } from './costsCategories';
+import {
+  buildCostsCsv,
+  categoryBreakdown,
+  computeTotals,
+  countedExpenses,
+  filterBudgetItems,
+  filterSettlements,
+  myShareOf,
+  settledShareOf,
+  showsSplitting,
+  type CostsCtx,
+  type CostsSegment,
+  type CostsSettlementFlow,
+  type CostsSettlementResponse,
+} from './costsModel';
+import { knownPersonNames } from './CostsPanel.helpers';
+import { useCostsCurrency } from './useCostsCurrency';
+
+/** The events after which the balances are read again from the server. */
+const SETTLEMENT_RELOAD_EVENTS = [
+  'budget:settlement-created',
+  'budget:settlement-updated',
+  'budget:settlement-deleted',
+  'budget:exchange-rates-applied',
+  'budget:exchange-rates-updated',
+  'guest:identity-transferred',
+  'budget:updated',
+  'budget:members-updated',
+  'budget:member-paid-updated',
+  'member:removed',
+  'member:updated',
+] as const;
+
+type Translate = (key: string, params?: Record<string, string | number>) => string;
+interface Toaster {
+  error: (message: string) => void;
+  info: (message: string) => void;
+}
+
+function useCostsSettlement(tripId: number, base: string, tripCurrency: string) {
+  const [settlementRead, setSettlementRead] = useState<{
+    tripId: number;
+    requested: string;
+    response: CostsSettlementResponse;
+  } | null>(null);
+  const currentRead = settlementRead?.tripId === tripId ? settlementRead : null;
+  const settlement = currentRead?.response ?? null;
+  const settledIn = (settlement?.currency || currentRead?.requested)?.toUpperCase();
+  // Anchored on the trip currency's quote, the one the server books with (#2525).
+  const { convert, displayPerTrip } = useExchangeRates(base, tripCurrency);
+
+  // A failed settlement read leaves `settlement` null, which the views would
+  // otherwise present as "everyone is square", a balance claim we cannot make.
+  const [settlementError, setSettlementError] = useState(false);
+  // Only the latest read may land: an answer for the currency picked before would
+  // otherwise overwrite the one for the currency shown now.
+  const latestRead = useRef(0);
+  const displayRate = settledIn === base ? settlement?.display_rate : undefined;
+  // The browser's own figure for the display currency goes along, for the server to
+  // answer in it when it cannot fetch a quote itself.
+  const readSettlement = useCallback(() => {
+    const read = ++latestRead.current;
+    return budgetRepo
+      .settlement(tripId, base, base !== tripCurrency ? displayPerTrip : null)
+      .then((s: CostsSettlementResponse) => {
+        if (read !== latestRead.current) return;
+        setSettlementRead({ tripId, requested: base, response: s });
+        setSettlementError(false);
+      })
+      .catch(() => {
+        if (read === latestRead.current) setSettlementError(true);
+      });
+  }, [tripId, base, tripCurrency, displayPerTrip]);
+  const loadSettlement = useCallback(() => {
+    void readSettlement();
+  }, [readSettlement]);
+
+  const balancesKnown =
+    !settlementError && settledIn === base && (!settlement?.trip_currency || settlement.trip_currency === tripCurrency);
+  return { settlement, settlementError, balancesKnown, displayRate, convert, readSettlement, loadSettlement };
+}
+
+/**
+ * The Costs ledger behind the desktop CostsPanel and the phone MCostsTab: the
+ * display and trip currencies, the settlement the server nets the balances in,
+ * the totals and filters over the expenses and payments, the category
+ * breakdown, the CSV export and the ledger writes. Each surface lays it out
+ * and keeps its own dialogs or sheets.
+ *
+ * `splitting` says whether the ledger splits anything at all: not on a trip
+ * that keeps totals only (#1714) or on a trip of one (#2689). Without it the
+ * owner filter and the recorded payments are left out too.
+ *
+ * Where the two differ today, the surface says which way: the desktop also
+ * reads the settlement when the trip changes (`settlementOnTripChange`), leaves
+ * an expense nobody paid out of my share (`skipUnfinishedShares`, #2225) and
+ * writes each expense's currency into the CSV as stored (`csvCurrencyAsStored`).
+ */
+export function useCostsLedger({
+  tripId,
+  trip,
+  budgetItems,
+  memberCount,
+  canEdit,
+  actions,
+  t,
+  toast,
+  settlementOnTripChange = false,
+  skipUnfinishedShares = false,
+  csvCurrencyAsStored = false,
+}: {
+  tripId: number;
+  trip: Trip | null | undefined;
+  budgetItems: BudgetItem[];
+  /** The trip's current members; with one, there is nothing to split. */
+  memberCount: number;
+  canEdit: boolean;
+  actions: Pick<TripStoreState, 'loadBudgetItems' | 'deleteBudgetItem'>;
+  t: Translate;
+  toast: Toaster;
+  settlementOnTripChange?: boolean;
+  skipUnfinishedShares?: boolean;
+  csvCurrencyAsStored?: boolean;
+}) {
+  const { loadBudgetItems, deleteBudgetItem } = actions;
+  const { locale } = useTranslation();
+  const me = useAuthStore((s) => s.user?.id ?? -1);
+
+  // Display/base currency = the user's preferred currency (Settings), falling back
+  // to the trip's own currency, unless this trip is read in another one (#1683).
+  // Everything in Costs is converted to and shown in it.
+  const { base, usual, setBase, baseOptions } = useCostsCurrency(tripId, trip);
+  // Pre-rework rows stored currency = NULL, meaning "the trip's own currency".
+  const tripCurrency = (trip?.currency || usual).toUpperCase();
+  const { settlement, settlementError, balancesKnown, displayRate, convert, readSettlement, loadSettlement } =
+    useCostsSettlement(tripId, base, tripCurrency);
+  const settling = useRef(false);
+  const ctx: CostsCtx = useMemo(
+    () => ({
+      me,
+      tripCurrency,
+      displayCurrency: base,
+      convert: (amount, currency) =>
+        displayRate != null && currency?.toUpperCase() === tripCurrency
+          ? amount * displayRate
+          : convert(amount, currency),
+    }),
+    [me, tripCurrency, base, convert, displayRate]
+  );
+
+  // A payment, a split, a paid mark or a renamed or removed guest written
+  // elsewhere (a fellow traveller, the assistant) moves the balances without
+  // changing the number of expenses, so those events read the settlement again,
+  // one read per burst however many changes one assistant step applies.
+  useServerPing(SETTLEMENT_RELOAD_EVENTS, true, readSettlement);
+
+  // The items reload when the trip changes; the settlement reloads on a trip or
+  // currency change and when the number of expenses changes. Further refreshes are
+  // explicit after each write, so an unrelated re-render does not refetch it. The
+  // count is for an expense saved outside the ledger: a scanned receipt is reviewed
+  // in the trip sheets, which reload the items but cannot reach this settlement.
+  const onTripChange = useEffectEvent(() => {
+    void loadBudgetItems(tripId);
+    if (settlementOnTripChange) loadSettlement();
+  });
+  useEffect(() => {
+    onTripChange();
+  }, [tripId, loadBudgetItems]);
+  // Offline the balances are the last ones the server worked out, and an expense or
+  // payment saved meanwhile waits in the queue. Read again once the connection is
+  // back and the queue holds no Costs write any more, so they count.
+  const { offline } = useNetworkMode();
+  const [queuedWrites, setQueuedWrites] = useState(0);
+  useEffect(() => {
+    const subscription = liveQuery(() => budgetRepo.pendingWrites(tripId)).subscribe({
+      next: setQueuedWrites,
+      // A queue that cannot be read holds nothing to wait for.
+      error: () => setQueuedWrites(0),
+    });
+    return () => subscription.unsubscribe();
+  }, [tripId]);
+  const synced = !offline && queuedWrites === 0;
+  const settlementRevision = useTripStore((state) =>
+    Number(state.trip?.id) === tripId ? state.budgetSettlementRevision : 0
+  );
+  useEffect(() => {
+    loadSettlement();
+  }, [budgetItems.length, loadSettlement, synced, settlementRevision]);
+
+  // A payment saved offline has no row until the server records it, so the user
+  // is told it is on its way rather than seeing nothing happen.
+  const afterSettlementWrite = (result: SettlementWriteResult) => {
+    if (result.queued) toast.info(t('costs.paymentQueued'));
+    loadSettlement();
+  };
+
+  const [search, setSearch] = useState('');
+  const [segment, setSegment] = useState<CostsSegment>('all');
+  const [catFilter, setCatFilter] = useState(''); // '' = all categories
+  const [dayFilter, setDayFilter] = useState(''); // '' = all days, else YYYY-MM-DD
+  // Categories left out of the totals for a look without them (#2819): only this
+  // view, nothing is saved and nothing owed changes.
+  const [leftOutCats, setLeftOutCats] = useState<ReadonlySet<CostCategory>>(() => new Set());
+  const toggleLeftOutCat = useCallback((key: CostCategory) => {
+    setLeftOutCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const countAllCats = useCallback(() => setLeftOutCats(new Set()), []);
+
+  const shareOf = skipUnfinishedShares ? settledShareOf : myShareOf;
+  const flows = useMemo(() => (balancesKnown ? (settlement?.flows ?? []) : []), [settlement, balancesKnown]);
+  const canSettle = canEdit && queuedWrites === 0 && flows.length > 0;
+  const settledUp = balancesKnown && flows.length === 0;
+  const splitting = useMemo(
+    () => showsSplitting(trip?.costs_mode, memberCount, budgetItems, settlement, me),
+    [trip?.costs_mode, memberCount, budgetItems, settlement, me]
+  );
+  // The owner filter is hidden while nothing is split, so it cannot hold the list back.
+  const activeSegment = splitting ? segment : 'all';
+  // Names for people the expenses still name after they left the trip (#2604).
+  const knownNames = useMemo(() => knownPersonNames(budgetItems, settlement), [budgetItems, settlement]);
+  // `ctx` carries the rates. They can land after the expenses, and without it in the
+  // deps the cards kept the sums they were first added up with while the rows moved on.
+  const totals = useMemo(
+    () => computeTotals(budgetItems, flows, ctx, shareOf, leftOutCats),
+    [budgetItems, flows, ctx, shareOf, leftOutCats]
+  );
+  const filtered = useMemo(
+    () =>
+      filterBudgetItems(
+        budgetItems,
+        { search, segment: activeSegment, categoryKey: catFilter, dayKey: dayFilter },
+        ctx,
+        shareOf
+      ),
+    [budgetItems, search, activeSegment, catFilter, dayFilter, ctx, shareOf]
+  );
+  const filteredSettlements = useMemo(
+    () =>
+      splitting
+        ? filterSettlements(
+            settlement?.settlements || [],
+            { search, segment: activeSegment, categoryKey: catFilter, dayKey: dayFilter },
+            me
+          )
+        : [],
+    [splitting, settlement, search, activeSegment, catFilter, dayFilter, me]
+  );
+  const catBreakdown = useMemo(() => categoryBreakdown(budgetItems, ctx, leftOutCats), [budgetItems, ctx, leftOutCats]);
+  // The count beside the total adds up what the total does.
+  const countedCount = useMemo(() => countedExpenses(budgetItems, leftOutCats), [budgetItems, leftOutCats]);
+  // What the totals leave out, named in the breakdown's order, for the line that says so.
+  const leftOutLabel = useMemo(() => {
+    const names = catBreakdown.filter((r) => r.leftOut).map((r) => t(COST_CAT_META[r.key].labelKey));
+    return names.length > 0 ? t('costs.breakdown.leftOut', { categories: names.join(', ') }) : '';
+  }, [catBreakdown, t]);
+
+  // CSV export of all expenses, the wiki-documented export that got lost in the
+  // Costs rework (#1500). One row per expense, oldest first.
+  const exportCsv = useCallback(() => {
+    const { filename, content } = buildCostsCsv(budgetItems, {
+      base,
+      ctx,
+      locale,
+      tripTitle: trip?.title,
+      t,
+      currencyOf: csvCurrencyAsStored ? (e) => e.currency || tripCurrency : undefined,
+    });
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, filename);
+  }, [budgetItems, base, ctx, locale, trip?.title, t, csvCurrencyAsStored, tripCurrency]);
+
+  const deleteExpense = async (id: number) => {
+    try {
+      await deleteBudgetItem(tripId, id);
+      loadSettlement();
+    } catch {
+      toast.error(t('common.unknownError'));
+    }
+  };
+
+  // Deleting the recorded transfer brings the suggested flow back, so it reads
+  // as "undo" rather than delete.
+  const undoSettlement = async (id: number) => {
+    try {
+      afterSettlementWrite(await budgetRepo.deleteSettlement(tripId, id));
+    } catch {
+      toast.error(t('common.unknownError'));
+    }
+  };
+
+  const recordQuotedFlow = (flow: CostsSettlementFlow) =>
+    budgetRepo.createSettlement(
+      tripId,
+      withFallbackFx(
+        {
+          from_user_id: flow.from.user_id,
+          to_user_id: flow.to.user_id,
+          amount: flow.amount,
+          currency: base,
+          ...(flow.exchange_rate === undefined ? {} : { exchange_rate: flow.exchange_rate }),
+          ...(settlement?.trip_currency ? { rate_base_currency: settlement.trip_currency } : {}),
+          settled_at: localToday(),
+        },
+        tripCurrency
+      )
+    );
+
+  const settleQuotedFlows = async (quoted: CostsSettlementFlow[]) => {
+    if (!canSettle || settling.current || quoted.length === 0) return;
+    settling.current = true;
+    let queued = false;
+    try {
+      for (const flow of quoted) {
+        const result = await recordQuotedFlow(flow);
+        queued ||= result.queued;
+      }
+    } catch {
+      toast.error(t('common.unknownError'));
+    } finally {
+      try {
+        if (queued) toast.info(t('costs.paymentQueued'));
+        await readSettlement();
+      } finally {
+        settling.current = false;
+      }
+    }
+  };
+
+  const settleFlow = (fromId: number, toId: number, amount: number) =>
+    settleQuotedFlows(flows.filter((f) => f.from.user_id === fromId && f.to.user_id === toId && f.amount === amount));
+
+  const settleAll = () => settleQuotedFlows(flows);
+
+  return {
+    me,
+    base,
+    setBase,
+    baseOptions,
+    tripCurrency,
+    ctx,
+    settlement,
+    settlementError,
+    loadSettlement,
+    flows,
+    balancesKnown,
+    settledUp,
+    canSettle,
+    splitting,
+    knownNames,
+    search,
+    setSearch,
+    segment,
+    setSegment,
+    catFilter,
+    setCatFilter,
+    dayFilter,
+    setDayFilter,
+    totals,
+    filtered,
+    filteredSettlements,
+    catBreakdown,
+    countedCount,
+    leftOutLabel,
+    toggleLeftOutCat,
+    countAllCats,
+    exportCsv,
+    deleteExpense,
+    undoSettlement,
+    settleFlow,
+    settleAll,
+  };
+}

@@ -15,7 +15,7 @@ The compose file ships with several hardening options enabled by default:
 | `read_only: true` | Mounts the container filesystem read-only; only the two mounted volumes (`/app/data`, `/app/uploads`) and `/tmp` are writable |
 | `security_opt: no-new-privileges:true` | Prevents the process from gaining additional Linux privileges via setuid/setgid executables |
 | `cap_drop: [ALL]` | Drops all Linux capabilities from the container |
-| `cap_add: [CHOWN, SETUID, SETGID]` | Adds back only the capabilities needed for the entrypoint to drop privileges to the `node` user |
+| `cap_add: [CHOWN, SETUID, SETGID, KILL]` | Adds back only what the container needs: the first three let the entrypoint drop privileges to the `node` user, `KILL` lets `dumb-init` pass the stop signal on to it, so `docker stop` shuts TREK down cleanly instead of killing it |
 | `tmpfs: /tmp:noexec,nosuid,size=128m` | Mounts a 128 MB in-memory `/tmp`; required because the container root is read-only |
 
 > **Note (Docker from snap):** If you installed Docker via `snap` (config under `/var/snap/docker/...`), `no-new-privileges:true` will prevent the container from starting with `exec /usr/bin/dumb-init: operation not permitted`. This is a [snap/AppArmor limitation](https://bugs.launchpad.net/snapd/+bug/1908448), not a TREK issue — install Docker from the [official apt repository](https://docs.docker.com/engine/install/ubuntu/) instead, or remove `no-new-privileges`. See [Troubleshooting](Troubleshooting#container-wont-start-exec-usrbindumb-init-operation-not-permitted).
@@ -24,7 +24,7 @@ The compose file ships with several hardening options enabled by default:
 
 | Host path | Container path | Contents |
 |---|---|---|
-| `./data` | `/app/data` | SQLite database, logs, `.jwt_secret`, `.encryption_key` |
+| `./data` | `/app/data` | SQLite database (not used with `TREK_DB_URL`), logs, `.jwt_secret`, `.encryption_key`, pre-migration and pre-restore copies |
 | `./uploads` | `/app/uploads` | Uploaded files (photos, documents, covers, avatars) |
 
 ### Named Volumes
@@ -46,6 +46,14 @@ volumes:
 
 Docker creates the volumes automatically on first `docker compose up`. Use `docker volume ls` and `docker volume inspect` to manage them.
 
+### Optional storage seed
+
+A commented line mounts a storage-config.json file from the compose folder read-only into the data directory. Uncomment it to provision file storage once on the first start. See [Admin-Storage](Admin-Storage).
+
+## Healthcheck and Logs
+
+The compose file includes a healthcheck that polls `/api/health` every 30 seconds and follows a changed `PORT`, so `docker ps` shows `healthy` once TREK is up. It also limits the container log to three files of 10 MB each, because Docker keeps every line forever by default.
+
 ## Environment Variables
 
 The compose file has no `env_file:` key, so a `.env` placed alongside `docker-compose.yml` is used only for `${VAR}` interpolation — a value reaches the container only if a line in the `environment:` block references it. Four entries are wired that way:
@@ -62,25 +70,32 @@ The commented `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` lines are interpolated a
 
 Every other variable — `APP_URL`, the OIDC block, `FORCE_HTTPS`, `TRUST_PROXY`, `ADMIN_EMAIL`/`ADMIN_PASSWORD`, the MCP limits — ships as a commented literal. Uncomment the line in `docker-compose.yml` and put the value there; setting it in `.env` alone has no effect.
 
+A few variables are not in the compose file at all, among them `FILE_UPLOAD_LIMIT_MB` (the upload limit for files, 50 MB by default) and `RESTORE_FROM_BACKUP` (a backup ZIP to restore on the very first start, see [Backups](Backups#restoring-on-a-new-install-before-setup)). Add a line for them to the `environment:` block yourself.
+
+Some optional variables ship as commented lines, ready to uncomment: `LLM_TIMEOUT_MS` and `LLM_MAX_OUTPUT_TOKENS` for AI parsing, the `VAPID_*` keys for Web Push, `TREK_PLACES_*` and `PLACES_API_KEY` for place search, `AMAP_*`, `UNSPLASH_ACCESS_KEY`, `GOOGLE_LIST_DATA_BASE` and `TREK_WIKI_DIR`. Rootless Podman users will also find `HSTS_INCLUDE_SUBDOMAINS`, `COOKIE_SECURE` and `ALLOW_LINK_LOCAL_IPS` there.
+
 `APP_URL` is usually not needed. TREK resolves its public base URL as `APP_URL` → first `ALLOWED_ORIGINS` entry → `http://localhost:<PORT>`, so the `ALLOWED_ORIGINS` value above already gives OIDC redirect URIs, passkey origin checks and the links in email notifications the correct origin. Uncomment `APP_URL` only when the public base URL has to differ from the first allowed origin.
 
 For a full description of every variable, see [Environment-Variables](Environment-Variables).
 
 ## Image Tags
 
-Three tag strategies are available:
+Five tags are available:
 
 | Tag | Example                  | Behavior |
 |---|--------------------------|---|
 | `latest` | `mauriceboe/trek:latest` | Always the newest release across all major versions |
-| Major version | `mauriceboe/trek:4`      | Latest release pinned to that major version |
-| Full version | `mauriceboe/trek:4.0.0`  | Exact release; never changes |
+| Major version | `mauriceboe/trek:5`      | Latest release pinned to that major version |
+| Minor version | `mauriceboe/trek:5.0`    | Latest patch of that minor version; never moves to the next minor. Published from 5.0.0 on |
+| Full version | `mauriceboe/trek:5.0.0`  | Exact release; never changes |
+| `latest-pre` | `mauriceboe/trek:latest-pre` | Test build of the next version; not for production |
 
 The compose file above uses `latest`. To pin, change the `image:` line:
 
 ```yaml
-image: mauriceboe/trek:4        # track major version 4
-image: mauriceboe/trek:4.0.0   # pin to exact release
+image: mauriceboe/trek:5        # track major version 5
+image: mauriceboe/trek:5.0      # stay on 5.0.x patches
+image: mauriceboe/trek:5.0.0    # pin to exact release
 ```
 
 ## Start TREK
@@ -100,6 +115,25 @@ docker compose logs -f
 This compose file is designed for deployments where a reverse proxy (nginx, Caddy, Traefik) terminates TLS in front of TREK. To enable HTTPS redirects and secure cookies, uncomment `FORCE_HTTPS=true` and `TRUST_PROXY=1`.
 
 See [Reverse-Proxy](Reverse-Proxy) for complete proxy configuration examples.
+
+## Running on Postgres
+
+[`docker-compose.postgres.yml`](https://github.com/liketrek/TREK/blob/main/docker-compose.postgres.yml) runs TREK beside a `postgres:18` service instead of the SQLite file. Its `db` service keeps the database in a named volume and publishes no port, and the `app` service (container `trek`) waits for the database's health check before it starts. The `app` service sets only a few environment variables; add the others you need (`APP_URL`, `FORCE_HTTPS`, OIDC, SMTP and so on) as in `docker-compose.yml`. It needs Docker Compose 2.23.1 or newer (`docker compose version`); an older one refuses the file with `Additional property content is not allowed`.
+
+The volume path depends on the Postgres major version: `postgres:18` keeps its data under `/var/lib/postgresql`, the images for 14 to 17 under `/var/lib/postgresql/data`. Change the image tag and the volume path together, and only for a new database. A database stays on the major it was created with, so when you update the compose file later, keep your image tag and volume path; moving to another major needs `pg_upgrade` or a backup and restore, never just a new tag. See [Database: Postgres](Database-Postgres#postgres-versions-and-the-volume-path).
+
+Add two passwords to the `.env` file beside the compose file, together with `COMPOSE_FILE`, then start it:
+
+```bash
+printf '\nCOMPOSE_FILE=docker-compose.postgres.yml\nPOSTGRES_ADMIN_PASSWORD=%s\nPOSTGRES_PASSWORD=%s\n' '<a long random value>' '<another long random value>' >> .env
+docker compose up -d
+```
+
+The command appends to `.env`, so the values already in it, such as `ENCRYPTION_KEY`, stay. `COMPOSE_FILE` makes every later `docker compose` command in this directory use `docker-compose.postgres.yml` without `-f`, including the ones in [Updating](Updating). Without it, a plain `docker compose up -d` reads `docker-compose.yml` and starts TREK on the SQLite file instead.
+
+`POSTGRES_ADMIN_PASSWORD` is the password of the database's superuser `postgres`, which on the first start only creates the role `trek`. `POSTGRES_PASSWORD` is the password of `trek`, the role TREK connects as: it owns TREK's database and is not a superuser, so a crafted backup restored into it cannot reach the database container. That password goes into `TREK_DB_URL`, so use URL-safe characters or percent-encode it. Without either password the database does not initialize and TREK does not start. An install made with an older version of the compose file connects as a superuser; [Database: Postgres](Database-Postgres#moving-a-compose-install-off-the-superuser) shows how to move it. To run it against a database that already exists elsewhere, use the plain `docker-compose.yml` and set `TREK_DB_URL` yourself.
+
+Read [Database: Postgres](Database-Postgres) before you use it. It covers the requirements, SSL, backups and restores, and the limits of a Postgres install.
 
 ## Next Steps
 

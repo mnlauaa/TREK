@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Không có danh sách',
   'todo.namePlaceholder': 'Tên nhiệm vụ',
   'todo.descriptionPlaceholder': 'Mô tả (tùy chọn)',
+  'todo.editDescription': 'Nhấn để chỉnh sửa, liên kết mở trực tiếp',
   'todo.unassigned': 'Chưa được chỉ định',
   'todo.noCategory': 'Không có danh sách',
   'todo.hasDescription': 'Có mô tả',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Sự ưu tiên',
   'todo.detail.noPriority': 'Không có',
   'todo.detail.create': 'Tạo nhiệm vụ',
+  'todo.progressCount': 'Xong {done}/{total}',
+  'todo.allDone': 'Đã xong hết!',
+  'todo.filter.myShort': 'Của tôi',
 };
 export default todo;

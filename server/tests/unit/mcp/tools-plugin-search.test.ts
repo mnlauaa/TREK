@@ -2,74 +2,54 @@
  * Unit tests for the search_places_via_plugins MCP tool (src/nest/plugins/
  * contributions/plugin-search.mcp.ts), the MCP counterpart of GET /api/plugin-search.
  */
+import { PluginHooks } from '../../../src/nest/plugins/plugin-hooks.service';
+import { makeUser } from '../../helpers/factories/users';
+import { FakeRealtimeService } from '../../helpers/fake-realtime';
+import { createMcpHarness, parseToolResult, type McpHarness } from '../../helpers/mcp-harness';
+import { resetDatabase } from '../../helpers/reset-database';
+import { bootTestApp } from '../../helpers/test-app';
+import { MikroORM } from '@mikro-orm/core';
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA foreign_keys = ON');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: number, userId: number) =>
-      db
-        .prepare(
-          'SELECT t.id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)',
-        )
-        .get(userId, tripId, userId),
-    isOwner: (tripId: number, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-const { broadcastMock, pluginsEnabled } = vi.hoisted(() => ({
-  broadcastMock: vi.fn(),
+const { pluginsEnabled } = vi.hoisted(() => ({
   pluginsEnabled: vi.fn(() => true),
 }));
 
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/websocket', () => ({ broadcast: broadcastMock }));
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-}));
 // The admin kill switch reads live env; drive it from the test instead of the process.
 vi.mock('../../../src/nest/plugins/kill-switch', () => ({ pluginsEnabled }));
 
-import { runMigrations } from '../../../src/db/migrations';
-import { createTables } from '../../../src/db/schema';
-import { createUser } from '../../helpers/factories';
-import { createMcpHarness, parseToolResult, type McpHarness } from '../../helpers/mcp-harness';
-import { resetTestDb } from '../../helpers/test-db';
-import { PluginHooks } from '../../../src/nest/plugins/plugin-hooks.service';
+const realtime = new FakeRealtimeService();
+const broadcastMock = realtime.broadcastMock;
 
 const providersOfMock = vi.spyOn(PluginHooks.prototype, 'providersOf');
 const searchPlacesMock = vi.spyOn(PluginHooks.prototype, 'searchPlaces');
 
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
+let orm: MikroORM;
+
+beforeAll(async () => {
+  orm = (await bootTestApp(realtime)).get(MikroORM);
 });
 
-beforeEach(() => {
-  resetTestDb(testDb);
+beforeEach(async () => {
+  await resetDatabase(orm);
   broadcastMock.mockClear();
   pluginsEnabled.mockReturnValue(true);
   providersOfMock.mockReset().mockReturnValue([]);
   searchPlacesMock.mockReset().mockResolvedValue([]);
 });
 
-afterAll(() => {
-  testDb.close();
+afterAll(async () => {
+  await (await bootTestApp(realtime)).close();
 });
 
 async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>) {
-  const h = await createMcpHarness({ userId, withResources: false, scopes: null });
-  try { await fn(h); } finally { await h.cleanup(); }
+  const h = await createMcpHarness({ realtime, userId, withResources: false, scopes: null });
+  try {
+    await fn(h);
+  } finally {
+    await h.cleanup();
+  }
 }
 
 interface PlacesPayload {
@@ -81,7 +61,7 @@ const call = async (h: McpHarness, args: Record<string, unknown>) =>
 
 describe('Tool: search_places_via_plugins', () => {
   it('returns what the providers found, with the rating open data cannot carry', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     providersOfMock.mockReturnValue(['guide']);
     searchPlacesMock.mockResolvedValue([
       { id: 'h1', name: 'Hotel Bellevue', lat: 46.5, lng: 6.6, rating: 4.6, address: 'Lakeside 1' },
@@ -107,7 +87,7 @@ describe('Tool: search_places_via_plugins', () => {
   });
 
   it('passes the bias and the limit through, and refuses a coordinate off the globe', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     providersOfMock.mockReturnValue(['guide']);
 
     await withHarness(user.id, async (h) => {
@@ -129,7 +109,7 @@ describe('Tool: search_places_via_plugins', () => {
   });
 
   it('answers with an empty list when no plugin provides an index, without asking one', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const payload = parseToolResult(await call(h, { query: 'hotel' })) as PlacesPayload;
       expect(payload.places).toEqual([]);
@@ -138,7 +118,7 @@ describe('Tool: search_places_via_plugins', () => {
   });
 
   it('answers with an empty list while the plugin runtime is switched off', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     pluginsEnabled.mockReturnValue(false);
     providersOfMock.mockReturnValue(['guide']);
 
@@ -150,7 +130,7 @@ describe('Tool: search_places_via_plugins', () => {
   });
 
   it('skips a provider that fails and still returns the other one', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     providersOfMock.mockReturnValue(['broken', 'guide']);
     searchPlacesMock.mockImplementation(async (pluginId: string) => {
       if (pluginId === 'broken') throw new Error('timed out');
@@ -159,7 +139,7 @@ describe('Tool: search_places_via_plugins', () => {
 
     await withHarness(user.id, async (h) => {
       const payload = parseToolResult(await call(h, { query: 'hotel' })) as PlacesPayload;
-      expect(payload.places.map(p => p.pluginId)).toEqual(['guide']);
+      expect(payload.places.map((p) => p.pluginId)).toEqual(['guide']);
     });
   });
 });

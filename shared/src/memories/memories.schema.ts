@@ -1,3 +1,5 @@
+import { rowIdInputSchema } from '../common/primitives.schema';
+
 import { z } from 'zod';
 
 /**
@@ -25,6 +27,8 @@ const looseBoolean = z.union([z.boolean(), z.literal('true'), z.literal('false')
 
 /** `Number(x) || fallback` — the client sends these as strings from query-ish forms. */
 const looseNumber = z.union([z.number(), z.string()]).optional();
+/** A row id: a whole number or its digits, which the controller reads with toRowId. */
+const looseId = rowIdInputSchema.optional();
 
 /**
  * The UTC offset the caller means its calendar days in, in minutes east of UTC
@@ -75,6 +79,20 @@ export const immichSearchSchema = z.looseObject({
   utc_offset_minutes: utcOffsetMinutes,
 });
 
+/**
+ * How far the journey photo picker pages a date-bounded search (#1587): its
+ * first page and at most this many after it, so it never asks for a page past
+ * PROVIDER_SELECT_ALL_MAX_PAGES + 1. At the picker's 200 a page that is 50,200
+ * photos.
+ *
+ * An absolute page rather than a count per run: whether "Select all" loads the
+ * pages or they are scrolled into view, and however often it is pressed, page
+ * 251 is the last. Shared because both ends size against it: the picker stops
+ * there, and the Immich search keeps its absolute scan ceiling deep enough that
+ * this last page is still answered in full.
+ */
+export const PROVIDER_SELECT_ALL_MAX_PAGES = 250;
+
 // ── Synology ──────────────────────────────────────────────────────────────
 
 export const synologySettingsSchema = z.looseObject({
@@ -105,7 +123,7 @@ export const synologySearchSchema = z.looseObject({
 export const photoSelectionSchema = z.looseObject({
   provider: z.string(),
   asset_ids: z.array(z.string()),
-  owner_id: z.number().optional(),
+  owner_id: z.number().int().optional(),
   passphrase: z.string().optional(),
 });
 
@@ -117,13 +135,13 @@ export const addTripPhotosSchema = z.looseObject({
 });
 
 export const setTripPhotoSharingSchema = z.looseObject({
-  photo_id: looseNumber,
+  photo_id: looseId,
   shared: z.unknown().optional(),
 });
 
 /** The photo to unlink from the trip. Same shape the sharing toggle takes. */
 export const removeTripPhotoSchema = z.looseObject({
-  photo_id: looseNumber,
+  photo_id: looseId,
 });
 
 export const createAlbumLinkSchema = z.looseObject({

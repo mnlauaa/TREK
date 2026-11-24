@@ -4,21 +4,23 @@ How to update TREK to a newer version without losing data.
 
 ## Before You Update
 
-Back up your data first. Go to Admin Panel → Backups and create a manual backup, or copy your `./data` and `./uploads` directories to a safe location. See [Backups](Backups) for details.
+Back up your data first. Go to Admin Panel → **Backup** and create a manual backup, or copy your `./data` and `./uploads` directories to a safe location. See [Backups](Backups) for details.
 
 ## Image Tags
 
 | Tag | Example | Behavior |
 |---|---|---|
 | `latest` | `mauriceboe/trek:latest` | Always the newest release across all major versions |
-| Major version | `mauriceboe/trek:4` | Latest release pinned to that major version |
-| Full version | `mauriceboe/trek:4.0.0` | Exact release; never changes |
+| Major version | `mauriceboe/trek:5` | Latest release pinned to that major version |
+| Minor version | `mauriceboe/trek:5.0` | Latest patch of that minor version; never moves to the next minor. Published from 5.0.0 on: 4.x releases have no minor tag, so pin those by major or full version |
+| Full version | `mauriceboe/trek:5.0.0` | Exact release; never changes |
+| Prerelease | `mauriceboe/trek:latest-pre` | The newest test build of the next version. For trying it out on a copy of your data, not for the instance you rely on |
 
-Use `latest` or a major-version tag if you want updates on each redeploy. Use a full version tag for explicit control — update by changing the tag, not by re-pulling.
+Use `latest` or a major-version tag if you want updates on each redeploy. A minor-version tag still brings fixes but waits for you to move to the next minor, which is where larger changes and database upgrades usually land. Use a full version tag for explicit control: update by changing the tag, not by re-pulling.
 
 ## Docker Compose (Recommended)
 
-**`latest` or major-version tag:**
+**`latest`, major-version or minor-version tag:**
 
 ```bash
 docker compose pull && docker compose up -d
@@ -26,9 +28,11 @@ docker compose pull && docker compose up -d
 
 This pulls the newest matching image and recreates the container with your existing volumes. Your data is untouched.
 
+On Postgres with `docker-compose.postgres.yml`, these commands use that file only when `.env` holds `COMPOSE_FILE=docker-compose.postgres.yml`, as [Install: Docker Compose](Install-Docker-Compose#running-on-postgres) sets it up. Otherwise add `-f docker-compose.postgres.yml` to each of them: without it they read `docker-compose.yml` and start TREK on the SQLite file.
+
 **Pinned full-version tag:**
 
-Edit `docker-compose.yml`, update the tag in the `image:` line (e.g. `4.0.0` → `4.0.1`), then redeploy:
+Edit `docker-compose.yml`, update the tag in the `image:` line (e.g. `5.0.0` → `5.0.1`), then redeploy:
 
 ```bash
 docker compose up -d
@@ -80,6 +84,88 @@ See [Install-Helm](Install-Helm) for the full installation walkthrough and value
 
 TREK runs any pending database migrations automatically at startup. No manual migration steps are required after pulling a new image.
 
+Migrations only go forward, so going back to an older image means going back to a copy of the database from before the update. Images from 5.0 on refuse to start on a database a newer TREK has migrated. Images from 4.3.x and earlier do not check this: they start on the newer database without a warning, so restore the copy before you start one of them.
+
+TREK takes that copy itself. Right before a startup applies pending migrations, it writes the database to `data/pre-migrate-<schema>-<time>.db` (next to `travel.db`, or next to the file `TREK_DB_FILE` names) and logs the path. On PostgreSQL it writes a `.pgdump` file instead; see [Rolling back a Postgres update](#rolling-back-a-postgres-update). `<schema>` names what the copy holds: `legacy-244` for a 4.3.3 install, or the last migration's number for a newer one. The newest three are kept (`TREK_DB_PRE_MIGRATE_SNAPSHOT_KEEP`). A restart with nothing to migrate and a brand-new install take no copy.
+
+If the copy cannot be written (the disk is full, or the data directory is read-only), TREK does not migrate and refuses to start, with a message naming the path. Free some space and start again. If you cannot, and you have a backup of your own, `TREK_DB_PRE_MIGRATE_SNAPSHOT=false` starts without the copy.
+
+To go back to the previous image after an update:
+
+1. Stop TREK.
+2. Copy the `pre-migrate-…db` file over `data/travel.db` and delete `data/travel.db-wal` and `data/travel.db-shm`.
+3. Start the previous image.
+
+An image from 5.0 on that refuses a newer database names the copy it can run, if one is in the data directory. An image from 4.3.x or earlier neither refuses nor points at the copy, so for those, steps 1 to 3 are the only way back. Uploads are not part of this copy; they are not changed by migrations. The copy is a safety net for the update, not a backup: keep taking backups as described in [Backups](Backups).
+
+### Rolling back a Postgres update
+
+On a [PostgreSQL database](Database-Postgres) the copy TREK takes before a migration is `data/pre-migrate-<schema>-<time>.pgdump`, a `pg_dump` custom-format file, and the procedure is different from the SQLite one above. The copy holds the database only. Anything written after it was taken is lost when you roll back, and the uploads are not affected.
+
+The copy cannot be loaded over the migrated schema: it recreates TREK's tables, its `nocase` collation, its trigger functions and its sequences, and every one of them still exists. Dropping only the tables is not enough, because the functions, the collation and the sequences a table does not own stay behind, and the load then stops at the first one that already exists. So the steps below clear the whole schema and load the copy in one transaction, the way TREK's own restore does: a load that fails leaves the database as it was.
+
+1. Stop TREK.
+2. Turn the copy into a SQL script, with client tools of a version that carries the CVE-2025-8714 fix (18.0, 17.6, 16.10, 15.14 or 14.19 at least) and that is at least as new as the server. Name the schema TREK's tables are in, normally `public`:
+
+   ```bash
+   pg_restore --no-owner --no-privileges --schema=public --file=restore.sql data/pre-migrate-<schema>-<time>.pgdump
+   ```
+
+   `pg_restore` 17 and later write `SET transaction_timeout = 0;` near the top of the script, a setting PostgreSQL 14, 15 and 16 do not know. On such a server, delete that line from `restore.sql` before step 4; TREK's own restore leaves it out the same way.
+
+3. Save this block as `clear-schema.sql`. It drops every table, view, sequence, function, collation and type in the current schema, which is what TREK's restore runs before it loads a backup:
+
+   ```sql
+   DO $clear$
+   DECLARE r record;
+   BEGIN
+     FOR r IN SELECT c.oid::regclass AS name, c.relkind FROM pg_class c
+       WHERE c.relnamespace = current_schema()::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype IN ('e', 'a', 'i'))
+     LOOP
+       CONTINUE WHEN NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = r.name::oid);
+       EXECUTE format('DROP %s IF EXISTS %s CASCADE',
+         CASE r.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'S' THEN 'SEQUENCE'
+           WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END, r.name);
+     END LOOP;
+     FOR r IN SELECT p.oid::regprocedure AS sig FROM pg_proc p
+       WHERE p.pronamespace = current_schema()::regnamespace
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+     LOOP
+       CONTINUE WHEN NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = r.sig::oid);
+       EXECUTE format('DROP ROUTINE IF EXISTS %s CASCADE', r.sig);
+     END LOOP;
+     FOR r IN SELECT format('%I.%I', n.nspname, c.collname) AS name FROM pg_collation c
+       JOIN pg_namespace n ON n.oid = c.collnamespace
+       WHERE n.nspname = current_schema()
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+     LOOP
+       EXECUTE format('DROP COLLATION IF EXISTS %s CASCADE', r.name);
+     END LOOP;
+     FOR r IN SELECT t.oid::regtype AS name FROM pg_type t
+       WHERE t.typnamespace = current_schema()::regnamespace AND t.typtype IN ('e', 'd', 'r')
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = t.oid AND d.deptype IN ('e', 'i'))
+     LOOP
+       CONTINUE WHEN NOT EXISTS (SELECT 1 FROM pg_type WHERE oid = r.name::oid);
+       EXECUTE format('DROP TYPE IF EXISTS %s CASCADE', r.name);
+     END LOOP;
+   END
+   $clear$;
+   ```
+
+4. Clear the schema and load the script in one transaction, connected as TREK's own role (the URL in `TREK_DB_URL`):
+
+   ```bash
+   psql "postgres://user@host:5432/trek?sslmode=require" --no-psqlrc --single-transaction --set=ON_ERROR_STOP=1 --file=clear-schema.sql --file=restore.sql
+   ```
+
+   Put the password in the `PGPASSWORD` environment variable rather than in the URL, which keeps it out of the command line. Delete `restore.sql` afterwards: it holds the whole database in plain text.
+5. Start the previous image with the same `TREK_DB_URL`.
+
+Loading the copy with `pg_restore -d` into a database you dropped and created again does not work: the copy holds TREK's schema by name, so `pg_restore` creates `public` again, stops at `schema "public" already exists` and rolls the whole load back. Use the steps above, which clear the schema instead of the database.
+
+A TREK image without PostgreSQL support cannot read this database at all. It would start on a new SQLite file instead. An image from 5.0 on that refuses a newer database names the copy it can run, if one is in the data directory.
+
 ## After the Update
 
 The first time a user opens TREK on the desktop after an update, a notice headed **Update installed** opens on top of the app: three cards with the headline features of that release, a note from the maintainer, a **Release notes** link to the full notes on GitHub, and links for supporting the project. Every user sees it once per version. Closing it keeps it closed on that version, and the next update brings it back, a patch release included. The phone does not show it.
@@ -103,6 +189,21 @@ Two things change with 4.3.1. Neither needs a manual step on Docker, but they ar
 
 - **Booked nights lead their day.** A migration moves every booked night to the head of its check-in day, behind only a stop whose own time is at or before the check-in, and the stops without an hour follow it: a hotel booked for ten in the morning is reached at ten in the [Road-Trip](Road-Trip) view, not at a quarter past twelve behind a whole day of untimed stops. A night booked for the end of a driving day heads that day too when its stops carry no time of their own, so such a day now reads hotel first. A via point drawn on the road into that hotel from the stop that is now last is removed, because that leg no longer exists in the day, the same way a drag would remove it; the other vias follow their stops. Under **Days** nothing changes. To put a hotel back at the end, drag it down the day in the Road Trip rail, or give the first stop after it a start time at or before the check-in, which brings the untimed stops behind that one along; a time on the last stop alone leaves the hotel in the middle of the day. See [Accommodations](Accommodations#on-the-route).
 - **Source installs need a build toolchain, or `--ignore-scripts`.** The server runs better-sqlite3 13, which ships its binaries inside the package, so nothing is compiled any more; the Docker image and the Helm chart are unaffected. On an install that runs `npm ci` itself, outside Docker, a lockfile-driven `npm ci` still runs node-gyp against those binaries and stops without Python 3 and a C++ toolchain (`build-essential` on Debian/Ubuntu, the Xcode Command Line Tools on macOS, the Visual Studio Build Tools on Windows; npm/cli#9837). Either keep those installed, as [Development-environment](Development-environment) lists them, or run `npm ci --ignore-scripts`, which is what the image does.
+
+## Upgrading to 5.0
+
+5.0 is a large release. Apart from the point below about the Places API, updating needs no manual step on any install method: migrations run at startup, and TREK copies the database first (see [Database Migrations](#database-migrations)).
+
+- **A new look, and a phone interface of its own.** Dialogs are redesigned and the phone gets its own screens instead of a squeezed desktop layout. Open apps switch over after **Reload page** (see [Open apps after an update](#open-apps-after-an-update)).
+- **New features.** Tours, TREK Studio for journeys, the AI Assistant addon, notifications in an inbox, trip settings and a Help Center inside the app. The addons are switched on or off under **Admin → Addons**; see [Addons-Overview](Addons-Overview) and [Help-Center](Help-Center).
+- **AI assistant secrets are encrypted** with your `ENCRYPTION_KEY` like the other stored secrets, and the connections need no action on update. A key rotation covers them; see [Encryption-Key-Rotation](Encryption-Key-Rotation).
+- **Web Push needs no VAPID setup.** TREK generates its key pair on first start and keeps it in the database. See [Environment-Variables](Environment-Variables#web-push).
+- **Remove any `APP_VERSION` override.** The version now comes from the image itself. A leftover `APP_VERSION=` line in your compose file, `.env` or Portainer stack only gets in the way.
+- **Tours asks the TREK Places API first.** The grades, surfaces and kinds of way under a planned tour and the horse routes around the map are read from `https://places.liketrek.com`, and the Overpass mirrors are asked only when it has no answer. An `OVERPASS_URL` pointed at an internal Overpass therefore no longer keeps these lookups inside your network: set `TREK_PLACES_ENABLED=false`, or point `TREK_PLACES_URL` at a copy you run yourself. [TREK-Places-API](TREK-Places-API#what-leaves-your-instance) lists what is sent.
+
+## Moving to PostgreSQL
+
+An update never switches the database. To move an existing SQLite install to PostgreSQL, update first and let TREK start once on SQLite, then follow [Database: Postgres: Moving an existing install to Postgres](Database-Postgres#moving-an-existing-install-to-postgres). The move copies the database only; the uploads stay where they are. Setting `TREK_DB_URL` alone, without the move, is refused while `data/travel.db` holds your data, so an update cannot leave you on an empty instance by accident.
 
 ## Encryption Key Note
 
@@ -133,21 +234,31 @@ journalctl -u trek -n 50
 
 Open the **Stacks** list, click the TREK stack, then click **Redeploy**.
 
-**`latest` or major-version tag** — enable the **Re-pull image and redeploy** switch before confirming. Portainer pulls the newest matching image and recreates the container.
+**`latest`, major-version or minor-version tag**: enable the **Re-pull image and redeploy** switch before confirming. Portainer pulls the newest matching image and recreates the container.
 
 ![Re-pull image and redeploy switch ticked, with arrows pointing to the switch and the Update button](assets/portainer-force-pull.png)
 
-**Pinned full-version tag** (e.g. `4.0.0`) — edit the stack, update the tag in the `image:` line, then click **Update the stack**. No re-pull switch needed; the tag change forces a fresh pull.
+**Pinned full-version tag** (e.g. `5.0.0`), edit the stack, update the tag in the `image:` line, then click **Update the stack**. No re-pull switch needed; the tag change forces a fresh pull.
 
 ![Edit stack page with an arrow pointing to the image tag in the compose editor](assets/portainer-update-version.png)
 
 ![Edit stack page with an arrow pointing to the Update the stack button](assets/portainer-update-stack.png)
+
+Portainer's **Recreate** on a single container keeps that container's environment, which on images before 5.0 included the previous release's `APP_VERSION`. TREK then kept reporting the old version and open apps did not switch to the new interface. Images from 5.0 on take the version from a file inside the image, so a recreated container reports the image it actually runs.
 
 See [Install-Portainer](Install-Portainer) for the full installation walkthrough.
 
 ## Unraid
 
 In the Unraid Docker tab, click the TREK container and select **Update**. Unraid will pull the latest image and restart with the same volumes.
+
+## TrueNAS SCALE
+
+Back up your data and uploads, then update TREK from **Apps → Installed Applications** when an update is available. TrueNAS catalog updates may arrive separately from TREK releases. See [Install-TrueNAS-SCALE](Install-TrueNAS-SCALE) and [Database Migrations](#database-migrations) for storage and rollback guidance.
+
+## Open apps after an update
+
+A browser tab or installed app that stays open while you update notices the new version as soon as it reconnects to the restarted server. It shows a small notice with **Reload page**, which loads the new version without waiting for the next start; a page that is closed and opened again switches on its own. The notice stays away while the device is offline and can be closed until the next start.
 
 ## Next Steps
 

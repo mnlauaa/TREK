@@ -10,35 +10,39 @@
  * dropped or points at the wrong addon. These assertions are what keeps the
  * three route groups gated, and gated on the right thing.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { ADDON_IDS } from '../../../src/addons';
+import { AddonGuard } from '../../../src/nest/addons/addon.guard';
+import type { AddonsService } from '../../../src/nest/addons/addons.service';
+import { RequireAddon, REQUIRE_ADDON, type RequireAddonMeta } from '../../../src/nest/addons/require-addon.decorator';
+import { CollectionsController } from '../../../src/nest/collections/collections.controller';
+import { AirtrailController } from '../../../src/nest/integrations/airtrail.controller';
+import { JourneyController } from '../../../src/nest/journey/journey.controller';
+import { ReservationImportController } from '../../../src/nest/reservation-import/reservation-import.controller';
 import { HttpException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { AddonGuard } from '../../../src/nest/addons/addon.guard';
-import { RequireAddon, REQUIRE_ADDON, type RequireAddonMeta } from '../../../src/nest/addons/require-addon.decorator';
-import type { AddonsService } from '../../../src/nest/addons/addons.service';
-import { ADDON_IDS } from '../../../src/addons';
-import { JourneyController } from '../../../src/nest/journey/journey.controller';
-import { CollectionsController } from '../../../src/nest/collections/collections.controller';
-import { AirtrailController } from '../../../src/nest/integrations/airtrail.controller';
-import { ReservationImportController } from '../../../src/nest/reservation-import/reservation-import.controller';
+import { describe, it, expect, vi } from 'vitest';
 
-/** A context whose handler/class carry the decorator under test. */
-function ctxFor(handler: object, cls: object = class {}): ExecutionContext {
+/** A context whose handler/class carry the decorator under test, for a request with or without a user. */
+function ctxFor(handler: object, cls: object = class {}, user?: { id: number }): ExecutionContext {
   return {
     getHandler: () => handler,
     getClass: () => cls,
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
   } as unknown as ExecutionContext;
 }
 
-function addons(enabled: boolean): AddonsService {
-  return { isAddonEnabled: vi.fn(() => enabled) } as unknown as AddonsService;
+function addons(enabled: boolean, anywhere = false): AddonsService {
+  return {
+    isAddonEnabled: vi.fn(() => enabled),
+    isEnabledForUserAnywhere: vi.fn(() => enabled || anywhere),
+  } as unknown as AddonsService;
 }
 
-function thrown(fn: () => unknown) {
+async function thrown(fn: () => unknown) {
   try {
-    fn();
+    await fn();
     return undefined;
   } catch (err) {
     return err instanceof HttpException ? { status: err.getStatus(), body: err.getResponse() } : err;
@@ -46,47 +50,97 @@ function thrown(fn: () => unknown) {
 }
 
 /** Apply @RequireAddon to a throwaway class the way a controller would. */
-function decorated(addonId: string, label: string) {
+function decorated(addonId: string | readonly string[], label: string) {
   class Gated {}
   RequireAddon(addonId, label)(Gated);
   return Gated;
 }
 
 describe('AddonGuard', () => {
-  it('ADDON-GUARD-001: 404s with the decorator label when the addon is disabled', () => {
+  it('ADDON-GUARD-001: 404s with the decorator label when the addon is disabled', async () => {
     const cls = decorated(ADDON_IDS.JOURNEY, 'Journey');
     const guard = new AddonGuard(addons(false), new Reflector());
 
-    expect(thrown(() => guard.canActivate(ctxFor(() => {}, cls))))
-      .toEqual({ status: 404, body: { error: 'Journey addon is not enabled' } });
+    expect(await thrown(() => guard.canActivate(ctxFor(() => {}, cls)))).toEqual({
+      status: 404,
+      body: { error: 'Journey addon is not enabled' },
+    });
   });
 
-  it('ADDON-GUARD-002: passes when the addon is enabled, asking for the declared id', () => {
+  it('ADDON-GUARD-002: passes when the addon is enabled, asking for the declared id', async () => {
     const cls = decorated(ADDON_IDS.COLLECTIONS, 'Collections');
     const svc = addons(true);
     const guard = new AddonGuard(svc, new Reflector());
 
-    expect(guard.canActivate(ctxFor(() => {}, cls))).toBe(true);
+    expect(await guard.canActivate(ctxFor(() => {}, cls))).toBe(true);
     expect(svc.isAddonEnabled).toHaveBeenCalledWith(ADDON_IDS.COLLECTIONS);
   });
 
-  it('ADDON-GUARD-003: is a no-op on a route that never asked for an addon', () => {
+  it('ADDON-GUARD-007: a list of addons opens the route while any one of them is on', async () => {
+    const cls = decorated([ADDON_IDS.AI_ASSISTANT, ADDON_IDS.LLM_PARSING], 'AI assistant');
+    const isAddonEnabled = vi.fn(async (id: string) => id === ADDON_IDS.LLM_PARSING);
+    const guard = new AddonGuard({ isAddonEnabled } as unknown as AddonsService, new Reflector());
+    expect(await guard.canActivate(ctxFor(() => {}, cls))).toBe(true);
+
+    isAddonEnabled.mockResolvedValue(false);
+    expect(await thrown(() => guard.canActivate(ctxFor(() => {}, cls)))).toEqual({
+      status: 404,
+      body: { error: 'AI assistant addon is not enabled' },
+    });
+  });
+
+  it('ADDON-GUARD-003: is a no-op on a route that never asked for an addon', async () => {
     const svc = addons(false);
     const guard = new AddonGuard(svc, new Reflector());
 
-    expect(guard.canActivate(ctxFor(() => {}, class {}))).toBe(true);
+    expect(await guard.canActivate(ctxFor(() => {}, class {}))).toBe(true);
     expect(svc.isAddonEnabled).not.toHaveBeenCalled();
   });
 
-  it('ADDON-GUARD-004: a handler-level decorator overrides the controller-level one', () => {
+  it('ADDON-GUARD-004: a handler-level decorator overrides the controller-level one', async () => {
     const cls = decorated(ADDON_IDS.JOURNEY, 'Journey');
     const handler = () => {};
     RequireAddon(ADDON_IDS.AIRTRAIL, 'AirTrail')(handler);
     const svc = addons(false);
 
-    expect(thrown(() => new AddonGuard(svc, new Reflector()).canActivate(ctxFor(handler, cls))))
-      .toEqual({ status: 404, body: { error: 'AirTrail addon is not enabled' } });
+    expect(await thrown(() => new AddonGuard(svc, new Reflector()).canActivate(ctxFor(handler, cls)))).toEqual({
+      status: 404,
+      body: { error: 'AirTrail addon is not enabled' },
+    });
     expect(svc.isAddonEnabled).toHaveBeenCalledWith(ADDON_IDS.AIRTRAIL);
+  });
+});
+
+describe('AddonGuard once the user is known', () => {
+  it('ADDON-GUARD-008: opens for a user one of whose trips switched the addon on, although the instance has it off', async () => {
+    const cls = decorated(ADDON_IDS.TOURS, 'Tours');
+    const svc = addons(false, true);
+    const guard = new AddonGuard(svc, new Reflector());
+
+    expect(await guard.canActivate(ctxFor(() => {}, cls, { id: 7 }))).toBe(true);
+    expect(svc.isEnabledForUserAnywhere).toHaveBeenCalledWith(7, ADDON_IDS.TOURS);
+    expect(svc.isAddonEnabled).not.toHaveBeenCalled();
+  });
+
+  it('ADDON-GUARD-009: stays shut for a user none of whose trips switched it on', async () => {
+    const cls = decorated(ADDON_IDS.ROADTRIP, 'Road trip');
+    const guard = new AddonGuard(addons(false, false), new Reflector());
+
+    expect(await thrown(() => guard.canActivate(ctxFor(() => {}, cls, { id: 7 })))).toEqual({
+      status: 404,
+      body: { error: 'Road trip addon is not enabled' },
+    });
+  });
+
+  it('ADDON-GUARD-010: without a user it reads the instance switch alone', async () => {
+    const cls = decorated(ADDON_IDS.TOURS, 'Tours');
+    const svc = addons(false, true);
+
+    expect(await thrown(() => new AddonGuard(svc, new Reflector()).canActivate(ctxFor(() => {}, cls)))).toEqual({
+      status: 404,
+      body: { error: 'Tours addon is not enabled' },
+    });
+    expect(svc.isEnabledForUserAnywhere).not.toHaveBeenCalled();
   });
 });
 
@@ -110,8 +164,10 @@ describe('the gated route groups still declare their addon', () => {
     // whenever the AirTrail addon happens to be off. AddonGuard still runs first
     // in the chain, so the 404 keeps beating the 401.
     expect(metaOf(ReservationImportController)).toBeUndefined();
-    expect(Reflect.getMetadata(REQUIRE_ADDON, ReservationImportController.prototype.importAirtrail))
-      .toEqual({ addonId: ADDON_IDS.AIRTRAIL, label: 'AirTrail' });
+    expect(Reflect.getMetadata(REQUIRE_ADDON, ReservationImportController.prototype.importAirtrail)).toEqual({
+      addonId: ADDON_IDS.AIRTRAIL,
+      label: 'AirTrail',
+    });
     expect(guardsOf(ReservationImportController)[0]).toBe(AddonGuard);
   });
 });

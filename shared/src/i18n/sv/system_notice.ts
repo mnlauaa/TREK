@@ -41,56 +41,10 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': 'Fungerar offline på mobilen',
   'system_notice.dev_test_modal.title': '[Dev] Meddelande om test',
   'system_notice.dev_test_modal.body': 'Detta är ett testmeddelande avsett endast för utvecklare.',
-  'system_notice.thank_you_support.title': 'Tack för att du använder TREK',
-  'system_notice.thank_you_support.body':
-    'Ett snabbt tack för att du installerade TREK – det betyder verkligen mycket.\n\nJag är en ensam utvecklare och bygger TREK på min fritid. Det började som ett litet verktyg bara för mina egna resor, och jag är ärligt talat överväldigad av allt stöd och intresse från communityn sedan dess. TREK är skapat med mycket hjärta från min sida – men också tack vare de många fantastiska externa bidragsgivare som har hjälpt till att forma det.\n\n**TREK är öppen källkod och helt gratis – och kommer alltid att förbli så. Inga betalnivåer, inga prenumerationer, inga förbehåll. Jag lovar.**\n\nOm TREK är användbart för dig och du vill stödja utvecklingen, så hjälper en liten kaffe mig verkligen att fortsätta bygga – ingen press alls, men varje kopp håller de sena nätterna igång.\n\nTack för att du är här.\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '100 % öppen källkod på GitHub',
-  'system_notice.thank_you_support.highlight_free': 'Gratis för alltid – aldrig några betalnivåer',
-  'system_notice.thank_you_support.highlight_community': 'Byggt tillsammans med communityn',
-  'system_notice.thank_you_support.cta_bmc': 'Buy Me a Coffee',
-  'system_notice.thank_you_support.cta_kofi': 'Stöd på Ko-fi',
   'system_notice.pager.prev': 'Tidigare meddelande',
   'system_notice.pager.next': 'Nästa meddelande',
   'system_notice.pager.counter': '{current} / {total}',
   'system_notice.pager.goto': 'Gå till meddelandet {n}',
   'system_notice.pager.position': 'Meddlenade {current} av {total}',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': 'Uppdatering klar',
-  'system_notice.release_notes.headline': 'Fyra saker TREK nu gör på egen hand.',
-  'system_notice.release_notes.intro':
-    'Ett eget plats-API, bilresor planerade från början till slut, din platshistorik i dina händer, och dina dokument i synk.',
-  'system_notice.release_notes.features_label': 'Höjdpunkterna',
-  'system_notice.release_notes.features_aside': 'Långt ifrån allt',
-  'system_notice.release_notes.feature_places_title': 'TREK Places API',
-  'system_notice.release_notes.feature_places_body':
-    'Den första reseplaneraren med öppen källkod och eget plats-API. 73,6 miljoner platser, ingen nyckel, ingen kvot.',
-  'system_notice.release_notes.feature_roadtrip_title': 'Tillägget Bilresa',
-  'system_notice.release_notes.feature_roadtrip_body':
-    'Planerar körningen själv: rutt, sträcka, timmar och stopp. Av tills en admin slår på det.',
-  'system_notice.release_notes.feature_dawarich_title': 'Dawarich-integration',
-  'system_notice.release_notes.feature_dawarich_body':
-    'Det självhostade svaret på Google Timeline, nu läsbart direkt i TREK. TREK läser, och bara läser.',
-  'system_notice.release_notes.footnote': 'Dessutom en lång rad mindre ändringar i resten av TREK.',
-  'system_notice.release_notes.notes_label': 'Versionsnyheter',
-  'system_notice.release_notes.note_eyebrow': 'Ett ord från utvecklaren',
-  'system_notice.release_notes.note_title': 'Du är anledningen till att jag fortsätter bygga TREK.',
-  'system_notice.release_notes.note_body':
-    'TREK började som ett litet verktyg för mina egna resor, skrivet efter jobbet för att jag ville ha ett bättre sätt att planera dem. Det har egentligen aldrig slutat växa. Nästan allt du använder byggdes sent på nätterna, på helger, på tåg, vid sidan av ett heltidsjobb, och många kvällar undrade jag tyst för mig själv om någon där ute någonsin skulle öppna det.',
-  'system_notice.release_notes.promise_label': 'Löftet',
-  'system_notice.release_notes.promise_lead': 'TREK förblir gratis, för alltid.',
-  'system_notice.release_notes.promise_text':
-    'Varje funktion, varje uppdatering, för alla. Inga betalnivåer, inga prenumerationer, inga förbehåll.',
-  'system_notice.release_notes.note_body_after':
-    'Och sedan gjorde ni det. Inom några månader var ni tusentals: stjärnor, felrapporter, översättningar till språk jag inte talar, pull requests från människor jag aldrig har träffat. Jag kollar fortfarande repot varje morgon innan jag gör något annat, och det känns ännu inte riktigt verkligt.',
-  'system_notice.release_notes.note_closing': 'Tack för att du är här. Hälsningar, Maurice.',
-  'system_notice.release_notes.support_lead':
-    'TREK är gratis och kommer alltid att vara det, men servrar, domäner och många sena nätter är det inte.',
-  'system_notice.release_notes.support_text':
-    'Om TREK har förtjänat en plats på dina resor, så bjud mig gärna på en kaffe och hjälp till att nästa utgåva blir av.',
-  'system_notice.release_notes.cta_bmc': 'Buy me a coffee',
-  'system_notice.release_notes.cta_kofi': 'Stöd på Ko-fi',
-  'system_notice.release_notes.feature_docsync_title': 'Dokumentsynk',
-  'system_notice.release_notes.feature_docsync_body':
-    'Paperless-ngx, Papra, Nextcloud, OpenCloud och Synology Drive. En resas dokument flödar åt båda håll med lagringen du redan kör.',
 };
 export default system_notice;

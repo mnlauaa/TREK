@@ -8,41 +8,47 @@
  * decides a poster-less video must 404 rather than stream the whole file as a
  * "thumbnail" had no case at all.
  */
+import { db as testDb } from '../../../src/db/database';
+import { JourneyPhotos } from '../../../src/db/entities/JourneyPhotos.entity';
+import { TrekPhotos } from '../../../src/db/entities/TrekPhotos.entity';
+import { TripPhotos } from '../../../src/db/entities/TripPhotos.entity';
+import { Users } from '../../../src/db/entities/Users.entity';
+import type { ImmichService } from '../../../src/nest/memories/immich.service';
+import { PhotoProviderRegistry } from '../../../src/nest/memories/photo-provider.registry';
+import { PhotoResolverService } from '../../../src/nest/memories/photo-resolver.service';
+import { ImmichPhotoProvider } from '../../../src/nest/memories/providers/immich.provider';
+import { SynologyPhotoProvider } from '../../../src/nest/memories/providers/synology.provider';
+import { RenditionPendingError, type PublicMediaService } from '../../../src/nest/memories/public-media.service';
+import type { SynologyService } from '../../../src/nest/memories/synology.service';
+import type { ThumbnailService } from '../../../src/nest/memories/thumbnail.service';
+import type { TrekPhotoCacheService } from '../../../src/nest/memories/trek-photo-cache.service';
+import { TrekPhotoRegistrationService } from '../../../src/nest/photos/trek-photo-registration.service';
+import { deleteRows, findRow, insertRow, insertRowIgnoringConflict } from '../../helpers/factories/rows';
+import { createTestOrm, type TestOrm } from '../../helpers/test-orm';
+
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
+vi.mock('../../../src/db/database', async () => {
+  const { createSnapshotTestDb } = await import('../../helpers/db-mock');
+  const db = createSnapshotTestDb();
   return {
-    testDb: db,
-    dbMock: { db, closeDb: () => {}, reinitialize: () => {}, canAccessTrip: () => null, isOwner: () => false, getPlaceWithTags: () => null },
+    db,
+    closeDb: () => {},
+    reinitialize: () => {},
+    canAccessTrip: () => null,
+    isOwner: () => false,
+    getPlaceWithTags: () => null,
   };
 });
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'x'.repeat(40),
-  ENCRYPTION_KEY: 'a'.repeat(64),
-  updateJwtSecret: () => {},
-}));
+
 vi.mock('../../../src/nest/common/crypto/apiKeyCrypto', () => ({
   decrypt_api_key: (v: string) => v,
   encrypt_api_key: (v: string) => v,
   maybe_encrypt_api_key: (v: string) => v,
 }));
-
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { DatabaseService } from '../../../src/nest/database/database.service';
-import { TrekPhotosRepository } from '../../../src/nest/photos/trek-photos.repository';
-import { PhotoResolverService } from '../../../src/nest/memories/photo-resolver.service';
-import type { ImmichService } from '../../../src/nest/memories/immich.service';
-import type { SynologyService } from '../../../src/nest/memories/synology.service';
-import type { ThumbnailService } from '../../../src/nest/memories/thumbnail.service';
-import type { TrekPhotoCacheService } from '../../../src/nest/memories/trek-photo-cache.service';
-import { PhotoProviderRegistry } from '../../../src/nest/memories/photo-provider.registry';
-import { ImmichPhotoProvider } from '../../../src/nest/memories/providers/immich.provider';
-import { SynologyPhotoProvider } from '../../../src/nest/memories/providers/synology.provider';
 
 const immich = {
   streamImmichAsset: vi.fn(),
@@ -65,10 +71,10 @@ const cache = {
 };
 // Local bytes go through the storage facade (slice 3); the resolver only ever
 // addresses the 'journey' category with the 'journey/' prefix stripped.
-const storage = { exists: vi.fn(), sendToResponse: vi.fn() };
+const storage = { exists: vi.fn(), sendToResponse: vi.fn(), stat: vi.fn(), withLocalFile: vi.fn() };
+// The location-free copies have their own suite; here a switch for made / refused.
+const publicMedia = { renditionFor: vi.fn() };
 
-const dbs = new DatabaseService(testDb);
-const repo = new TrekPhotosRepository(dbs);
 // Real adapters over the stubbed services, and a real registry: the cases below
 // keep asserting on immich.streamImmichAsset/synology.streamSynologyAsset, so
 // they now also pin the adapters' argument mapping — which is where the two
@@ -78,48 +84,170 @@ const providers = new PhotoProviderRegistry([
   new ImmichPhotoProvider(immich as unknown as ImmichService),
   new SynologyPhotoProvider(synology as unknown as SynologyService),
 ]);
-const svc = new PhotoResolverService(
-  repo,
-  thumbnails as unknown as ThumbnailService,
-  cache as unknown as TrekPhotoCacheService,
-  providers,
-  storage as unknown as import('../../../src/nest/storage/storage.service').StorageService,
-);
+let t: TestOrm;
+let svc: PhotoResolverService;
 
 function makeRes() {
   return { status: vi.fn().mockReturnThis(), json: vi.fn(), set: vi.fn(), sendFile: vi.fn(), end: vi.fn() };
 }
 
 /** Insert a trek_photos row directly so each case controls the exact shape. */
-function insertPhoto(cols: Record<string, unknown>): number {
-  const keys = Object.keys(cols);
-  const res = testDb.prepare(
-    `INSERT INTO trek_photos (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
-  ).run(...keys.map(k => cols[k] as never));
-  return Number(res.lastInsertRowid);
+async function insertPhoto(cols: {
+  provider: string;
+  file_path?: string;
+  thumbnail_path?: string;
+  media_type?: string;
+  asset_id?: string;
+  owner_id?: number;
+  passphrase?: string;
+}): Promise<number> {
+  const { owner_id, ...rest } = cols;
+  return insertRow(t, TrekPhotos, { ...rest, ...(owner_id !== undefined ? { owner: owner_id } : {}) });
 }
 
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
+beforeAll(async () => {
+  t = await createTestOrm(testDb);
+  const repo = new TrekPhotoRegistrationService(t.repo(TrekPhotos), t.repo(TripPhotos), t.repo(JourneyPhotos));
+  svc = new PhotoResolverService(
+    repo,
+    thumbnails as unknown as ThumbnailService,
+    cache as unknown as TrekPhotoCacheService,
+    providers,
+    storage as unknown as import('../../../src/nest/storage/storage.service').StorageService,
+    publicMedia as unknown as PublicMediaService,
+  );
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   // owner_id carries a FK to users; the cases pick fixed ids, so seed them.
-  testDb.prepare('DELETE FROM trek_photos').run();
+  await deleteRows(t, TrekPhotos);
   for (const id of [2, 3, 4, 5, 9]) {
-    testDb.prepare("INSERT OR IGNORE INTO users (id, username, email, password_hash) VALUES (?, ?, ?, 'x')")
-      .run(id, `u${id}`, `u${id}@example.test`);
+    await insertRowIgnoringConflict(t, Users, {
+      id,
+      username: `u${id}`,
+      email: `u${id}@example.test`,
+      password_hash: 'x',
+    });
   }
   cache.serveFresh.mockReturnValue(false);
   cache.getInFlight.mockReturnValue(undefined);
   cache.cacheKey.mockReturnValue('k');
   storage.exists.mockResolvedValue(false);
   storage.sendToResponse.mockResolvedValue(undefined);
+  publicMedia.renditionFor.mockImplementation(async (_category: string, name: string) => `public/${name}`);
 });
 
-afterAll(() => testDb.close());
+afterAll(async () => {
+  await t.close();
+  testDb.close();
+});
+
+describe('streamPublicPhoto: what a share link gets', () => {
+  it('RESOLVE-030: a local original goes out as its location-free copy, never as stored', async () => {
+    const id = await insertPhoto({ provider: 'local', file_path: 'journey/x.jpg' });
+    storage.exists.mockResolvedValue(true);
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 1, id, 'original');
+
+    expect(publicMedia.renditionFor).toHaveBeenCalledWith('journey', 'x.jpg');
+    expect(storage.sendToResponse).toHaveBeenCalledWith('journey', 'public/x.jpg', res);
+    expect(storage.sendToResponse).not.toHaveBeenCalledWith('journey', 'x.jpg', res);
+  });
+
+  it('RESOLVE-031: a thumbnail TREK re-encoded goes out as is, an uploaded poster as its copy', async () => {
+    const thumbId = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.jpg',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
+    const posterId = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/clip.mp4',
+      thumbnail_path: 'journey/poster.jpg',
+      media_type: 'video',
+    });
+    storage.exists.mockResolvedValue(true);
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 1, thumbId, 'thumbnail');
+    await svc.streamPublicPhoto(res as never, 1, posterId, 'thumbnail');
+
+    expect(storage.sendToResponse).toHaveBeenCalledWith('journey', 'thumbs/h.jpg', res);
+    expect(storage.sendToResponse).toHaveBeenCalledWith('journey', 'public/poster.jpg', res);
+    expect(publicMedia.renditionFor).toHaveBeenCalledTimes(1);
+  });
+
+  it('RESOLVE-032: an original that cannot be cleaned is stood in for by the re-encoded thumbnail', async () => {
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.heic',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
+    storage.exists.mockResolvedValue(true);
+    publicMedia.renditionFor.mockResolvedValue(null);
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 1, id, 'original');
+
+    expect(storage.sendToResponse).toHaveBeenCalledTimes(1);
+    expect(storage.sendToResponse).toHaveBeenCalledWith('journey', 'thumbs/h.jpg', res);
+  });
+
+  it('RESOLVE-033: with neither a clean copy nor a thumbnail the answer is a 404, not the stored file', async () => {
+    const id = await insertPhoto({ provider: 'local', file_path: 'journey/clip.mp4', media_type: 'video' });
+    storage.exists.mockResolvedValue(true);
+    publicMedia.renditionFor.mockRejectedValue(new Error('disk full'));
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 1, id, 'original');
+
+    expect(storage.sendToResponse).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'File not found' });
+    expect(res.set).not.toHaveBeenCalled();
+  });
+
+  it('RESOLVE-036: a copy still being made is a 503 to come back to, not the thumbnail or the stored file', async () => {
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.jpg',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
+    storage.exists.mockResolvedValue(true);
+    publicMedia.renditionFor.mockRejectedValue(new RenditionPendingError());
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 1, id, 'original');
+
+    expect(storage.sendToResponse).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '10');
+  });
+
+  it('RESOLVE-035: an immich original is asked for as the public rendition, and an owner still gets the original', async () => {
+    const id = await insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
+    const res = makeRes();
+
+    await svc.streamPublicPhoto(res as never, 5, id, 'original');
+    await svc.streamPhoto(res as never, 5, id, 'original');
+
+    const views = immich.streamImmichAsset.mock.calls.map((call) => (call[5] as { publicView?: boolean }).publicView);
+    expect(views).toEqual([true, false]);
+  });
+
+  it('RESOLVE-034: an owner still gets the stored original', async () => {
+    const id = await insertPhoto({ provider: 'local', file_path: 'journey/x.jpg' });
+    storage.exists.mockResolvedValue(true);
+    const res = makeRes();
+
+    await svc.streamPhoto(res as never, 1, id, 'original');
+
+    expect(publicMedia.renditionFor).not.toHaveBeenCalled();
+    expect(storage.sendToResponse).toHaveBeenCalledWith('journey', 'x.jpg', res);
+  });
+});
 
 describe('streamPhoto — dispatch', () => {
   it('RESOLVE-001: 404s a photo id that does not exist', async () => {
@@ -130,7 +258,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-002: a local row whose file is gone answers "File not found", not a provider call', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'nope/missing.jpg' });
+    const id = await insertPhoto({ provider: 'local', file_path: 'nope/missing.jpg' });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 1, id, 'original');
@@ -143,7 +271,7 @@ describe('streamPhoto — dispatch', () => {
 
   it('RESOLVE-003: a poster-less video 404s instead of streaming the whole file as a thumbnail', async () => {
     // #823: falling through here would push a full video down a thumbnail request.
-    const id = insertPhoto({ provider: 'local', file_path: 'nope/clip.mp4', media_type: 'video' });
+    const id = await insertPhoto({ provider: 'local', file_path: 'nope/clip.mp4', media_type: 'video' });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 1, id, 'thumbnail');
@@ -154,7 +282,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-004: a local image with no thumbnail asks for one to be generated', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'nope/photo.jpg' });
+    const id = await insertPhoto({ provider: 'local', file_path: 'nope/photo.jpg' });
     thumbnails.ensureLocalThumbnail.mockResolvedValue(null);
     const res = makeRes();
 
@@ -164,18 +292,30 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-005: a generated thumbnail is recorded on the row', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'nope/photo.jpg' });
-    thumbnails.ensureLocalThumbnail.mockResolvedValue({ thumbnailRelPath: 'journey/thumbs/abc.jpg', width: 800, height: 600 });
+    const id = await insertPhoto({ provider: 'local', file_path: 'nope/photo.jpg' });
+    thumbnails.ensureLocalThumbnail.mockResolvedValue({
+      thumbnailRelPath: 'journey/thumbs/abc.jpg',
+      width: 800,
+      height: 600,
+    });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 1, id, 'thumbnail');
 
-    const row = testDb.prepare('SELECT thumbnail_path, width, height FROM trek_photos WHERE id = ?').get(id) as { thumbnail_path: string; width: number; height: number };
-    expect(row).toEqual({ thumbnail_path: 'journey/thumbs/abc.jpg', width: 800, height: 600 });
+    const row = await findRow(t, TrekPhotos, { id });
+    expect({ thumbnail_path: row?.thumbnail_path, width: row?.width, height: row?.height }).toEqual({
+      thumbnail_path: 'journey/thumbs/abc.jpg',
+      width: 800,
+      height: 600,
+    });
   });
 
   it('RESOLVE-014: a local thumbnail hit streams through storage with the immutable headers', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'journey/x.jpg', thumbnail_path: 'journey/thumbs/h.jpg' });
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.jpg',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
     storage.exists.mockResolvedValue(true);
     const res = makeRes();
 
@@ -188,7 +328,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-015: a local original hit streams through storage with the day-long cache header', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'journey/x.jpg' });
+    const id = await insertPhoto({ provider: 'local', file_path: 'journey/x.jpg' });
     storage.exists.mockResolvedValue(true);
     const res = makeRes();
 
@@ -200,7 +340,11 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-016: a missing thumbnail falls through to the original for images', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'journey/x.jpg', thumbnail_path: 'journey/thumbs/h.jpg' });
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.jpg',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
     storage.exists.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const res = makeRes();
 
@@ -210,7 +354,12 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-017: a video whose recorded poster is gone 404s instead of falling through (#823)', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'journey/clip.mp4', thumbnail_path: 'journey/thumbs/t.jpg', media_type: 'video' });
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/clip.mp4',
+      thumbnail_path: 'journey/thumbs/t.jpg',
+      media_type: 'video',
+    });
     storage.exists.mockResolvedValue(false);
     const res = makeRes();
 
@@ -222,7 +371,11 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-019: a rejecting exists check (invalid key) reads as a local miss for thumb and original', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'journey/x.jpg', thumbnail_path: 'journey/thumbs/h.jpg' });
+    const id = await insertPhoto({
+      provider: 'local',
+      file_path: 'journey/x.jpg',
+      thumbnail_path: 'journey/thumbs/h.jpg',
+    });
     storage.exists.mockRejectedValue(new Error('invalid storage key'));
     const res = makeRes();
 
@@ -234,7 +387,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-018: a file_path outside journey/ reads as a local miss without touching storage', async () => {
-    const id = insertPhoto({ provider: 'local', file_path: 'nope/other.jpg' });
+    const id = await insertPhoto({ provider: 'local', file_path: 'nope/other.jpg' });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 1, id, 'original');
@@ -245,16 +398,23 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-006: an immich original goes straight to the provider with the range header', async () => {
-    const id = insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
+    const id = await insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 3, id, 'original', 'bytes=0-99');
 
-    expect(immich.streamImmichAsset).toHaveBeenCalledWith(res, 3, 'a1', 'original', 5, expect.objectContaining({ range: 'bytes=0-99' }));
+    expect(immich.streamImmichAsset).toHaveBeenCalledWith(
+      res,
+      3,
+      'a1',
+      'original',
+      5,
+      expect.objectContaining({ range: 'bytes=0-99' }),
+    );
   });
 
   it('RESOLVE-007: an immich thumbnail served from cache never reaches the provider', async () => {
-    const id = insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
+    const id = await insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
     cache.serveFresh.mockReturnValue(true);
     const res = makeRes();
 
@@ -265,7 +425,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-008: a synology original forwards the decrypted passphrase', async () => {
-    const id = insertPhoto({ provider: 'synologyphotos', asset_id: 's1', owner_id: 9, passphrase: 'secret' });
+    const id = await insertPhoto({ provider: 'synologyphotos', asset_id: 's1', owner_id: 9, passphrase: 'secret' });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 4, id, 'original');
@@ -274,7 +434,7 @@ describe('streamPhoto — dispatch', () => {
   });
 
   it('RESOLVE-009: a synology row without a passphrase forwards undefined, not an empty string', async () => {
-    const id = insertPhoto({ provider: 'synologyphotos', asset_id: 's2', owner_id: 9 });
+    const id = await insertPhoto({ provider: 'synologyphotos', asset_id: 's2', owner_id: 9 });
     const res = makeRes();
 
     await svc.streamPhoto(res as never, 4, id, 'original');
@@ -290,7 +450,7 @@ describe('getPhotoInfo — dispatch', () => {
   });
 
   it('RESOLVE-011: asks immich for an immich asset', async () => {
-    const id = insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
+    const id = await insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
     immich.getAssetInfo.mockResolvedValue({ success: true, data: { id: 'a1' } });
 
     await svc.getPhotoInfo(3, id);
@@ -300,7 +460,7 @@ describe('getPhotoInfo — dispatch', () => {
   });
 
   it('RESOLVE-012: asks synology for a synology asset', async () => {
-    const id = insertPhoto({ provider: 'synologyphotos', asset_id: 's1', owner_id: 9 });
+    const id = await insertPhoto({ provider: 'synologyphotos', asset_id: 's1', owner_id: 9 });
     synology.getSynologyAssetInfo.mockResolvedValue({ success: true, data: { id: 's1' } });
 
     await svc.getPhotoInfo(4, id);
@@ -310,8 +470,65 @@ describe('getPhotoInfo — dispatch', () => {
   });
 
   it('RESOLVE-013: an unknown provider is an error, not a crash', async () => {
-    const id = insertPhoto({ provider: 'picasa', asset_id: 'p1', owner_id: 2 });
+    const id = await insertPhoto({ provider: 'picasa', asset_id: 'p1', owner_id: 2 });
     const result = await svc.getPhotoInfo(1, id);
     expect(result.success).toBe(false);
+  });
+});
+
+describe('readForSignals: what the quality signals are measured on', () => {
+  let dir: string;
+  let original: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'trek-resolver-signals-'));
+    original = join(dir, 'p.jpg');
+    await writeFile(original, Buffer.from('jpeg bytes'));
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('RESOLVE-020: a local original is read whole through storage, unless it is over the cap, missing or a video', async () => {
+    const id = await insertPhoto({ provider: 'local', file_path: 'journey/p.jpg' });
+    storage.stat.mockResolvedValue({ key: 'p.jpg', size: 10, mtimeMs: 0 });
+    storage.withLocalFile.mockImplementation((_category: string, _name: string, fn: (path: string) => unknown) =>
+      fn(original),
+    );
+
+    expect(await svc.readForSignals(id, 100)).toEqual({ kind: 'original', bytes: Buffer.from('jpeg bytes') });
+    expect(storage.withLocalFile).toHaveBeenCalledWith('journey', 'p.jpg', expect.any(Function));
+    expect(await svc.readForSignals(id, 5)).toEqual({ kind: 'none' });
+    storage.stat.mockRejectedValue(new Error('invalid key'));
+    expect(await svc.readForSignals(id, 100)).toEqual({ kind: 'none' });
+
+    const outside = await insertPhoto({ provider: 'local', file_path: 'elsewhere/p.jpg' });
+    const clip = await insertPhoto({ provider: 'local', file_path: 'journey/c.mp4', media_type: 'video' });
+    const bare = await insertPhoto({ provider: 'local' });
+    const unread = await Promise.all([outside, clip, bare, 999999].map((photoId) => svc.readForSignals(photoId, 100)));
+    expect(unread).toEqual([{ kind: 'none' }, { kind: 'none' }, { kind: 'none' }, { kind: 'none' }]);
+    expect(storage.withLocalFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("RESOLVE-021: a provider photo answers its thumbnail and the original's size, asked with its owner's credentials", async () => {
+    const id = await insertPhoto({ provider: 'immich', asset_id: 'a1', owner_id: 5 });
+    const bytes = Buffer.from('thumb');
+    immich.fetchImmichThumbnailBytes.mockResolvedValue({ bytes, contentType: 'image/webp' });
+    immich.getAssetInfo.mockResolvedValue({ success: true, data: { id: 'a1', width: 6000, height: 4000 } });
+
+    expect(await svc.readForSignals(id, 100)).toEqual({ kind: 'thumbnail', bytes, width: 6000, height: 4000 });
+    expect(immich.fetchImmichThumbnailBytes).toHaveBeenCalledWith(5, 'a1', 5);
+    expect(immich.getAssetInfo).toHaveBeenCalledWith(5, 'a1', 5);
+
+    immich.getAssetInfo.mockResolvedValue({ error: 'offline', status: 502 });
+    expect(await svc.readForSignals(id, 100)).toEqual({ kind: 'thumbnail', bytes, width: null, height: null });
+
+    immich.fetchImmichThumbnailBytes.mockResolvedValue({ error: 'offline', status: 502 });
+    expect(await svc.readForSignals(id, 100)).toEqual({ kind: 'unavailable' });
+
+    const unknown = await insertPhoto({ provider: 'picasa', asset_id: 'p1', owner_id: 2 });
+    const ownerless = await insertPhoto({ provider: 'immich', asset_id: 'a2' });
+    expect(await svc.readForSignals(unknown, 100)).toEqual({ kind: 'none' });
+    expect(await svc.readForSignals(ownerless, 100)).toEqual({ kind: 'none' });
   });
 });

@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const gr: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const gr: NotificationLocale = {
     booking_change: (p) => ({
       title: `Νέα κράτηση: ${p.booking}`,
       body: `Ο/Η ${p.actor} πρόσθεσε μια νέα κράτηση "${p.booking}" (${p.type}) στο "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `Η πτήση ${p.flight} αναχώρησε`,
+      body: `Η πτήση ${p.flight} από ${p.from} προς ${p.to} είναι στον αέρα.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `Η πτήση ${p.flight} έχει καθυστέρηση`,
+      body: `Η πτήση ${p.flight} από ${p.from} προς ${p.to} έχει καθυστέρηση περίπου ${p.delay} λεπτών.`,
+    }),
+    flight_landed: (p) => ({
+      title: `Η πτήση ${p.flight} προσγειώθηκε`,
+      body: `Η πτήση ${p.flight} από ${p.from} προσγειώθηκε στο ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Υπενθύμιση ταξιδιού: ${p.trip}`,
@@ -37,8 +50,14 @@ const gr: NotificationLocale = {
       body: `Ο/Η ${p.actor} σας προσκάλεσε να μοιραστείτε μια συλλογή. Ανοίξτε το TREK για να αποδεχτείτε ή να απορρίψετε.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} φωτογραφίες κοινοποιήθηκαν`,
-      body: `Ο/Η ${p.actor} κοινοποίησε ${p.count} φωτογραφία/ες στο "${p.trip}".`,
+      title: pluralForm(p.count, 'el', {
+        one: `${p.count} φωτογραφία κοινοποιήθηκε`,
+        other: `${p.count} φωτογραφίες κοινοποιήθηκαν`,
+      }),
+      body: pluralForm(p.count, 'el', {
+        one: `Ο/Η ${p.actor} κοινοποίησε ${p.count} φωτογραφία στο "${p.trip}".`,
+        other: `Ο/Η ${p.actor} κοινοποίησε ${p.count} φωτογραφίες στο "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Νέο μήνυμα στο "${p.trip}"`,
@@ -56,11 +75,44 @@ const gr: NotificationLocale = {
       title: 'Αποτυχία αντιγράφου αποθήκευσης',
       body:
         `Η εγγραφή στο αντίγραφο '${p.backend}' απέτυχε: ${p.op} του ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` ${p.suppressed} επιπλέον αποτυχίες αποκρύφθηκαν από την τελευταία ειδοποίηση.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'el', {
+              one: ` ${p.suppressed} επιπλέον αποτυχία αποκρύφθηκε από την τελευταία ειδοποίηση και μετά.`,
+              other: ` ${p.suppressed} επιπλέον αποτυχίες αποκρύφθηκαν από την τελευταία ειδοποίηση και μετά.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Αίτημα περιοχής κανό',
+      body: `${p.actor} σχεδιάζει διαδρομή κανό στην περιοχή ${p.region}. Φόρτωσε ή απόρριψε τα δεδομένα νερού στη διαχείριση, στα Πρόσθετα.`,
     }),
     synology_session_cleared: () => ({
       title: 'Η σύνδεση Synology τερματίστηκε',
       body: 'Ο λογαριασμός σας Synology ή το URL άλλαξε. Έχετε αποσυνδεθεί από το Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Μονοπάτι wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `«${p.tour}» στο «${p.trip}» άλλαξε στο wanderer. Άνοιξε τη διαδρομή και έλεγξε την πηγή της για να δεις όλες τις αλλαγές. Στο ταξίδι τίποτα δεν αλλάζει από μόνο του.`
+          : p.state === 'unverifiable'
+            ? `«${p.tour}» στο «${p.trip}» δεν ελέγχεται πια στο wanderer. Η διαδρομή στο ταξίδι σου μένει ως έχει.`
+            : `«${p.tour}» στο «${p.trip}» ίσως άλλαξε στο wanderer. Άνοιξε τη διαδρομή και έλεγξε την πηγή της. Στο ταξίδι τίποτα δεν αλλάζει από μόνο του.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Προστέθηκε από email: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `Ο/Η ${p.actor} πρόσθεσε την κράτηση «${p.booking}» στο «${p.trip}» από προωθημένο email.`
+          : `Η κράτηση «${p.booking}» από το προωθημένο email σας προστέθηκε στο «${p.trip}». Μπορείτε να την αναιρέσετε στο TREK για 7 ημέρες.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Προωθημένες κρατήσεις για έλεγχο',
+      body: `Προωθημένες κρατήσεις σε αναμονή στο TREK: ${p.count}. Σε καθεμία αναφέρεται γιατί δεν προστέθηκε αυτόματα.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Η εισαγωγή email σε παύση',
+      body: 'Το TREK δεν δέχεται προς το παρόν προωθημένα email κρατήσεων, οπότε περίμενε πριν τα προωθήσεις. Οι διευθύνσεις σου μένουν και θα λειτουργήσουν ξανά όταν επιστρέψει η εισαγωγή, και οι κρατήσεις που έχουν ήδη προστεθεί μένουν στα ταξίδια σου.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

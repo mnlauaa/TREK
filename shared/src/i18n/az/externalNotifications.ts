@@ -1,0 +1,128 @@
+import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
+
+const az: NotificationLocale = {
+  email: {
+    footer: 'Bu məktubu TREK-də bildirişləriniz aktiv olduğu üçün aldınız.',
+    manage: 'Seçimləri Tənzimləmələr bölməsində idarə edin',
+    madeWith: 'Hazırlanıb:',
+    openTrek: 'TREK-i aç',
+  },
+  events: {
+    trip_invite: (p) => ({
+      title: `Səyahət dəvəti: “${p.trip}”`,
+      body: `${p.actor} ${p.invitee || 'bir üzvü'} “${p.trip}” səyahətinə dəvət etdi.`,
+    }),
+    booking_change: (p) => ({
+      title: `Yeni rezervasiya: ${p.booking}`,
+      body: `${p.actor} “${p.trip}” səyahətinə yeni ${p.type} rezervasiyası — “${p.booking}” əlavə etdi.`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} havaya qalxdı`,
+      body: `${p.from} hava limanından ${p.to} hava limanına ${p.flight} reysi havadadır.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} gecikir`,
+      body: `${p.from} hava limanından ${p.to} hava limanına ${p.flight} reysi təxminən ${p.delay} dəqiqə gecikir.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} endi`,
+      body: `${p.from} hava limanından gələn ${p.flight} reysi ${p.to} hava limanına endi.`,
+    }),
+    trip_reminder: (p) => ({
+      title: `Səyahət xatırlatması: ${p.trip}`,
+      body: `“${p.trip}” səyahətiniz yaxınlaşır!`,
+    }),
+    todo_due: (p) => ({
+      title: `Tapşırığın son tarixi: ${p.todo}`,
+      body: `“${p.trip}” səyahətindəki “${p.todo}” tapşırığının son tarixi: ${p.due}.`,
+    }),
+    vacay_invite: (p) => ({
+      title: 'Vacay birləşdirmə dəvəti',
+      body: `${p.actor} sizi tətil planlarını birləşdirməyə dəvət etdi. Qəbul və ya rədd etmək üçün TREK-i açın.`,
+    }),
+    vacay_share: (p) => ({
+      title: 'Vacay təqvimi paylaşıldı',
+      body: `${p.actor} tətil təqvimini sizinlə paylaşdı. Baxmaq üçün TREK-i açın.`,
+    }),
+    collection_invite: (p) => ({
+      title: 'Kolleksiya dəvəti',
+      body: `${p.actor} sizi kolleksiyanı paylaşmağa dəvət etdi. Qəbul və ya rədd etmək üçün TREK-i açın.`,
+    }),
+    photos_shared: (p) => ({
+      title: pluralForm(p.count, 'az', { one: `${p.count} foto paylaşıldı`, other: `${p.count} foto paylaşıldı` }),
+      body: pluralForm(p.count, 'az', {
+        one: `${p.actor} “${p.trip}” səyahətində ${p.count} foto paylaşdı.`,
+        other: `${p.actor} “${p.trip}” səyahətində ${p.count} foto paylaşdı.`,
+      }),
+    }),
+    collab_message: (p) => ({
+      title: `“${p.trip}” səyahətində yeni mesaj`,
+      body: `${p.actor}: ${p.preview}`,
+    }),
+    packing_tagged: (p) => ({
+      title: `Baqaj: ${p.category}`,
+      body: `${p.actor} sizi “${p.trip}” səyahətində “${p.category}” baqaj kateqoriyasına təyin etdi.`,
+    }),
+    version_available: (p) => ({
+      title: 'Yeni TREK versiyası əlçatandır',
+      body: `TREK ${p.version} artıq əlçatandır. Yeniləmək üçün administrator panelinə keçin.`,
+    }),
+    replica_failure: (p) => ({
+      title: 'Yaddaş replikası xətası',
+      body:
+        `“${p.backend}” replikasına yazmaq mümkün olmadı: ${p.key} üçün ${p.op} — ${p.error}.` +
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'az', {
+              one: ` Son bildirişdən bəri ${p.suppressed} əlavə xəta gizlədilib.`,
+              other: ` Son bildirişdən bəri ${p.suppressed} əlavə xəta gizlədilib.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Avarçəkmə regionu sorğulanıb',
+      body: `${p.actor} ${p.region} ərazisində avarçəkmə turu planlaşdırır. Su məlumatını admin bölməsində Əlavələr altında yüklə və ya rədd et.`,
+    }),
+    synology_session_cleared: () => ({
+      title: 'Synology sessiyası təmizləndi',
+      body: 'Synology hesabınız və ya URL-iniz dəyişib. Synology Photos sessiyanız bağlanıb.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer marşrutu: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `"${p.trip}" içində "${p.tour}" wanderer-də dəyişdirildi. Bütün dəyişiklikləri görmək üçün turu aç və mənbəyini yoxla. Səfərdə heç nə özbaşına dəyişmir.`
+          : p.state === 'unverifiable'
+            ? `"${p.trip}" içində "${p.tour}" artıq wanderer-də yoxlanıla bilmir. Səfərindəki tur olduğu kimi qalır.`
+            : `"${p.trip}" içində "${p.tour}" wanderer-də dəyişmiş ola bilər. Turu aç və mənbəyini yoxla. Səfərdə heç nə özbaşına dəyişmir.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Məktubdan əlavə edildi: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} yönləndirilmiş məktubdakı "${p.booking}" rezervasiyasını "${p.trip}" səyahətinə əlavə etdi.`
+          : `Yönləndirdiyiniz məktubdakı "${p.booking}" rezervasiyası "${p.trip}" səyahətinə əlavə edildi. Bunu TREK-də 7 gün ərzində geri ala bilərsiniz.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Yoxlanılacaq yönləndirilmiş rezervasiyalar',
+      body: `TREK-də sizi gözləyən yönləndirilmiş rezervasiyalar: ${p.count}. Hər birində niyə avtomatik əlavə edilmədiyi yazılıb.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Poçt idxalı dayandırılıb',
+      body: 'TREK hələlik yönləndirilmiş rezervasiya məktublarını qəbul etmir, ona görə də onları hələ yönləndirməyin. Ünvanlarınız qalır və idxal geri qayıdanda yenidən işləyəcək, artıq əlavə edilmiş rezervasiyalar isə səfərlərinizdə qalır.',
+    }),
+    plugin_notification: (p) => ({
+      title: p.title ?? '',
+      body: p.body ?? '',
+    }),
+  },
+  passwordReset: {
+    subject: 'Parolunuzu sıfırlayın',
+    greeting: 'Salam',
+    body: 'TREK hesabınızın parolunu sıfırlamaq üçün sorğu aldıq. Yeni parol təyin etmək üçün aşağıdakı düyməyə klikləyin.',
+    ctaIntro: 'Parolu sıfırla',
+    expiry: 'Bu linkin vaxtı 60 dəqiqədən sonra bitəcək.',
+    ignore: 'Bu sorğunu siz göndərməmisinizsə, məktubu nəzərə almaya bilərsiniz — parolunuz dəyişməyəcək.',
+  },
+};
+export default az;

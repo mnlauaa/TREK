@@ -4,7 +4,7 @@ const dawarich: TranslationStrings = {
   // ── Connection ─────────────────────────────────────────────────────────────
   'dawarich.title': 'Dawarich',
   'dawarich.intro':
-    '連接你自己的 Dawarich 執行個體，看看你實際去過哪些地方。TREK 會讀取它，並建議日誌條目、地點和國家 — 在你確認之前不會新增任何內容，也不會回寫任何資料到 Dawarich。',
+    '連接你自己的 Dawarich 執行個體，看看你實際去過哪些地方。TREK 會讀取它，並建議日誌條目、地點和國家；在你確認之前不會新增任何內容，也不會回寫任何資料到 Dawarich。',
   'dawarich.url': '執行個體位址',
   'dawarich.apiKey': 'API 金鑰',
   'dawarich.apiKeyPlaceholder': '貼上你的 Dawarich API 金鑰',
@@ -112,7 +112,7 @@ const dawarich: TranslationStrings = {
   'dawarich.accept.confirm.journal': '新增條目',
   'dawarich.accept.confirm.bucket_list': '打勾',
   'dawarich.accept.recorded': '記錄時間 {from} 至 {to}',
-  'dawarich.accept.duration': '{minutes} 分鐘',
+  'dawarich.accept.duration': '{count} 分鐘',
   'dawarich.accept.name': '名稱',
   'dawarich.accept.date': '日期',
   'dawarich.accept.from': '抵達',
@@ -155,7 +155,6 @@ const dawarich: TranslationStrings = {
   'dawarich.atlas.loading': '正在讀取你的記錄…',
   'dawarich.atlas.empty': '你的記錄中沒有 TREK 尚未收錄的國家。',
   'dawarich.atlas.cities': '{count} 個城市',
-  'dawarich.atlas.citiesOne': '1 座城市',
   'dawarich.atlas.accept': '新增 {count} 個國家',
   'dawarich.atlas.accepted': '已新增 {count} 個國家',
   'dawarich.atlas.unresolved': 'TREK 無法將這些對應到國家：{names}。',
@@ -171,10 +170,8 @@ const dawarich: TranslationStrings = {
   'dawarich.again': '再查一次',
   'dawarich.bucket.metersAway': '{meters} 公尺外',
   'dawarich.bucket.kilometersAway': '{km} 公里外',
-  'dawarich.bucket.rule': '在 {meters} 公尺內停留 {minutes} 分鐘以上，才算實現心願。',
-
-  'dawarich.journey.dayStays.one': '來自 Dawarich 的 1 個停留',
-  'dawarich.journey.dayStays.other': '來自 Dawarich 的 {count} 個停留',
+  'dawarich.bucket.rule': '在 {meters} 公尺內停留 {count} 分鐘以上，才算實現心願。',
+  'dawarich.journey.dayStays.other': '來自 Dawarich 的 {count} 個停留點',
 };
 
 export default dawarich;

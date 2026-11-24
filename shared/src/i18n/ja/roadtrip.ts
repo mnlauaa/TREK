@@ -1,6 +1,22 @@
 import type { TranslationStrings } from '../types';
 
 const roadtrip: TranslationStrings = {
+  'timing.enabled': '時刻を自動計算',
+  'timing.fixedStart': '開始時刻指定',
+  'timing.fixedEnd': '終了時刻指定',
+  'timing.help': '滞在時間と移動時間から到着・出発時刻を計算します。',
+  'timing.fixedEndHint':
+    '終了時刻を指定すると滞在時間が決まります。滞在時間を編集するには終了時刻を空欄にしてください。',
+  'timing.travelMissing': '移動時間が未設定',
+  'timing.arrival': '到着予定',
+  'timing.departure': '出発予定',
+  'timing.fixed': '時刻を指定',
+  'timing.unknown': '未定',
+  'timing.bookingConflict': '予定の滞在時間がこの予約時間をカバーしていません。',
+  'timing.booking': '予約を表示',
+  'timing.travel': '移動時間（分）',
+  'timing.dayOffset': '+{count} 日',
+
   'roadtrip.stay.portals': '宿泊施設を探す',
   'roadtrip.stay.portalHint':
     '予約サイトで目的地、日付、宿泊人数を確認してください。CHECK24では手動で検索してください。',
@@ -56,7 +72,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.window.incomplete': '毎日の休憩を計算するには、すべての接続ルートが必要です。',
   'roadtrip.window.conflict':
     '固定時刻が移動や休憩と両立しません。手動の時刻は保持され、自動計画は一時停止しています。',
-  'roadtrip.window.tooLong': 'この設定では{days}日を超える追加日数が必要です。一日の移動時間を長くしてください。',
+  'roadtrip.window.tooLong': 'この設定では{count}日を超える追加日数が必要です。一日の移動時間を長くしてください。',
   'roadtrip.mode.roadtrip': 'ロードトリップ',
   'roadtrip.mode.days': '日ごと',
   'roadtrip.mode.label': 'プラン表示',
@@ -102,8 +118,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.limit.minutes': '分',
   'roadtrip.limit.off': 'なし',
   'roadtrip.limit.blockNote': '1ブロック = {distance}',
-  'roadtrip.limit.echoOver': '{days}日のうち{over}日が上限超過。',
-  'roadtrip.limit.echoNone': '{days}日すべてが上限内です。',
+  'roadtrip.limit.echoOver': '{count}日のうち{over}日が上限超過。',
+  'roadtrip.limit.echoNone': '{count}日すべてが上限内です。',
   'roadtrip.limit.echoDry': '到達できる立ち寄り先のない区間が{count}件。',
   'roadtrip.limit.echoEmpty': 'ロードトリップを開くと効果が見えます。',
   'roadtrip.limit.specToggle': '車のデータから計算する',
@@ -259,8 +275,8 @@ const roadtrip: TranslationStrings = {
   'roadtrip.stop.computed': '運転時間からの計算値',
   'roadtrip.stop.endIsLeave': 'ロードトリップでは、この時刻に出発します。',
   'roadtrip.via.hint': 'ドラッグでルートを変え、右クリックで削除',
-  'roadtrip.warn.late': '設定した時刻より {minutes} 分遅く到着します',
-  'roadtrip.warn.missedLeave': '設定した出発時刻より {minutes} 分遅く到着します',
+  'roadtrip.warn.late': '設定した時刻より {count} 分遅く到着します',
+  'roadtrip.warn.missedLeave': '設定した出発時刻より {count} 分遅く到着します',
   'roadtrip.warn.overnight': '翌日',
   'roadtrip.spill.title': '{number}日目から',
   'roadtrip.spill.departs': '{time} 発',
@@ -291,7 +307,6 @@ const roadtrip: TranslationStrings = {
   'roadtrip.ride.undated': '{title} はこの旅行のどの日にも入っていないため、走行では使われません。',
   'roadtrip.bookings.loose': 'この日のその他の予約',
   'roadtrip.ride.departureFlight': '出発 {time}',
-  'roadtrip.ride.duration': '予約上の所要時間',
   'roadtrip.ride.checkIn': 'チェックイン',
   'roadtrip.ride.boarding': '乗車',
   'roadtrip.ride.missed': '乗り遅れ',
@@ -316,5 +331,7 @@ const roadtrip: TranslationStrings = {
   'roadtrip.bookend.checkIn': 'チェックイン',
   'roadtrip.bookend.afterCheckOut': 'チェックアウト後に出発',
   'roadtrip.bookend.noVia': '宿泊先との間の区間には経由地を置けません。代わりにそこへ立ち寄り先を追加してください。',
+  'roadtrip.stay.untilHint':
+    'この訪問には終了時刻があるため、{time} に出発します。滞在時間を設定するには、開いて「終了時刻を削除」を選んでください。',
 };
 export default roadtrip;

@@ -4,7 +4,7 @@ TREK exposes **tools** (read and write actions) and **resources** (read-only `tr
 
 Every built-in tool checks its arguments against its published schema before anything runs. An argument the tool does not declare (a misspelt field such as `stopType` for `stop_type`) is refused with `Unrecognized key`, so the AI sees the mistake and can retry rather than reporting a change that never happened. Plugin-contributed tools follow the schema their manifest declares.
 
-For addon-gated tools (Packing, To-Dos, Atlas, Collab, Collections, Vacay, Journey, Dawarich, Document sync, Road trip) and their resources, see [MCP-Addon-Tools](MCP-Addon-Tools).
+For addon-gated tools (Packing, To-Dos, Atlas, Collab, Collections, Vacay, Journey including the link between a trip and a journal, Dawarich, Document sync, Tours, Road trip) and their resources, see [MCP-Addon-Tools](MCP-Addon-Tools).
 
 ## Tools
 
@@ -24,7 +24,7 @@ Compound tools collapse multi-step workflows into a single atomic transaction. I
 |---|---|---|
 | `create_and_assign_place` | `create_place` + `assign_place_to_day` | Create a place and assign it to a day. Takes the same place fields as `create_place`, `stop_type` included. Returns `{ place, assignment }`. Requires `places:write`. |
 | `create_place_accommodation` | `create_place` + `create_accommodation` | Create a place and book it as an accommodation. Returns `{ place, accommodation }`. Requires `trips:write`. |
-| `create_budget_item_with_members` | `create_budget_item` + `set_budget_item_members` | Create a budget item and set splitting members. If `userIds` is omitted, behaves like `create_budget_item`. Returns `{ item }`. Requires `budget:write`. |
+| `create_budget_item_with_members` | `create_budget_item` + `set_budget_item_members` | Create a budget item and set splitting members. If `userIds` is omitted or empty, the cost is split across all trip members, like `create_budget_item` without `member_ids`. Takes the same `reservation_id` / `place_id` links. Returns `{ item }`. Requires `budget:write`. |
 
 ### Trips
 
@@ -34,7 +34,7 @@ Requires `trips:read` or `trips:write` scope.
 |---|---|
 | `list_trips` | List all trips you own or are a member of. Supports `include_archived` flag. |
 | `create_trip` | Create a trip with title, dates, and currency. Days are auto-generated from the date range. Without a currency the trip takes your display currency (Settings → General, or the admin's User Defaults preset), and EUR when that is left on *Trip currency*; see [Currencies](Currencies). |
-| `update_trip` | Update a trip's title, description, dates, or currency. Day plans follow their position, so dates that hold fewer days remove the last days with what is on them, also when only the start moved later. Every day a change removes is listed in `removed_days`, with its id, number and date as they stood before and a reason: `overflow` for a day past the new range, `spare` for an empty day without a date. |
+| `update_trip` | Update a trip's title, description, dates, or currency, and with `costs_mode` whether Costs splits the expenses between the travelers (`split`) or keeps the totals only (`totals`); the costs mode needs `budget_edit` instead of `trip_edit`. Day plans follow their position, so dates that hold fewer days remove the last days with what is on them, also when only the start moved later. Every day a change removes is listed in `removed_days`, with its id, number and date as they stood before and a reason: `overflow` for a day past the new range, `spare` for an empty day without a date. |
 | `search_cover_images` | Search Unsplash for candidate cover photos and return their URLs, thumbnails and photographer credits. Nothing is saved; pass the chosen photo's URL to `update_trip` as `cover_image`. |
 | `delete_trip` | Delete a trip. Owner only. Requires `trips:delete`. |
 | `list_trip_members` | List the owner and all collaborators of a trip. |
@@ -43,11 +43,13 @@ Requires `trips:read` or `trips:write` scope.
 | `leave_trip` | Leave a trip you were invited to, giving up your own access. Use this rather than `remove_trip_member` when the user means themselves. The owner cannot leave their own trip. Requires `trips:write`. |
 | `create_trip_guest` | Add a travelling companion who has no TREK account. Assignable to budget splits, packing and day participants; never signs in, never emailed. Owner only. |
 | `rename_trip_guest` | Rename a guest on a trip. Owner only. |
-| `delete_trip_guest` | Delete a guest and re-split the expenses they were part of. Owner only. |
+| `delete_trip_guest` | Delete a guest and hand their share of each expense to the others in its split. Refused while the guest paid for an expense or is part of a recorded payment. Owner only. |
+| `get_trip_addons` | The trip addons of one trip (lists, costs, files, collab, road trip, tours) and whether each applies to it: `enabled` is what applies here, `instanceEnabled` the instance setting, `overridden` whether the trip owner chose it. An addon that is off for a trip has its tools refused for that trip. |
+| `set_trip_addon` | Switch one trip addon on or off for this trip only, or pass `enabled: null` to follow the instance again. Owner only. Data of an addon switched off is kept. See [Trip-Settings](Trip-Settings#addons). |
 | `copy_trip` | Duplicate a trip (days, places, itinerary, packing, budget, reservations). Packing items reset to unchecked. |
-| `export_trip_ics` | Export the trip itinerary and reservations as iCalendar (`.ics`) text. |
+| `export_trip_ics` | Export the trip itinerary and reservations as iCalendar (`.ics`) text. `dayEvents: false` leaves out the all-day summary per day. |
 | `get_share_link` | Get the current public share link for a trip and its permission flags. Requires `trips:share`. |
-| `create_share_link` | Create or update the public share link with configurable visibility flags. Requires `trips:share`. |
+| `create_share_link` | Create or update the public share link with configurable visibility flags, including the travel-only and without-photos options. Requires `trips:share`. |
 | `delete_share_link` | Revoke the public share link for a trip. Requires `trips:share`. |
 
 ### Places
@@ -57,13 +59,14 @@ Requires `places:read` or `places:write` scope.
 | Tool | Description |
 |---|---|
 | `list_places` | List places in a trip, optionally filtered by assignment status, category, tag, or search query. |
-| `create_place` | Add a place with name, coordinates, address, category, notes, website, phone, and optional `google_place_id` / `osm_id`. An optional `stop_type` (`fuel`, `charging`, `rest_area`, `campsite`, `restaurant`, `sights` or `hotel`) marks it as a service stop on a drive rather than a destination, so it is left out of the day's stop count; see [Road-Trip](Road-Trip). Leave it unset for an ordinary place. |
-| `update_place` | Update any field of an existing place including transport mode, timing, price and `stop_type`. Pass `stop_type: null` to turn a service stop back into an ordinary place. |
+| `create_place` | Add a place with name, coordinates, address, category, notes, website, phone, email, and optional `google_place_id` / `osm_id` / `amap_poi_id`. `opening_hours` takes the place's own hours, seven days starting on Monday (`closed`, `open`, `close` as `HH:MM`), shown instead of looked-up hours; `null` clears them. An optional `stop_type` (`fuel`, `charging`, `rest_area`, `campsite`, `restaurant`, `sights` or `hotel`) marks it as a service stop on a drive rather than a destination, so it is left out of the day's stop count; see [Road-Trip](Road-Trip). Leave it unset for an ordinary place. `tags` takes the ids of the tags the place should carry: tags of the trip (`list_trip_tags`) or personal tags of someone on the trip; any other id is ignored. |
+| `update_place` | Update any field of an existing place including phone, email, opening hours, transport mode, timing, price and `stop_type`. Pass `stop_type: null` to turn a service stop back into an ordinary place. `tags` replaces the place's tags with the given ids, `[]` clears them, and leaving it out keeps them. |
 | `rate_place` | Set or clear your own 1–5 star rating on a place. Every trip member rates independently and the place shows the average. Pass `null` to clear the vote. |
 | `bulk_update_places` | Update many places at once, applying the same field values (e.g. category, price, transport mode, `stop_type`) to every listed place in a single call. `stop_type: null` turns the listed service stops back into ordinary places. |
 | `delete_place` | Remove a place from a trip. Also removes all day assignments, the expenses linked to the place and any night booked at it, together with that night's reservation and the reservation's expense. Cannot be undone, so an assistant should warn before deleting a hotel that holds a booking. |
 | `bulk_delete_places` | Delete multiple places by ID. Removes all day assignments, linked expenses and any nights booked at each place, with their reservations and expenses. Cannot be undone. |
 | `import_places_from_url` | Import all places from a publicly shared Google Maps or Naver Maps list URL. |
+| `export_trip_kml` | Export the trip's places as KML text for Google My Maps: every place with coordinates as a pin with its name, address, description and category. Google Maps takes no list of places from outside, but a My Maps map imports the file as a layer. Requires `places:read`. |
 | `list_categories` | List all available place categories with id, name, icon, and color. |
 | `create_category` | Add a category to the instance-wide palette, with name, hex colour and emoji icon. Every trip on the instance sees it, so prefer an existing one from `list_categories`. Admin only; a non-admin gets `Admin access required`. Requires `places:write`. |
 | `update_category` | Rename a category or change its colour or icon. Every place already carrying it follows the change. Admin only. Requires `places:write`. |
@@ -84,6 +87,9 @@ Requires `trips:read` or `trips:write` scope.
 | `set_day_default_transport_mode` | Set the whole-day default travel mode. Per-leg modes still override it. Pass `null` to clear. |
 | `assign_place_to_day` | Pin a place to a specific day in the itinerary. Requires `places:write`. |
 | `unassign_place` | Remove a place assignment from a day. Requires `places:write`. |
+| `clear_day_assignments` | Remove every place from one day at once. The day, its notes and its bookings stay. Requires `places:write`. |
+| `set_assignment_route_excluded` | Keep a place on its day but out of the day's route, or route it again. Requires `places:write`. |
+| `set_place_image_from_file` | Use a picture already attached in the trip as a place image (the file is copied). Requires `places:write`. |
 | `reorder_day_assignments` | Reorder places within a day by providing assignment IDs in order. Requires `places:write`. |
 | `update_assignment_time` | Set start/end times for a place assignment (e.g. `"09:00"` – `"11:30"`). Pass `null` to clear. Requires `places:write`. |
 | `move_assignment` | Move a place assignment to a different day. Requires `places:write`. |
@@ -98,8 +104,8 @@ Requires `trips:read` or `trips:write` scope.
 
 | Tool | Description |
 |---|---|
-| `create_day_note` | Add a note to a specific day with optional time label and emoji icon. |
-| `update_day_note` | Edit a day note's text, time, or icon. |
+| `create_day_note` | Add a note to a specific day: `text` is the title, `time` the Markdown body (up to 2000 characters), plus an optional icon and colour. |
+| `update_day_note` | Edit a day note's title (`text`), body (`time`), icon, colour or position. |
 | `delete_day_note` | Remove a note from a day. |
 
 ### Accommodations
@@ -111,6 +117,7 @@ Requires `trips:read` or `trips:write` scope.
 | `create_accommodation` | Add an accommodation (hotel, Airbnb, etc.) linked to a place and a check-in/check-out date range. |
 | `update_accommodation` | Update fields on an existing accommodation including dates, times, confirmation, and notes. |
 | `delete_accommodation` | Delete an accommodation record from a trip. |
+| `list_accommodations` | Where the trip sleeps, stay by stay: the place with its address and position, the check-in and check-out days and times, and the booking linked to it. Requires `trips:read`. |
 
 ### Transport
 
@@ -118,19 +125,19 @@ Requires `reservations:write` scope.
 
 | Tool | Description |
 |---|---|
-| `create_transport` | Create a transport booking in any of the nine types the transport form offers (`flight`, `train`, `bus`, `car`, `taxi`, `bicycle`, `cruise`, `ferry`, `transport_other`), with optional multi-stop endpoints, departure/arrival times, and confirmation details. Scheduled public transit goes through `create_transit_journey` instead. |
+| `create_transport` | Create a transport booking in any of the ten types the transport form offers (`flight`, `train`, `bus`, `car`, `taxi`, `bicycle`, `cruise`, `ferry`, `cable_car`, `transport_other`), with optional multi-stop endpoints, departure/arrival times, and confirmation details. Scheduled public transit goes through `create_transit_journey` instead. |
 | `update_transport` | Update an existing transport booking. Pass `endpoints[]` to replace all stops. |
 | `delete_transport` | Delete a transport booking from a trip. |
 
 ### Automated public transit
 
-Transit search is powered by Transitous and uses the existing `geo:read` and `reservations:write` scopes.
+Transit search is powered by the configured transit provider (Transitous by default, or Google), falls back to the other one when the first finds no route, and uses the existing `geo:read` and `reservations:write` scopes.
 
 | Tool | Scope required | Description |
 |---|---|---|
 | `search_transit_stops` | `geo:read` | Search real public-transit stops and stations, optionally biased around coordinates. |
-| `search_transit_routes` | `geo:read` | Search scheduled routes between two coordinates with time, mode, and transfer filters. Also returns `dropped`, the number of provider itineraries that failed validation and are absent from the results. |
-| `create_transit_journey` | `reservations:write` | Save a selected route as a first-class automated transit journey on a trip day. |
+| `search_transit_routes` | `geo:read` | Search scheduled routes between two coordinates with time, mode, and transfer filters. Also returns `provider` (`transitous` or `google`, the backend that answered) and `dropped`, the number of provider itineraries that failed validation and are absent from the results. |
+| `create_transit_journey` | `reservations:write` | Save a selected route as a first-class automated transit journey on a trip day. Pass `provider` from `search_transit_routes` to preserve the actual source, including fallback results. Older callers that omit it retain the configured-provider behavior. `price` records the fare as an expense linked to the journey (`budget_category`, `transport` by default). |
 
 ### Reservations
 
@@ -144,7 +151,9 @@ Requires `reservations:read` or `reservations:write` scope.
 | `reorder_reservations` | Reorder reservations within a day. |
 | `set_reservation_travelers` | Set who is travelling on a booking, from the trip roster (members and guests). Replaces the list; an empty array clears it. Ids that are not on the trip come back under `ignored_user_ids` rather than being attached. |
 | `link_hotel_accommodation` | Set or update a hotel reservation's check-in/out day links and place. |
-| `list_upcoming_reservations` | The next bookings across all of the user's trips, soonest first, for "what is coming up?" when no particular trip is in question. Hotel stays appear as their check-in and check-out moments. Cancelled bookings and archived trips are left out. `limit` defaults to 6, at most 50. Requires `reservations:read`. |
+| `list_reservations` | The bookings of one trip with their readable details (`details`: airline, flight or train number, platform, seat, the legs of a stopover booking, check-in and check-out times, price, and `has_leg_reference` when a leg holds a booking reference of its own, never the reference itself) in place of the raw metadata. `kinds` keeps `transport` or `booking`, `dayId` the bookings on that day. Requires `reservations:read`. |
+| `list_upcoming_reservations` | The next bookings across all of the user's trips, soonest first, for "what is coming up?" when no particular trip is in question. Hotel stays appear as their check-in and check-out moments. Cancelled bookings, planned public-transit journeys and archived trips are left out. `limit` defaults to 6, at most 50. Requires `reservations:read`. |
+| `get_trip_flight_status` | The live status of a trip's booked flights, one entry per flight leg with a known flight number and both airports: the schedule in UTC with each airport's time zone, the phase (`scheduled`, `taxiing`, `airborne`, `landed`, `unknown`), observed wheels-up and touchdown, an estimated arrival with the delays worked out from it, progress and distances, the last position and the aircraft. Positions come from the free ADS-B feeds adsb.lol and, on a self-hosted install, adsb.fi; only the callsign is sent to them. Gates and cancellations are not known, and delays and arrival times are estimates. `enabled` is false when an admin switched live flight status off. Requires `reservations:read`. |
 
 ### Budget
 
@@ -152,15 +161,17 @@ Requires `budget:read` or `budget:write` scope. The Budget addon must be enabled
 
 | Tool | Description |
 |---|---|
-| `create_budget_item` | Add an expense with name, category, and price. |
-| `update_budget_item` | Update an expense's details, split (persons/days), or notes. |
+| `list_budget_items` | The trip's expenses with their ids, a page at a time (`offset`, `limit` up to 100, 50 by default). A page of long expenses ends earlier, so a client goes on at `next_offset` until it is `null`. Per expense: name, category, price and currency, date, the start of its note, the linked place or booking, who paid how much and who shares it, what a foreign expense comes to in the trip currency (`trip_amount`) and how many receipts it has (`receipt_count`). Next to the page the trip currency, the total and the totals per category over all expenses, and `unconverted_item_ids` for foreign expenses no rate converts. |
+| `get_budget_per_person` | What each person's shares of the expenses add up to and how much of that they paid, in the trip currency, as the per-person summary in the app shows it. |
+| `create_budget_item` | Add an expense with name, category, and price. `reservation_id` / `place_id` link it to a booking or place of the same trip. |
+| `update_budget_item` | Update an expense's details, split (persons/days), or notes. `reservation_id` / `place_id` link it to a booking or place of the same trip; `null` unlinks it. |
 | `delete_budget_item` | Remove a budget item. |
 | `set_budget_item_members` | Set which members are splitting a budget item (replaces current list). |
 | `toggle_budget_member_paid` | Mark or unmark a member as having paid their share. |
 | `get_settlement_summary` | Each member's net balance, the suggested payments to settle shared expenses, and each member's final budget (`finalBudgets`: expenses paid, net reimbursements, pending reimbursements, final cost, each figure with the rows it is made of under `sources`). `currency` says what the amounts are in: the `base` asked for when the server can quote it, otherwise the trip's base currency. An expense or payment in a foreign currency with no frozen rate, while the server has no live rate for it either, is left out of every figure and listed under `unconverted` (`item_ids`, `settlement_ids`, `currencies`). Call this before recording a settlement. |
 | `list_settlements` | List the recorded settle-up payments for a trip — who paid whom, how much, and when. |
-| `create_settlement` | Record a settle-up payment: one member paid another the given amount, with the payment's currency and the day it happened. |
-| `update_settlement` | Update a recorded settle-up payment (payer, recipient, amount, currency and the day it happened). |
+| `create_settlement` | Record a settle-up payment: one member paid another the given amount, with the payment's currency, the day it happened and an optional note. |
+| `update_settlement` | Update a recorded settle-up payment (payer, recipient, amount, currency, the day it happened and its note). |
 | `delete_settlement` | Delete a recorded settle-up payment. This is the undo for `create_settlement` and restores the affected balances. |
 | `freeze_budget_rates` | Pin today's server exchange rate on every expense and settle-up payment in a foreign currency that has no rate frozen yet, the rows under `unconverted` included. Rows with a frozen rate, in the trip currency or without a currency are never touched, and no rate is taken from the caller. Returns the rows it froze (`items`, `settlements`) and the currencies the server could not quote (`unresolved`). Needs the budget edit permission; an error when the trip currency changed meanwhile, with nothing written. |
 
@@ -170,10 +181,16 @@ Requires `places:read` or `places:write` scope.
 
 | Tool | Description |
 |---|---|
-| `list_tags` | List all tags belonging to the current user. |
-| `create_tag` | Create a new tag (user-scoped label for places) with optional hex color. |
-| `update_tag` | Update the name or color of an existing tag. |
-| `delete_tag` | Delete a tag (removes it from all attached places). |
+| `list_tags` | List all personal tags belonging to the current user. A trip's own tags are not among them. |
+| `create_tag` | Create a new personal tag (user-scoped label for places) with optional hex color. |
+| `update_tag` | Update the name or color of an existing personal tag. |
+| `delete_tag` | Delete a personal tag (removes it from all attached places). |
+| `list_trip_tags` | List the tags a trip owns, the same list for every member of the trip. |
+| `create_trip_tag` | Add a tag to a trip, with a name of up to 50 characters and an optional hex color. A trip has each name once, whatever its capitals: a name it already has returns that tag. Needs the permission to edit the trip's places. |
+| `update_trip_tag` | Rename or recolour a tag of a trip, on every place that carries it. A name another tag of the trip has is refused. Needs the permission to edit the trip's places. |
+| `delete_trip_tag` | Delete a tag of a trip and take it off every place that carried it. Needs the permission to edit the trip's places. |
+
+A trip's tags are the ones the app shows and filters by; see [Tags-and-Categories](Tags-and-Categories#trip-tags). Put them on a place with `tags` on `create_place`, `create_and_assign_place` and `update_place`.
 
 ### Maps & Weather
 
@@ -183,10 +200,14 @@ Requires `places:read` or `places:write` scope.
 | `reverse_geocode` | `geo:read` | Get a human-readable address for given coordinates. |
 | `resolve_maps_url` | `geo:read` | Resolve a Google Maps or Amap (高德地图) share URL to coordinates and place name. |
 | `search_pois` | `geo:read` | List places of one or more categories inside a map rectangle, the MCP side of the category buttons on the trip map. Answers from TREK's place index where it can and from OpenStreetMap (Overpass) otherwise, names the source of each result, and never calls Google. |
+| `search_nearby_places` | `geo:read` | List named places of any kind around a coordinate, nearest first, each with its distance in metres. Takes `lat`, `lng`, an optional `radius` (50 to 5000 m, default 500), `limit` (up to 20) and `lang`. Answers from TREK's place index first, from Google Places only when the instance has a key and the index found nothing, and from OpenStreetMap otherwise. Answers are cached for 30 minutes. |
+| `list_plugin_poi_categories` | `geo:read` | List the extra categories installed plugins add to the category buttons on the trip map (trailheads, EV chargers, step-free places, drinking water, campsites and the like), each with the `pluginId` and category `id` that `search_plugin_pois` takes and its label in the requested `lang`. Empty when no plugin adds categories, which is the normal case. |
+| `search_plugin_pois` | `geo:read` | List the places of one plugin category inside a map rectangle, the MCP side of a plugin's category button. Takes `pluginId`, `category`, a `bbox` (narrowed to a centred 0.5 degree window when larger, reported as `clamped`) and an optional `lang`. Results have the `search_pois` shape plus the answering `pluginId`, a `rating` where the plugin has one and up to six `details` rows (label and value) only that plugin knows. An unknown category or a failing plugin is an error result. Never calls Google. |
 | `search_airports` | `geo:read` | Search for airports by name, city, or IATA code. Returns IATA code, name, city, country, timezone. |
 | `get_airport` | `geo:read` | Look up an airport by IATA code (e.g. `"ZRH"`, `"CDG"`). |
 | `get_weather` | `weather:read` | Get a weather forecast for a location and date. |
 | `get_detailed_weather` | `weather:read` | Get an hourly/detailed weather forecast for a location and date. |
+| `get_wind_forecast` | `weather:read` | Get the wind for a location on one day: per local hour the mean speed and the gusts in km/h and the direction it comes from, and the day's strongest mean, strongest gust and dominant direction. Only a forecast: a past day or one more than 16 days ahead answers its status without figures. |
 
 ### Notifications
 
@@ -208,6 +229,7 @@ Requires `files:read` or `files:write`. Reading what is inside a document needs 
 |---|---|
 | `list_trip_files` | List a trip's documents: name, type, size, uploader, description, what they are linked to, starred and trash state. Pass `trash` to list the trash instead. |
 | `read_trip_file` | Read one document's contents. Text comes back as text, anything else base64, with an `encoding` field saying which. Files over 10 MB are refused; use the download link in the app. |
+| `upload_trip_file` | Add a document to a trip, base64-encoded, up to 10 MB (or the instance's upload limit if lower). The name needs an extension the file manager accepts. Optionally attach it to a booking, place or expense right away. Needs the file upload right. |
 | `update_trip_file` | Set a file's description and the booking, place or expense (`budget_item_id`, a receipt) it belongs to. Pass null to detach. |
 | `link_trip_file` | Link a file to one more booking, place, day assignment or expense (`budget_item_id`, a receipt). |
 | `unlink_trip_file` | Remove one link. The file stays. |
@@ -219,7 +241,7 @@ Requires `settings:read` or `settings:write`.
 
 | Tool | Description |
 |---|---|
-| `get_display_settings` | Read the user's units, time format, language, default currency and start page. Read this before rendering a temperature, a distance or a clock time. |
+| `get_display_settings` | Read the user's units, time format, first day of the week, language, the language of place names in search, default currency, start page, the trip tab a trip opens on, the colour mode (light, dark or auto), the world clocks on the dashboard and a few map and planner switches such as blurred booking codes. Read this before rendering a temperature, a distance or a clock time. |
 | `update_display_settings` | Change one or more of those preferences. Only display preferences: API keys, map tokens and LLM settings are refused, whatever is passed. |
 
 ### Calendar feeds
@@ -236,6 +258,8 @@ Requires `trips:share`, the same scope that manages public share links.
 | `enable_all_trips_calendar_feed` | |
 | `rotate_all_trips_calendar_feed` | |
 | `disable_all_trips_calendar_feed` | |
+
+A feed URL with `?days=0` appended leaves out the all-day summary per day; the tools hand back the plain URL and say so in their descriptions.
 
 ### Invite links
 
@@ -256,6 +280,25 @@ Accepting an invite has no tool on purpose: joining somebody's trip is a human a
 | `list_airtrail_flights` | List the flights available to import from a connected AirTrail account. Requires the AirTrail addon. |
 | `import_airtrail_flights` | Import chosen flights into a trip as transport bookings. |
 
+### Booking mail import
+
+The bookings read from mails the user forwarded to TREK ([Booking mail import](Booking-Mail-Import)). Requires
+`reservations:read`, or `reservations:write` to act on an entry; the import must be switched on for the instance. No
+tool reads or makes a forwarding address, since an address carries its secret token.
+
+| Tool | Description |
+|---|---|
+| `list_mail_inbox` | The entries waiting for a decision, each with why it waits, the booking as read, the trip it suggests and the mail's subject; `status: "resolved"` lists the decided ones. |
+| `add_mail_booking` | Add a waiting booking to the trip it suggests, or to another (`trip_id`). Undoable for seven days. |
+| `move_mail_booking` | Move a booking added from a mail into another trip while it can still be undone. Only the person who forwarded the mail can move it. |
+| `file_mail_booking` | Put the mail into a trip as documents, without a booking. Needs the Documents addon. |
+| `discard_mail_booking` | Set a waiting entry aside. |
+| `undo_mail_booking` | Remove a booking added from a mail with its stay, cost and documents, within seven days. |
+| `update_mail_import_settings` | The user's switches: `enabled`, `ai_enabled`, `auto_add` (add on its own or ask first). |
+
+A move or an undo of a booking whose cost was settled with, or that was edited since, answers `needs_confirmation`
+until it is repeated with `confirm: true`.
+
 ### Photos
 
 Requires `journey:read`, or `journey:write` to attach. Needs a configured Immich or Synology Photos provider.
@@ -274,6 +317,7 @@ Photo bytes are never returned: those are image URLs the app renders.
 | Tool | Description |
 |---|---|
 | `list_help_topics` | List the bundled help pages. Answers "how do I do X in TREK?" without guessing. |
+| `search_help` | Full-text search across the bundled help pages, the same search the in-app help uses. Returns the best-matching pages with the section heading and a snippet; follow up with `get_help_page`. |
 | `get_help_page` | Read one help page. |
 | `list_addons` | Which addons and collaboration features this instance has enabled. Worth calling when a tool you expected is not in the list: an addon that is off removes its tools exactly the way a missing scope does. |
 | `get_trip_warnings` | Warnings plugins have raised about a trip. A plugin raising one is telling the user something is wrong, so it is worth reading before reviewing an itinerary. |

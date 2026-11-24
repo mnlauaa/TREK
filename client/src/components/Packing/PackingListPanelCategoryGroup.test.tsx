@@ -1,4 +1,4 @@
-// FE-W5CAT-001 to FE-W5CAT-040
+// FE-W5CAT-001 to FE-W5CAT-042
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ComponentProps } from 'react'
 import { http, HttpResponse } from 'msw'
@@ -48,7 +48,7 @@ function setup(overrides: Partial<Props> = {}) {
 
 /** The category header owns the first MoreHorizontal; item rows render their own. */
 function openCategoryMenu(container: HTMLElement) {
-  const btn = container.querySelectorAll('svg.lucide-more-horizontal')[0].closest('button')!
+  const btn = container.querySelectorAll('svg.lucide-ellipsis')[0].closest('button')!
   fireEvent.click(btn)
   return btn
 }
@@ -303,7 +303,7 @@ describe('KategorieGruppe — bulk actions', () => {
 
   it('FE-W5CAT-015a: the menu trigger highlights on hover', () => {
     const { container } = setup()
-    const trigger = container.querySelectorAll('svg.lucide-more-horizontal')[0].closest('button')!
+    const trigger = container.querySelectorAll('svg.lucide-ellipsis')[0].closest('button')!
 
     fireEvent.mouseEnter(trigger)
     expect(trigger.style.color).toBe('var(--text-secondary)')
@@ -323,7 +323,7 @@ describe('KategorieGruppe — bulk actions', () => {
     expect(checkAll.style.background).toBe('none')
 
     fireEvent.mouseEnter(deleteAll)
-    expect(deleteAll.style.background).toBe('rgb(254, 242, 242)')
+    expect(deleteAll.style.background).toBe('rgba(239, 68, 68, 0.1)')
   })
 })
 
@@ -485,6 +485,17 @@ describe('KategorieGruppe — inline add item', () => {
     expect(onAddItem).not.toHaveBeenCalled()
   })
 
+  it('FE-W5CAT-028a: Enter on the first item typed into the placeholder row opens the add field (#2825)', async () => {
+    server.use(http.put('/api/trips/1/packing/1', () => HttpResponse.json({ item: buildPackingItem({ id: 1, name: 'Tent', category: 'Gear' }) })))
+    setup({ items: [buildPackingItem({ id: 1, name: '...', category: 'Gear' })] })
+
+    // The placeholder row is a field from the start.
+    fireEvent.change(screen.getByPlaceholderText('...'), { target: { value: 'Tent' } })
+    fireEvent.keyDown(screen.getByPlaceholderText('...'), { key: 'Enter' })
+
+    await waitFor(() => expect(screen.getByPlaceholderText('Item name...')).toHaveFocus())
+  })
+
   it('FE-W5CAT-028: the confirm button adds the item, and stays inert while empty', () => {
     const onAddItem = vi.fn(async () => {})
     const { container } = setup({ onAddItem })
@@ -508,13 +519,17 @@ describe('KategorieGruppe — inline add item', () => {
     expect(screen.queryByPlaceholderText('Item name...')).toBeNull()
   })
 
-  it('FE-W5CAT-030: the X button closes the inline form', () => {
+  it('FE-W5CAT-030: an empty field closes when it loses focus, a typed one stays', () => {
     const { container } = setup()
     fireEvent.click(screen.getByText('Add item'))
+    expect(container.querySelector('svg.lucide-x')).toBeNull()
+
     fireEvent.change(screen.getByPlaceholderText('Item name...'), { target: { value: 'Rope' } })
+    fireEvent.blur(screen.getByPlaceholderText('Item name...'))
+    expect(screen.getByPlaceholderText('Item name...')).toBeInTheDocument()
 
-    fireEvent.click(container.querySelector('svg.lucide-x')!.closest('button')!)
-
+    fireEvent.change(screen.getByPlaceholderText('Item name...'), { target: { value: '  ' } })
+    fireEvent.blur(screen.getByPlaceholderText('Item name...'))
     expect(screen.queryByPlaceholderText('Item name...')).toBeNull()
   })
 
@@ -633,5 +648,25 @@ describe('KategorieGruppe — plugin contributions', () => {
 
     expect(await screen.findByText('Sunny')).toBeInTheDocument()
     expect(screen.getByText('Forecast')).toBeInTheDocument()
+  })
+})
+
+describe('KategorieGruppe — sharing the whole list (#2961)', () => {
+  it('FE-W5CAT-041: the list menu offers the sharing of the whole list and closes on it', () => {
+    const onShareCategory = vi.fn()
+    const { container } = setup({ onShareCategory })
+    openCategoryMenu(container)
+
+    fireEvent.click(screen.getByText('Sharing for Whole List'))
+    expect(onShareCategory).toHaveBeenCalledOnce()
+    expect(screen.queryByText('Sharing for Whole List')).toBeNull()
+  })
+
+  it('FE-W5CAT-042: a read-only member gets no such entry', () => {
+    const { container } = setup({ onShareCategory: vi.fn(), canEdit: false })
+    openCategoryMenu(container)
+
+    expect(screen.getByText('Uncheck All')).toBeInTheDocument()
+    expect(screen.queryByText('Sharing for Whole List')).toBeNull()
   })
 })

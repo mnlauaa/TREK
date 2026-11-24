@@ -204,7 +204,10 @@ export function RtStopRow({ row, chrome, onOpen, onPickKind }: {
         // dir=ltr so a clock reads the same way round in an RTL locale.
         <span dir="ltr" className={`flex items-center gap-[3px] whitespace-nowrap text-[0.8125rem] tabular-nums ${row.pinned ? 'font-semibold text-m-ink' : 'font-medium text-m-faint'}`}>
           {row.pinned && <Pin size={9} strokeWidth={2.4} className="flex-none text-m-faint" aria-label={t('roadtrip.stop.pinned')} />}
-          {formatClockTime(row.time, chrome.is12h)}
+          <span>
+            {row.entry?.plannedArrival && row.entry.plannedArrival !== row.time && <span className="block text-caption text-m-faint">{t('places.startTime')} {formatClockTime(row.entry.plannedArrival, chrome.is12h)}</span>}
+            {formatClockTime(row.time, chrome.is12h)}
+          </span>
         </span>
       )}
     </TapRow>

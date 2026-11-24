@@ -1,4 +1,4 @@
-// FE-ADMSET-001 to FE-ADMSET-042
+// FE-ADMSET-001 to FE-ADMSET-044
 import { http, HttpResponse } from 'msw';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,9 +13,19 @@ import AdminSettingsTab from './AdminSettingsTab';
 type Spy = ReturnType<typeof vi.fn>;
 type Spies = Record<string, Spy> & { toast: Record<string, Spy> };
 
+/** The two tabs the settings are split into (security, services), on one page. */
+function AllParts({ admin, t }: { admin: AdminHook; t: ReturnType<typeof useTranslation>['t'] }) {
+  return (
+    <>
+      <AdminSettingsTab admin={admin} t={t} part="security" />
+      <AdminSettingsTab admin={admin} t={t} part="services" />
+    </>
+  );
+}
+
 function Harness({ admin }: { admin: AdminHook }) {
   const { t } = useTranslation();
-  return <AdminSettingsTab admin={admin} t={t} />;
+  return <AllParts admin={admin} t={t} />;
 }
 
 function renderTab(overrides: Record<string, unknown> = {}) {
@@ -24,9 +34,12 @@ function renderTab(overrides: Record<string, unknown> = {}) {
   return admin as unknown as Spies;
 }
 
-/** The card element whose <h2> matches the given heading text. */
+/** The card (a settingsKit SettingsCard, a <section>) whose <h2> matches the given heading text. */
+/** The card with the TREK services, the providers and the search log, apart from the keys. */
+const SERVICES = 'Place search and routing';
+
 function card(heading: string | RegExp): HTMLElement {
-  return screen.getByRole('heading', { name: heading }).closest<HTMLElement>('.rounded-xl')!;
+  return screen.getByRole('heading', { name: heading }).closest<HTMLElement>('section')!;
 }
 
 /**
@@ -38,9 +51,14 @@ function keyInput(name: string | RegExp): HTMLInputElement {
   return within(card('API Keys')).getByLabelText(name).parentElement!.querySelector('input')!;
 }
 
-/** The toggle button in the row belonging to a label paragraph. */
+/** The settingsKit row (label and hint left, control right) a label belongs to. */
+function rowOf(el: HTMLElement): HTMLElement | null {
+  return el.tagName === 'LABEL' ? el.closest<HTMLElement>('.flex-wrap') : null;
+}
+
+/** The toggle button in the row belonging to a label. */
 function toggleFor(label: string): HTMLElement {
-  const row = screen.getAllByText(label).map(el => el.closest<HTMLElement>('.flex.items-center.justify-between'));
+  const row = screen.getAllByText(label).map(rowOf);
   const found = row.find(Boolean)!;
   return within(found).getByRole('button');
 }
@@ -63,7 +81,7 @@ function OidcHarness() {
   const { t } = useTranslation();
   const [oidcConfig, setOidcConfig] = React.useState<OidcConfig>(EMPTY_OIDC);
   const admin = buildAdminHook({ oidcConfig, setOidcConfig });
-  return <AdminSettingsTab admin={admin} t={t} />;
+  return <AllParts admin={admin} t={t} />;
 }
 
 beforeEach(() => {
@@ -80,7 +98,8 @@ describe('AdminSettingsTab', () => {
 
     expect(screen.getByRole('heading', { name: 'Authentication Methods' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Passkey login' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /require two-factor/i })).toBeInTheDocument();
+    // Requiring two-factor is a switch of the sign-in card now, not a card of its own.
+    expect(screen.getByText(/require 2fa/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Allowed File Types' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'API Keys' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /single sign-on/i })).toBeInTheDocument();
@@ -135,6 +154,7 @@ describe('AdminSettingsTab', () => {
 
     expect(screen.queryByText('SSO Login')).not.toBeInTheDocument();
     expect(screen.queryByText('SSO Auto-Provisioning')).not.toBeInTheDocument();
+    expect(screen.queryByText('Go straight to SSO')).not.toBeInTheDocument();
   });
 
   it('FE-ADMSET-008: SSO login toggle sends the inverted value', () => {
@@ -157,6 +177,14 @@ describe('AdminSettingsTab', () => {
     fireEvent.click(toggleFor('SSO Auto-Provisioning'));
 
     expect(admin.handleToggleAuthSetting).toHaveBeenCalledWith('oidc_registration', true, admin.setOidcRegistration);
+  });
+
+  it('FE-ADMSET-044: the SSO auto redirect toggle sends the inverted value (#2925)', () => {
+    const admin = renderTab({ oidcConfigured: true, oidcAutoRedirect: true });
+
+    fireEvent.click(toggleFor('Go straight to SSO'));
+
+    expect(admin.handleToggleAuthSetting).toHaveBeenCalledWith('oidc_auto_redirect', false, admin.setOidcAutoRedirect);
   });
 
   it('FE-ADMSET-011: passkey toggle sends the inverted value', () => {
@@ -207,7 +235,7 @@ describe('AdminSettingsTab', () => {
   it('FE-ADMSET-016: require-MFA toggle flips the current value', () => {
     const admin = renderTab({ requireMfa: false });
 
-    fireEvent.click(within(card(/require two-factor/i)).getByRole('button'));
+    fireEvent.click(toggleFor('Require 2FA'));
 
     expect(admin.handleToggleRequireMfa).toHaveBeenCalledWith(true);
   });
@@ -300,43 +328,55 @@ describe('AdminSettingsTab', () => {
     // failing, which is quiet enough to be mistaken for the provider working.
     renderTab({ placesProvider: 'amap', hasAmapKey: false });
     expect(
-      within(card('API Keys')).getByText(/TREK index and OpenStreetMap alone/i),
+      within(card(SERVICES)).getByText(/TREK index and OpenStreetMap alone/i),
     ).toBeInTheDocument();
   });
 
   it('FE-ADMSET-022d: saving the provider goes through updateAppSettings, not the keys', () => {
     const admin = renderTab({ placesProvider: 'auto' });
     // A CustomSelect: the trigger shows the current choice, the menu is portaled.
-    fireEvent.click(within(card('API Keys')).getByRole('button', { name: 'Automatic' }));
+    fireEvent.click(within(card(SERVICES)).getByRole('button', { name: 'Automatic' }));
     fireEvent.click(screen.getByRole('button', { name: 'Amap (高德地图)' }));
     expect(admin.handleSavePlacesProvider).toHaveBeenCalledWith('amap');
   });
 
-  it('FE-ADMSET-022e: a managed install hides the keys but keeps the provider choice', () => {
-    // The operator owns the credentials; which of them answers place search is
-    // still the admin's call (server managed.ts lists places_provider as theirs).
+  it('FE-ADMSET-022e: a managed install hides place search, routing and the keys', () => {
+    // All of it is the operator's there (server managed.ts locks places_provider);
+    // Share place details has a tab of its own on AdminPage.
     renderTab({ managed: true, placesProvider: 'auto' });
 
-    const keys = within(card('API Keys'));
-    expect(keys.queryByLabelText('Google Maps API Key')).not.toBeInTheDocument();
-    expect(keys.queryByLabelText(/Amap/)).not.toBeInTheDocument();
-    expect(keys.getByRole('button', { name: 'Automatic' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'API Keys' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Google Maps API Key')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: SERVICES })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Automatic' })).not.toBeInTheDocument();
   });
 
-  it('FE-ADMSET-022f: an operator key keeps the managed install quiet', () => {
-    // The key fields are not on the page here, and an operator key set through
-    // the environment would not show up in them anyway. app-config knows.
-    renderTab({ managed: true, placesProvider: 'google', mapsKey: '', hasMapsKey: true });
+  it('FE-ADMSET-022f: a managed install keeps the file types card on the services tab', () => {
+    // Place search and the keys are the operator's there; the file types stay the admin's.
+    renderTab({ managed: true });
 
-    expect(
-      within(card('API Keys')).queryByText(/falls back to OpenStreetMap/i),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Allowed File Types' })).toBeInTheDocument();
   });
 
   it('FE-ADMSET-023: the maps Test button is disabled without a key', () => {
     renderTab({ mapsKey: '' });
 
     expect(within(card('API Keys')).getByRole('button', { name: /^test$/i })).toBeDisabled();
+  });
+
+  it('FE-ADMSET-043: a key the environment sets is read-only and names its variable (#1881)', () => {
+    const admin = renderTab({
+      keyInputProps: (field: string) =>
+        field === 'maps' ? { disabled: true, placeholder: 'Set via PLACES_API_KEY' } : { disabled: false, placeholder: 'Enter key...' },
+      mapsKeyTestable: true,
+    });
+
+    expect(keyInput('Google Maps API Key')).toBeDisabled();
+    expect(keyInput('Google Maps API Key')).toHaveAttribute('placeholder', 'Set via PLACES_API_KEY');
+    expect(keyInput(/unsplash/i)).toBeEnabled();
+    // The empty field still tests: the probe uses the key a search resolves to.
+    fireEvent.click(within(card('API Keys')).getByRole('button', { name: /^test$/i }));
+    expect(admin.handleValidateKey).toHaveBeenCalledWith('maps');
   });
 
   it('FE-ADMSET-024: the maps Test button validates the maps key', () => {
@@ -453,16 +493,17 @@ describe('AdminSettingsTab', () => {
     // A key alone does not put Google behind the search; the server ignores the
     // switch under another provider, and the row must not promise otherwise.
     renderTab({ placesGoogleOnly: true, hasMapsKey: true, placesProvider: 'openstreetmap' });
-    const hint = toggleFor('Search with Google only').closest<HTMLElement>('.flex.items-center.justify-between')!.querySelectorAll('p')[1];
+    // The hint sits behind the row's info mark, in the page for a screen reader.
+    const hint = toggleFor('Search with Google only').closest<HTMLElement>('.flex-wrap')!.querySelector('.sr-only')!;
     expect(hint.textContent).not.toMatch(/Every search and every suggestion goes to Google Places/);
     expect(hint.textContent).not.toMatch(/Needs a Google Maps API key/);
     expect(hint.textContent).toMatch(/provider/i);
   });
 
-  it('FE-ADMSET-031: the API keys card leads with the TREK index and no weather panel', () => {
+  it('FE-ADMSET-031: the place search card leads with the TREK index and no weather panel', () => {
     renderTab();
 
-    const keys = card('API Keys');
+    const keys = card(SERVICES);
     expect(within(keys).getByRole('img', { name: 'TREK Places API' })).toBeInTheDocument();
     expect(within(keys).getByText('Recommended default')).toBeInTheDocument();
     // Weather needs no key, so it left a card about keys. The panel itself lives
@@ -482,7 +523,7 @@ describe('AdminSettingsTab', () => {
     render(<OidcHarness />);
     const oidc = card(/single sign-on/i);
 
-    fireEvent.change(within(oidc).getByPlaceholderText('z.B. Google, Authentik, Keycloak'), {
+    fireEvent.change(within(oidc).getByPlaceholderText('e.g. Google, Authentik, Keycloak'), {
       target: { value: 'Authentik' },
     });
     fireEvent.change(within(oidc).getByPlaceholderText('https://accounts.google.com'), {
@@ -602,7 +643,7 @@ describe('AdminSettingsTab', () => {
       transitGoogleKeySource: 'instance',
       setTransitGoogleKeySource: vi.fn(),
     });
-    const block = screen.getByText('Transit Provider').closest<HTMLElement>('.rounded-xl')!;
+    const block = screen.getByText('Transit Provider').closest<HTMLElement>('section')!;
 
     fireEvent.click(within(block).getByRole('button'));
     fireEvent.click(screen.getByText('Google'));

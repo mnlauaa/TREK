@@ -1,5 +1,6 @@
 import React from 'react'
 import { Footprints, MoveRight, type LucideIcon } from 'lucide-react'
+import { useIsPhone } from '../../mobile/useIsPhone'
 
 /**
  * Shared display bits for public-transit entries (#1065) — the timeline row,
@@ -15,6 +16,7 @@ export interface TransitLegDisplay {
   line_text_color?: string | null
   duration?: number
   headsign?: string | null
+  agency?: string | null
   stops?: number
   from?: { name?: string; time?: string | null; track?: string | null }
   to?: { name?: string; time?: string | null; track?: string | null }
@@ -32,21 +34,21 @@ export function TransitWalkDivider({ leg, t, size = 'md' }: {
   size?: 'sm' | 'md'
 }) {
   const mins = leg.duration ? Math.round(leg.duration / 60) : null
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+  const isMobile = useIsPhone()
   // Hairlines that fade towards the outer edges — strongest next to the text.
   const rule = (dir: 'left' | 'right'): React.CSSProperties => ({
     flex: 1, height: 1, minWidth: 12, borderRadius: 1,
     background: `linear-gradient(to ${dir}, var(--text-faint), transparent)`,
     opacity: 0.55,
   })
-  // On phones the minutes lead so a long stop name only ever clips the name.
+  // On phones the minutes lead, so they stay on the first line when a long stop name wraps.
   const text = isMobile
     ? `${mins ? `${t('transit.min', { count: mins })} · ` : ''}${t('transit.walkTo', { name: leg.to?.name || '' })}`
     : `${t('transit.walkTo', { name: leg.to?.name || '' })}${mins ? ` · ${t('transit.min', { count: mins })}` : ''}`
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: size === 'sm' ? '1px 0' : '2px 0' }}>
       <span style={rule('left')} />
-      <span className="text-content-faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: size === 'sm' ? 'calc(10px * var(--fs-scale-caption, 1))' : 'calc(11.5px * var(--fs-scale-caption, 1))', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? '85%' : '75%' }}>
+      <span className="text-content-faint" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: size === 'sm' ? 'calc(10px * var(--fs-scale-caption, 1))' : 'calc(11.5px * var(--fs-scale-caption, 1))', fontWeight: 500, textAlign: 'center', overflowWrap: 'anywhere', maxWidth: isMobile ? '85%' : '75%' }}>
         <Footprints size={size === 'sm' ? 11 : 12} style={{ flexShrink: 0 }} />
         {text}
       </span>
@@ -70,8 +72,10 @@ export function TransitItineraryInline({ legs, t }: {
         const mins = leg.duration ? Math.round(leg.duration / 60) : null
         return (
           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-            <span className="text-content-muted" style={{ width: 34, flexShrink: 0, textAlign: 'right', fontSize: 'calc(10px * var(--fs-scale-caption, 1))', fontWeight: 600, paddingTop: 1 }}>
-              {leg.from?.time || ''}
+            {/* Departure beside the stops, arrival under it (#3139). */}
+            <span className="text-content-muted" style={{ width: 34, flexShrink: 0, alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'end', fontSize: 'calc(10px * var(--fs-scale-caption, 1))', fontWeight: 600, paddingTop: 1 }}>
+              <span>{leg.from?.time || ''}</span>
+              {leg.to?.time && <span className="text-content-faint">{leg.to.time}</span>}
             </span>
             <span style={{
               display: 'inline-flex', alignItems: 'center', borderRadius: 4, padding: '0 5px',
@@ -82,10 +86,11 @@ export function TransitItineraryInline({ legs, t }: {
               {leg.line || leg.mode}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="text-content" style={{ fontSize: 'calc(11px * var(--fs-scale-caption, 1))', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{leg.from?.name}</span>
+              {/* The folded-out itinerary is where a journey is read in full: stop names wrap (#3139). */}
+              <div className="text-content" style={{ fontSize: 'calc(11px * var(--fs-scale-caption, 1))', fontWeight: 500, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 4, minWidth: 0 }}>
+                <span dir="auto" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{leg.from?.name}</span>
                 <MoveRight size={10} className="text-content-faint" style={{ flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{leg.to?.name}</span>
+                <span dir="auto" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{leg.to?.name}</span>
               </div>
               <div className="text-content-faint" style={{ fontSize: 'calc(9.5px * var(--fs-scale-caption, 1))', marginTop: 1 }}>
                 {[
@@ -117,6 +122,8 @@ export interface TransitMetaItem {
   text: string
   /** De-emphasised (operator names and the like). */
   dim?: boolean
+  /** Set in capitals, for a count with its unit ("15 MIN", "5 STOPS"). */
+  caps?: boolean
 }
 
 /**
@@ -127,14 +134,15 @@ export function TransitMetaBadges({ items, size = 'md' }: { items: TransitMetaIt
   const font = size === 'sm' ? 'calc(10px * var(--fs-scale-caption, 1))' : 'calc(10.5px * var(--fs-scale-caption, 1))'
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-      {items.filter(i => i.text).map(({ icon: Icon, text, dim }, i) => (
+      {items.filter(i => i.text).map(({ icon: Icon, text, dim, caps }, i) => (
         <span
           key={i}
           className={dim ? 'bg-surface-card text-content-faint' : 'bg-surface-card text-content-muted'}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: size === 'sm' ? '1px 6px' : '2px 8px', borderRadius: 6,
-            fontSize: font, fontWeight: 500, whiteSpace: 'nowrap',
+            fontSize: font, fontWeight: caps ? 600 : 500, whiteSpace: 'nowrap',
+            textTransform: caps ? 'uppercase' : undefined, letterSpacing: caps ? '0.04em' : undefined,
             border: '1px solid var(--border-faint)',
           }}
         >
@@ -200,7 +208,7 @@ export function TransitLegChips({ legs, transfers, size = 'sm', t }: {
         </React.Fragment>
       ))}
       {typeof transfers === 'number' && transfers > 0 && (
-        <span className="text-content-faint" style={{ fontSize: badgeFont, marginLeft: 2 }}>
+        <span className="text-content-faint" style={{ fontSize: badgeFont, marginInlineStart: 2 }}>
           · {t('transit.transfers', { count: transfers })}
         </span>
       )}

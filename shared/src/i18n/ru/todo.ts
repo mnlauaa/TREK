@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Без списка',
   'todo.namePlaceholder': 'Название задачи',
   'todo.descriptionPlaceholder': 'Описание (необязательно)',
+  'todo.editDescription': 'Нажмите, чтобы изменить, ссылки открываются сразу',
   'todo.unassigned': 'Не назначено',
   'todo.noCategory': 'Без списка',
   'todo.hasDescription': 'Есть описание',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Приоритет',
   'todo.detail.noPriority': 'Нет',
   'todo.sortByPrio': 'Приоритет',
+  'todo.progressCount': '{done} из {total} выполнено',
+  'todo.allDone': 'Всё готово!',
+  'todo.filter.myShort': 'Мои',
 };
 export default todo;

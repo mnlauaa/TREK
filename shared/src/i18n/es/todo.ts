@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Sin lista',
   'todo.namePlaceholder': 'Nombre de la tarea',
   'todo.descriptionPlaceholder': 'Descripción (opcional)',
+  'todo.editDescription': 'Haz clic para editar, los enlaces se abren directamente',
   'todo.unassigned': 'Sin asignar',
   'todo.noCategory': 'Sin lista',
   'todo.hasDescription': 'Con descripción',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Prioridad',
   'todo.detail.noPriority': 'Ninguna',
   'todo.sortByPrio': 'Prioridad',
+  'todo.progressCount': '{done} de {total} hechas',
+  'todo.allDone': '¡Todo hecho!',
+  'todo.filter.myShort': 'Mías',
 };
 export default todo;

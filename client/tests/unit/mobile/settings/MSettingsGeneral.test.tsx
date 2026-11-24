@@ -1,12 +1,12 @@
 // FE-MOB-SET-001 onwards
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '../../../helpers/render';
+import { resetAllStores, seedStore } from '../../../helpers/store';
+import { buildSettings } from '../../../helpers/factories';
+import { useSettingsStore } from '../../../../src/store/settingsStore';
 import { ToastContainer } from '../../../../src/components/shared/Toast';
 import MSettingsGeneral from '../../../../src/mobile/screens/settings/MSettingsGeneral';
-import { useSettingsStore } from '../../../../src/store/settingsStore';
-import { buildSettings } from '../../../helpers/factories';
-import { render, screen } from '../../../helpers/render';
-import { resetAllStores, seedStore } from '../../../helpers/store';
 
 describe('MSettingsGeneral', () => {
   beforeEach(() => {
@@ -53,6 +53,21 @@ describe('MSettingsGeneral', () => {
     expect(updateSetting).toHaveBeenCalledWith('language', 'de');
   });
 
+  it('FE-MOB-SET-003b: place names follow the app until another language is picked for them', async () => {
+    const user = userEvent.setup();
+    const updateSetting = vi.fn().mockResolvedValue(undefined);
+    seedStore(useSettingsStore, {
+      settings: buildSettings({ language: 'en' }),
+      updateSetting,
+    });
+    render(<MSettingsGeneral />);
+
+    await user.click(screen.getByRole('button', { name: 'Same as the app' }));
+    const sheet = await screen.findByRole('dialog', { name: 'Place names' });
+    await user.click(within(sheet).getByRole('button', { name: 'Deutsch' }));
+    expect(updateSetting).toHaveBeenCalledWith('place_language', 'de');
+  });
+
   it('FE-MOB-SET-004: a chosen display currency is shown with its symbol', () => {
     seedStore(useSettingsStore, { settings: buildSettings({ language: 'en', default_currency: 'EUR' }) });
     render(<MSettingsGeneral />);
@@ -70,7 +85,7 @@ describe('MSettingsGeneral', () => {
     render(<MSettingsGeneral />);
 
     await user.click(screen.getByRole('button', { name: 'Trip currency' }));
-    await user.click(await screen.findByRole('button', { name: 'CHF — Swiss Franc' }));
+    await user.click(await screen.findByRole('button', { name: /^CHF/ }));
     expect(updateSetting).toHaveBeenCalledWith('default_currency', 'CHF');
   });
 
@@ -93,12 +108,7 @@ describe('MSettingsGeneral', () => {
 
   it('FE-MOB-SET-007: unset unit preferences fall back to the metric/24h defaults', () => {
     seedStore(useSettingsStore, {
-      settings: buildSettings({
-        language: 'en',
-        temperature_unit: undefined,
-        distance_unit: undefined,
-        time_format: undefined,
-      }),
+      settings: buildSettings({ language: 'en', temperature_unit: undefined, distance_unit: undefined, time_format: undefined }),
     });
     render(<MSettingsGeneral />);
 
@@ -113,10 +123,7 @@ describe('MSettingsGeneral', () => {
     expect(screen.getByRole('switch', { name: 'Booking route labels' })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('switch', { name: 'Explore places on the map' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('switch', { name: 'Blur Booking Codes' })).toHaveAttribute('aria-checked', 'false');
-    expect(screen.getByRole('switch', { name: 'Optimize route from accommodation' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    expect(screen.getByRole('switch', { name: 'Optimize route from accommodation' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('FE-MOB-SET-009: flipping a travel toggle persists the new boolean', async () => {
@@ -147,12 +154,7 @@ describe('MSettingsGeneral', () => {
       settings: buildSettings({ language: 'en' }),
       updateSetting: vi.fn().mockRejectedValue(new Error('Error saving setting')),
     });
-    render(
-      <>
-        <ToastContainer />
-        <MSettingsGeneral />
-      </>
-    );
+    render(<><ToastContainer /><MSettingsGeneral /></>);
 
     await user.click(screen.getByRole('button', { name: '°F Fahrenheit' }));
     expect(await screen.findByText('Error saving setting')).toBeInTheDocument();
@@ -164,12 +166,7 @@ describe('MSettingsGeneral', () => {
       settings: buildSettings({ language: 'en' }),
       updateSetting: vi.fn().mockRejectedValue('boom'),
     });
-    render(
-      <>
-        <ToastContainer />
-        <MSettingsGeneral />
-      </>
-    );
+    render(<><ToastContainer /><MSettingsGeneral /></>);
 
     await user.click(screen.getByRole('button', { name: '°F Fahrenheit' }));
     expect(await screen.findByText('Error')).toBeInTheDocument();
@@ -234,5 +231,39 @@ describe('MSettingsGeneral', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     await user.click(toggle);
     expect(updateSetting).toHaveBeenCalledWith('map_always_show_routes', false);
+  });
+});
+
+describe('MSettingsGeneral week start (#2029)', () => {
+  it('FE-MOB-SET-017: the week-start segments show Monday when unset and save the day tapped', async () => {
+    const user = userEvent.setup();
+    const updateSetting = vi.fn().mockResolvedValue(undefined);
+    seedStore(useSettingsStore, { settings: buildSettings({ language: 'en', week_start: undefined }), updateSetting });
+    render(<MSettingsGeneral />);
+
+    expect(screen.getByRole('button', { name: 'Monday' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Saturday' }));
+    expect(updateSetting).toHaveBeenCalledWith('week_start', 'saturday');
+  });
+});
+
+describe('MSettingsGeneral date format (#2971)', () => {
+  it('FE-MOB-SET-018: the date-format row shows the language format when unset and the sheet saves a pick', async () => {
+    const user = userEvent.setup();
+    const updateSetting = vi.fn().mockResolvedValue(undefined);
+    seedStore(useSettingsStore, { settings: buildSettings({ language: 'en', date_format: undefined }), updateSetting });
+    render(<MSettingsGeneral />);
+
+    // The choices are labelled by how they write 31 December; auto adds the language's own way.
+    await user.click(screen.getByRole('button', { name: /\(12\/31\/2026\)/ }));
+    await user.click(await screen.findByRole('button', { name: '31.12.2026' }));
+    expect(updateSetting).toHaveBeenCalledWith('date_format', 'DD.MM.YYYY');
+  });
+
+  it('FE-MOB-SET-019: a stored format is shown on its row', () => {
+    seedStore(useSettingsStore, { settings: buildSettings({ language: 'en', date_format: 'YYYY/MM/DD' }) });
+    render(<MSettingsGeneral />);
+
+    expect(screen.getByRole('button', { name: '2026/12/31' })).toBeInTheDocument();
   });
 });

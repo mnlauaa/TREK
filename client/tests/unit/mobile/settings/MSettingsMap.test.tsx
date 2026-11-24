@@ -16,8 +16,8 @@ vi.mock('../../../../src/components/Map/MapView', () => ({
   MapView: ({ tileUrl }: { tileUrl: string }) => <div data-testid="leaflet-preview" data-tile={tileUrl} />,
 }));
 vi.mock('../../../../src/components/Settings/MapboxPreview', () => ({
-  default: ({ provider, token, style, enable3d, quality }: {
-    provider: string; token: string; style: string; enable3d: boolean; quality: boolean;
+  default: ({ provider, token, style, enable3d, quality, hidePois }: {
+    provider: string; token: string; style: string; enable3d: boolean; quality: boolean; hidePois?: boolean;
   }) => (
     <div
       data-testid="gl-preview"
@@ -26,8 +26,14 @@ vi.mock('../../../../src/components/Settings/MapboxPreview', () => ({
       data-style={style}
       data-3d={String(enable3d)}
       data-quality={String(quality)}
+      data-hide-pois={String(hidePois)}
     />
   ),
+}));
+// jsdom has no WebGL2; these cases are about a browser that has it.
+vi.mock('../../../../src/utils/webgl', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/utils/webgl')>()),
+  hasWebGL: () => true,
 }));
 
 const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -199,6 +205,7 @@ describe('MSettingsMap', () => {
       mapbox_style: 'mapbox://styles/mapbox/dark-v11',
       mapbox_3d_enabled: true,
       mapbox_quality_mode: false,
+      map_hide_basemap_pois: false,
     });
     await screen.findByText('Map settings saved');
   });
@@ -329,5 +336,19 @@ describe('MSettingsMap', () => {
     await user.type(cartoInput(), 'demo-key');
 
     expect(screen.queryByText(/API KEY REQUIRED/)).not.toBeInTheDocument();
+  });
+
+  it('FE-MOB-SETMAP-025: the switch for the basemap points of interest drives the preview and is saved (#1761)', async () => {
+    const user = userEvent.setup();
+    const updateSettings = seedMap({ map_provider: 'mapbox-gl', mapbox_access_token: 'pk.token' });
+    renderMap();
+
+    const toggle = screen.getByRole('switch', { name: 'Hide Points of Interest' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await user.click(toggle);
+    expect(await screen.findByTestId('gl-preview')).toHaveAttribute('data-hide-pois', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Save Map' }));
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ map_hide_basemap_pois: true }));
   });
 });

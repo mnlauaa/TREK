@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const en: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const en: NotificationLocale = {
     booking_change: (p) => ({
       title: `Ny bokning: ${p.booking}`,
       body: `${p.actor} la till en ny ${p.type} "${p.booking}" till "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} har lyft`,
+      body: `${p.flight} från ${p.from} till ${p.to} är i luften.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} är försenat`,
+      body: `${p.flight} från ${p.from} till ${p.to} ligger cirka ${p.delay} minuter efter tidtabellen.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} har landat`,
+      body: `${p.flight} från ${p.from} har landat i ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Resepåminnelse: ${p.trip}`,
@@ -37,8 +50,11 @@ const en: NotificationLocale = {
       body: `${p.actor} bjöd in dig att dela en samling. Öppna TREK för att acceptera eller avvisa.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} foton delade`,
-      body: `${p.actor} delade ${p.count} foto(n) i "${p.trip}".`,
+      title: pluralForm(p.count, 'sv', { one: `${p.count} foto delat`, other: `${p.count} foton delade` }),
+      body: pluralForm(p.count, 'sv', {
+        one: `${p.actor} delade ${p.count} foto i "${p.trip}".`,
+        other: `${p.actor} delade ${p.count} foton i "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nytt meddelande i "${p.trip}"`,
@@ -56,11 +72,44 @@ const en: NotificationLocale = {
       title: 'Fel i lagringsreplik',
       body:
         `Skrivning till replik '${p.backend}' misslyckades: ${p.op} för ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` ${p.suppressed} ytterligare fel har undertryckts sedan senaste aviseringen.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'sv', {
+              one: ' Ytterligare ett fel har undertryckts sedan senaste aviseringen.',
+              other: ` Ytterligare ${p.suppressed} fel har undertryckts sedan senaste aviseringen.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Paddelregion efterfrågad',
+      body: `${p.actor} planerar en paddeltur i ${p.region}. Läs in eller avböj dess vattendata i administrationen under Tillägg.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology session rensad',
       body: 'Ditt Synology-konto eller din webbadress har ändrats. Du har loggats ut från Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer-led: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `”${p.tour}” i ”${p.trip}” har ändrats i wanderer. Öppna turen och kontrollera dess källa för att se alla ändringar. Inget i resan ändras av sig självt.`
+          : p.state === 'unverifiable'
+            ? `”${p.tour}” i ”${p.trip}” kan inte längre kontrolleras i wanderer. Turen i din resa förblir som den är.`
+            : `”${p.tour}” i ”${p.trip}” kan ha ändrats i wanderer. Öppna turen och kontrollera dess källa. Inget i resan ändras av sig självt.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Tillagd från ett mejl: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} lade till "${p.booking}" i "${p.trip}" från ett vidarebefordrat mejl.`
+          : `"${p.booking}" från ditt vidarebefordrade mejl lades till i "${p.trip}". Du kan ångra det i TREK i 7 dagar.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Vidarebefordrade bokningar att granska',
+      body: `Vidarebefordrade bokningar som väntar på dig i TREK: ${p.count}. Vid varje står varför den inte lades till av sig själv.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Mejlimport pausad',
+      body: 'TREK tar inte emot vidarebefordrade bokningsmejl just nu, så vänta med att vidarebefordra dem. Dina adresser finns kvar och fungerar igen när importen är tillbaka, och bokningar som redan lagts till finns kvar i dina resor.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

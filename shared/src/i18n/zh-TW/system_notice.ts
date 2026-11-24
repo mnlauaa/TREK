@@ -11,14 +11,6 @@ const system_notice: TranslationStrings = {
   'system_notice.welcome_v1.highlight_offline': '行動裝置支援離線使用',
   'system_notice.dev_test_modal.title': '[開發] 測試通知',
   'system_notice.dev_test_modal.body': '這是僅供開發環境使用的測試通知。',
-  'system_notice.thank_you_support.title': '感謝你使用 TREK',
-  'system_notice.thank_you_support.body':
-    '想簡單地對你說聲謝謝——謝謝你安裝了 TREK，這對我來說真的意義重大。\n\n我是一名獨立開發者，利用業餘時間打造 TREK。它最初只是我為自己的旅行做的一個小工具，而自那以後社群給予的支持與關注，老實說讓我感到無比驚喜。TREK 是我傾注了許多心血做出來的——但也要感謝許多了不起的外部貢獻者，是他們一起塑造了它。\n\n**TREK 是開源且完全免費的——而且永遠都會如此。沒有付費方案，沒有訂閱，沒有任何附加條件。我保證。**\n\n如果 TREK 對你有幫助，而你願意支持它的開發，一杯小小的咖啡真的能幫助我繼續做下去——完全不必有任何壓力，但每一杯都讓那些熬夜的時光更有動力。\n\n謝謝你來到這裡。\n\n— Maurice',
-  'system_notice.thank_you_support.highlight_opensource': '在 GitHub 上 100% 開源',
-  'system_notice.thank_you_support.highlight_free': '永遠免費 — 絕無任何付費方案',
-  'system_notice.thank_you_support.highlight_community': '與社群一起攜手打造',
-  'system_notice.thank_you_support.cta_bmc': '請我喝杯咖啡',
-  'system_notice.thank_you_support.cta_kofi': '在 Ko-fi 上支持我',
   'system_notice.pager.prev': '上一則通知',
   'system_notice.pager.next': '下一則通知',
   'system_notice.pager.counter': '{current} / {total}',
@@ -53,41 +45,5 @@ const system_notice: TranslationStrings = {
   'system_notice.v3014_whitespace_collision.title': '需要操作：使用者帳戶衝突',
   'system_notice.v3014_whitespace_collision.body':
     '3.0.14 版本升級偵測到一個或多個由儲存帳戶中前後空白字元引發的使用者名稱或電子郵件衝突。受影響的帳戶已自動重新命名。請檢查伺服器日誌中以 **[migration] WHITESPACE COLLISION** 開頭的行，以確認哪些帳戶需要審查。',
-  // The release modal. One stable set of keys: each big release swaps the copy in place.
-  'system_notice.release_notes.eyebrow': '更新已安裝',
-  'system_notice.release_notes.headline': 'TREK 現在能自己完成的四件事。',
-  'system_notice.release_notes.intro':
-    '自有的地點 API、從頭到尾規劃的公路旅行、掌握在你手中的位置記錄，以及保持同步的文件。',
-  'system_notice.release_notes.features_label': '本次重頭戲',
-  'system_notice.release_notes.features_aside': '遠不止這些',
-  'system_notice.release_notes.feature_places_title': 'TREK Places API',
-  'system_notice.release_notes.feature_places_body':
-    '首個擁有自有地點 API 的開源旅行規劃器。7360 萬個地點，無需金鑰，沒有配額。',
-  'system_notice.release_notes.feature_roadtrip_title': '公路旅行擴充套件',
-  'system_notice.release_notes.feature_roadtrip_body': '自動規劃行車：路線、距離、時長和停靠點。管理員開啟前預設關閉。',
-  'system_notice.release_notes.feature_dawarich_title': 'Dawarich 整合',
-  'system_notice.release_notes.feature_dawarich_body':
-    'Google Timeline 的自架替代方案，現在可以直接在 TREK 裡檢視。TREK 只讀取，也僅止於讀取。',
-  'system_notice.release_notes.footnote': '除此之外，TREK 的其他部分還有一長串小改動。',
-  'system_notice.release_notes.notes_label': '版本說明',
-  'system_notice.release_notes.note_eyebrow': '來自維護者的話',
-  'system_notice.release_notes.note_title': '是你們讓我一直堅持做 TREK。',
-  'system_notice.release_notes.note_body':
-    'TREK 最初只是我為自己的旅行做的小工具，下班後一點一點寫出來，只因為我想更好地規劃旅行。後來它就再也沒有停止成長。你用到的幾乎每一項功能，都是在全職工作之外，在深夜、週末和火車上做出來的。也有很多個晚上，我會默默地想，這世界上究竟會不會有人打開它。',
-  'system_notice.release_notes.promise_label': '承諾',
-  'system_notice.release_notes.promise_lead': 'TREK 永遠免費。',
-  'system_notice.release_notes.promise_text':
-    '每一項功能、每一次更新，都屬於每一個人。沒有付費方案，沒有訂閱，沒有任何套路。',
-  'system_notice.release_notes.note_body_after':
-    '後來，你們真的來了。短短幾個月，就來了成千上萬的你們：有人按星標、回報 bug，有人把它翻譯成我不會說的語言，還有素未謀面的人送出 pull request。直到今天，我每天早上第一件事仍是打開儲存庫看看，而這一切還是有點不太真實。',
-  'system_notice.release_notes.note_closing': '謝謝你來到這裡，Maurice 敬上。',
-  'system_notice.release_notes.support_lead': 'TREK 現在免費，以後也永遠免費，但伺服器、網域和無數個深夜可不是免費的。',
-  'system_notice.release_notes.support_text':
-    '如果它已經在你的旅行中佔有一席之地，請我喝杯咖啡，幫我把下一個版本繼續做出來吧。',
-  'system_notice.release_notes.cta_bmc': 'Buy me a coffee',
-  'system_notice.release_notes.cta_kofi': '在 Ko-fi 上支持我',
-  'system_notice.release_notes.feature_docsync_title': '文件同步',
-  'system_notice.release_notes.feature_docsync_body':
-    'Paperless-ngx、Papra、Nextcloud、OpenCloud 和 Synology Drive。行程的文件與你已在運行的儲存雙向流動。',
 };
 export default system_notice;

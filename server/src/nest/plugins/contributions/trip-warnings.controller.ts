@@ -1,10 +1,12 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { DatabaseService } from '../../database/database.service';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth-core/jwt-auth.guard';
+import { toRowId } from '../../common/row-id';
+import { TripAccessService } from '../../trip-membership/trip-access.service';
 import { pluginsEnabled } from '../kill-switch';
 import { PluginHooks } from '../plugin-hooks.service';
 import { stripEmoji } from '../text-sanitize';
+import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+
+import type { Request } from 'express';
 
 /**
  * GET /api/trip-warnings/:tripId — validation/warning contributions from plugins
@@ -29,7 +31,7 @@ const MESSAGE_MAX = 300;
 export class TripWarningsController {
   constructor(
     private readonly hooks: PluginHooks,
-    private readonly dbs: DatabaseService,
+    private readonly trips: TripAccessService,
   ) {}
 
   @Get(':tripId')
@@ -38,9 +40,10 @@ export class TripWarningsController {
     @Req() req: Request & { user?: { id: number } },
   ): Promise<{ warnings: Warning[] }> {
     if (!pluginsEnabled()) return { warnings: [] };
-    const tripId = Number(tripIdRaw);
+    const tripId = toRowId(tripIdRaw);
     const userId = req.user?.id;
-    if (!Number.isFinite(tripId) || userId == null || !this.dbs.canAccessTrip(tripId, userId)) return { warnings: [] };
+    if (tripId === null || userId == null || !(await this.trips.findAccessible(tripId, userId)))
+      return { warnings: [] };
 
     const ids = this.hooks.providersOf('warningProvider');
     const perProvider = await Promise.all(
@@ -51,13 +54,16 @@ export class TripWarningsController {
           // Drop non-object elements BEFORE the cap — otherwise one null in the array
           // throws inside map() and the catch below discards ALL of this provider's
           // warnings (and the cap should count only valid entries anyway).
-          return list.filter((w): w is Record<string, unknown> => !!w && typeof w === 'object').slice(0, MAX_WARNINGS).map((w) => ({
-            pluginId: id,
-            level: w.level === 'error' || w.level === 'info' ? (w.level as Level) : 'warning',
-            message: stripEmoji(String(w.message ?? '')).slice(0, MESSAGE_MAX),
-            dayId: typeof w.dayId === 'number' ? w.dayId : undefined,
-            placeId: typeof w.placeId === 'number' ? w.placeId : undefined,
-          }));
+          return list
+            .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object')
+            .slice(0, MAX_WARNINGS)
+            .map((w) => ({
+              pluginId: id,
+              level: w.level === 'error' || w.level === 'info' ? (w.level as Level) : 'warning',
+              message: stripEmoji(String(w.message ?? '')).slice(0, MESSAGE_MAX),
+              dayId: typeof w.dayId === 'number' ? w.dayId : undefined,
+              placeId: typeof w.placeId === 'number' ? w.placeId : undefined,
+            }));
         } catch {
           return []; // a slow / failing provider contributes nothing
         }

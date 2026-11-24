@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import type { StoreApi } from 'zustand'
-import { tripsApi, tagsApi, categoriesApi } from '../api/client'
+import { tagsApi, categoriesApi } from '../api/client'
 import { offlineDb } from '../db/offlineDb'
-import { tripRepo } from '../repo/tripRepo'
+import { tripRepo, TripNeedsConnectionError } from '../repo/tripRepo'
 import { dayRepo } from '../repo/dayRepo'
 import { placeRepo } from '../repo/placeRepo'
 import { packingRepo } from '../repo/packingRepo'
@@ -10,6 +10,7 @@ import { todoRepo } from '../repo/todoRepo'
 import { budgetRepo } from '../repo/budgetRepo'
 import { reservationRepo } from '../repo/reservationRepo'
 import { fileRepo } from '../repo/fileRepo'
+import { tripTagRepo } from '../repo/tripTagRepo'
 import { isEffectivelyOnline } from '../sync/networkMode'
 import { createPlacesSlice } from './slices/placesSlice'
 import { createAssignmentsSlice } from './slices/assignmentsSlice'
@@ -20,6 +21,7 @@ import { createTodoSlice } from './slices/todoSlice'
 import { createBudgetSlice } from './slices/budgetSlice'
 import { createReservationsSlice } from './slices/reservationsSlice'
 import { createFilesSlice } from './slices/filesSlice'
+import { createTripTagsSlice } from './slices/tripTagsSlice'
 import { handleRemoteEvent } from './slices/remoteEventHandler'
 import type {
   Trip, Day, Place, Assignment, DayNote, PackingItem, TodoItem,
@@ -36,6 +38,24 @@ import type { TodoSlice } from './slices/todoSlice'
 import type { BudgetSlice } from './slices/budgetSlice'
 import type { ReservationsSlice } from './slices/reservationsSlice'
 import type { FilesSlice } from './slices/filesSlice'
+import type { TripTagsSlice } from './slices/tripTagsSlice'
+import type { PlacesRatingFloor } from '../utils/placesFilter'
+
+/** The part of the world the trip's plan map shows, as its last move left it. */
+export interface PlanMapViewport {
+  tripId: number
+  south: number
+  west: number
+  north: number
+  east: number
+}
+
+/** The open trip went away under this tab, and why. */
+export interface TripGone {
+  tripId: number
+  /** Deleted by someone else, or this user is no longer one of its members. */
+  reason: 'deleted' | 'removed'
+}
 
 export interface TripStoreState
   extends PlacesSlice,
@@ -46,7 +66,8 @@ export interface TripStoreState
     TodoSlice,
     BudgetSlice,
     ReservationsSlice,
-    FilesSlice {
+    FilesSlice,
+    TripTagsSlice {
   trip: Trip | null
   days: Day[]
   places: Place[]
@@ -65,20 +86,53 @@ export interface TripStoreState
   // unmounts and remounts (#1541).
   placesFilter: string
   placesCategoryFilter: Set<string>
+  // Minimum average stars. Shared for the same reason: the map markers and the
+  // phone's list follow the floor the desktop list sets, and back (#1435).
+  placesRatingFilter: PlacesRatingFloor
+  // Where the plan map is looking, so the place search can look there too
+  // (#2620). Null while no plan map is on screen.
+  planMapViewport: PlanMapViewport | null
   isLoading: boolean
   error: string | null
+  /**
+   * Set by the remote handler when the open trip was deleted elsewhere or this
+   * user was taken off it (or left it in another tab). The planner says so and
+   * goes back to the trip list; nothing else reads it.
+   */
+  tripGone: TripGone | null
+  guestIdentityRevision: number
 
   setSelectedDay: (dayId: number | null) => void
   setPlacesFilter: (filter: string) => void
   setPlacesCategoryFilter: (categoryIds: Set<string>) => void
+  setPlacesRatingFilter: (floor: PlacesRatingFloor) => void
+  setPlanMapViewport: (viewport: PlanMapViewport | null) => void
+  /** Lifts the pool, category and rating filters at once. */
+  resetPlacesFilters: () => void
   handleRemoteEvent: (event: WebSocketEvent) => void
   resetTrip: () => void
   loadTrip: (tripId: number | string) => Promise<void>
   hydrateActiveTrip: (tripId: number | string) => Promise<void>
+  refreshTransferredGuest: (tripId: number | string, origin?: 'local' | 'remote') => void
   refreshDays: (tripId: number | string) => Promise<void>
   updateTrip: (tripId: number | string, data: Partial<Trip> & { date_shift_mode?: 'keep_bookings' | 'shift_all' }) => Promise<Trip>
   addTag: (data: Partial<Tag> & { name: string }) => Promise<Tag>
   addCategory: (data: Partial<Category> & { name: string }) => Promise<Category>
+  /** Reads the user's tags again after they changed elsewhere (`tags:changed`). */
+  reloadTags: () => Promise<void>
+  /** Reads the packing list again, for a change no item event describes (a template applied). */
+  reloadPackingItems: (tripId: number | string) => Promise<void>
+  clearTripGone: () => void
+}
+
+/**
+ * What a section reads as when the trip has its addon switched off: the server
+ * answers 404 ("Lists addon is not enabled") for it, which is no reason to fail
+ * the whole trip. Any other failure is rethrown as before.
+ */
+function emptyWhenAddonOff<T>(err: unknown, empty: T): T {
+  if ((err as { response?: { status?: number } } | null)?.response?.status === 404) return empty
+  throw err
 }
 
 export const useTripStore = create<TripStoreState>((set, get) => ({
@@ -97,18 +151,25 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   selectedDayId: null,
   placesFilter: 'all',
   placesCategoryFilter: new Set<string>(),
+  placesRatingFilter: 'all',
+  planMapViewport: null,
   isLoading: false,
   error: null,
+  tripGone: null,
+  guestIdentityRevision: 0,
 
   setSelectedDay: (dayId: number | null) => set({ selectedDayId: dayId }),
   setPlacesFilter: (filter: string) => set({ placesFilter: filter }),
   setPlacesCategoryFilter: (categoryIds: Set<string>) => set({ placesCategoryFilter: categoryIds }),
+  setPlacesRatingFilter: (floor: PlacesRatingFloor) => set({ placesRatingFilter: floor }),
+  setPlanMapViewport: (viewport: PlanMapViewport | null) => set({ planMapViewport: viewport }),
+  resetPlacesFilters: () => set({ placesFilter: 'all', placesCategoryFilter: new Set<string>(), placesRatingFilter: 'all' }),
 
   handleRemoteEvent: (event: WebSocketEvent) => handleRemoteEvent(set, get, event),
 
   // Clear every trip-scoped slice so switching trips (or losing access to one)
   // can never leave a previous trip's data visible. Global tags/categories are
-  // left intact. Called at the top of loadTrip.
+  // left intact; the trip's own tags go with it. Called at the top of loadTrip.
   resetTrip: () => set({
     trip: null,
     days: [],
@@ -120,26 +181,38 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
     budgetItems: [],
     files: [],
     reservations: [],
+    tripTags: [],
     selectedDayId: null,
     placesFilter: 'all',
     placesCategoryFilter: new Set<string>(),
+    placesRatingFilter: 'all',
+    planMapViewport: null,
     error: null,
+    tripGone: null,
+    guestIdentityRevision: 0,
+    exchangeRatesRevision: 0,
+    budgetSettlementRevision: 0,
   }),
+
+  clearTripGone: () => set({ tripGone: null }),
 
   loadTrip: async (tripId: number | string) => {
     get().resetTrip()
+    const identityRevision = get().guestIdentityRevision
+    const isCurrentIdentity = () => get().guestIdentityRevision === identityRevision
     set({ isLoading: true, error: null })
     try {
-      const [tripData, daysData, placesData, packingData, todoData, budgetData, reservationsData, filesData, tagsData, categoriesData] = await Promise.all([
+      const [tripData, daysData, placesData, packingData, todoData, budgetData, reservationsData, filesData, tagsData, categoriesData, tripTagsData] = await Promise.all([
         tripRepo.get(tripId),
         dayRepo.list(tripId),
         placeRepo.list(tripId),
-        packingRepo.list(tripId),
-        todoRepo.list(tripId),
+        // A trip with Lists switched off answers 404 for both; the trip still opens, without them.
+        packingRepo.list(tripId).catch(err => emptyWhenAddonOff(err, { items: [] as PackingItem[] })),
+        todoRepo.list(tripId).catch(err => emptyWhenAddonOff(err, { items: [] as TodoItem[] })),
         // Budget / reservations / files are hydrated here too so the offline
         // path is uniform (no separate tab-gated effects). Non-fatal: a failure
         // in any of these must not blank the whole trip.
-        budgetRepo.list(tripId).catch(() => ({ items: [] as BudgetItem[] })),
+        budgetRepo.list(tripId, isCurrentIdentity).catch(() => ({ items: [] as BudgetItem[] })),
         reservationRepo.list(tripId).catch(() => ({ reservations: [] as Reservation[] })),
         fileRepo.list(tripId).catch(() => ({ files: [] as TripFile[] })),
         isEffectivelyOnline()
@@ -148,6 +221,9 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         isEffectivelyOnline()
           ? categoriesApi.list().catch(() => offlineDb.categories.toArray().then(categories => ({ categories })))
           : offlineDb.categories.toArray().then(categories => ({ categories })),
+        // The trip's own tags, non-fatal like the three above: without them the
+        // places still show the tags they carry.
+        tripTagRepo.list(tripId).catch(() => ({ tags: [] as Tag[] })),
       ])
 
       const assignmentsMap: AssignmentsMap = {}
@@ -165,11 +241,12 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
         dayNotes: dayNotesMap,
         packingItems: packingData.items,
         todoItems: todoData.items,
-        budgetItems: budgetData.items,
+        ...(isCurrentIdentity() && { budgetItems: budgetData.items }),
         reservations: reservationsData.reservations,
         files: filesData.files,
         tags: tagsData.tags,
         categories: categoriesData.categories,
+        tripTags: tripTagsData.tags,
         isLoading: false,
       })
     } catch (err: unknown) {
@@ -184,18 +261,32 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   // offline appear in place — no splash, no resetTrip. Each resource is
   // best-effort; a failure on one must not wipe the others.
   hydrateActiveTrip: async (tripId: number | string) => {
+    const identityRevision = get().guestIdentityRevision
+    const isCurrent = () => String(get().trip?.id) === String(tripId) && get().guestIdentityRevision === identityRevision
     await Promise.all([
       get().refreshDays(tripId),
-      placeRepo.list(tripId).then(d => set({ places: d.places })).catch(() => {}),
-      packingRepo.list(tripId).then(d => set({ packingItems: d.items })).catch(() => {}),
-      todoRepo.list(tripId).then(d => set({ todoItems: d.items })).catch(() => {}),
+      placeRepo.list(tripId).then(d => { if (isCurrent()) set({ places: d.places }) }).catch(() => {}),
+      packingRepo.list(tripId).then(d => { if (isCurrent()) set({ packingItems: d.items }) }).catch(() => {}),
+      todoRepo.list(tripId).then(d => { if (isCurrent()) set({ todoItems: d.items }) }).catch(() => {}),
       get().loadBudgetItems(tripId),
       get().loadReservations(tripId),
       get().loadFiles(tripId),
+      get().loadTripTags(tripId),
     ])
     // Accommodations live in planner-local state, not this store — nudge the
     // planner to reload them too (e.g. a trip date change made while offline).
     window.dispatchEvent(new CustomEvent('accommodations:refresh'))
+  },
+
+  refreshTransferredGuest: (tripId, origin = 'local') => {
+    if (String(get().trip?.id) !== String(tripId)) return
+    set(state => ({
+      guestIdentityRevision: state.guestIdentityRevision + 1,
+      ...(origin === 'local' && { budgetSettlementRevision: state.budgetSettlementRevision + 1 }),
+    }))
+    void get().hydrateActiveTrip(tripId).catch(error => {
+      console.warn('Could not refresh the trip after guest identity transfer', error)
+    })
   },
 
   refreshDays: async (tripId: number | string) => {
@@ -216,7 +307,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   updateTrip: async (tripId: number | string, data: Partial<Trip> & { date_shift_mode?: 'keep_bookings' | 'shift_all' }) => {
     try {
       const before = get().trip
-      const result = await tripsApi.update(tripId, data)
+      const result = await tripRepo.update(tripId, data)
       set({ trip: result.trip })
       // New dates rebuild the day rows, and a stay on a day that went is gone
       // with it. Stays live in the planner, not here, so every caller of this
@@ -239,6 +330,7 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
       await get().loadReservations(tripId)
       return result.trip
     } catch (err: unknown) {
+      if (err instanceof TripNeedsConnectionError) throw err
       throw new Error(getApiErrorMessage(err, 'Error updating trip'))
     }
   },
@@ -250,6 +342,28 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
       return result.tag
     } catch (err: unknown) {
       throw new Error(getApiErrorMessage(err, 'Error creating tag'))
+    }
+  },
+
+  // Online only: offline the cached tags are all there is, and the change that
+  // pinged us is not readable anyway. A failed read keeps the tags on screen.
+  reloadTags: async () => {
+    if (!isEffectivelyOnline()) return
+    try {
+      const { tags } = await tagsApi.list()
+      set({ tags })
+    } catch {
+      // The next trip load reads them again.
+    }
+  },
+
+  // Through the repo like loadTrip, so the offline cache follows the new list.
+  reloadPackingItems: async (tripId: number | string) => {
+    try {
+      const { items } = await packingRepo.list(tripId)
+      if (String(get().trip?.id) === String(tripId)) set({ packingItems: items })
+    } catch {
+      // The list on screen stays; the next reload or reconnect catches up.
     }
   },
 
@@ -272,4 +386,5 @@ export const useTripStore = create<TripStoreState>((set, get) => ({
   ...createBudgetSlice(set, get),
   ...createReservationsSlice(set, get),
   ...createFilesSlice(set, get),
+  ...createTripTagsSlice(set, get),
 }))

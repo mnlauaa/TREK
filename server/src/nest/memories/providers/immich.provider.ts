@@ -1,10 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import type { Response } from 'express';
 import { ImmichService } from '../immich.service';
 import { fail, success, type AssetInfo, type ServiceResult } from '../memories.helpers';
-import type {
-  PhotoAssetKind, PhotoAssetRef, PhotoBytes, PhotoFetchError, PhotoProvider,
-} from '../photo-provider';
+import type { PhotoAssetKind, PhotoAssetRef, PhotoBytes, PhotoFetchError, PhotoProvider } from '../photo-provider';
+import { Injectable } from '@nestjs/common';
+
+import type { Response } from 'express';
 
 /**
  * Immich behind the PhotoProvider interface.
@@ -24,6 +23,7 @@ export class ImmichPhotoProvider implements PhotoProvider {
     return this.immich.streamImmichAsset(res, ref.userId, ref.assetId, kind, ref.ownerId, {
       mediaType: ref.mediaType,
       range: ref.range,
+      publicView: ref.audience === 'public',
     });
   }
 

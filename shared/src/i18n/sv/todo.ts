@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'Ingen lista',
   'todo.namePlaceholder': 'Uppgiftsnamn',
   'todo.descriptionPlaceholder': 'Beskrivning (valfritt)',
+  'todo.editDescription': 'Klicka för att redigera, länkar öppnas direkt',
   'todo.unassigned': 'Ej tilldelad',
   'todo.noCategory': 'Ingen lista',
   'todo.hasDescription': 'Har beskrivning',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Prioritet',
   'todo.detail.noPriority': 'Ingen',
   'todo.detail.create': 'Skapa uppgift',
+  'todo.progressCount': '{done} av {total} klara',
+  'todo.allDone': 'Allt klart!',
+  'todo.filter.myShort': 'Mina',
 };
 export default todo;

@@ -1,4 +1,6 @@
 import { maybe_encrypt_api_key, decrypt_api_key } from '../common/crypto/apiKeyCrypto';
+import type { StructuredReader } from './llm-provider.interface';
+import { asLlmVision, type LlmVision } from '@trek/shared';
 
 /**
  * Shared types + helpers for the `llm_parsing` addon configuration.
@@ -15,14 +17,31 @@ import { maybe_encrypt_api_key, decrypt_api_key } from '../common/crypto/apiKeyC
 
 export type LlmProvider = 'local' | 'openai' | 'anthropic';
 
-/** Fully-resolved config the clients consume. */
-export interface ResolvedLlmConfig {
+/** A provider called with a key (or none, on a local server) at an address: what an admin can configure. */
+export interface ApiLlmConfig {
   provider: LlmProvider;
   model: string;
   baseUrl?: string;
   apiKey?: string;
-  multimodal: boolean;
+  vision: LlmVision;
 }
+
+/**
+ * A ChatGPT plan the AI connection lends: it signs in instead of holding a key,
+ * so it has no address or key here and is read through `read`. Never stored in
+ * the addon config, only resolved from the shared connection.
+ */
+interface PlanLlmConfig {
+  provider: 'chatgpt';
+  model: string;
+  read: StructuredReader;
+  vision: LlmVision;
+  baseUrl?: undefined;
+  apiKey?: undefined;
+}
+
+/** Fully-resolved config the clients consume. */
+export type ResolvedLlmConfig = ApiLlmConfig | PlanLlmConfig;
 
 /** Shape of the admin instance config stored in `addons.config` (apiKey encrypted). */
 export interface LlmAddonConfig {
@@ -30,7 +49,11 @@ export interface LlmAddonConfig {
   model?: string;
   baseUrl?: string;
   apiKey?: string;
-  multimodal?: boolean;
+  /**
+   * Replaces `multimodal`, which the admin screens wrote as `false` on every
+   * save whatever the model: a stored `false` means nothing, so it is not read.
+   */
+  vision?: LlmVision;
 }
 
 export const LLM_PROVIDERS: LlmProvider[] = ['local', 'openai', 'anthropic'];
@@ -46,6 +69,13 @@ export function prepareLlmAddonConfigForWrite(
   existingStored: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...incoming };
+  if ('vision' in incoming) out.vision = asLlmVision(incoming.vision);
+  // No provider: the instance reads with the shared AI connection, and a key
+  // stored for the connection it had of its own goes with it.
+  if (!incoming.provider) {
+    delete out.apiKey;
+    return out;
+  }
   const key = incoming.apiKey;
   if (key === undefined || key === null || key === '' || key === MASKED_VALUE) {
     // Keep the existing encrypted key untouched (mask echoed or no key supplied).

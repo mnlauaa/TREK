@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
-
-import { OVERPASS_TIMEOUT_DEFAULT_MS } from '../../../src/nest/maps/maps.helpers';
-
+import {
+  deriveHttpBoot,
+  deriveKitinerary,
+  deriveMailIngest,
+  deriveServices,
+  deriveStorage,
+  deriveTransit,
+} from '../../../src/app-config/boot-derive';
 import {
   deriveApp,
   deriveHttp,
@@ -14,10 +18,16 @@ import {
   derivePlugins,
   deriveIntegrations,
   deriveBackup,
+  deriveDb,
+  deriveFiles,
   deriveNet,
   derivePaths,
+  derivePush,
   deriveAll,
 } from '../../../src/app-config/derive';
+import { OVERPASS_TIMEOUT_DEFAULT_MS } from '../../../src/nest/maps/maps.helpers';
+
+import { describe, it, expect } from 'vitest';
 
 // These tests PIN the exact legacy coercions each derived field replaced.
 // If one fails after an edit, the edit changed runtime behavior — fix the
@@ -64,20 +74,25 @@ describe('deriveHttp', () => {
     expect(deriveHttp({}).wsOrigins).toBeNull();
   });
 
-  it('TRUST_PROXY: numeric hop count wins, 1 only as fallback (globalMiddleware)', () => {
-    expect(deriveHttp({ TRUST_PROXY: '2' }).trustProxy).toBe(2);
+  it('TRUST_PROXY: numeric hop count wins, 1 only as fallback (globalMiddleware, httpConfig token)', () => {
+    expect(deriveHttpBoot({ TRUST_PROXY: '2' }).trustProxy).toBe(2);
     // 0 is a valid hop count ("trust no proxy"), not a missing value.
-    expect(deriveHttp({ TRUST_PROXY: '0' }).trustProxy).toBe(0);
-    expect(deriveHttp({ TRUST_PROXY: 'abc' }).trustProxy).toBe(1);
-    expect(deriveHttp({}).trustProxy).toBe(1);
+    expect(deriveHttpBoot({ TRUST_PROXY: '0' }).trustProxy).toBe(0);
+    expect(deriveHttpBoot({ TRUST_PROXY: 'abc' }).trustProxy).toBe(1);
+    expect(deriveHttpBoot({}).trustProxy).toBe(1);
+  });
+
+  it("HTTP_KEEP_ALIVE_TIMEOUT_MS: 95 s unless set (above nginx's 60 s and Traefik's 90 s idle timeout)", () => {
+    expect(deriveHttpBoot({}).keepAliveTimeoutMs).toBe(95_000);
+    expect(deriveHttpBoot({ HTTP_KEEP_ALIVE_TIMEOUT_MS: '120000' }).keepAliveTimeoutMs).toBe(120_000);
   });
 
   it('boolean switches accept the whole boolean-like family (unified semantics)', () => {
     expect(deriveHttp({ FORCE_HTTPS: 'TRUE' }).forceHttps).toBe(true);
     expect(deriveHttp({ FORCE_HTTPS: 'on' }).forceHttps).toBe(true);
-    expect(deriveHttp({ HSTS_INCLUDE_SUBDOMAINS: 'TRUE' }).hstsIncludeSubdomains).toBe(true);
-    expect(deriveHttp({ HSTS_INCLUDE_SUBDOMAINS: '1' }).hstsIncludeSubdomains).toBe(true);
-    expect(deriveHttp({ HSTS_INCLUDE_SUBDOMAINS: 'off' }).hstsIncludeSubdomains).toBe(false);
+    expect(deriveHttpBoot({ HSTS_INCLUDE_SUBDOMAINS: 'TRUE' }).hstsIncludeSubdomains).toBe(true);
+    expect(deriveHttpBoot({ HSTS_INCLUDE_SUBDOMAINS: '1' }).hstsIncludeSubdomains).toBe(true);
+    expect(deriveHttpBoot({ HSTS_INCLUDE_SUBDOMAINS: 'off' }).hstsIncludeSubdomains).toBe(false);
   });
 
   it('COOKIE_SECURE is tri-state: explicit falsy disables, anything else auto-detects', () => {
@@ -143,6 +158,12 @@ describe('deriveOidc', () => {
     expect(deriveOidc({}).scope).toBe('openid email profile');
     expect(deriveOidc({}).adminClaim).toBe('groups');
     expect(deriveOidc({ OIDC_ADMIN_CLAIM: 'roles' }).adminClaim).toBe('roles');
+  });
+
+  it('usernameClaim stays unset unless a claim is named (#1677)', () => {
+    expect(deriveOidc({}).usernameClaim).toBeUndefined();
+    expect(deriveOidc({ OIDC_USERNAME_CLAIM: '   ' }).usernameClaim).toBeUndefined();
+    expect(deriveOidc({ OIDC_USERNAME_CLAIM: ' preferred_username ' }).usernameClaim).toBe('preferred_username');
   });
 
   it('OIDC_ONLY coerces the boolean-like family', () => {
@@ -214,10 +235,15 @@ describe('derivePlugins', () => {
 });
 
 describe('deriveIntegrations', () => {
-  it('pins unsplash trim, transit base strip + default, nominatim trim + default, overpass timeout', () => {
+  it('reads FLIGHT_LIVE_ENABLED as the setting spells it, unset or unparseable as no word at all', () => {
+    expect(deriveIntegrations({}).flightLiveEnabled).toBeUndefined();
+    expect(deriveIntegrations({ FLIGHT_LIVE_ENABLED: 'off' }).flightLiveEnabled).toBe('false');
+    expect(deriveIntegrations({ FLIGHT_LIVE_ENABLED: ' YES ' }).flightLiveEnabled).toBe('true');
+    expect(deriveIntegrations({ FLIGHT_LIVE_ENABLED: 'maybe' }).flightLiveEnabled).toBeUndefined();
+  });
+
+  it('pins unsplash trim, nominatim trim + default, overpass timeout', () => {
     expect(deriveIntegrations({ UNSPLASH_ACCESS_KEY: ' key ' }).unsplashAccessKey).toBe('key');
-    expect(deriveIntegrations({}).transitApiBase).toBe('https://api.transitous.org');
-    expect(deriveIntegrations({ TRANSIT_API_URL: 'https://t.example//' }).transitApiBase).toBe('https://t.example');
     expect(deriveIntegrations({}).nominatimUrl).toBe('https://nominatim.openstreetmap.org');
     // Padded and whitespace-only both come back from a compose file or a ConfigMap,
     // and the schema already called the second one unset.
@@ -231,10 +257,111 @@ describe('deriveIntegrations', () => {
     expect(deriveIntegrations({ OVERPASS_TIMEOUT_MS: '-1' }).overpassTimeoutMs).toBe(OVERPASS_TIMEOUT_DEFAULT_MS);
   });
 
+  it('says whether the operator set a Nominatim of their own, which keeps search off Photon', () => {
+    expect(deriveIntegrations({}).nominatimOwn).toBe(false);
+    expect(deriveIntegrations({ NOMINATIM_URL: '   ' }).nominatimOwn).toBe(false);
+    expect(deriveIntegrations({ NOMINATIM_URL: 'http://nominatim:8080' }).nominatimOwn).toBe(true);
+    // The public address spelled out is still a choice the operator made.
+    expect(deriveIntegrations({ NOMINATIM_URL: 'https://nominatim.openstreetmap.org' }).nominatimOwn).toBe(true);
+  });
+
   it('floors the LLM ceiling to a whole number — undici rejects a fractional headersTimeout', () => {
     expect(deriveIntegrations({}).llmTimeoutMs).toBe(900_000);
     expect(deriveIntegrations({ LLM_TIMEOUT_MS: '-1' }).llmTimeoutMs).toBe(900_000);
     expect(deriveIntegrations({ LLM_TIMEOUT_MS: '60000.5' }).llmTimeoutMs).toBe(60_000);
+  });
+
+  it('leaves the LLM answer cap to each client unless one is set (#2677)', () => {
+    expect(deriveIntegrations({}).llmMaxOutputTokens).toBeUndefined();
+    expect(deriveIntegrations({ LLM_MAX_OUTPUT_TOKENS: '' }).llmMaxOutputTokens).toBeUndefined();
+    expect(deriveIntegrations({ LLM_MAX_OUTPUT_TOKENS: '16384' }).llmMaxOutputTokens).toBe(16384);
+  });
+});
+
+describe('deriveTransit (transitConfig token)', () => {
+  it('TRANSIT_API_URL: trailing slashes stripped, Transitous unless set', () => {
+    expect(deriveTransit({}).apiBase).toBe('https://api.transitous.org');
+    expect(deriveTransit({ TRANSIT_API_URL: 'https://t.example//' }).apiBase).toBe('https://t.example');
+  });
+});
+
+describe('deriveKitinerary (kitineraryConfig token)', () => {
+  const sep = process.platform === 'win32' ? ';' : ':';
+
+  it('KITINERARY_EXTRACTOR_PATH passes through as given, unset stays unset', () => {
+    expect(deriveKitinerary({}).extractorPath).toBeUndefined();
+    expect(deriveKitinerary({ KITINERARY_EXTRACTOR_PATH: '/opt/ki' }).extractorPath).toBe('/opt/ki');
+  });
+
+  it('splits PATH (or the Windows Path) on the platform delimiter and drops blank entries', () => {
+    expect(deriveKitinerary({ PATH: ['/a', ' /b ', '', '/c'].join(sep) }).searchPath).toEqual(['/a', '/b', '/c']);
+    expect(deriveKitinerary({ Path: ['/w1', '/w2'].join(sep) }).searchPath).toEqual(['/w1', '/w2']);
+    expect(deriveKitinerary({}).searchPath).toEqual([]);
+  });
+});
+
+describe('deriveMailIngest (mailIngestConfig token)', () => {
+  it('leaves every value unset unless its variable holds one, trimmed', () => {
+    expect(Object.values(deriveMailIngest({}))).toEqual(Array(9).fill(null));
+    expect(deriveMailIngest({ MAIL_INGEST_IMAP_HOST: '  ', MAIL_INGEST_IMAP_PASS: ' s3cret ' })).toMatchObject({
+      imapHost: null,
+      imapPass: 's3cret',
+    });
+  });
+
+  it('reads the transport and the encryption in lower case', () => {
+    expect(deriveMailIngest({ MAIL_INGEST_TRANSPORT: 'IMAP', MAIL_INGEST_IMAP_TLS: 'StartTLS' })).toMatchObject({
+      transport: 'imap',
+      imapTls: 'starttls',
+    });
+  });
+});
+
+describe('deriveServices (servicesConfig token)', () => {
+  it('registers by itself unless TREK_SERVICES says off, and any value but auto is off', () => {
+    expect(deriveServices({}).mode).toBe('auto');
+    expect(deriveServices({ TREK_SERVICES: ' AUTO ' }).mode).toBe('auto');
+    expect(deriveServices({ TREK_SERVICES: 'off' }).mode).toBe('off');
+    expect(deriveServices({ TREK_SERVICES: 'of' }).mode).toBe('off');
+  });
+
+  it('takes a key from TREK_SERVICES_KEY, trimmed, and no key for a blank one', () => {
+    expect(deriveServices({ TREK_SERVICES_KEY: ' tk1.k.p.s ' }).key).toBe('tk1.k.p.s');
+    expect(deriveServices({ TREK_SERVICES_KEY: '  ' }).key).toBeNull();
+    expect(deriveServices({}).key).toBeNull();
+  });
+
+  it('sends the key to the three liketrek services unless TREK_SERVICES_HOSTS names others', () => {
+    const all = ['places.liketrek.com', 'photon.liketrek.com', 'valhalla.liketrek.com'];
+    expect(deriveServices({}).hosts).toEqual(all);
+    expect(deriveServices({ TREK_SERVICES_HOSTS: 'Places.LikeTrek.com, , photon.liketrek.com' }).hosts).toEqual([
+      'places.liketrek.com',
+      'photon.liketrek.com',
+    ]);
+    expect(deriveServices({ TREK_SERVICES_HOSTS: ' , ' }).hosts).toEqual(all);
+  });
+
+  it('asks photon.liketrek.com unless TREK_PHOTON_URL names another copy, trimmed and without trailing slashes', () => {
+    expect(deriveServices({}).photonUrl).toBe('https://photon.liketrek.com');
+    expect(deriveServices({ TREK_PHOTON_URL: '  ' }).photonUrl).toBe('https://photon.liketrek.com');
+    expect(deriveServices({ TREK_PHOTON_URL: ' https://geo.example.org/photon// ' }).photonUrl).toBe(
+      'https://geo.example.org/photon',
+    );
+  });
+
+  it('relays routing to valhalla.liketrek.com unless TREK_VALHALLA_URL names another, without its trailing slash', () => {
+    expect(deriveServices({}).valhallaUrl).toBe('https://valhalla.liketrek.com');
+    expect(deriveServices({ TREK_VALHALLA_URL: ' http://valhalla.lan:8002/ ' }).valhallaUrl).toBe(
+      'http://valhalla.lan:8002',
+    );
+    expect(deriveServices({ TREK_VALHALLA_URL: '  ' }).valhallaUrl).toBe('https://valhalla.liketrek.com');
+  });
+});
+
+describe('deriveFiles (#1364)', () => {
+  it('defaults the upload limit to 50 MB and takes FILE_UPLOAD_LIMIT_MB', () => {
+    expect(deriveFiles({}).uploadLimitMb).toBe(50);
+    expect(deriveFiles({ FILE_UPLOAD_LIMIT_MB: '200' }).uploadLimitMb).toBe(200);
   });
 });
 
@@ -246,6 +373,64 @@ describe('deriveBackup', () => {
     expect(deriveBackup({}).maxDecompressedMb).toBe(5 * 1024);
     expect(deriveBackup({ ENCRYPTION_KEY: 'x' }).encryptionKeyFromEnv).toBe(true);
   });
+
+  it('reads RESTORE_FROM_BACKUP as a trimmed path, and blank as unset (#1089)', () => {
+    expect(deriveBackup({}).restoreFromBackup).toBeNull();
+    expect(deriveBackup({ RESTORE_FROM_BACKUP: '   ' }).restoreFromBackup).toBeNull();
+    expect(deriveBackup({ RESTORE_FROM_BACKUP: ' /app/data/b.zip ' }).restoreFromBackup).toBe('/app/data/b.zip');
+  });
+});
+
+describe('deriveDb: the pre-migration snapshot', () => {
+  it('leaves the switch undefined when unset, so the caller can default it per environment', () => {
+    expect(deriveDb({}).preMigrateSnapshot).toBeUndefined();
+    expect(deriveDb({ TREK_DB_PRE_MIGRATE_SNAPSHOT: 'off' }).preMigrateSnapshot).toBe(false);
+    expect(deriveDb({ TREK_DB_PRE_MIGRATE_SNAPSHOT: 'TRUE' }).preMigrateSnapshot).toBe(true);
+  });
+
+  it('keeps three copies unless told otherwise, at most a hundred', () => {
+    expect(deriveDb({}).preMigrateSnapshotKeep).toBe(3);
+    expect(deriveDb({ TREK_DB_PRE_MIGRATE_SNAPSHOT_KEEP: '5' }).preMigrateSnapshotKeep).toBe(5);
+    expect(deriveDb({ TREK_DB_PRE_MIGRATE_SNAPSHOT_KEEP: '0' }).preMigrateSnapshotKeep).toBe(3);
+    expect(deriveDb({ TREK_DB_PRE_MIGRATE_SNAPSHOT_KEEP: '500' }).preMigrateSnapshotKeep).toBe(100);
+  });
+});
+
+describe('deriveDb: starting on Postgres beside a SQLite install', () => {
+  it('keeps the refusal unless TREK_DB_IGNORE_SQLITE_FILE is an explicit true', () => {
+    expect(deriveDb({}).ignoreSqliteFile).toBe(false);
+    expect(deriveDb({ TREK_DB_IGNORE_SQLITE_FILE: 'false' }).ignoreSqliteFile).toBe(false);
+    expect(deriveDb({ TREK_DB_IGNORE_SQLITE_FILE: 'yes' }).ignoreSqliteFile).toBe(true);
+    expect(deriveDb({ TREK_DB_IGNORE_SQLITE_FILE: 'true' }).ignoreSqliteFile).toBe(true);
+  });
+});
+
+describe('deriveDb: the engine', () => {
+  it('DB-ENGINE-001: SQLite unless TREK_DB_URL names a database', () => {
+    expect(deriveDb({})).toMatchObject({ engine: 'sqlite' });
+    expect(deriveDb({ TREK_DB_URL: '   ' })).toMatchObject({ engine: 'sqlite' });
+    expect(deriveDb({ TREK_DB_URL: ' postgres://u:p@db:5432/trek ' })).toMatchObject({
+      engine: 'postgres',
+      url: 'postgres://u:p@db:5432/trek',
+    });
+  });
+
+  it('DB-ENGINE-002: a pool of ten connections unless told otherwise, from 1 to 100', () => {
+    const poolMaxOf = (raw: Record<string, string>) => {
+      const db = deriveDb({ TREK_DB_URL: 'postgres://u:p@db:5432/trek', ...raw });
+      return db.engine === 'postgres' ? db.poolMax : null;
+    };
+    expect(deriveDb({ TREK_DB_URL: 'postgres://u:p@db:5432/trek' })).toMatchObject({ engine: 'postgres' });
+    expect(poolMaxOf({})).toBe(10);
+    expect(poolMaxOf({ TREK_DB_POOL_MAX: '25' })).toBe(25);
+    expect(poolMaxOf({ TREK_DB_POOL_MAX: '0' })).toBe(10);
+    expect(poolMaxOf({ TREK_DB_POOL_MAX: '500' })).toBe(100);
+  });
+
+  it('DB-ENGINE-003: no pool size on SQLite, which has no pool', () => {
+    expect(deriveDb({ TREK_DB_POOL_MAX: '25' })).toMatchObject({ engine: 'sqlite' });
+    expect(deriveDb({})).not.toHaveProperty('poolMax');
+  });
 });
 
 describe('deriveNet', () => {
@@ -256,7 +441,9 @@ describe('deriveNet', () => {
   });
 
   it('ALLOW_LINK_LOCAL_IPS keeps only the addresses that may be used', () => {
-    expect(deriveNet({ ALLOW_LINK_LOCAL_IPS: '169.254.1.2,169.254.169.254,bogus' }).allowLinkLocalIps).toEqual(['169.254.1.2']);
+    expect(deriveNet({ ALLOW_LINK_LOCAL_IPS: '169.254.1.2,169.254.169.254,bogus' }).allowLinkLocalIps).toEqual([
+      '169.254.1.2',
+    ]);
     expect(deriveNet({}).allowLinkLocalIps).toEqual([]);
   });
 });
@@ -264,9 +451,9 @@ describe('deriveNet', () => {
 describe('derivePaths', () => {
   it('passes the path vars through raw — defaulting stays at the consumer', () => {
     expect(derivePaths({ TREK_WIKI_DIR: '/w' }).wikiDir).toBe('/w');
-    expect(derivePaths({ TREK_PLACE_PHOTO_DIR: '/p' }).placePhotoDir).toBe('/p');
+    expect(deriveStorage({ TREK_PLACE_PHOTO_DIR: '/p' }).placePhotoDir).toBe('/p');
     expect(derivePaths({}).wikiDir).toBeUndefined();
-    expect(derivePaths({}).placePhotoDir).toBeUndefined();
+    expect(deriveStorage({}).placePhotoDir).toBeUndefined();
   });
 });
 
@@ -276,8 +463,22 @@ describe('deriveAll', () => {
     expect(env.app.port).toBe(4000);
     expect(env.demo.enabled).toBe(true);
     for (const ns of [
-      'app', 'http', 'session', 'demo', 'adminBootstrap', 'oidc', 'smtp', 'mcp',
-      'plugins', 'webauthn', 'integrations', 'backup', 'db', 'paths', 'net',
+      'app',
+      'http',
+      'session',
+      'demo',
+      'adminBootstrap',
+      'oidc',
+      'smtp',
+      'mcp',
+      'plugins',
+      'webauthn',
+      'integrations',
+      'backup',
+      'db',
+      'paths',
+      'net',
+      'push',
     ] as const) {
       expect(env[ns]).toBeDefined();
     }
@@ -299,6 +500,14 @@ describe('deriveMaps', () => {
     }
   });
 
+  it('TREK_PLACES_CONTRIBUTE leaves the choice to an admin unless it says off, and fails closed on anything else', () => {
+    expect(deriveMaps({} as never).trekPlacesContribute).toBe('admin');
+    expect(deriveMaps({ TREK_PLACES_CONTRIBUTE: ' Admin ' } as never).trekPlacesContribute).toBe('admin');
+    for (const value of ['off', 'OFF', 'false', 'yes']) {
+      expect(deriveMaps({ TREK_PLACES_CONTRIBUTE: value } as never).trekPlacesContribute, value).toBe('off');
+    }
+  });
+
   it('TREK_PLACES_ENABLED fails open when unset, blank or outside the family', () => {
     // A typo must not silently drop a whole install back to Nominatim, whose
     // usage policy forbids what TREK was doing with it. Outside the family the
@@ -307,5 +516,19 @@ describe('deriveMaps', () => {
     for (const value of ['', '  ', 'maybe', 'fasle']) {
       expect(deriveMaps({ TREK_PLACES_ENABLED: value } as never).trekPlacesEnabled, value).toBe(true);
     }
+  });
+});
+
+describe('derivePush', () => {
+  it('passes the VAPID_* values through trimmed, blank counting as unset', () => {
+    expect(derivePush({})).toEqual({ vapidPublicKey: undefined, vapidPrivateKey: undefined, vapidSubject: undefined });
+    expect(
+      derivePush({ VAPID_PUBLIC_KEY: ' BPub ', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: ' mailto:ops@example.com ' }),
+    ).toEqual({ vapidPublicKey: 'BPub', vapidPrivateKey: 'priv', vapidSubject: 'mailto:ops@example.com' });
+    expect(derivePush({ VAPID_PUBLIC_KEY: '   ', VAPID_SUBJECT: '' })).toEqual({
+      vapidPublicKey: undefined,
+      vapidPrivateKey: undefined,
+      vapidSubject: undefined,
+    });
   });
 });

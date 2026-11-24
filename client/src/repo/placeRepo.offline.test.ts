@@ -1,4 +1,4 @@
-// FE-REPO-PLACE-001 to FE-REPO-PLACE-013
+// FE-REPO-PLACE-001 to FE-REPO-PLACE-013, FE-REPO-PLACE-030 to FE-REPO-PLACE-032
 // Offline write paths (mutation queue + optimistic Dexie rows) and the bulk
 // online paths, which tests/unit/repo/placeRepo.test.ts does not touch.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { server } from '../../tests/helpers/msw/server'
 import { placeRepo } from './placeRepo'
 import { offlineDb, clearAll } from '../db/offlineDb'
 import type { QueuedMutation } from '../db/offlineDb'
-import { buildPlace } from '../../tests/helpers/factories'
+import { buildPlace, buildTag } from '../../tests/helpers/factories'
 
 function setOnline(v: boolean): void {
   Object.defineProperty(navigator, 'onLine', { value: v, writable: true, configurable: true })
@@ -48,6 +48,52 @@ describe('placeRepo.create — offline', () => {
     expect(mutation.tempId).toBe(place.id)
     expect(mutation.status).toBe('pending')
     expect(mutation.body).toEqual({ name: 'Park Güell' })
+  })
+})
+
+describe('placeRepo — field origins offline', () => {
+  it('FE-REPO-PLACE-030: the queued body carries fieldOrigins for the replay, the optimistic row does not', async () => {
+    const { place } = await placeRepo.create(3, { name: 'Cafe', website: 'https://cafe.example', fieldOrigins: { website: 'user' } })
+    const cached = await offlineDb.places.get(place.id)
+    expect(cached).not.toHaveProperty('fieldOrigins')
+    expect(place).not.toHaveProperty('fieldOrigins')
+
+    await placeRepo.update(3, place.id, { phone: '+49 1', fieldOrigins: { phone: 'user' } })
+    const mutations = await queue()
+    expect(mutations.find(m => m.method === 'POST')?.body).toEqual({ name: 'Cafe', website: 'https://cafe.example', fieldOrigins: { website: 'user' } })
+    expect(mutations.find(m => m.method === 'PUT')?.body).toEqual({ phone: '+49 1', fieldOrigins: { phone: 'user' } })
+    expect(await offlineDb.places.get(place.id)).not.toHaveProperty('fieldOrigins')
+  })
+})
+
+describe('placeRepo — tags offline', () => {
+  it('FE-REPO-PLACE-031: the queued body names the tags by id, the optimistic row carries the tags themselves', async () => {
+    const monument = buildTag({ id: 7, trip_id: 3, name: 'Monument' })
+    await offlineDb.tripTags.put({ tripId: 3, tags: [monument] })
+
+    const { place } = await placeRepo.create(3, { name: 'Belem Tower', tags: [7, 99] })
+
+    // The trip's tag as the device knows it; an id it does not know shows nothing until the sync.
+    expect(place.tags).toEqual([monument])
+    expect((await offlineDb.places.get(place.id))?.tags).toEqual([monument])
+    expect((await queue())[0].body).toEqual({ name: 'Belem Tower', tags: [7, 99] })
+  })
+
+  it('FE-REPO-PLACE-032: an update keeps a tag of the place the trip does not list, and a write without tags leaves them', async () => {
+    const zone = buildTag({ id: 8, trip_id: 3, name: 'Zone' })
+    await offlineDb.tripTags.put({ tripId: 3, tags: [zone] })
+    const personal = { id: 50, name: 'Hidden gem', color: '#f59e0b' }
+    await offlineDb.places.put(buildPlace({ id: 12, trip_id: 3, tags: [personal] }))
+
+    const tagged = await placeRepo.update(3, 12, { tags: [50, 8] })
+    expect(tagged.place.tags).toEqual([personal, zone])
+
+    const renamed = await placeRepo.update(3, 12, { name: 'Renamed' })
+    expect(renamed.place.tags).toEqual([personal, zone])
+
+    const cleared = await placeRepo.update(3, 12, { tags: [] })
+    expect(cleared.place.tags).toEqual([])
+    expect((await offlineDb.places.get(12))?.tags).toEqual([])
   })
 })
 

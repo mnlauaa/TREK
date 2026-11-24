@@ -1,5 +1,5 @@
-export type Display  = 'modal' | 'banner' | 'toast';
-export type Severity = 'info'  | 'warn'   | 'critical';
+export type Display = 'modal' | 'banner' | 'toast';
+export type Severity = 'info' | 'warn' | 'critical';
 
 export type NoticeCondition =
   | { kind: 'firstLogin' }
@@ -24,8 +24,8 @@ export interface NoticeMedia {
 }
 
 export type NoticeCta =
-  | { kind: 'nav';    labelKey: string; href: string }
-  | { kind: 'link';   labelKey: string; href: string }  // external URL, opens in a new tab
+  | { kind: 'nav'; labelKey: string; href: string }
+  | { kind: 'link'; labelKey: string; href: string } // external URL, opens in a new tab
   | { kind: 'action'; labelKey: string; actionId: string; dismissOnAction?: boolean };
 
 export interface NoticeReleaseFeature {
@@ -63,6 +63,8 @@ export interface NoticeRelease {
     bodyAfterKey: string;
     closingKey: string;
   };
+  /** Labels the support footer as a card like the promise; without it the footer is a plain line. */
+  supportLabelKey?: string;
   supportLeadKey: string;
   supportTextKey: string;
 }
@@ -79,6 +81,7 @@ export interface SystemNotice {
   highlights?: Array<{ labelKey: string; iconName?: string }>;
   cta?: NoticeCta;
   secondaryCta?: NoticeCta;
+  tertiaryCta?: NoticeCta;
   /** Set to render the two-column release modal rather than the generic body. */
   release?: NoticeRelease;
   // Hide this notice on small/mobile viewports (evaluated client-side).
@@ -95,4 +98,7 @@ export interface SystemNotice {
 }
 
 // DTO sent to client (same shape minus the conditions — server evaluates those)
-export type SystemNoticeDTO = Omit<SystemNotice, 'conditions' | 'publishedAt' | 'minVersion' | 'maxVersion' | 'priority' | 'recurring'>;
+export type SystemNoticeDTO = Omit<
+  SystemNotice,
+  'conditions' | 'publishedAt' | 'minVersion' | 'maxVersion' | 'priority' | 'recurring'
+>;

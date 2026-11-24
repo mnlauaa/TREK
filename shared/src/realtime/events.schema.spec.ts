@@ -16,9 +16,15 @@ import { describe, it, expect } from 'vitest';
  */
 const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'roadtripPreferences:changed': { preferences: { roadtrip_day_start: '08:00' } },
+  'tripAddons:changed': {
+    addons: [{ id: 'budget', name: 'Costs', icon: 'Wallet', enabled: false, instanceEnabled: true, overridden: true }],
+  },
   'place:created': { place: { id: 3, name: 'Louvre' } },
   'place:updated': { place: { id: 3, name: 'Louvre' } },
   'place:deleted': { placeId: 3 },
+  'tripTags:changed': {},
+  'tours:changed': { placeIds: [3] },
+  'tours:visits': { assignmentId: 9, visits: [{ assignment_id: 9, station_key: 'abcdef', status: 'visited' }] },
   'assignment:created': { assignment: { id: 9, day_id: 2 } },
   'assignment:updated': { assignment: { id: 9, day_id: 2 } },
   'assignment:deleted': { assignmentId: 9, dayId: 2 },
@@ -52,6 +58,7 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'todo:updated': { item: { id: 4 } },
   'todo:deleted': { itemId: 4 },
   'todo:assignees': { category: 'before', assignees: [1] },
+  'todo:reordered': { orderedIds: [4, 3] },
   'budget:created': { item: { id: 11 } },
   'budget:updated': { item: { id: 11 } },
   'budget:deleted': { itemId: 11 },
@@ -68,6 +75,44 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'reservation:deleted': { reservationId: 6 },
   'reservation:positions': { positions: [{ id: 6, position: 0 }], day_id: 2 },
   'reservation:travelers-updated': { reservationId: 6, travelers: [{ user_id: 1 }] },
+  'flight:live': {
+    flights: [
+      {
+        reservation_id: 6,
+        leg_index: 0,
+        callsign: 'DLH400',
+        flight_number: 'LH 400',
+        service_date: '2026-06-11',
+        origin: { code: 'FRA', name: 'Frankfurt', lat: 50.03, lng: 8.57, timezone: 'Europe/Berlin' },
+        destination: { code: 'JFK', name: 'New York JFK', lat: 40.64, lng: -73.78, timezone: 'America/New_York' },
+        phase: 'airborne',
+        scheduled_departure: '2026-06-11T11:50:00.000Z',
+        scheduled_arrival: '2026-06-11T20:35:00.000Z',
+        departed_at: '2026-06-11T12:14:00.000Z',
+        landed_at: null,
+        estimated_arrival: '2026-06-11T20:51:00.000Z',
+        departure_delay_min: 24,
+        arrival_delay_min: 16,
+        progress: 0.42,
+        distance_total_km: 6200,
+        distance_remaining_km: 3596,
+        position: {
+          lat: 55.1,
+          lng: -20.4,
+          altitude_ft: 37000,
+          ground_speed_kt: 470,
+          track_deg: 285,
+          vertical_rate_fpm: 0,
+          on_ground: false,
+        },
+        aircraft: { registration: 'D-AIXA', type: 'A359' },
+        last_seen_at: '2026-06-11T15:40:00.000Z',
+        fetched_at: '2026-06-11T15:40:10.000Z',
+        stale: false,
+        source: 'adsb.lol',
+      },
+    ],
+  },
   'accommodation:created': { accommodation: { id: 8 } },
   'accommodation:updated': { accommodation: { id: 8 } },
   'accommodation:deleted': { accommodationId: 8 },
@@ -75,7 +120,9 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'trip:deleted': { id: 1 },
   'member:added': { member: { user_id: 2 } },
   'member:removed': { userId: 2 },
-  'guest:identity-transferred': { guestUserId: 7, transferredByUserId: 2 },
+  'guest:identity-transferred': { guestUserId: 2, transferredByUserId: 1 },
+  'member:updated': { member: { id: 2, username: 'Guest Ana' } },
+  'trip:journal:changed': {},
   'docsync:changed': { linkId: 4, pulled: 2, pushed: 1 },
   'file:created': { file: { id: 13 } },
   'file:updated': { file: { id: 13 } },
@@ -96,6 +143,11 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'memories:updated': { userId: 1 },
   'notification:new': { notification: { id: 21, sender_username: 'ana' } },
   'notification:updated': { notification: { id: 21 } },
+  'notification:read-all': {},
+  'trips:changed': {},
+  'settings:updated': { keys: ['temperature_unit', 'dark_mode'] },
+  'tags:changed': {},
+  'atlas:changed': {},
   'collections:updated': { collectionId: 4 },
   'collections:accepted': { collectionId: 4 },
   'collections:declined': { collectionId: 4 },
@@ -114,6 +166,8 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   'vacay:share': { from: { id: 1 } },
   'vacay:share-removed': {},
   'vacay:shared-update': {},
+  'journey:updated': { journeyId: 3 },
+  'journey:deleted': { journeyId: 3 },
   'journey:trip:synced': { journeyId: 3, tripId: 1 },
   'journey:entry:created': { journeyId: 3, entry: { id: 5 } },
   'journey:entry:updated': { journeyId: 3, entry: { id: 5 } },
@@ -126,6 +180,10 @@ const FIXTURES: Record<TrekWsEventName, Record<string, unknown>> = {
   },
   'journey:book:cursor': { journeyId: 7, socketId: 3, userId: 2, spreadIndex: 0, x: 105.5, y: 60 },
   'journey:contributor:changed': { journeyId: 3, targetUserId: 2, role: 'editor' },
+  'journey:photos:updated': { journeyId: 3 },
+  'journey:recording:updated': { journeyId: 3, date: '2026-05-14' },
+  'mailInbox:changed': { pending: 3 },
+  'mailInbox:settings': {},
   'import:progress': { jobId: 'j1', tripId: 1, status: 'running', done: 1, total: 3, fileName: 'a.pdf' },
   'import:done': { jobId: 'j1', tripId: 1, result: { items: [] } },
   'import:error': { jobId: 'j1', tripId: 1, message: 'boom' },
@@ -148,10 +206,33 @@ const DRIFT_VARIANTS: Partial<Record<TrekWsEventName, Record<string, unknown>[]>
 };
 
 describe('@trek/shared realtime event registry', () => {
-  it('WSEVT-REG-001: pins the authoritative inventory counts (77 trip + 32 user = 109)', () => {
-    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(77);
-    expect(TREK_WS_USER_EVENT_NAMES).toHaveLength(32);
-    expect(TREK_WS_EVENT_NAMES).toHaveLength(109);
+  it('WSEVT-REG-001: pins the authoritative inventory counts (85 trip + 43 user = 128)', () => {
+    // 67th to 69th trip event: the three collab:link:* a shared link emits.
+    // 70th and 71st: the road trip's vias and tracks, which used to be written silently.
+    // 74th: docsync:changed, so a sync run that moved documents refreshes the
+    // panel without every member polling for it.
+    // 76th: trip:journal:changed, so the trip's Journal tab and Settings follow
+    // a journal being linked, changed or unlinked.
+    // 77th: tours:visits, so the stops of a city walk checked off on one of its
+    // days show the same for every member of the trip.
+    // 33rd user event: journey:photos:updated, so the gallery re-sorts once the
+    // capture times of an import have landed (#1587).
+    // 34th: journey:recording:updated, so every map of a journey shows a day's
+    // recorded route once somebody took it over (JRN-01).
+    // 78th and 79th trip event, 35th to 41st user event: what the broadcast
+    // parity work found no event for (todo:reordered, member:updated;
+    // notification:read-all, trips:changed, settings:updated, tags:changed,
+    // atlas:changed, journey:updated, journey:deleted). Registered first, the
+    // writes that send them follow.
+    // 42nd and 43rd user event: mailInbox:changed and mailInbox:settings, the
+    // inbox of forwarded booking mails and its settings card.
+    // 81st trip event: tripTags:changed, so a tag a member adds to the trip,
+    // renames or deletes shows the same for everyone on it.
+    // 82nd trip event: tripAddons:changed, so a trip addon its owner switches on
+    // or off for the trip shows or hides for every member at once.
+    expect(TREK_WS_TRIP_EVENT_NAMES).toHaveLength(85);
+    expect(TREK_WS_USER_EVENT_NAMES).toHaveLength(43);
+    expect(TREK_WS_EVENT_NAMES).toHaveLength(128);
   });
 
   it('WSEVT-REG-002: every name is domain:action shaped and outside the reserved plugin: namespace', () => {
@@ -192,5 +273,24 @@ describe('@trek/shared realtime event registry', () => {
       _source: 'mcp',
     });
     expect(result.success).toBe(true);
+    const strict = TREK_WS_EVENTS['settings:updated'].payload.safeParse({ keys: ['dark_mode'], _source: 'mcp' });
+    expect(strict.success).toBe(true);
+  });
+
+  it('WSEVT-REG-008: settings:updated never carries a value, and member:updated no more than who and the name', () => {
+    const settings = TREK_WS_EVENTS['settings:updated'].payload;
+    expect(settings.safeParse({ keys: ['dark_mode'], values: { dark_mode: 'on' } }).success).toBe(false);
+    const member = TREK_WS_EVENTS['member:updated'].payload;
+    expect(member.safeParse({ member: { id: 2, username: 'Guest Ana', email: 'ana@example.org' } }).success).toBe(
+      false,
+    );
+  });
+
+  it('WSEVT-REG-009: mailInbox:changed carries a count and nothing negative', () => {
+    const changed = TREK_WS_EVENTS['mailInbox:changed'].payload;
+    expect(changed.safeParse({ pending: 0 }).success).toBe(true);
+    expect(changed.safeParse({ pending: -1 }).success).toBe(false);
+    expect(changed.safeParse({ pending: 1.5 }).success).toBe(false);
+    expect(changed.safeParse({}).success).toBe(false);
   });
 });

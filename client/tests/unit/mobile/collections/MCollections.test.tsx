@@ -1,12 +1,15 @@
-// FE-MOB-COLSCR-001 to FE-MOB-COLSCR-031
+// FE-MOB-COLSCR-001 to FE-MOB-COLSCR-038
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '../../../helpers/render'
+import { render, screen, fireEvent, waitFor, within } from '../../../helpers/render'
+import { setSizeClass } from '../../../helpers/sizeClass'
 import MCollections from '../../../../src/mobile/screens/collections/MCollections'
 import { ALL_SAVED } from '../../../../src/store/collectionStore'
 
 const mocks = vi.hoisted(() => ({ coll: {} as Record<string, unknown> }))
 
+const routeTransition = vi.hoisted(() => ({ skipNextRouteTransition: vi.fn() }))
+vi.mock('../../../../src/mobile/routeTransition', () => routeTransition)
 vi.mock('../../../../src/pages/collections/useCollections', () => ({
   useCollections: () => mocks.coll,
 }))
@@ -146,6 +149,7 @@ function makeHook(over: Record<string, unknown> = {}): Record<string, unknown> {
     categories: [],
     collections: [list(1, 'Hamburg')],
     ownedLists: [list(1, 'Hamburg')],
+    writableLists: [list(1, 'Hamburg')],
     sharedLists: [],
     activeCollection: list(1, 'Hamburg'),
     isAllSaved: false,
@@ -159,10 +163,13 @@ function makeHook(over: Record<string, unknown> = {}): Record<string, unknown> {
     mappable: [place(10, 'Elbphilharmonie', { lat: 53.5, lng: 10 })],
     members: [],
     incomingInvites: [],
-    counts: { all: 1, idea: 1, want: 0, visited: 0 },
+    orderedInvites: [],
+    routeInvite: null,
+    counts: { all: 1, idea: 1, want: 0, visited: 0, revisit: 0 },
     view: 'list',
     statusFilter: 'all',
     categoryFilter: 'all',
+    categoryOptions: [],
     ratingFilter: 'all',
     search: '',
     selectedPlaceId: null,
@@ -186,6 +193,7 @@ function makeHook(over: Record<string, unknown> = {}): Record<string, unknown> {
     copyIds: null, openCopyForSelectedPlace: vi.fn(), openCopyForSelection: vi.fn(), closeCopy: vi.fn(), handleCopyToTrip: vi.fn(),
     handleSelectList: vi.fn(), handleDeleteList: vi.fn(),
     handleStatusChange: vi.fn(), handleRatePlace: vi.fn(), handleDeleteSelected: vi.fn(),
+    handleAcceptInvite: vi.fn(), handleDeclineInvite: vi.fn(),
     allVisibleSelected: false, handleSelectAll: vi.fn(),
     listPickerMode: null, setListPickerMode: vi.fn(), handleMoveToList: vi.fn(), handleDuplicateToList: vi.fn(),
     ...over,
@@ -202,21 +210,22 @@ describe('MCollections', () => {
     mocks.coll = makeHook()
   })
 
-  it('FE-MOB-COLSCR-001: shows only the spinner while the first load is in flight', () => {
+  it('FE-MOB-COLSCR-001: shows only the placeholders while the first load is in flight', () => {
     mocks.coll = makeHook({ loading: true, collections: [], places: [], visiblePlaces: [] })
     render(<MCollections />)
 
     expect(screen.queryByPlaceholderText('collections.search')).not.toBeInTheDocument()
-    expect(document.querySelector('.animate-spin')).not.toBeNull()
+    expect(document.querySelector('[data-skeleton]')).not.toBeNull()
   })
 
-  it('FE-MOB-COLSCR-002: with no lists at all it offers the first-list CTA', () => {
+  it('FE-MOB-COLSCR-002: with no lists at all the dock + button starts the first one; the screen has no button of its own', async () => {
     mocks.coll = makeHook({ collections: [], ownedLists: [], activeCollection: null, activeId: null, canShare: false })
-    render(<MCollections />)
+    render(<MCollections />, { initialEntries: ['/collections?create=place'] })
 
     expect(screen.getByText('collections.empty.firstTitle')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /collections.newList/ }))
-    expect(fn('setEditorTarget')).toHaveBeenCalledWith('new')
+    expect(screen.queryByRole('button', { name: /^collections.newList$/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(fn('setEditorTarget')).toHaveBeenCalledWith('new'))
+    expect(fn('setShowAddPlace')).not.toHaveBeenCalled()
     expect(screen.queryByPlaceholderText('collections.search')).not.toBeInTheDocument()
   })
 
@@ -262,6 +271,8 @@ describe('MCollections', () => {
 
     fireEvent.click(screen.getByText('Julien Tipps'))
     expect(fn('handleSelectList')).toHaveBeenCalledWith(2)
+    // Another list is the same screen: the URL change must not slide a page in.
+    expect(routeTransition.skipNextRouteTransition).toHaveBeenCalled()
     // Picking closes the dropdown again.
     expect(screen.queryByText('Julien Tipps')).not.toBeInTheDocument()
   })
@@ -295,7 +306,7 @@ describe('MCollections', () => {
     // The union has no label chip, so the status chip is the only "all" chip.
     mocks.coll = makeHook({
       isAllSaved: true, activeId: ALL_SAVED, activeCollection: null, canShare: false,
-      counts: { all: 5, idea: 2, want: 2, visited: 1 },
+      counts: { all: 5, idea: 2, want: 2, visited: 1, revisit: 0 },
     })
     render(<MCollections />)
 
@@ -356,7 +367,7 @@ describe('MCollections', () => {
     expect(fn('setLabelFilter')).toHaveBeenCalledWith([2, 1])
   })
 
-  it('FE-MOB-COLSCR-013: a list without labels says so, and the manage chip opens the manager', () => {
+  it('FE-MOB-COLSCR-013: a list without labels says so, and the label panel opens the manager', () => {
     render(<MCollections />)
 
     // Status chip and label chip both read "all" while nothing is filtered.
@@ -365,8 +376,10 @@ describe('MCollections', () => {
     fireEvent.click(chips[1])
     expect(screen.getByText('collections.labels.empty')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /collections.labels.title/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'collections.labels.add' }))
     expect(fn('setShowLabelManager')).toHaveBeenCalledWith(true)
+    // Opening the manager closes the panel.
+    expect(screen.queryByText('collections.labels.empty')).not.toBeInTheDocument()
   })
 
   it('FE-MOB-COLSCR-014: the backdrop under an open dropdown closes it again', () => {
@@ -396,7 +409,7 @@ describe('MCollections', () => {
     fireEvent.click(screen.getByRole('button', { name: /collections.selectAll/ }))
     expect(fn('handleSelectAll')).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'packing.editDone' }))
     expect(fn('setSelectMode')).toHaveBeenCalledWith(false)
   })
 
@@ -435,6 +448,16 @@ describe('MCollections', () => {
     expect(screen.getByRole('button', { name: /collections.duplicateToList/ })).toBeInTheDocument()
   })
 
+  it('FE-MOB-COLSCR-017b: an editor keeps copy and duplicate but cannot move places out of the list', () => {
+    mocks.coll = makeHook({ selectMode: true, selectedIds: [10], canEdit: true, canDelete: false, isOwner: false })
+    render(<MCollections />)
+
+    expect(screen.queryByRole('button', { name: /collections.moveToList/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /common.delete/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /collections.duplicateToList/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /collections.copyToTrip/ })).toBeInTheDocument()
+  })
+
   it('FE-MOB-COLSCR-018: the list view renders rows, the loading state and both empty states', () => {
     render(<MCollections />)
     expect(screen.getByText('Elbphilharmonie')).toBeInTheDocument()
@@ -445,7 +468,7 @@ describe('MCollections', () => {
 
     mocks.coll = makeHook({ places: [], visiblePlaces: [], placesLoading: true })
     const loadingView = render(<MCollections />)
-    expect(loadingView.container.querySelector('.animate-spin')).not.toBeNull()
+    expect(loadingView.container.querySelector('[data-skeleton]')).not.toBeNull()
 
     mocks.coll = makeHook({ places: [], visiblePlaces: [] })
     render(<MCollections />)
@@ -521,7 +544,9 @@ describe('MCollections', () => {
       selectedIds: [10, 11],
       copyIds: [10],
       listPickerMode: 'move',
+      // The add sheet offers the owned lists, the move picker every writable one.
       ownedLists: [list(1, 'Hamburg'), list(2, 'Kopenhagen')],
+      writableLists: [list(1, 'Hamburg'), list(2, 'Kopenhagen')],
     })
     render(<MCollections />)
 
@@ -564,7 +589,7 @@ describe('MCollections', () => {
   })
 
   it('FE-MOB-COLSCR-022: the list picker duplicates in copy mode', () => {
-    mocks.coll = makeHook({ listPickerMode: 'copy', selectedIds: [10], ownedLists: [list(1, 'Hamburg'), list(2, 'Kopenhagen')] })
+    mocks.coll = makeHook({ listPickerMode: 'copy', selectedIds: [10], writableLists: [list(1, 'Hamburg'), list(2, 'Kopenhagen')] })
     render(<MCollections />)
 
     fireEvent.click(screen.getByText('listpicker-pick'))
@@ -631,12 +656,12 @@ describe('MCollections', () => {
     expect(fn('setShowAddPlace')).not.toHaveBeenCalled()
   })
 
-  it('FE-MOB-COLSCR-029: desktop-only category and rating filters are cleared on phone (#1435)', async () => {
+  it('FE-MOB-COLSCR-029: the desktop-only rating filter is cleared on phone, the category filter is kept (#1435, #2618)', async () => {
     mocks.coll = makeHook({ categoryFilter: 3, ratingFilter: 4 })
     render(<MCollections />)
 
-    await waitFor(() => expect(fn('setCategoryFilter')).toHaveBeenCalledWith('all'))
-    expect(fn('setRatingFilter')).toHaveBeenCalledWith('all')
+    await waitFor(() => expect(fn('setRatingFilter')).toHaveBeenCalledWith('all'))
+    expect(fn('setCategoryFilter')).not.toHaveBeenCalled()
   })
 
   it('FE-MOB-COLSCR-030: the add sheet has no fixed target while the union is active', () => {
@@ -646,5 +671,109 @@ describe('MCollections', () => {
     render(<MCollections />)
 
     expect(screen.getByText('add-target:null::1')).toBeInTheDocument()
+  })
+})
+
+// #2618: the phone could filter by status and label, but not by category.
+describe('MCollections: category filter (#2618)', () => {
+  const categoryOptions = [
+    { id: 3, name: 'Restaurant', color: '#E8843D', icon: 'utensils', count: 2 },
+    { id: 5, name: 'Museum', color: null, icon: null, count: 1 },
+  ]
+
+  it('FE-MOB-COLSCR-035: the chip lists the categories present with their counts and picks one', () => {
+    mocks.coll = makeHook({ categoryOptions })
+    render(<MCollections />)
+
+    const chip = screen.getByRole('button', { name: 'categories.title: collections.status.filterAll' })
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    // The "all" row counts every categorised place.
+    expect(screen.getByRole('button', { name: /^collections.status.filterAll\s*3$/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Restaurant\s*2$/ }))
+    expect(fn('setCategoryFilter')).toHaveBeenCalledWith(3)
+    // Picking closes the panel.
+    expect(screen.queryByRole('button', { name: /^Museum\s*1$/ })).not.toBeInTheDocument()
+  })
+
+  it('FE-MOB-COLSCR-036: an active category names itself and the "all" row clears it', () => {
+    mocks.coll = makeHook({ categoryOptions, categoryFilter: 5 })
+    render(<MCollections />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'categories.title: Museum' }))
+    fireEvent.click(screen.getByRole('button', { name: /^collections.status.filterAll\s*3$/ }))
+    expect(fn('setCategoryFilter')).toHaveBeenCalledWith('all')
+  })
+
+  it('FE-MOB-COLSCR-037: without categories the chip stays away, unless a category is still set from another list', () => {
+    mocks.coll = makeHook()
+    const { unmount } = render(<MCollections />)
+    expect(screen.queryByRole('button', { name: /^categories.title/ })).not.toBeInTheDocument()
+    unmount()
+
+    mocks.coll = makeHook({ categoryFilter: 7, categories: [{ id: 7, name: 'Beach' }] })
+    render(<MCollections />)
+    fireEvent.click(screen.getByRole('button', { name: 'categories.title: Beach' }))
+    fireEvent.click(screen.getByRole('button', { name: /^collections.status.filterAll\s*0$/ }))
+    expect(fn('setCategoryFilter')).toHaveBeenCalledWith('all')
+  })
+
+  it('FE-MOB-COLSCR-038: opening one filter panel closes the other', () => {
+    mocks.coll = makeHook({ categoryOptions })
+    render(<MCollections />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'categories.title: collections.status.filterAll' }))
+    expect(screen.getByRole('button', { name: /^Museum\s*1$/ })).toBeInTheDocument()
+    // The status chip is the first chip reading "all".
+    fireEvent.click(screen.getAllByRole('button', { name: 'collections.status.filterAll' })[0])
+    expect(screen.queryByRole('button', { name: /^Museum\s*1$/ })).not.toBeInTheDocument()
+    // The status panel is open in its place (its rows name each status).
+    expect(screen.getAllByRole('button', { name: /collections.status.idea/ }).length).toBeGreaterThan(0)
+  })
+})
+
+// #2645: the phone had no way to answer a list invite, and the notification's
+// link landed on "Start your first collection".
+describe('MCollections: invites (#2645)', () => {
+  const invite = { collection_id: 14, name: 'Lisbon', from: { id: 4, username: 'Lena' } }
+
+  it('FE-MOB-COLSCR-032: with no lists of their own, the invite can be accepted or declined', () => {
+    mocks.coll = makeHook({
+      collections: [], ownedLists: [], activeCollection: null, activeId: null, canShare: false,
+      incomingInvites: [invite], orderedInvites: [invite], routeInvite: invite,
+    })
+    render(<MCollections />)
+
+    expect(screen.getByText('Lisbon')).toBeInTheDocument()
+    expect(screen.getByText(/Lena/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /collections.invites.accept/ }))
+    expect(fn('handleAcceptInvite')).toHaveBeenCalledWith(14)
+    fireEvent.click(screen.getByRole('button', { name: 'collections.invites.decline' }))
+    expect(fn('handleDeclineInvite')).toHaveBeenCalledWith(14)
+  })
+
+  it('FE-MOB-COLSCR-033: invites sit above the lists too, in the order the hook gives', () => {
+    const other = { collection_id: 3, name: 'Rome', from: { id: 5, username: 'Tom' } }
+    mocks.coll = makeHook({ incomingInvites: [other, invite], orderedInvites: [invite, other] })
+    render(<MCollections />)
+
+    const names = screen.getAllByText(/^(Lisbon|Rome)$/).map(el => el.textContent)
+    expect(names).toEqual(['Lisbon', 'Rome'])
+    expect(screen.getByPlaceholderText('collections.search')).toBeInTheDocument()
+  })
+
+  it('FE-MOB-COLSCR-034: with room for two panes the lists stand beside the places and the head names the list', () => {
+    setSizeClass('split')
+    render(<MCollections />)
+    const lists = screen.getByRole('navigation', { name: 'collections.title' })
+    expect(within(lists).getByRole('button', { name: /Hamburg/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('heading', { name: 'Hamburg' })).toBeInTheDocument()
+
+    fireEvent.click(within(lists).getByRole('button', { name: /collections.allSaved/ }))
+    expect(fn('handleSelectList')).toHaveBeenCalledWith(ALL_SAVED)
+    fireEvent.click(within(lists).getByRole('button', { name: /collections.newList/ }))
+    expect(fn('setEditorTarget')).toHaveBeenCalledWith('new')
   })
 })

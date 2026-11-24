@@ -63,6 +63,17 @@ describe.skipIf(!inMonorepo)('parity with the host', () => {
   });
 });
 
+const serverDataContract = path.resolve(here, '../../server/src/db/engine/plugin-data-contract.ts');
+
+describe.skipIf(!fs.existsSync(serverDataContract))('parity with the host plugin database', () => {
+  it("the vendored ctx.db contract is byte-identical to the server's", () => {
+    // dev and the mock host hold ctx.db to the host's caps and refuse a call with the host's
+    // own words, NUL included; a drift would let a plugin pass here and fail in TREK.
+    const ours = fs.readFileSync(path.resolve(here, '../src/plugin-data-contract.ts'), 'utf8');
+    expect(ours.replace(/\r\n/g, '\n')).toBe(fs.readFileSync(serverDataContract, 'utf8').replace(/\r\n/g, '\n'));
+  });
+});
+
 describe.skipIf(!fs.existsSync(hostFrame))('parity with the host frame', () => {
   it('the session storage contract is one contract in all three copies', () => {
     // Nothing generates these: the limits are written out by hand in the SDK export
@@ -99,13 +110,15 @@ describe.skipIf(!inMonorepo)('core event catalog', () => {
 });
 
 describe.skipIf(!inMonorepo)('settings-field attribute parity', () => {
-  it("SETTING_FIELD_KEYS matches the host's install/manifest.ts", () => {
+  it("SETTING_FIELD_KEYS matches the host's protocol/manifest-rules.ts", () => {
     // The `manifest.settings-known-keys` check warns on an attribute the host would
     // silently drop, so the list must be the host's — compared whole, both ways round.
-    const theirsFile = path.resolve(here, '../../server/src/nest/plugins/install/manifest.ts');
+    // It is generated into host-facts.ts now (check:plugin-facts); this reads the source
+    // as well so a standalone run of this suite catches a stale artefact.
+    const theirsFile = path.resolve(here, '../../server/src/nest/plugins/protocol/manifest-rules.ts');
     const src = fs.readFileSync(theirsFile, 'utf8');
     const block = src.match(/export const SETTING_FIELD_KEYS = \[([\s\S]*?)\] as const/);
-    expect(block, 'SETTING_FIELD_KEYS not found in install/manifest.ts').toBeTruthy();
+    expect(block, 'SETTING_FIELD_KEYS not found in protocol/manifest-rules.ts').toBeTruthy();
     const theirs = [...block![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
     expect([...SETTING_FIELD_KEYS]).toEqual(theirs);
   });

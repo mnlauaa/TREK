@@ -40,10 +40,10 @@ Log in with what it shows; you will be asked to set a new password.
 **Reset the admin without losing data** (locked-out, existing install):
 
 ```bash
-docker exec -it trek node server/reset-admin.js
+docker exec -it -u node trek node server/reset-admin.js
 ```
 
-This resets (or creates) `admin@trek.local` and prints a generated password. Override with `-e RESET_ADMIN_EMAIL=you@example.com -e RESET_ADMIN_PASSWORD=yourpass`. You will be asked to change it on first login.
+This resets (or creates) `admin@trek.local` and prints a generated password. Override with `-e RESET_ADMIN_EMAIL=you@example.com -e RESET_ADMIN_PASSWORD=yourpass`. You will be asked to change it on first login. Resetting an existing account also signs it out of every session it still had. On a [Postgres](Database-Postgres) install (`TREK_DB_URL` set) the same command resets the account in the Postgres database, through the same connection settings as the server; it does not open or create a `travel.db`.
 
 **Start over with chosen credentials** (fresh install, no data to keep):
 
@@ -147,6 +147,21 @@ Keep the proxy's `client_max_body_size` at or above `BACKUP_UPLOAD_LIMIT_MB`. No
 
 ---
 
+## File upload refused: "File is too large"
+
+**Cause:** A file uploaded to a trip, a booking or a collab note is capped at 50 MB by default. The Files tab refuses a bigger file before the upload starts with `File is too large (max 50 MB)`, and the server answers the same check with `400 File is too large`. Videos have their own 500 MB cap, and trip covers and place images 20 MB. If the upload instead fails with a `413` or without any message, your reverse proxy refused the request body before TREK saw it.
+
+**Fix:** Raise the limit with `FILE_UPLOAD_LIMIT_MB` and restart:
+
+```yaml
+environment:
+  - FILE_UPLOAD_LIMIT_MB=200   # in MB (default: 50)
+```
+
+Keep the proxy's body limit (`client_max_body_size` on nginx) at or above that value. On Helm the chart does not pass this variable through, so patch it onto the Deployment. See [Environment Variables](Environment-Variables#storage--paths) and [Reverse Proxy](Reverse-Proxy).
+
+---
+
 ## "Cannot find module" on startup
 
 **Likely cause:** A volume is mounted at `/app`, which hides the application code (`node_modules` and `dist`) shipped inside the image. Mount only the data and uploads directories — `-v ./data:/app/data -v ./uploads:/app/uploads` — never `/app` itself. Current images detect this before Node starts and print `FATAL: TREK application files are missing from the image.` instead of the bare module error.
@@ -163,6 +178,12 @@ Keep only `./data:/app/data` and `./uploads:/app/uploads`, then recreate the con
 >
 > ```bash
 > sudo chown -R 1000:1000 ./data ./uploads
+> ```
+>
+> The start-up step only looks at `data`, `uploads` and what sits directly in them. Files copied in as root further down, into a subdirectory that already belongs to `node` (for example a restore with `docker cp ./photos/. trek:/app/uploads/photos/` or with `sudo cp` on the bind mount), stay root-owned across restarts. Hand them over once:
+>
+> ```bash
+> docker exec trek chown -R node:node /app/uploads /app/data
 > ```
 
 ---
@@ -332,9 +353,29 @@ docker logs <container> 2>&1 | grep -E "SMTP test email (sent|failed)|SMTP test 
 
 ---
 
+## My location does not work: "Location requires a secure (HTTPS) connection"
+
+**Cause:** Browsers only hand out the device location in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). Over plain HTTP at an address other than `localhost`, the location button on the map shows *Location requires a secure (HTTPS) connection*, and the journal's current location stays empty. The same goes for a phone opening TREK by its LAN address.
+
+**Fix:** Open TREK over HTTPS. Two common ways when TREK runs at home:
+
+- **A reverse proxy with a certificate**, see [Reverse-Proxy](Reverse-Proxy).
+- **An HTTPS tunnel** (Cloudflare Tunnel, Tailscale Serve, ngrok and the like) that ends at TREK's HTTP port.
+
+With a tunnel or proxy in front and plain HTTP still used on the LAN, set:
+
+- `APP_URL` to the HTTPS address, so links in emails and calendar feeds use it.
+- `TRUST_PROXY=1`, so TREK sees that the request came in over HTTPS.
+- `COOKIE_SECURE=false` only if you also sign in over plain HTTP on the LAN; without it, that sign-in keeps no session. HTTPS sign-ins work either way.
+- `ALLOWED_ORIGINS` needs no entry for either address: the address in the browser's address bar is always allowed. Add origins only for other sites that call TREK.
+
+See [Environment Variables](Environment-Variables) for each of them.
+
+---
+
 ## CORS error — API requests blocked in the browser
 
-**Cause:** If `ALLOWED_ORIGINS` is set, only those origins are permitted. Any request from a different origin is rejected with a CORS error visible in the browser console.
+**Cause:** If `ALLOWED_ORIGINS` is set, only those origins are permitted, plus the host the request was sent to (the address in the browser's address bar is never cross-origin to itself). A request from any other origin is refused with `403 Not allowed by CORS`, and the server logs a `CORS: refused origin ...` warning naming the origin to add.
 
 **Fix:** Add your origin to the comma-separated list:
 
@@ -353,7 +394,7 @@ If `ALLOWED_ORIGINS` is not set, the default is **same-origin only** — cross-o
 
 | Code | Reason |
 |------|--------|
-| `4001` | No token, expired/invalid token, or user not found — re-login required |
+| `4001` | No token, expired/invalid token, or user not found — re-login required; or an unexpected error during connection setup (reason `connection setup failed`) — reconnect; if it persists check the server log |
 | `4403` | MFA is required globally but the user has not enabled it |
 
 **Fix:**
@@ -367,13 +408,15 @@ If `ALLOWED_ORIGINS` is not set, the default is **same-origin only** — cross-o
 
 **Cause:** The browser Clipboard API (`navigator.clipboard`) is only available in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts), so on plain HTTP at a non-localhost address it is undefined.
 
-TREK works around this where it matters most. The share-link and invite-link buttons in the trip **Members** dialog, the journey share link, and the calendar-subscribe URLs fall back to a hidden textarea plus the deprecated `document.execCommand('copy')`, which is not secure-context gated — **those keep working over plain HTTP**, on desktop and mobile alike.
+TREK works around this where it matters most. The share-link and invite-link buttons in the trip's **Trip settings** dialog, the journey share link, and the calendar-subscribe URLs fall back to a hidden textarea plus the deprecated `document.execCommand('copy')`, which is not secure-context gated, so **those keep working over plain HTTP**, on desktop and mobile alike.
 
 The remaining copy buttons call `navigator.clipboard` directly and have no fallback:
 
 - **Settings > Integrations (MCP)** — the MCP endpoint URL, the JSON client config, a newly created MCP token, and OAuth client IDs, client secrets and rotated secrets. These fail with no message at all, because the click handler throws before any toast is shown.
 - **Settings > Account** — the 2FA backup codes. This one shows a generic error toast. Use the **Download** button next to it as a workaround; it does not need a secure context.
-- **Admin Panel > Users & Invites** — the registration invite link, both on create ("create and copy") and via the copy button on an existing invite.
+- **Admin Panel > Users** (the **Invite Links** card): the registration invite link, both on create ("create and copy") and via the copy button on an existing invite.
+- The copy button next to a booking's confirmation code in the booking's detail popup. It shows `Could not copy`.
+- The webhook URL of a [Document-Sync](Document-Sync) connection in the Files tab.
 
 **Fix:** For those buttons, one of:
 
@@ -550,3 +593,133 @@ Create a WAF skip rule that bypasses bot management only for the MCP and OAuth p
 4. Save and deploy.
 
 This allows MCP and OAuth traffic through while keeping Cloudflare bot protection active for all other paths.
+
+
+---
+
+## Web Push notifications do not arrive
+
+**Cause:** Push depends on several things at once, and the card under **Settings → Notifications** tells you which one is missing.
+
+**Fix:** Check them in this order:
+
+- TREK has to be opened over **HTTPS**. On any `http://` address other than `localhost` the card says that push needs HTTPS.
+- On an iPhone or iPad, push only works in the Home Screen app. Add TREK to the Home Screen, open it from there and turn push on there.
+- Push is per device. Press **Turn on for this device** on every device that should receive it, and use **Send test** to check. Logging out, or changing your password, removes the device, so turn it on again afterwards.
+- The admin has to switch the **Web Push** channel on in **Admin → Notifications**, and the **Push** column of your matrix has to allow the event.
+- If you set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` yourself, both have to be set and belong together. If only one is set, or the stored key cannot be decrypted because `ENCRYPTION_KEY` changed, push is off and the server log says why.
+- Notifications must not be blocked for TREK in the browser or the system settings.
+
+See [Notifications](Notifications#web-push) for the details.
+
+---
+
+## The app shows an old version after an update
+
+**Cause:** The installed app and open tabs keep running the build they loaded. TREK does not reload a page under your hands.
+
+**Fix:** When a release is deployed while TREK is open, a notice reads **A new version is available** with a **Reload page** button. Click it. If you closed the notice, reload the page, or close the installed app and open it again. Changes you made offline with the newer version wait in the queue until a tab on the current version is open, then they are sent. See [Offline-Mode-and-PWA](Offline-Mode-and-PWA#stats--cache).
+
+---
+
+## TREK refuses to start after an update or a rollback
+
+**Cause:** There are two different refusals. TREK 5.0 and later refuse to start on a database that a newer TREK has already migrated, and they refuse to migrate when they cannot write the safety copy of the database first (a full disk or a read-only data directory).
+
+**Fix:** Read the first lines of the server log, which name the problem and the path. For a full disk, free space and start again. To go back to the previous image, restore the `data/pre-migrate-<schema>-<time>.db` copy over `data/travel.db`, delete `travel.db-wal` and `travel.db-shm`, and start the older image. The exact steps, and the `TREK_DB_PRE_MIGRATE_SNAPSHOT` switch, are in [Updating](Updating#database-migrations).
+
+---
+
+## AI booking import times out or comes back cut off
+
+**Cause:** One AI parsing call is limited in time and in answer length. A local model on a slow host can need minutes, and a document with many bookings needs a long answer.
+
+**Fix:** Raise `LLM_TIMEOUT_MS` (default 900000, which is 15 minutes) for a timeout, and `LLM_MAX_OUTPUT_TOKENS` (default 4096, or 8192 on Anthropic) when the import says the answer was cut off. See [AI-Booking-Import](AI-Booking-Import) and [Environment-Variables](Environment-Variables).
+
+---
+
+## Place search only shows OpenStreetMap results
+
+**Cause:** TREK asks its own place index, the [TREK Places API](TREK-Places-API), first. When that service cannot be reached, the server logs `TREK Places ... failed, falling back` and search carries on with OpenStreetMap alone. The same happens when `TREK_PLACES_ENABLED` is set to `false`.
+
+**Fix:** Check that `TREK_PLACES_ENABLED` is not `false` and that the server can reach `https://places.liketrek.com`, or your own copy named in `TREK_PLACES_URL`. See [Environment-Variables](Environment-Variables#place-search-trek-places-api).
+
+---
+
+## Offline changes do not sync
+
+**Cause:** The server kept refusing a queued change (after eight attempts it counts as failed), or an edit you made offline collided with a newer one on the server.
+
+**Fix:** The status pill at the bottom of the window reads **Failed to sync: N** or **Conflicts: N**. Open **Settings → Offline**. Under **Failed changes**, use **Try again** or **Discard** on each item. Under conflicts, choose **Keep mine** or **Keep theirs**. If the local copy itself looks wrong, **Clear cache** empties it and the next sync downloads it again. Unsynced changes are kept when a trip is cleared from the device. See [Offline-Mode-and-PWA](Offline-Mode-and-PWA).
+
+---
+
+## Postgres: TREK refuses to start because the database holds tables
+
+**Cause:** `TREK_DB_URL` points at a database that already has tables, and none of them is TREK's migration history. TREK creates its schema only in an empty database, and it does not adopt tables another application made. The log reads `[DB] Refusing to boot: the database holds N table(s) (...) but no TREK migration history.` Nothing was written to the database.
+
+**Fix:** Create a new, empty database for TREK, or point `TREK_DB_URL` at the one TREK already migrated. If this database is the wrong one, check the URL. See [Database-Postgres](Database-Postgres#first-boot).
+
+---
+
+## Postgres: TREK refuses to start because a copy before migrating could not be written
+
+**Cause:** Before it applies pending migrations, TREK writes a `pg_dump` copy to `data/pre-migrate-<schema>-<time>.pgdump`. If `pg_dump` is not installed where TREK looks, or the data directory is full or read-only, the copy fails and TREK refuses to migrate. The log says `could not write a copy of the database ... Nothing was migrated.`
+
+**Fix:** Install the PostgreSQL client tools (the Docker image has them) or set `TREK_DB_PG_BIN_DIR` to the directory that holds `pg_dump`. Free disk space or fix the permissions on `data/`, then start again. To migrate without a copy, set `TREK_DB_PRE_MIGRATE_SNAPSHOT=false`, but only when you have a backup of your own. See [Updating](Updating#database-migrations).
+
+---
+
+## Postgres: "pg_dump was not found" when backing up or restoring
+
+**Cause:** The backup, restore or pre-migration copy runs `pg_dump`, `pg_restore` or `psql` by its absolute path. None of them is in the directories TREK searches (`/usr/lib/postgresql/18` down to `14`, `/usr/local/bin`, `/usr/bin`), and `PATH` is not searched.
+
+**Fix:** Install the `postgresql-client` package, or set `TREK_DB_PG_BIN_DIR` to the directory that holds the three tools. The Docker image already includes the version 18 client. See [Database-Postgres](Database-Postgres#where-the-client-tools-are-found).
+
+---
+
+## Postgres: a backup or restore fails with "server version mismatch" or a version error
+
+**Cause:** Three different problems produce messages about versions. A client tool works with servers up to its own major version, so TREK refuses a backup or restore with tools older than the server (`pg_dump is version 17, older than the PostgreSQL 18 server`). A restore also refuses a `pg_restore` or `psql` older than 18.0, 17.6, 16.10, 15.14 or 14.19, because those versions cannot restore a dump safely (CVE-2025-8714). And a client older than 16 cannot use the system's certificate authorities, so with `sslmode` set and no `sslrootcert` it is refused too. Each error names the version it found.
+
+**Fix:** Use the Docker image's tools, which are version 18 and work with every supported server (14 to 18), or point `TREK_DB_PG_BIN_DIR` at client tools at least as new as the server. For the certificate message, add `sslrootcert=<CA file>` to `TREK_DB_URL` or use newer tools.
+
+---
+
+## Postgres: TREK refuses to start because of the server version
+
+**Cause:** TREK supports PostgreSQL 14 to 18 and refuses any other server before it writes anything (`the Postgres server is version 19; TREK supports PostgreSQL 14 to 18`).
+
+**Fix:** Run TREK on a server of a supported version. A newer major is supported once a TREK release ships client tools for it.
+
+---
+
+## Postgres: a restore is refused because of the database role
+
+**Cause:** `TREK_DB_URL` connects as a role that could reach the database server from SQL: a superuser or a member of one, a role that holds `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files` or may run a server file function such as `lo_export`, from PostgreSQL 15 on a role granted ALTER SYSTEM or a superuser-only setting, or on PostgreSQL 14 and 15 a role with CREATEROLE or a member of one. A backup is a SQL script that runs as this role, so TREK refuses to restore it with a role that could run commands or read or write files on the database server. Plugin databases (`db:own`) are refused for the same roles. TREK also logs a warning about such a role at startup.
+
+**Fix:** Connect TREK as a role that owns its database and is not a superuser. See [Database-Postgres](Database-Postgres#a-role-that-is-not-a-superuser), which also shows how to move an install made with an older `docker-compose.postgres.yml`.
+
+---
+
+## Postgres: TREK refuses to start because of the sslmode in TREK_DB_URL
+
+**Cause:** The `sslmode` parameter is not one TREK accepts. TREK accepts `disable`, `require`, `verify-ca` and `verify-full`. A value such as `prefer`, `allow` or `no-verify`, or a misspelling, would connect without verifying the server, so TREK refuses to start. A `sslrootcert` that names a file the container cannot read stops the start the same way.
+
+**Fix:** Set `sslmode` to one of the four accepted values, and mount the CA file and point `sslrootcert` at its path inside the container. See [Database-Postgres](Database-Postgres#ssl).
+
+---
+
+## Postgres: TREK refuses to start because TREK_DB_URL is set with a SQLite variable
+
+**Cause:** `TREK_DB_URL` is set together with `TREK_DB_FILE`, `TREK_DB_JOURNAL_MODE` or `TREK_DB_SYNCHRONOUS`. TREK cannot tell which database those variables mean, so it refuses to start.
+
+**Fix:** Unset the SQLite variables. See [Environment-Variables](Environment-Variables).
+
+---
+
+## Postgres: a restore refuses the archive
+
+**Cause:** The archive is not a Postgres backup, or it cannot be loaded here. The message says which: `This backup holds a SQLite database, which cannot be restored into a Postgres database.` (a backup from a SQLite install), `The uploaded dump holds no TREK migration history.` (a dump that is not from TREK), or `This backup was made by a newer TREK version.` A SQLite backup cannot be restored into PostgreSQL, and a PostgreSQL backup cannot be restored into SQLite.
+
+**Fix:** Restore a backup taken on the same engine. For a newer backup, update TREK first. The database being replaced is kept as `data/pre-restore-<time>.pgdump` before the load starts. An archive that is refused is not loaded, so the database itself is unchanged. See [Backups](Backups#restoring-a-backup).

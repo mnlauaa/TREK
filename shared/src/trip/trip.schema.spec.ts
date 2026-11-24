@@ -5,6 +5,8 @@ import {
   tripUpdateRequestSchema,
   tripAddMemberRequestSchema,
   activeTripResponseSchema,
+  tripCalendarQuerySchema,
+  tripSchema,
 } from './trip.schema';
 
 import { describe, it, expect } from 'vitest';
@@ -48,6 +50,30 @@ describe('tripUpdateRequestSchema', () => {
     expect(tripUpdateRequestSchema.safeParse({}).success).toBe(true);
     expect(tripUpdateRequestSchema.safeParse({ is_archived: 1, cover_image: null }).success).toBe(true);
   });
+
+  it('bounds cover_image like a place image url: a replaced cover is queued for release', () => {
+    expect(tripUpdateRequestSchema.safeParse({ cover_image: `/uploads/covers/${'a'.repeat(2000)}` }).success).toBe(
+      true,
+    );
+    expect(tripUpdateRequestSchema.safeParse({ cover_image: 'x'.repeat(2049) }).success).toBe(false);
+  });
+
+  it('takes the costs mode, split or totals and nothing else (#1714)', () => {
+    expect(tripUpdateRequestSchema.safeParse({ costs_mode: 'totals' }).success).toBe(true);
+    expect(tripUpdateRequestSchema.safeParse({ costs_mode: 'split' }).success).toBe(true);
+    expect(tripUpdateRequestSchema.safeParse({ costs_mode: 'none' }).success).toBe(false);
+    expect(tripUpdateRequestSchema.safeParse({ costs_mode: null }).success).toBe(false);
+  });
+});
+
+describe('tripSchema', () => {
+  const trip = { id: 1, user_id: 1, title: 'Japan', currency: 'EUR', is_archived: 0, reminder_days: 3 };
+
+  it('reads the costs mode, and a trip cached without one still parses (#1714)', () => {
+    expect(tripSchema.parse({ ...trip, costs_mode: 'totals' }).costs_mode).toBe('totals');
+    expect(tripSchema.safeParse(trip).success).toBe(true);
+    expect(tripSchema.safeParse({ ...trip, costs_mode: 'shares' }).success).toBe(false);
+  });
 });
 
 describe('tripAddMemberRequestSchema', () => {
@@ -69,5 +95,23 @@ describe('activeTripResponseSchema', () => {
   it('rejects a missing trip key — "no trip" is null, not absent', () => {
     expect(activeTripResponseSchema.safeParse({}).success).toBe(false);
     expect(activeTripResponseSchema.safeParse({ trip: { title: 'Japan' } }).success).toBe(false);
+  });
+});
+
+describe('tripCalendarQuerySchema', () => {
+  it('takes days=0 or days=1, or nothing (#2602)', () => {
+    expect(tripCalendarQuerySchema.parse({})).toEqual({});
+    expect(tripCalendarQuerySchema.parse({ days: '0' })).toEqual({ days: '0' });
+    expect(tripCalendarQuerySchema.parse({ days: '1' })).toEqual({ days: '1' });
+  });
+
+  it('refuses any other days value', () => {
+    for (const days of ['false', '2', '', 0]) {
+      expect(tripCalendarQuerySchema.safeParse({ days }).success).toBe(false);
+    }
+  });
+
+  it('drops keys a calendar app adds of its own', () => {
+    expect(tripCalendarQuerySchema.parse({ days: '0', client: 'ios' })).toEqual({ days: '0' });
   });
 });

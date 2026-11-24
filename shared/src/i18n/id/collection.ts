@@ -7,8 +7,8 @@ const collection: TranslationStrings = {
   'collections.saveToListHint': 'Duplikat dilewati otomatis',
   'collections.role.label': 'Peran',
   'collections.role.viewer': 'Peninjau',
-  'collections.role.editor': 'Editor',
-  'collections.role.admin': 'Admin',
+  'collections.role.editor': 'Editor', // same-as-en
+  'collections.role.admin': 'Admin', // same-as-en
   'collections.picker.allLists': 'Semua daftar',
   'collections.select': 'Pilih',
   'collections.selectAll': 'Pilih semua',
@@ -19,7 +19,7 @@ const collection: TranslationStrings = {
   'collections.duplicateToListTitle': 'Duplikat {count} ke daftar lain',
   'collections.noOtherLists': 'Belum ada daftar lain',
   'collections.movedCount': '{count} tempat dipindahkan',
-  'collections.duplicatedCount': '{count} tempat diduplikat',
+  'collections.duplicatedCount': '{count} tempat diduplikasi',
   'collections.placeCount': '{count} tempat',
   'collections.category': 'Kategori',
   'collections.noCategory': 'Tanpa kategori',
@@ -30,7 +30,7 @@ const collection: TranslationStrings = {
   'collections.description': 'Deskripsi',
   'collections.descriptionPlaceholder': 'Tambahkan deskripsi…',
   'collections.links': 'Tautan',
-  'collections.linkLabel': 'Label',
+  'collections.linkLabel': 'Label', // same-as-en
   'collections.addLink': 'Tambah tautan',
   'collections.addDetails': 'Tambah detail',
   'collections.addPlace': 'Tambah tempat',
@@ -94,6 +94,7 @@ const collection: TranslationStrings = {
   'collections.status.idea': 'Ide',
   'collections.status.want': 'Ingin ke sana',
   'collections.status.visited': 'Dikunjungi',
+  'collections.status.revisit': 'Ingin kembali',
   'collections.status.filterAll': 'Semua',
   'collections.status.cycleHint': 'ketuk untuk mengubah',
 
@@ -174,9 +175,13 @@ const collection: TranslationStrings = {
   'collections.file.formatTrek': 'Daftar TREK',
   'collections.file.formatTrekHint': 'Untuk TREK lain, lengkap dengan label dan status',
   'collections.file.formatGpxHint': 'Titik lokasi untuk OsmAnd, Organic Maps, Garmin, dan aplikasi peta lain',
+  'collections.file.formatKmlHint': 'Penanda untuk Google My Maps, agar tempat terlihat di Google Maps',
   'collections.file.gpxOmitted': '{count} tempat tanpa koordinat tidak dimasukkan ke berkas GPX',
   'collections.file.gpxNothing':
     'Tidak ada tempat yang punya koordinat, jadi tidak ada yang bisa dimasukkan ke berkas GPX.',
+  'collections.file.kmlOmitted': '{count} tempat tanpa koordinat tidak dimasukkan ke berkas KML',
+  'collections.file.kmlNothing':
+    'Tidak ada tempat yang punya koordinat, jadi tidak ada yang bisa dimasukkan ke berkas KML.',
   'collections.file.reading': 'Membaca berkas…',
   'collections.file.gpxSkipped': '{count} titik lokasi tanpa koordinat yang bisa dipakai tidak disertakan.',
   'collections.file.gpxTrack': 'Berkas ini juga berisi {count} titik jejak. Jejak tidak diimpor, hanya titik lokasi.',
@@ -224,7 +229,7 @@ const collection: TranslationStrings = {
   'collections.labels.name': 'Nama label',
   'collections.labels.namePlaceholder': 'mis. Berlin',
   'collections.labels.assign': 'Beri label',
-  'collections.labels.assignN': 'Beri label ke {count} tempat',
+  'collections.labels.assignN': 'Beri label pada {count} tempat',
   'collections.labels.assignedCount': '{count} tempat diberi label',
   'collections.labels.empty': 'Belum ada label',
   'collections.labels.emptyHint': 'Buat label dulu untuk mengelompokkan tempat di daftar ini.',

@@ -1,3 +1,4 @@
+import { idSchema } from '../common/primitives.schema';
 import {
   placeCategorySchema,
   placeImageUrlSchema,
@@ -8,9 +9,19 @@ import { tagSchema } from '../tag/tag.schema';
 
 import { z } from 'zod';
 
-export const COLLECTION_STATUSES = ['idea', 'want', 'visited'] as const;
+/**
+ * A saved place's status, in the order the one-tap cycle walks. 'revisit' (#2567)
+ * is a place already visited that the user wants to go back to; it sits last so
+ * the stored values and the order of the first three stay as they were.
+ */
+export const COLLECTION_STATUSES = ['idea', 'want', 'visited', 'revisit'] as const;
 export const collectionStatusSchema = z.enum(COLLECTION_STATUSES).catch('idea').default('idea');
 export type CollectionStatus = (typeof COLLECTION_STATUSES)[number];
+
+/** Whether the status means "been there": a place to revisit counts as visited wherever visits are counted. */
+export function isVisitedCollectionStatus(status: CollectionStatus): boolean {
+  return status === 'visited' || status === 'revisit';
+}
 
 /** Per-member permission on a shared list. viewer = read + copy-to-trip only;
  *  editor (default) = add + edit places; admin = full incl. delete. The owner
@@ -77,7 +88,7 @@ export const collectionPlaceSchema = z.object({
   category: placeCategorySchema.optional(),
   tags: z.array(tagSchema.partial()).optional(),
   /** Ids of the per-collection labels assigned to this place. */
-  label_ids: z.array(z.number()).optional(),
+  label_ids: z.array(z.number().int()).optional(),
   // Collaborative ratings (#1435): every member's vote + the displayed aggregate.
   ratings: z.array(placeRatingVoteSchema).optional(),
   rating_avg: z.number().nullable().optional(),
@@ -137,24 +148,24 @@ export const collectionUpdateRequestSchema = collectionCreateRequestSchema.parti
 export type CollectionUpdateRequest = z.infer<typeof collectionUpdateRequestSchema>;
 
 /** Reorder the caller's lists — every visible collection id in the desired order.
- *  Plain z.number() (no .min/.int) mirrors the legacy hand-rolled check the DTO
- *  ratchet replaced: any array of numbers, empty included. */
+ *  No .min mirrors the legacy hand-rolled check the DTO ratchet replaced: any
+ *  array, empty included; .int() keeps a fractional id from reaching SQL. */
 export const collectionReorderRequestSchema = z.object({
-  orderedIds: z.array(z.number()),
+  orderedIds: z.array(z.number().int()),
 });
 export type CollectionReorderRequest = z.infer<typeof collectionReorderRequestSchema>;
 
 /** Save a place into a list from a raw maps/manual payload (or carrying provenance). */
 export const collectionSavePlaceRequestSchema = z.object({
-  collection_id: z.number(),
-  source_place_id: z.number().nullable().optional(),
-  source_trip_id: z.number().nullable().optional(),
+  collection_id: z.number().int(),
+  source_place_id: z.number().int().nullable().optional(),
+  source_trip_id: z.number().int().nullable().optional(),
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   lat: z.number().nullable().optional(),
   lng: z.number().nullable().optional(),
   address: z.string().nullable().optional(),
-  category_id: z.number().nullable().optional(),
+  category_id: z.number().int().nullable().optional(),
   price: z.number().nullable().optional(),
   currency: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -166,25 +177,25 @@ export const collectionSavePlaceRequestSchema = z.object({
   phone: z.string().nullable().optional(),
   status: collectionStatusSchema.optional(),
   links: collectionLinksSchema.optional(),
-  tag_ids: z.array(z.number()).optional(),
+  tag_ids: z.array(z.number().int()).optional(),
   force: z.boolean().optional(), // "add anyway" over a dedup match
 });
 export type CollectionSavePlaceRequest = z.infer<typeof collectionSavePlaceRequestSchema>;
 
 /** DEDICATED DTO for POST /places/from-trip — the server reads the place, so no place payload. */
 export const collectionSaveFromTripRequestSchema = z.object({
-  collection_id: z.number(),
-  source_trip_id: z.number(),
-  source_place_id: z.number(),
+  collection_id: z.number().int(),
+  source_trip_id: z.number().int(),
+  source_place_id: z.number().int(),
   force: z.boolean().optional(),
 });
 export type CollectionSaveFromTripRequest = z.infer<typeof collectionSaveFromTripRequestSchema>;
 
 /** Bulk: copy several selected trip places into a list at once. */
 export const collectionSaveFromTripManyRequestSchema = z.object({
-  collection_id: z.number(),
-  source_trip_id: z.number(),
-  source_place_ids: z.array(z.number()).min(1).max(1000),
+  collection_id: z.number().int(),
+  source_trip_id: z.number().int(),
+  source_place_ids: z.array(z.number().int()).min(1).max(1000),
   force: z.boolean().optional(),
 });
 export type CollectionSaveFromTripManyRequest = z.infer<typeof collectionSaveFromTripManyRequestSchema>;
@@ -204,14 +215,24 @@ export const collectionPlaceUpdateRequestSchema = z.object({
   // undefined (left unchanged) instead of being injected as 'idea' (see #1437). The
   // .catch('idea') guard against invalid values is preserved.
   status: collectionStatusSchema.removeDefault().optional(),
-  category_id: z.number().nullable().optional(),
-  collection_id: z.number().optional(), // move to another list
+  category_id: z.number().int().nullable().optional(),
+  collection_id: z.number().int().optional(), // move to another list
   links: collectionLinksSchema.optional(),
-  tag_ids: z.array(z.number()).optional(),
+  tag_ids: z.array(z.number().int()).optional(),
   // Replace the place's per-collection label assignments (omit to leave unchanged).
-  label_ids: z.array(z.number()).optional(),
+  label_ids: z.array(z.number().int()).optional(),
   // Custom thumbnail (#1136): null clears it (falls back to the auto-fetched photo).
   image_url: placeImageUrlSchema.nullable().optional(),
+  // The fields saving accepts but editing did not (#2646), with the same checks, so
+  // a place can be corrected in place instead of re-saved, which loses its labels,
+  // ratings, position and id. Each one is left alone when absent; null clears it.
+  google_place_id: z.string().nullable().optional(),
+  google_ftid: z.string().nullable().optional(),
+  osm_id: z.string().nullable().optional(),
+  website: placeWebsiteSchema.nullable().optional(),
+  phone: z.string().nullable().optional(),
+  price: z.number().nullable().optional(),
+  currency: z.string().nullable().optional(),
 });
 export type CollectionPlaceUpdateRequest = z.infer<typeof collectionPlaceUpdateRequestSchema>;
 
@@ -221,7 +242,7 @@ export type CollectionSetStatusRequest = z.infer<typeof collectionSetStatusReque
 /** Set one status on several saved places at once — the place dialog's "mark
  *  visited everywhere it is saved" (#1469). Ids are collection_places ids. */
 export const collectionSetStatusManyRequestSchema = z.object({
-  ids: z.array(z.number()).min(1).max(1000),
+  ids: z.array(z.number().int()).min(1).max(1000),
   status: collectionStatusSchema,
 });
 export type CollectionSetStatusManyRequest = z.infer<typeof collectionSetStatusManyRequestSchema>;
@@ -229,8 +250,8 @@ export type CollectionSetStatusManyRequest = z.infer<typeof collectionSetStatusM
 /** Same, but naming the places by their TRIP ids: the server resolves each one to
  *  the lists it is saved in. Drives the planner's bulk "mark as visited" (#1469). */
 export const collectionSetStatusFromTripRequestSchema = z.object({
-  trip_id: z.number(),
-  place_ids: z.array(z.number()).min(1).max(1000),
+  trip_id: z.number().int(),
+  place_ids: z.array(z.number().int()).min(1).max(1000),
   status: collectionStatusSchema,
 });
 export type CollectionSetStatusFromTripRequest = z.infer<typeof collectionSetStatusFromTripRequestSchema>;
@@ -243,49 +264,96 @@ export const collectionSetStatusManyResponseSchema = z.object({
 });
 export type CollectionSetStatusManyResponse = z.infer<typeof collectionSetStatusManyResponseSchema>;
 
-/** Bulk-delete saved places. Plain z.number() (no .min/.int) mirrors the legacy
- *  hand-rolled check the DTO ratchet replaced (same shape as placeBulkDeleteRequestSchema). */
+/** Bulk-delete saved places. No .min mirrors the legacy hand-rolled check the
+ *  DTO ratchet replaced (same shape as placeBulkDeleteRequestSchema). */
 export const collectionDeleteManyRequestSchema = z.object({
-  ids: z.array(z.number()),
+  ids: z.array(z.number().int()),
 });
 export type CollectionDeleteManyRequest = z.infer<typeof collectionDeleteManyRequestSchema>;
 
 /** Copy one or many saved places INTO a trip (dedup precheck on server). */
 export const collectionCopyToTripRequestSchema = z.object({
-  trip_id: z.number(),
-  place_ids: z.array(z.number()).min(1),
+  trip_id: z.number().int(),
+  place_ids: z.array(z.number().int()).min(1),
   force: z.boolean().optional(),
 });
 export type CollectionCopyToTripRequest = z.infer<typeof collectionCopyToTripRequestSchema>;
 
+/** What a copy into a trip did: how many went in, the ones the trip had, and each new trip place by its source. */
+export const collectionCopyToTripResponseSchema = z.object({
+  copied: z.number(),
+  skipped: z.array(z.object({ id: z.number(), name: z.string() })),
+  created: z.array(z.object({ id: z.number(), source_id: z.number() })),
+});
+export type CollectionCopyToTripResponse = z.infer<typeof collectionCopyToTripResponseSchema>;
+
+/** Saved places and labels asked for by their ids, across every list the caller can see (get_collection_items). */
+export const collectionItemsRequestSchema = z.object({
+  placeIds: z.array(idSchema).max(50).optional(),
+  labelIds: z.array(idSchema).max(20).optional(),
+});
+export type CollectionItemsRequest = z.infer<typeof collectionItemsRequestSchema>;
+
+export const COLLECTION_PLACES_PAGE_DEFAULT = 100;
+export const COLLECTION_PLACES_PAGE_MAX = 500;
+
+/**
+ * One page of a list's places for an MCP client (list_collection_places, #2647):
+ * get_collection answers a long list as one block a client cuts in the middle.
+ * Pages follow the list's own order and continue from a cursor rather than an
+ * offset, so labelling the places of one page while filtering on `unlabeled`
+ * cannot make the next page skip any.
+ */
+export const collectionPlacesPageRequestSchema = z.object({
+  collectionId: idSchema,
+  cursor: z
+    .string()
+    .max(200)
+    .optional()
+    .describe('Where to go on: the next_cursor of the page before. Leave it out for the first page.'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(COLLECTION_PLACES_PAGE_MAX)
+    .optional()
+    .describe(
+      `How many places at most (default ${COLLECTION_PLACES_PAGE_DEFAULT}, at most ${COLLECTION_PLACES_PAGE_MAX})`,
+    ),
+  status: z.enum(COLLECTION_STATUSES).optional().describe('Only places with this status'),
+  labelId: idSchema.optional().describe('Only places carrying this label of the list'),
+  unlabeled: z.boolean().optional().describe('true: only places without any label. Not together with labelId.'),
+});
+export type CollectionPlacesPageRequest = z.infer<typeof collectionPlacesPageRequestSchema>;
+
 // Fusion invitations. user_id is NUMERIC ONLY — the UI always sends an id from availableUsers.
 export const collectionInviteRequestSchema = z.object({
-  collection_id: z.number(),
-  user_id: z.number(),
+  collection_id: z.number().int(),
+  user_id: z.number().int(),
   role: collectionRoleSchema.optional(),
 });
 export type CollectionInviteRequest = z.infer<typeof collectionInviteRequestSchema>;
 
-export const collectionInviteActionRequestSchema = z.object({ collection_id: z.number() });
+export const collectionInviteActionRequestSchema = z.object({ collection_id: z.number().int() });
 export type CollectionInviteActionRequest = z.infer<typeof collectionInviteActionRequestSchema>;
 
 export const collectionInviteCancelRequestSchema = z.object({
-  collection_id: z.number(),
-  user_id: z.number(),
+  collection_id: z.number().int(),
+  user_id: z.number().int(),
 });
 export type CollectionInviteCancelRequest = z.infer<typeof collectionInviteCancelRequestSchema>;
 
 /** Owner removes an ALREADY-ACCEPTED member (kick). */
 export const collectionRemoveMemberRequestSchema = z.object({
-  collection_id: z.number(),
-  user_id: z.number(),
+  collection_id: z.number().int(),
+  user_id: z.number().int(),
 });
 export type CollectionRemoveMemberRequest = z.infer<typeof collectionRemoveMemberRequestSchema>;
 
 /** Owner changes an accepted member's permission role. */
 export const collectionSetMemberRoleRequestSchema = z.object({
-  collection_id: z.number(),
-  user_id: z.number(),
+  collection_id: z.number().int(),
+  user_id: z.number().int(),
   role: collectionRoleSchema,
 });
 export type CollectionSetMemberRoleRequest = z.infer<typeof collectionSetMemberRoleRequestSchema>;
@@ -295,7 +363,7 @@ const labelColorSchema = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
 
 /** Create a custom label in a list. */
 export const collectionLabelCreateRequestSchema = z.object({
-  collection_id: z.number(),
+  collection_id: z.number().int(),
   name: z.string().trim().min(1).max(60),
   color: labelColorSchema.optional(),
 });
@@ -311,8 +379,8 @@ export type CollectionLabelUpdateRequest = z.infer<typeof collectionLabelUpdateR
 
 /** Bulk add or remove one/several labels across many selected places. */
 export const collectionLabelAssignRequestSchema = z.object({
-  label_ids: z.array(z.number()).min(1).max(50),
-  place_ids: z.array(z.number()).min(1).max(1000),
+  label_ids: z.array(z.number().int()).min(1).max(50),
+  place_ids: z.array(z.number().int()).min(1).max(1000),
 });
 export type CollectionLabelAssignRequest = z.infer<typeof collectionLabelAssignRequestSchema>;
 
@@ -337,6 +405,28 @@ export const collectionDetailResponseSchema = z.object({
 });
 export type CollectionDetailResponse = z.infer<typeof collectionDetailResponseSchema>;
 
+/**
+ * The asked-for places and labels with the lists they sit in: each list's
+ * size, colour, labels and people (names and roles, no addresses), and
+ * whether the caller may delete places from it (its owner or an admin). An id
+ * the caller cannot see is left out, never refused.
+ */
+const collectionItemsListSchema = collectionSchema
+  .pick({ id: true, name: true, color: true, place_count: true, is_owner: true, labels: true })
+  .extend({
+    can_delete: z.boolean(),
+    members: z.array(
+      collectionMemberSchema.pick({ user_id: true, username: true, status: true, role: true, is_owner: true }),
+    ),
+  });
+
+export const collectionItemsResponseSchema = z.object({
+  lists: z.array(collectionItemsListSchema),
+  places: z.array(collectionPlaceSchema),
+  labels: z.array(collectionLabelSchema),
+});
+export type CollectionItemsResponse = z.infer<typeof collectionItemsResponseSchema>;
+
 /** Dedup outcome envelope reused by save + copy (matches placeService dedup UX). */
 export const collectionSaveResultSchema = z.object({
   place: collectionPlaceSchema.optional(),
@@ -352,6 +442,8 @@ export const collectionMembershipSchema = z.object({
     z.object({
       collection_id: z.number(),
       name: z.string(),
+      /** The list's colour, for its dot; older servers leave it out. */
+      color: z.string().nullable().optional(),
       place_id: z.number(),
       /** Per-list status, so the picker can show and change it without a second round trip (#1469). */
       status: collectionStatusSchema,

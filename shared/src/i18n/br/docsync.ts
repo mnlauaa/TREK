@@ -71,6 +71,7 @@ const docsync: TranslationStrings = {
   'docsync.state.scope_drift': 'Saiu da pasta',
 
   'docsync.conflict.resolve': 'Resolver {count}',
+  'docsync.conflict.resolve.one': 'Resolver {count}',
 
   'docsync.conflict.title': 'As duas cópias mudaram',
   'docsync.conflict.keepTrek': 'Manter a versão do TREK',
@@ -179,6 +180,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'Pausado: um administrador desativou este provedor. A sincronização continua assim que ele for reativado.',
   'docsync.binding.reconnect': 'Voltar a ligar',
+  'docsync.connection.title': 'Conexão',
+  'docsync.connection.hint': 'O endereço e o login que o TREK usa para este armazenamento.',
+  'docsync.connection.edit': 'Editar conexão',
+  'docsync.connection.remove': 'Remover conexão',
+  'docsync.connection.confirmRemove':
+    'O TREK esquece o endereço e o login deste armazenamento, e toda sincronização desta viagem por ele para. Os documentos continuam no TREK e no armazenamento.',
 };
 
 export default docsync;

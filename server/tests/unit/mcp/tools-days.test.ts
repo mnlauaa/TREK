@@ -4,81 +4,65 @@
  * resource (moved from resources.test.ts when the legacy registrar was ported).
  * create_day's plain append is covered in tools-days-accommodations.test.ts.
  */
+import { DayAssignments } from '../../../src/db/entities/DayAssignments.entity';
+import { Days } from '../../../src/db/entities/Days.entity';
+import { Trips } from '../../../src/db/entities/Trips.entity';
+import { DaysService } from '../../../src/nest/days/days.service';
+import { makeDayAccommodation, makeDayAssignment } from '../../helpers/factories/itinerary';
+import { makePlace } from '../../helpers/factories/places';
+import { findRow, updateRows } from '../../helpers/factories/rows';
+import { makeDay, makeTrip, readTripDays } from '../../helpers/factories/trips';
+import { makeUser } from '../../helpers/factories/users';
+import { FakeRealtimeService } from '../../helpers/fake-realtime';
+import { createMcpHarness, parseToolResult, parseResourceResult, type McpHarness } from '../../helpers/mcp-harness';
+import { resetDatabase } from '../../helpers/reset-database';
+import { bootTestApp } from '../../helpers/test-app';
+import { MikroORM } from '@mikro-orm/core';
+
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: any, userId: number) =>
-      db.prepare(`SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`).get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
+const realtime = new FakeRealtimeService();
+const broadcastMock = realtime.broadcastMock;
 
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-}));
-
-const { broadcastMock } = vi.hoisted(() => ({ broadcastMock: vi.fn() }));
-vi.mock('../../../src/websocket', () => ({ broadcast: broadcastMock }));
-
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { resetTestDb } from '../../helpers/test-db';
-import {
-  createUser, createTrip, createDay, createPlace, createDayAssignment, createDayAccommodation,
-} from '../../helpers/factories';
-import { createMcpHarness, parseToolResult, parseResourceResult, type McpHarness } from '../../helpers/mcp-harness';
-import { DaysService } from '../../../src/nest/days/days.service';
-
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
-});
-
-beforeEach(() => {
-  resetTestDb(testDb);
+beforeEach(async () => {
+  await resetDatabase(orm);
   broadcastMock.mockClear();
   delete process.env.DEMO_MODE;
 });
 
-afterAll(() => {
-  testDb.close();
+let orm: MikroORM;
+
+beforeAll(async () => {
+  orm = (await bootTestApp(realtime)).get(MikroORM);
+});
+
+afterAll(async () => {
+  await (await bootTestApp(realtime)).close();
 });
 
 async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>) {
-  const h = await createMcpHarness({ userId, withResources: false });
-  try { await fn(h); } finally { await h.cleanup(); }
+  const h = await createMcpHarness({ realtime, userId, withResources: false });
+  try {
+    await fn(h);
+  } finally {
+    await h.cleanup();
+  }
 }
 
 /** The stored day row, which is what a tool's echo can disagree with. */
-function dayRow(dayId: number) {
-  return testDb.prepare('SELECT title, notes, day_number, date FROM days WHERE id = ?').get(dayId) as
-    { title: string | null; notes: string | null; day_number: number; date: string | null };
+async function dayRow(dayId: number) {
+  const row = await findRow(orm, Days, { id: dayId });
+  if (!row) throw new Error(`no day ${dayId}`);
+  return row;
 }
 
 /** Day ids of a trip in stored order, so a reorder can be read back positionally. */
-function dayIdsInOrder(tripId: number): number[] {
-  return (testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY day_number').all(tripId) as { id: number }[])
-    .map(r => r.id);
+async function dayIdsInOrder(tripId: number): Promise<number[]> {
+  return (await readTripDays(orm, tripId)).map((r) => r.id);
 }
 
-function dayDatesInOrder(tripId: number): (string | null)[] {
-  return (testDb.prepare('SELECT date FROM days WHERE trip_id = ? ORDER BY day_number').all(tripId) as { date: string | null }[])
-    .map(r => r.date);
+async function dayDatesInOrder(tripId: number): Promise<(string | null)[]> {
+  return (await readTripDays(orm, tripId)).map((r) => r.date ?? null);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,9 +71,9 @@ function dayDatesInOrder(tripId: number): (string | null)[] {
 
 describe('Tool: update_day', () => {
   it('sets a day title', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -102,9 +86,9 @@ describe('Tool: update_day', () => {
   });
 
   it('clears a day title with null', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id, { title: 'Old Title' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id, { title: 'Old Title' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -117,10 +101,10 @@ describe('Tool: update_day', () => {
   });
 
   it('setting a title preserves the day notes (post-port defect fix)', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
-    testDb.prepare('UPDATE days SET notes = ? WHERE id = ?').run('Walking day', day.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
+    await updateRows(orm, Days, { id: day.id }, { notes: 'Walking day' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -133,9 +117,9 @@ describe('Tool: update_day', () => {
   });
 
   it('writes notes without being sent a title, and keeps the title', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id, { title: 'Arrival in Paris' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id, { title: 'Arrival in Paris' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -146,13 +130,13 @@ describe('Tool: update_day', () => {
       expect(data.day.notes).toBe('Ferry leaves at 08:00');
     });
 
-    expect(dayRow(day.id)).toMatchObject({ title: 'Arrival in Paris', notes: 'Ferry leaves at 08:00' });
+    expect(await dayRow(day.id)).toMatchObject({ title: 'Arrival in Paris', notes: 'Ferry leaves at 08:00' });
   });
 
   it('sets a title and notes in one call', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({
@@ -161,14 +145,14 @@ describe('Tool: update_day', () => {
       });
     });
 
-    expect(dayRow(day.id)).toMatchObject({ title: 'Free day', notes: 'Nothing booked' });
+    expect(await dayRow(day.id)).toMatchObject({ title: 'Free day', notes: 'Nothing booked' });
   });
 
   it('clears the notes with an empty string', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id, { title: 'Arrival' });
-    testDb.prepare('UPDATE days SET notes = ? WHERE id = ?').run('Ferry leaves at 08:00', day.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id, { title: 'Arrival' });
+    await updateRows(orm, Days, { id: day.id }, { notes: 'Ferry leaves at 08:00' });
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({
@@ -177,13 +161,13 @@ describe('Tool: update_day', () => {
       });
     });
 
-    expect(dayRow(day.id)).toMatchObject({ title: 'Arrival', notes: null });
+    expect(await dayRow(day.id)).toMatchObject({ title: 'Arrival', notes: null });
   });
 
   it('refuses a non-string notes value', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -194,13 +178,13 @@ describe('Tool: update_day', () => {
       expect((result.content as { text: string }[])[0].text).toContain('Invalid arguments');
     });
 
-    expect(dayRow(day.id).notes).toBeNull();
+    expect((await dayRow(day.id)).notes).toBeNull();
   });
 
   it('broadcasts day:updated event', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'update_day', arguments: { tripId: trip.id, dayId: day.id, title: 'Day 1' } });
       expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'day:updated', expect.any(Object));
@@ -208,10 +192,10 @@ describe('Tool: update_day', () => {
   });
 
   it('returns error when day does not belong to trip', async () => {
-    const { user } = createUser(testDb);
-    const trip1 = createTrip(testDb, user.id);
-    const trip2 = createTrip(testDb, user.id);
-    const dayFromTrip2 = createDay(testDb, trip2.id);
+    const { user } = await makeUser(orm);
+    const trip1 = await makeTrip(orm, user.id);
+    const trip2 = await makeTrip(orm, user.id);
+    const dayFromTrip2 = await makeDay(orm, trip2.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -223,23 +207,29 @@ describe('Tool: update_day', () => {
   });
 
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
+    const day = await makeDay(orm, trip.id);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_day', arguments: { tripId: trip.id, dayId: day.id, title: 'X' } });
+      const result = await h.client.callTool({
+        name: 'update_day',
+        arguments: { tripId: trip.id, dayId: day.id, title: 'X' },
+      });
       expect(result.isError).toBe(true);
     });
   });
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
-    const day = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
+    const day = await makeDay(orm, trip.id);
     await withHarness(user.id, async (h) => {
-      const result = await h.client.callTool({ name: 'update_day', arguments: { tripId: trip.id, dayId: day.id, title: 'X' } });
+      const result = await h.client.callTool({
+        name: 'update_day',
+        arguments: { tripId: trip.id, dayId: day.id, title: 'X' },
+      });
       expect(result.isError).toBe(true);
     });
   });
@@ -251,11 +241,11 @@ describe('Tool: update_day', () => {
 
 describe('Tool: create_day (position)', () => {
   it('inserts an empty day into the middle of a dateless trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
-    const d3 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
+    const d3 = await makeDay(orm, trip.id);
 
     let insertedId = 0;
     await withHarness(user.id, async (h) => {
@@ -266,14 +256,14 @@ describe('Tool: create_day (position)', () => {
       insertedId = (parseToolResult(result) as { day: { id: number } }).day.id;
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, insertedId, d2.id, d3.id]);
-    expect(dayRow(insertedId)).toMatchObject({ day_number: 2, date: null });
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, insertedId, d2.id, d3.id]);
+    expect(await dayRow(insertedId)).toMatchObject({ day_number: 2, date: null });
   });
 
   it('re-pins the dates and extends the trip when inserting into a dated trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
-    const [d1, d2, d3] = dayIdsInOrder(trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
+    const [d1, d2, d3] = await dayIdsInOrder(trip.id);
 
     let insertedId = 0;
     await withHarness(user.id, async (h) => {
@@ -285,16 +275,16 @@ describe('Tool: create_day (position)', () => {
       insertedId = (parseToolResult(result) as { day: { id: number } }).day.id;
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1, insertedId, d2, d3]);
-    expect(dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03', '2025-06-04']);
-    expect(dayRow(insertedId)).toMatchObject({ date: '2025-06-02', notes: null });
-    expect(testDb.prepare('SELECT end_date FROM trips WHERE id = ?').get(trip.id)).toEqual({ end_date: '2025-06-04' });
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1, insertedId, d2, d3]);
+    expect(await dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03', '2025-06-04']);
+    expect(await dayRow(insertedId)).toMatchObject({ date: '2025-06-02', notes: null });
+    expect((await findRow(orm, Trips, { id: trip.id }))?.end_date).toBe('2025-06-04');
   });
 
   it('appends when position is omitted and still honours date and notes', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
 
     let appendedId = 0;
     await withHarness(user.id, async (h) => {
@@ -305,14 +295,14 @@ describe('Tool: create_day (position)', () => {
       appendedId = (parseToolResult(result) as { day: { id: number } }).day.id;
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, appendedId]);
-    expect(dayRow(appendedId)).toMatchObject({ date: '2025-06-15', notes: 'Arrival day' });
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, appendedId]);
+    expect(await dayRow(appendedId)).toMatchObject({ date: '2025-06-15', notes: 'Arrival day' });
   });
 
   it('broadcasts day:reordered for an insert and day:created for an append', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, position: 1 } });
@@ -326,9 +316,9 @@ describe('Tool: create_day (position)', () => {
   });
 
   it('refuses a position below 1', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -339,17 +329,17 @@ describe('Tool: create_day (position)', () => {
       expect((result.content as { text: string }[])[0].text).toContain('Invalid arguments');
     });
 
-    expect(dayIdsInOrder(trip.id)).toHaveLength(1);
+    expect(await dayIdsInOrder(trip.id)).toHaveLength(1);
   });
 
   it('refuses an insert that would invert a stay, leaving the trip untouched', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
-    const [d1, d2, d3] = dayIdsInOrder(trip.id);
-    const place = createPlace(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
+    const [d1, d2, d3] = await dayIdsInOrder(trip.id);
+    const place = await makePlace(orm, trip.id);
     // The stay ends on the last day, so pushing a day in front of its start
     // cannot invert it; anchoring it the other way round is what does.
-    createDayAccommodation(testDb, trip.id, place.id, d3, d1);
+    await makeDayAccommodation(orm, trip.id, place.id, d3, d1);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -360,20 +350,20 @@ describe('Tool: create_day (position)', () => {
       expect((result.content as { text: string }[])[0].text).toContain('accommodation');
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1, d2, d3]);
-    expect(dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03']);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1, d2, d3]);
+    expect(await dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03']);
   });
 
   it('blocks demo user on an insert', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
+    await makeDay(orm, trip.id);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, position: 1 } });
       expect(result.isError).toBe(true);
     });
-    expect(dayIdsInOrder(trip.id)).toHaveLength(1);
+    expect(await dayIdsInOrder(trip.id)).toHaveLength(1);
   });
 });
 
@@ -382,16 +372,18 @@ describe('Tool: create_day (position)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Tool: create_day (dated)', () => {
-  const endDate = (tripId: number) =>
-    (testDb.prepare('SELECT end_date FROM trips WHERE id = ?').get(tripId) as { end_date: string | null }).end_date;
+  const endDate = async (tripId: number) => (await findRow(orm, Trips, { id: tripId }))?.end_date;
 
   it('appends the next date behind the dated days, extends the trip and answers with both', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
-    const [d1, d2] = dayIdsInOrder(trip.id);
-    const spare = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
+    const [d1, d2] = await dayIdsInOrder(trip.id);
+    const spare = await makeDay(orm, trip.id);
 
-    let data = {} as { day: { id: number; date: string; notes: string | null }; trip: { end_date: string; day_count: number } };
+    let data = {} as {
+      day: { id: number; date: string; notes: string | null };
+      trip: { end_date: string; day_count: number };
+    };
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_day',
@@ -402,36 +394,49 @@ describe('Tool: create_day (dated)', () => {
 
     expect(data.day).toMatchObject({ date: '2025-06-03', notes: 'Late checkout' });
     expect(data.trip).toMatchObject({ end_date: '2025-06-03', day_count: 4 });
-    expect(dayIdsInOrder(trip.id)).toEqual([d1, d2, data.day.id, spare.id]);
-    expect(dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03', null]);
-    expect(endDate(trip.id)).toBe('2025-06-03');
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1, d2, data.day.id, spare.id]);
+    expect(await dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03', null]);
+    expect(await endDate(trip.id)).toBe('2025-06-03');
     // The insert shape of day:reordered, so collaborators refetch, then the trip.
-    expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'day:reordered', expect.objectContaining({ day: expect.objectContaining({ id: data.day.id }) }));
-    expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'trip:updated', expect.objectContaining({ trip: expect.objectContaining({ end_date: '2025-06-03' }) }));
+    expect(broadcastMock).toHaveBeenCalledWith(
+      trip.id,
+      'day:reordered',
+      expect.objectContaining({ day: expect.objectContaining({ id: data.day.id }) }),
+    );
+    expect(broadcastMock).toHaveBeenCalledWith(
+      trip.id,
+      'trip:updated',
+      expect.objectContaining({ trip: expect.objectContaining({ end_date: '2025-06-03' }) }),
+    );
     expect(broadcastMock).not.toHaveBeenCalledWith(trip.id, 'day:created', expect.any(Object));
   });
 
   it('refuses dated next to a position or a date, the way the REST contract does', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
 
     await withHarness(user.id, async (h) => {
       for (const extra of [{ position: 1 }, { date: '2025-07-01' }]) {
-        const result = await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, dated: true, ...extra } });
+        const result = await h.client.callTool({
+          name: 'create_day',
+          arguments: { tripId: trip.id, dated: true, ...extra },
+        });
         expect(result.isError).toBe(true);
-        expect((result.content as { text: string }[])[0].text).toContain('dated cannot be combined with date or position');
+        expect((result.content as { text: string }[])[0].text).toContain(
+          'dated cannot be combined with date or position',
+        );
       }
     });
 
-    expect(dayIdsInOrder(trip.id)).toHaveLength(2);
-    expect(endDate(trip.id)).toBe('2025-06-02');
+    expect(await dayIdsInOrder(trip.id)).toHaveLength(2);
+    expect(await endDate(trip.id)).toBe('2025-06-02');
     expect(broadcastMock).not.toHaveBeenCalled();
   });
 
   it('refuses a trip without dates and writes nothing', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, dated: true } });
@@ -439,14 +444,16 @@ describe('Tool: create_day (dated)', () => {
       expect((result.content as { text: string }[])[0].text).toContain('This trip has no dates');
     });
 
-    expect(dayDatesInOrder(trip.id)).toEqual([null]);
+    expect(await dayDatesInOrder(trip.id)).toEqual([null]);
     expect(broadcastMock).not.toHaveBeenCalled();
   });
 
   it('lets an unexpected failure surface as one, not as a refusal of the trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
-    const boom = vi.spyOn(DaysService.prototype, 'appendDated').mockImplementation(() => { throw new Error('disk full'); });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
+    const boom = vi.spyOn(DaysService.prototype, 'appendDated').mockImplementation(() => {
+      throw new Error('disk full');
+    });
     try {
       await withHarness(user.id, async (h) => {
         const result = await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, dated: true } });
@@ -461,27 +468,31 @@ describe('Tool: create_day (dated)', () => {
 
   it('blocks a demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, dated: true } });
       expect(result.isError).toBe(true);
     });
 
-    expect(dayIdsInOrder(trip.id)).toHaveLength(2);
-    expect(endDate(trip.id)).toBe('2025-06-02');
+    expect(await dayIdsInOrder(trip.id)).toHaveLength(2);
+    expect(await endDate(trip.id)).toBe('2025-06-02');
   });
 
   it('an insert at a position announces the grown trip as well', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-02' });
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'create_day', arguments: { tripId: trip.id, position: 1 } });
     });
 
-    expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'trip:updated', expect.objectContaining({ trip: expect.objectContaining({ end_date: '2025-06-03', day_count: 3 }) }));
+    expect(broadcastMock).toHaveBeenCalledWith(
+      trip.id,
+      'trip:updated',
+      expect.objectContaining({ trip: expect.objectContaining({ end_date: '2025-06-03', day_count: 3 }) }),
+    );
   });
 });
 
@@ -491,13 +502,13 @@ describe('Tool: create_day (dated)', () => {
 
 describe('Tool: reorder_days', () => {
   it('renumbers the days and carries each day content along', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id, { title: 'First' });
-    const d2 = createDay(testDb, trip.id, { title: 'Second' });
-    const d3 = createDay(testDb, trip.id, { title: 'Third' });
-    const place = createPlace(testDb, trip.id);
-    const assignment = createDayAssignment(testDb, d3.id, place.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id, { title: 'First' });
+    const d2 = await makeDay(orm, trip.id, { title: 'Second' });
+    const d3 = await makeDay(orm, trip.id, { title: 'Third' });
+    const place = await makePlace(orm, trip.id);
+    const assignment = await makeDayAssignment(orm, d3.id, place.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -507,16 +518,15 @@ describe('Tool: reorder_days', () => {
       expect(parseToolResult(result)).toEqual({ success: true });
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d3.id, d1.id, d2.id]);
-    expect(dayRow(d3.id)).toMatchObject({ day_number: 1, title: 'Third' });
-    expect(testDb.prepare('SELECT day_id FROM day_assignments WHERE id = ?').get(assignment.id))
-      .toEqual({ day_id: d3.id });
+    expect(await dayIdsInOrder(trip.id)).toEqual([d3.id, d1.id, d2.id]);
+    expect(await dayRow(d3.id)).toMatchObject({ day_number: 1, title: 'Third' });
+    expect((await findRow(orm, DayAssignments, { id: assignment.id }))?.day_id).toBe(d3.id);
   });
 
   it('keeps the dates pinned to their slots so the content moves across them', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
-    const [d1, d2, d3] = dayIdsInOrder(trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
+    const [d1, d2, d3] = await dayIdsInOrder(trip.id);
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({
@@ -525,16 +535,16 @@ describe('Tool: reorder_days', () => {
       });
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d3, d1, d2]);
-    expect(dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03']);
-    expect(dayRow(d3).date).toBe('2025-06-01');
+    expect(await dayIdsInOrder(trip.id)).toEqual([d3, d1, d2]);
+    expect(await dayDatesInOrder(trip.id)).toEqual(['2025-06-01', '2025-06-02', '2025-06-03']);
+    expect((await dayRow(d3)).date).toBe('2025-06-01');
   });
 
   it('broadcasts day:reordered with the ordered ids', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'reorder_days', arguments: { tripId: trip.id, orderedIds: [d2.id, d1.id] } });
@@ -548,11 +558,11 @@ describe('Tool: reorder_days', () => {
   });
 
   it('refuses a list that is not a permutation of the trip days', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
-    const d3 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
+    const d3 = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -563,17 +573,17 @@ describe('Tool: reorder_days', () => {
       expect((result.content as { text: string }[])[0].text).toContain('permutation');
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id, d3.id]);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id, d3.id]);
     expect(broadcastMock).not.toHaveBeenCalled();
   });
 
   it('refuses a day id from another trip', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const other = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
-    const foreign = createDay(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const other = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
+    const foreign = await makeDay(orm, other.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -583,16 +593,16 @@ describe('Tool: reorder_days', () => {
       expect(result.isError).toBe(true);
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
-    expect(dayRow(foreign.id).day_number).toBe(1);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
+    expect((await dayRow(foreign.id)).day_number).toBe(1);
   });
 
   it('refuses a move that would make a stay end before it starts, and rolls back', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
-    const [d1, d2, d3] = dayIdsInOrder(trip.id);
-    const place = createPlace(testDb, trip.id);
-    createDayAccommodation(testDb, trip.id, place.id, d1, d2);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id, { start_date: '2025-06-01', end_date: '2025-06-03' });
+    const [d1, d2, d3] = await dayIdsInOrder(trip.id);
+    const place = await makePlace(orm, trip.id);
+    await makeDayAccommodation(orm, trip.id, place.id, d1, d2);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -603,14 +613,14 @@ describe('Tool: reorder_days', () => {
       expect((result.content as { text: string }[])[0].text).toContain('accommodation');
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1, d2, d3]);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1, d2, d3]);
     expect(broadcastMock).not.toHaveBeenCalled();
   });
 
   it('refuses an empty list', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -623,11 +633,11 @@ describe('Tool: reorder_days', () => {
   });
 
   it('returns access denied for non-member', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -637,15 +647,15 @@ describe('Tool: reorder_days', () => {
       expect(result.isError).toBe(true);
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
   });
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const trip = createTrip(testDb, user.id);
-    const d1 = createDay(testDb, trip.id);
-    const d2 = createDay(testDb, trip.id);
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const trip = await makeTrip(orm, user.id);
+    const d1 = await makeDay(orm, trip.id);
+    const d2 = await makeDay(orm, trip.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -655,7 +665,7 @@ describe('Tool: reorder_days', () => {
       expect(result.isError).toBe(true);
     });
 
-    expect(dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
+    expect(await dayIdsInOrder(trip.id)).toEqual([d1.id, d2.id]);
   });
 });
 
@@ -665,12 +675,12 @@ describe('Tool: reorder_days', () => {
 
 describe('Resource: trek://trips/{tripId}/days', () => {
   it('returns days with assignments in order', async () => {
-    const { user } = createUser(testDb);
-    const trip = createTrip(testDb, user.id);
-    const day1 = createDay(testDb, trip.id, { day_number: 1 });
-    const day2 = createDay(testDb, trip.id, { day_number: 2 });
-    const place = createPlace(testDb, trip.id);
-    createDayAssignment(testDb, day1.id, place.id);
+    const { user } = await makeUser(orm);
+    const trip = await makeTrip(orm, user.id);
+    const day1 = await makeDay(orm, trip.id, { day_number: 1 });
+    const day2 = await makeDay(orm, trip.id, { day_number: 2 });
+    const place = await makePlace(orm, trip.id);
+    await makeDayAssignment(orm, day1.id, place.id);
     void day2;
 
     await withHarness(user.id, async (h) => {
@@ -685,9 +695,9 @@ describe('Resource: trek://trips/{tripId}/days', () => {
   });
 
   it('returns access denied for unauthorized trip', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    const trip = createTrip(testDb, other.id);
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const trip = await makeTrip(orm, other.id);
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.readResource({ uri: `trek://trips/${trip.id}/days` });

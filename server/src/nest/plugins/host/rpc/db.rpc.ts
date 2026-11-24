@@ -1,10 +1,11 @@
-import { PluginController, PluginMethod, PluginOpenMethod } from '../rpc-kit/decorators';
-import { asArgs, asTxOps, str } from '../rpc-params';
-import type { PluginRpcContext } from '../rpc-kit/types';
+import { PluginController, PluginMethod, PluginOpenMethod } from '../../../../nest-rpc/rpc-kit/decorators';
+import type { PluginRpcContext } from '../../../../nest-rpc/rpc-kit/types';
+import { asArgs, asTxOps, str } from '../../../../nest-rpc/rpc-params';
 import { PluginUserSettingsService } from '../../plugin-user-settings.service';
 
 /**
- * A plugin's OWN sqlite, plus the three methods the router registers unconditionally.
+ * A plugin's OWN database (a SQLite file, or a schema of its own when TREK runs on
+ * Postgres), plus the three methods the router registers unconditionally.
  *
  * Every method reads `ctx.data` fresh. It must never be captured in a field or a
  * closure: the handle is per plugin, and disable()/re-enable builds a new host while
@@ -36,6 +37,12 @@ export class DbRpc {
     return ctx.data.tx(asTxOps(params.ops));
   }
 
+  /** The engine the plugin's SQL runs on, so a plugin can write the dialect it takes. */
+  @PluginMethod('db.engine', { permission: 'db:own' })
+  engine(_params: Record<string, unknown>, ctx: PluginRpcContext): unknown {
+    return { engine: ctx.data.engine };
+  }
+
   /**
    * Inter-plugin call. No permission of its own: the router authorises it against
    * the declared dependency edge and the target's `provides` allowlist. The acting
@@ -48,8 +55,8 @@ export class DbRpc {
 
   /** Same deal: the router checks the emitter's `emits` allowlist. */
   @PluginOpenMethod('events.emit')
-  emitEvent(params: Record<string, unknown>, ctx: PluginRpcContext): unknown {
-    ctx.plugins.emit(str(params.event, 'event'), params.payload);
+  async emitEvent(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
+    await ctx.plugins.emit(str(params.event, 'event'), params.payload);
     return { ok: true };
   }
 
@@ -60,8 +67,8 @@ export class DbRpc {
    * plugin falls back to ctx.config.
    */
   @PluginOpenMethod('settings.get')
-  getSetting(params: Record<string, unknown>, ctx: PluginRpcContext): unknown {
+  async getSetting(params: Record<string, unknown>, ctx: PluginRpcContext): Promise<unknown> {
     if (ctx.actingUserId === undefined) return { value: undefined };
-    return { value: this.settings.readOne(ctx.pluginId, ctx.actingUserId, str(params.key, 'key')) };
+    return { value: await this.settings.readOne(ctx.pluginId, ctx.actingUserId, str(params.key, 'key')) };
   }
 }

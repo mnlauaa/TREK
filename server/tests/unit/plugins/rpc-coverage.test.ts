@@ -9,9 +9,9 @@
  * "how far along is the move" to "nothing fell out of it": a method deleted without a
  * replacement, or a new *.rpc.ts class that no one listed in allRpcControllers().
  */
+import { PluginRpcRegistryService } from '../../../src/nest-rpc/rpc-kit/registry.service';
+import { createTestPluginRegistry } from '../../../src/nest-rpc/rpc-kit/testing';
 import { PluginRpcHost } from '../../../src/nest/plugins/host/rpc-host';
-import { PluginRpcRegistryService } from '../../../src/nest/plugins/host/rpc-kit/registry.service';
-import { createTestPluginRegistry } from '../../../src/nest/plugins/host/rpc-kit/testing';
 import { KNOWN_METHODS, KNOWN_PERMISSIONS, UNCONDITIONAL_METHODS } from '../../../src/nest/plugins/protocol/envelope';
 import { allRpcControllers, makeDeps } from '../../helpers/rpc-host-deps';
 
@@ -46,13 +46,13 @@ describe('plugin RPC coverage ledger', () => {
     expect(fromRegistry.size).toBe(KNOWN_METHODS.length + UNCONDITIONAL_METHODS.length);
   });
 
-  it('RPCLEDGER-005 the surface is the 122 methods the protocol declares', () => {
+  it('RPCLEDGER-005 the surface is the 123 methods the protocol declares', () => {
     // Pinned rather than derived: a method DELETED from KNOWN_METHODS together with
     // its handler would keep every test above green, and this is the line that makes
     // that show up in the diff.
-    expect(KNOWN_METHODS.length).toBe(119);
+    expect(KNOWN_METHODS.length).toBe(120);
     expect(UNCONDITIONAL_METHODS.length).toBe(3);
-    expect(fromRegistry.size).toBe(122);
+    expect(fromRegistry.size).toBe(123);
   });
 
   it('RPCLEDGER-006 boot-time total coverage is armed in production', () => {

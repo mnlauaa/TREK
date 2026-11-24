@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const hu: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const hu: NotificationLocale = {
     booking_change: (p) => ({
       title: `Új foglalás: ${p.booking}`,
       body: `${p.actor} hozzáadott egy "${p.booking}" (${p.type}) foglalást a(z) "${p.trip}" utazáshoz.`,
+    }),
+    flight_departed: (p) => ({
+      title: `A(z) ${p.flight} felszállt`,
+      body: `A(z) ${p.flight} járat ${p.from} és ${p.to} között a levegőben van.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `A(z) ${p.flight} késik`,
+      body: `A(z) ${p.flight} járat ${p.from} és ${p.to} között körülbelül ${p.delay} percet késik.`,
+    }),
+    flight_landed: (p) => ({
+      title: `A(z) ${p.flight} leszállt`,
+      body: `A(z) ${p.flight} járat ${p.from} felől leszállt itt: ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Utazás emlékeztető: ${p.trip}`,
@@ -37,8 +50,11 @@ const hu: NotificationLocale = {
       body: `${p.actor} meghívott egy gyűjtemény megosztására. Nyissa meg a TREK-et az elfogadáshoz vagy elutasításhoz.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} fotó megosztva`,
-      body: `${p.actor} ${p.count} fotót osztott meg a(z) "${p.trip}" utazásban.`,
+      title: pluralForm(p.count, 'hu', { one: `${p.count} fotó megosztva`, other: `${p.count} fotó megosztva` }),
+      body: pluralForm(p.count, 'hu', {
+        one: `${p.actor} ${p.count} fotót osztott meg a(z) "${p.trip}" utazásban.`,
+        other: `${p.actor} ${p.count} fotót osztott meg a(z) "${p.trip}" utazásban.`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Új üzenet a(z) "${p.trip}" utazásban`,
@@ -56,11 +72,44 @@ const hu: NotificationLocale = {
       title: 'Tárhely-replika hiba',
       body:
         `Sikertelen írás a(z) '${p.backend}' replikán: ${p.op} / ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Az utolsó értesítés óta ${p.suppressed} további hiba lett elnyomva.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'hu', {
+              one: ` Az utolsó értesítés óta ${p.suppressed} további hiba lett elnyomva.`,
+              other: ` Az utolsó értesítés óta ${p.suppressed} további hiba lett elnyomva.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Evezős régiót kértek',
+      body: `${p.actor} evezős túrát tervez itt: ${p.region}. Töltsd be vagy utasítsd el a vízadatait az adminfelületen a Bővítmények alatt.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology munkamenet törölve',
       body: 'A Synology fiókja vagy URL-je megváltozott. Kijelentkeztek a Synology Photos-ból.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer útvonal: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `„${p.tour}” („${p.trip}”) megváltozott a wandererben. Nyisd meg a túrát, és ellenőrizd a forrását, hogy minden változást láss. Az utazásban semmi sem változik magától.`
+          : p.state === 'unverifiable'
+            ? `„${p.tour}” („${p.trip}”) már nem ellenőrizhető a wandererben. A túra az utazásodban változatlan marad.`
+            : `„${p.tour}” („${p.trip}”) megváltozhatott a wandererben. Nyisd meg a túrát, és ellenőrizd a forrását. Az utazásban semmi sem változik magától.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Levélből hozzáadva: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} egy továbbított levélből hozzáadta a(z) „${p.booking}” foglalást ehhez: „${p.trip}”.`
+          : `A továbbított leveledből származó „${p.booking}” foglalás bekerült ide: „${p.trip}”. A TREK-ben 7 napig visszavonhatod.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Ellenőrizendő továbbított foglalások',
+      body: `Rád váró továbbított foglalások a TREK-ben: ${p.count}. Mindegyiknél ott áll, miért nem került be magától.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'E-mail-importálás szüneteltetve',
+      body: 'A TREK egyelőre nem fogad továbbított foglalási e-maileket, ezért most ne továbbíts ilyet. A címeid megmaradnak, és újra működnek, amint az importálás visszatér, a már hozzáadott foglalások pedig az utazásaidban maradnak.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

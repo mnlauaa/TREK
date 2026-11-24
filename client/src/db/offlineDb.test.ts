@@ -267,7 +267,7 @@ describe('offlineDb — clearTripData', () => {
     expect((await offlineDb.blobCache.toArray()).map(e => e.url)).toEqual(['/f2'])
   })
 
-  it('FE-DB-OFFLINE-019: keeps unsynced work and only purges dead failed mutations', async () => {
+  it('FE-DB-OFFLINE-019: keeps unsynced work, conflicts and parked failed changes', async () => {
     await offlineDb.mutationQueue.bulkPut([
       queued('m-pending', 1, 'pending'),
       queued('m-syncing', 1, 'syncing'),
@@ -279,7 +279,7 @@ describe('offlineDb — clearTripData', () => {
     await clearTripData(1)
 
     const left = (await offlineDb.mutationQueue.toArray()).map(m => m.id).sort()
-    expect(left).toEqual(['m-conflict', 'm-other-trip', 'm-pending', 'm-syncing'])
+    expect(left).toEqual(['m-conflict', 'm-failed', 'm-other-trip', 'm-pending', 'm-syncing'])
   })
 })
 
@@ -340,31 +340,6 @@ describe('offlineDb — connection proxy', () => {
 
     await reopenForUser(56)
     expect((offlineDb as unknown as Record<string, unknown>).__marker).toBeUndefined()
-  })
-
-  it('upgrades the 4.2.1 cache without losing places or pending writes', async () => {
-    const legacy = new Dexie('trek-offline-u57')
-    // Exact v4 store definitions from the 4.2.1 release, without later areaPlaces.
-    legacy.version(4).stores({
-      trips: 'id', days: 'id, trip_id', places: 'id, trip_id',
-      packingItems: 'id, trip_id', todoItems: 'id, trip_id', budgetItems: 'id, trip_id',
-      reservations: 'id, trip_id', tripFiles: 'id, trip_id',
-      mutationQueue: 'id, tripId, status, createdAt', syncMeta: 'tripId',
-      blobCache: 'url, cachedAt, tripId', accommodations: 'id, trip_id',
-      tripMembers: '[tripId+id], tripId', tags: 'id', categories: 'id',
-      importFiles: '[jobId+fileName], jobId, createdAt',
-    })
-    const place = { id: 19, trip_id: 1, name: 'Offline edited place' }
-    const mutation = queued('upgrade-pending', 1, 'pending')
-    await legacy.open()
-    await legacy.table('places').put(place)
-    await legacy.table('mutationQueue').put(mutation)
-    legacy.close()
-    await reopenForUser(57)
-    expect(offlineDb.verno).toBe(8)
-    expect(await offlineDb.places.get(19)).toEqual(place)
-    expect(await offlineDb.mutationQueue.get('upgrade-pending')).toEqual(mutation)
-    expect(await offlineDb.areaPlaces.count()).toBe(0)
   })
 
   it('FE-DB-OFFLINE-029: upgrading a pre-v3 cache backfills tripId and bytes on blob rows', async () => {

@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const cs: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const cs: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nová rezervace: ${p.booking}`,
       body: `${p.actor} přidal rezervaci "${p.booking}" (${p.type}) k "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} odletěl`,
+      body: `${p.flight} z ${p.from} do ${p.to} je ve vzduchu.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} má zpoždění`,
+      body: `${p.flight} z ${p.from} do ${p.to} má zhruba ${p.delay} minut zpoždění.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} přistál`,
+      body: `${p.flight} z ${p.from} přistál v ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Připomínka výletu: ${p.trip}`,
@@ -37,8 +50,16 @@ const cs: NotificationLocale = {
       body: `${p.actor} vás pozval ke sdílení sbírky. Otevřete TREK pro přijetí nebo odmítnutí.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} sdílených fotek`,
-      body: `${p.actor} sdílel ${p.count} foto v "${p.trip}".`,
+      title: pluralForm(p.count, 'cs', {
+        one: `${p.count} sdílená fotka`,
+        few: `${p.count} sdílené fotky`,
+        other: `${p.count} sdílených fotek`,
+      }),
+      body: pluralForm(p.count, 'cs', {
+        one: `${p.actor} sdílel ${p.count} fotku v "${p.trip}".`,
+        few: `${p.actor} sdílel ${p.count} fotky v "${p.trip}".`,
+        other: `${p.actor} sdílel ${p.count} fotek v "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nová zpráva v "${p.trip}"`,
@@ -56,11 +77,45 @@ const cs: NotificationLocale = {
       title: 'Selhání repliky úložiště',
       body:
         `Zápis do repliky '${p.backend}' selhal: ${p.op} u ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Od poslední notifikace bylo potlačeno ${p.suppressed} dalších selhání.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'cs', {
+              one: ` Od poslední notifikace bylo potlačeno ${p.suppressed} další selhání.`,
+              few: ` Od poslední notifikace byla potlačena ${p.suppressed} další selhání.`,
+              other: ` Od poslední notifikace bylo potlačeno ${p.suppressed} dalších selhání.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Vyžádán vodácký region',
+      body: `${p.actor} plánuje vodáckou trasu v regionu ${p.region}. Načti nebo zamítni jeho vodní data v administraci v části Doplňky.`,
     }),
     synology_session_cleared: () => ({
       title: 'Relace Synology byla zrušena',
       body: 'Váš účet nebo URL Synology se změnil. Byli jste odhlášeni ze Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Trasa wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `„${p.tour}“ v „${p.trip}“ byla ve wanderer změněna. Otevřete túru a zkontrolujte její zdroj, abyste viděli všechny změny. V cestě se nic nezmění samo.`
+          : p.state === 'unverifiable'
+            ? `„${p.tour}“ v „${p.trip}“ už nelze ve wanderer ověřit. Túra ve vaší cestě zůstává, jak je.`
+            : `„${p.tour}“ v „${p.trip}“ se ve wanderer možná změnila. Otevřete túru a zkontrolujte její zdroj. V cestě se nic nezmění samo.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Přidáno z e-mailu: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} přidal(a) „${p.booking}“ do „${p.trip}“ z přeposlaného e-mailu.`
+          : `„${p.booking}“ z vašeho přeposlaného e-mailu byla přidána do „${p.trip}“. V TREK to můžete 7 dní vrátit zpět.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Přeposlané rezervace ke kontrole',
+      body: `Přeposlané rezervace čekající na vás v TREK: ${p.count}. U každé je uvedeno, proč nebyla přidána sama.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Import e-mailů pozastaven',
+      body: 'TREK zatím nepřijímá přeposlané e-maily s rezervacemi, proto je zatím nepřeposílejte. Vaše adresy zůstávají a znovu budou fungovat, až se import vrátí, a již přidané rezervace zůstávají ve vašich cestách.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

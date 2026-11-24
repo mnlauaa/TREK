@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const es: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const es: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nueva reserva: ${p.booking}`,
       body: `${p.actor} añadió una reserva "${p.booking}" (${p.type}) a "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} ha despegado`,
+      body: `${p.flight} de ${p.from} a ${p.to} está en el aire.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} va con retraso`,
+      body: `${p.flight} de ${p.from} a ${p.to} lleva unos ${p.delay} minutos de retraso.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} ha aterrizado`,
+      body: `${p.flight} desde ${p.from} ha aterrizado en ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Recordatorio: ${p.trip}`,
@@ -37,8 +50,11 @@ const es: NotificationLocale = {
       body: `${p.actor} te invitó a compartir una colección. Abre TREK para aceptar o rechazar.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} fotos compartidas`,
-      body: `${p.actor} compartió ${p.count} foto(s) en "${p.trip}".`,
+      title: pluralForm(p.count, 'es', { one: `${p.count} foto compartida`, other: `${p.count} fotos compartidas` }),
+      body: pluralForm(p.count, 'es', {
+        one: `${p.actor} compartió ${p.count} foto en "${p.trip}".`,
+        other: `${p.actor} compartió ${p.count} fotos en "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nuevo mensaje en "${p.trip}"`,
@@ -56,11 +72,44 @@ const es: NotificationLocale = {
       title: 'Fallo de réplica de almacenamiento',
       body:
         `Error al escribir en la réplica '${p.backend}': ${p.op} de ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Se suprimieron ${p.suppressed} errores más desde la última notificación.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'es', {
+              one: ` Se suprimió ${p.suppressed} error más desde la última notificación.`,
+              other: ` Se suprimieron ${p.suppressed} errores más desde la última notificación.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Región de kayak pedida',
+      body: `${p.actor} está planificando una ruta en kayak en ${p.region}. Carga o rechaza sus datos de agua en la administración, en Complementos.`,
     }),
     synology_session_cleared: () => ({
       title: 'Sesión de Synology cerrada',
       body: 'Tu cuenta o URL de Synology ha cambiado. Has cerrado sesión en Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Ruta de wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `«${p.tour}» en «${p.trip}» se cambió en wanderer. Abre el recorrido y comprueba su fuente para ver todos los cambios. Nada del viaje cambia por sí solo.`
+          : p.state === 'unverifiable'
+            ? `«${p.tour}» en «${p.trip}» ya no se puede comprobar en wanderer. El recorrido de tu viaje se queda como está.`
+            : `«${p.tour}» en «${p.trip}» puede haber cambiado en wanderer. Abre el recorrido y comprueba su fuente para saberlo. Nada del viaje cambia por sí solo.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Añadido desde un correo: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} añadió «${p.booking}» a «${p.trip}» desde un correo reenviado.`
+          : `«${p.booking}» de tu correo reenviado se añadió a «${p.trip}». Puedes deshacerlo en TREK durante 7 días.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Reservas reenviadas por revisar',
+      body: `Reservas reenviadas pendientes en TREK: ${p.count}. Cada una indica por qué no se añadió sola.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Importación de correos en pausa',
+      body: 'Por ahora TREK no acepta correos de reserva reenviados, así que espera antes de reenviarlos. Tus direcciones se mantienen y volverán a funcionar cuando vuelva la importación, y las reservas ya añadidas siguen en tus viajes.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

@@ -1,27 +1,69 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { BookingImportService } from '../../../../src/nest/booking-import/booking-import.service';
 import { HttpException } from '@nestjs/common';
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the heavy side-effect imports so the service module loads cleanly; the
 // preview() path under test only touches the extractor + llmParse deps.
 vi.mock('../../../../src/db/database', () => ({
-  db: { prepare: vi.fn() }, closeDb: () => {}, reinitialize: () => {},
+  db: { prepare: vi.fn() },
+  closeDb: () => {},
+  reinitialize: () => {},
   // Trip access reaches these through DatabaseService; preview() never calls
   // them, but the module-level import has to resolve.
-  canAccessTrip: vi.fn(), isOwner: () => false, getPlaceWithTags: () => null,
+  canAccessTrip: vi.fn(),
+  isOwner: () => false,
+  getPlaceWithTags: () => null,
 }));
-import { db as dbConn } from '../../../../src/db/database';
-import { DatabaseService } from '../../../../src/nest/database/database.service';
-vi.mock('../../../../src/websocket', () => ({ broadcast: vi.fn() }));
-const permissionsStub = { checkPermission: vi.fn(() => true) };
+const guardsStub = { hasTripPermission: vi.fn(async () => true) };
 
-import { BookingImportService } from '../../../../src/nest/booking-import/booking-import.service';
+/** The service under test with the named collaborators given, every other one left out. */
+function buildService(deps: Partial<Record<(typeof DEP_ORDER)[number], unknown>>): BookingImportService {
+  const args = DEP_ORDER.map((name) => deps[name]);
+  return new BookingImportService(...(args as ConstructorParameters<typeof BookingImportService>));
+}
 
-const HOTEL_KI = { '@type': 'LodgingReservation', reservationNumber: 'ABC', reservationFor: { name: 'Hotel X' }, checkinTime: '2026-06-11T15:00', checkoutTime: '2026-06-12T11:00' };
-const file = (name = 'a.pdf') => ({ buffer: Buffer.from('x'), originalname: name } as any);
+// The constructor's order, so a test names what it hands in instead of counting positions.
+const DEP_ORDER = [
+  'extractor',
+  'llmParse',
+  'daysRepo',
+  'reservationsRepo',
+  'reservations',
+  'guards',
+  'budget',
+  'addons',
+  'realtime',
+  'maps',
+  'places',
+  'uow',
+  'origins',
+] as const;
+// confirm() checks the trip and the person's right itself: the trip is reachable, the role a plain user's.
+const tripAccess = vi.fn(async (): Promise<{ id: number; user_id: number } | undefined> => ({ id: 5, user_id: 1 }));
+// No earlier import holds any key unless a test says so.
+const findIdByExternal = vi.fn(async (): Promise<number | undefined> => undefined);
+const reservationsRepoStub = { findIdByExternal };
+// The origin bookkeeping of the venues a confirm creates; its own suite is place-origins.service.test.ts.
+const origins = { recordImported: vi.fn(async () => undefined) };
+// Runs the callback in place; the tests that care about the boundary wrap it to record it.
+const uowStub = { transactional: <T>(fn: () => Promise<T>) => fn() };
+
+const HOTEL_KI = {
+  '@type': 'LodgingReservation',
+  reservationNumber: 'ABC',
+  reservationFor: { name: 'Hotel X' },
+  checkinTime: '2026-06-11T15:00',
+  checkoutTime: '2026-06-12T11:00',
+};
+const file = (name = 'a.pdf') => ({ buffer: Buffer.from('x'), originalname: name }) as any;
 
 function make(opts: { kit?: boolean; ai?: boolean; extract?: any; parse?: any }) {
   const extractor = { isAvailable: () => opts.kit ?? false, extract: vi.fn(opts.extract ?? (async () => [])) };
-  const llmParse = { isAvailable: () => opts.ai ?? false, parse: vi.fn(opts.parse ?? (async () => ({ kiItems: [], warnings: [] }))) };
+  const llmParse = {
+    isAvailable: () => opts.ai ?? false,
+    parse: vi.fn(opts.parse ?? (async () => ({ kiItems: [], warnings: [] }))),
+  };
   const reservations = { create: vi.fn() };
   // budget/addons/realtime/maps ride the confirm() path only — the preview()
   // tests never reach them, so stubs beyond the positional slots aren't needed.
@@ -32,7 +74,23 @@ function make(opts: { kit?: boolean; ai?: boolean; extract?: any; parse?: any })
   // Places became a constructor dep with the place DI fold (was a path mock of
   // services/placeService); only confirm() reaches it, so a bare create stub does.
   const places = { create: vi.fn() };
-  return { svc: new BookingImportService(extractor as any, llmParse as any, new DatabaseService(dbConn), reservations as never, permissionsStub as never, undefined as never, undefined as never, undefined as never, maps as never, places as never), extractor, llmParse, reservations, maps, places };
+  return {
+    svc: buildService({
+      extractor,
+      llmParse,
+      reservations,
+      guards: guardsStub,
+      maps,
+      places,
+      uow: uowStub,
+      origins,
+    }),
+    extractor,
+    llmParse,
+    reservations,
+    maps,
+    places,
+  };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -60,7 +118,8 @@ describe('BookingImportService.preview', () => {
 
   it('fallback-on-empty: runs the LLM when kitinerary finds nothing and flags needs_review', async () => {
     const { svc, extractor, llmParse } = make({
-      kit: true, ai: true,
+      kit: true,
+      ai: true,
       extract: async () => [],
       parse: async () => ({ kiItems: [HOTEL_KI], warnings: [] }),
     });
@@ -72,6 +131,16 @@ describe('BookingImportService.preview', () => {
     expect(res.files![0]).toEqual({ fileName: 'a.pdf', aiAvailable: true, aiUsed: true });
   });
 
+  it('reports how the AI reading of a file ended, where it ran', async () => {
+    const { svc } = make({
+      kit: true,
+      ai: true,
+      parse: async () => ({ kiItems: [], warnings: ['a.pdf: AI parsing failed — 429'], outcome: 'quota_exhausted' }),
+    });
+    const res = await svc.preview([file()], 'fallback-on-empty', 1);
+    expect(res.files).toEqual([{ fileName: 'a.pdf', aiAvailable: true, aiUsed: true, outcome: 'quota_exhausted' }]);
+  });
+
   it('fallback-on-empty: skips the LLM when kitinerary already found items', async () => {
     const { svc, llmParse } = make({ kit: true, ai: true, extract: async () => [HOTEL_KI] });
     const res = await svc.preview([file()], 'fallback-on-empty', 1);
@@ -79,9 +148,23 @@ describe('BookingImportService.preview', () => {
     expect(res.files![0].aiUsed).toBe(false);
   });
 
+  it('fallback-on-empty: a photo goes straight to the LLM, kitinerary is not asked', async () => {
+    const { svc, extractor, llmParse } = make({
+      kit: true,
+      ai: true,
+      extract: async () => [HOTEL_KI],
+      parse: async () => ({ kiItems: [HOTEL_KI], warnings: [] }),
+    });
+    const res = await svc.preview([file('ticket.jpg')], 'fallback-on-empty', 1);
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(llmParse.parse).toHaveBeenCalledWith({ buffer: expect.any(Buffer), originalName: 'ticket.jpg' }, 1);
+    expect(res.items[0].needs_review).toBe(true);
+  });
+
   it('force-ai: skips kitinerary entirely and uses the LLM', async () => {
     const { svc, extractor, llmParse } = make({
-      kit: true, ai: true,
+      kit: true,
+      ai: true,
       parse: async () => ({ kiItems: [HOTEL_KI], warnings: [] }),
     });
     const res = await svc.preview([file()], 'force-ai', 1);
@@ -160,8 +243,8 @@ describe('BookingImportService.preview endpoint geocoding (#1969)', () => {
 
     const res = await svc.preview([file()], 'no-ai', 1);
     const endpoints = (res.items[0] as { endpoints?: { name: string }[] }).endpoints ?? [];
-    expect(endpoints.map(e => e.name)).toContain('Berlin Hbf');
-    expect(res.warnings.some(w => w.includes('Berlin Hbf'))).toBe(true);
+    expect(endpoints.map((e) => e.name)).toContain('Berlin Hbf');
+    expect(res.warnings.some((w) => w.includes('Berlin Hbf'))).toBe(true);
   });
 
   it('survives a geocoder that throws, rather than failing the import', async () => {
@@ -178,7 +261,7 @@ describe('BookingImportService.preview endpoint geocoding (#1969)', () => {
       reservationFor: {
         ...TRAIN_KI.reservationFor,
         departureStation: { name: 'Berlin Hbf', geo: { latitude: 52.525, longitude: 13.369 } },
-        arrivalStation: { name: 'München Hbf', geo: { latitude: 48.140, longitude: 11.558 } },
+        arrivalStation: { name: 'München Hbf', geo: { latitude: 48.14, longitude: 11.558 } },
       },
     };
     const { svc, maps } = make({ kit: true, extract: async () => [withGeo] });
@@ -192,13 +275,32 @@ describe('BookingImportService.preview endpoint geocoding (#1969)', () => {
 // used to reach the place row exactly as the mail or the review form had it.
 describe('BookingImportService.confirm venue website (#2483)', () => {
   it('BOOKING-IMPORT-2483-01: a bare host is saved with https, a script link or nothing not at all', async () => {
-    const reservations = { create: vi.fn(() => ({ reservation: { id: 1 }, accommodationCreated: false })) };
+    const reservations = {
+      createWithCostInTx: vi.fn(() => ({
+        reservation: { id: 1 },
+        accommodationCreated: false,
+        costEvents: [],
+        stayMirror: {},
+      })),
+      announceStayMirror: vi.fn(),
+      announceCost: vi.fn(),
+      verifyTripAccess: tripAccess,
+    };
     const places = { create: vi.fn((_tripId: string, _input: { website?: string }) => ({ id: 7 })) };
-    const svc = new BookingImportService(
-      {} as never, {} as never, new DatabaseService(dbConn), reservations as never, permissionsStub as never,
-      undefined as never, { isAddonEnabled: () => false } as never, { broadcast: vi.fn() } as never,
-      { geocodeQuery: vi.fn() } as never, places as never,
-    );
+    // No dates on a restaurant, so the day repositories are never reached.
+    const svc = buildService({
+      extractor: {},
+      llmParse: {},
+      reservationsRepo: reservationsRepoStub,
+      reservations,
+      guards: guardsStub,
+      addons: { isAddonEnabled: () => false, isEnabledForTrip: async () => false },
+      realtime: { broadcast: vi.fn() },
+      maps: { geocodeQuery: vi.fn() },
+      places,
+      uow: uowStub,
+      origins,
+    });
     const item = (website?: string) => ({
       type: 'restaurant',
       title: 'Dîner',
@@ -206,7 +308,12 @@ describe('BookingImportService.confirm venue website (#2483)', () => {
       source: { fileName: 'booking.eml', index: 0 },
     });
 
-    const res = await svc.confirm('5', [item('www.creperie.example/carte'), item('javascript:alert(1)'), item()], undefined);
+    const res = await svc.confirm(
+      '5',
+      1,
+      [item('www.creperie.example/carte'), item('javascript:alert(1)'), item()],
+      undefined,
+    );
 
     expect(res.created).toHaveLength(3);
     expect(places.create.mock.calls.map(([, input]) => input.website)).toEqual([
@@ -214,5 +321,408 @@ describe('BookingImportService.confirm venue website (#2483)', () => {
       undefined,
       undefined,
     ]);
+    // The venues' details came from the booking: recorded once, as an import, after the loop.
+    expect(origins.recordImported).toHaveBeenLastCalledWith([7, 7, 7]);
+  });
+});
+
+// The booking and the cost its extracted price becomes go in as one write, through
+// ReservationsService.createWithCostInTx with the venue, and the FX rate frozen before it.
+describe('BookingImportService.confirm writes the booking with its cost', () => {
+  function makeConfirm(
+    opts: {
+      budget?: boolean;
+      failWrite?: boolean;
+      freeze?: (tripId: string, entry: { currency?: string | null; exchange_rate?: number }) => Promise<void>;
+    } = {},
+  ) {
+    const order: string[] = [];
+    const costEvents = [{ event: 'budget:created', payload: { item: { id: 9 } } }];
+    const reservations = {
+      createWithCostInTx: vi.fn(async () => {
+        if (opts.failWrite) throw new Error('write failed');
+        order.push('write');
+        return { reservation: { id: 1 }, accommodationCreated: false, costEvents, stayMirror: {} };
+      }),
+      announceStayMirror: vi.fn(async () => {
+        order.push('announceStayMirror');
+      }),
+      announceCost: vi.fn(() => {
+        order.push('announceCost');
+      }),
+      verifyTripAccess: tripAccess,
+    };
+    const places = {
+      create: vi.fn(async () => {
+        order.push('place');
+        return { id: 7 };
+      }),
+    };
+    const uow = {
+      transactional: vi.fn(async <T>(fn: () => Promise<T>) => {
+        order.push('begin');
+        const out = await fn();
+        order.push('commit');
+        return out;
+      }),
+    };
+    const budget = {
+      prepareRate: vi.fn(async (tripId: string, entry: { currency?: string | null; exchange_rate?: number }) => {
+        order.push('freeze');
+        const quoted = { ...entry };
+        await (
+          opts.freeze ??
+          (async (_t: string, e: { exchange_rate?: number }) => {
+            e.exchange_rate = 0.5;
+          })
+        )(tripId, quoted);
+        return { kind: 'freeze', rate: { exchange_rate: quoted.exchange_rate } };
+      }),
+    };
+    const realtime = {
+      broadcast: vi.fn((_tripId: string, event: string) => {
+        order.push(event);
+      }),
+    };
+    const svc = buildService({
+      extractor: {},
+      llmParse: {},
+      reservationsRepo: reservationsRepoStub,
+      reservations,
+      guards: guardsStub,
+      budget,
+      addons: { isAddonEnabled: async () => opts.budget ?? true, isEnabledForTrip: async () => opts.budget ?? true },
+      realtime,
+      maps: { geocodeQuery: vi.fn() },
+      places,
+      uow,
+      origins,
+    });
+    return { svc, reservations, budget, places, realtime, order, costEvents };
+  }
+  const priced = {
+    type: 'train',
+    title: 'ICE 123',
+    metadata: { price: '49.9', priceCurrency: 'CHF' },
+    source: { fileName: 'ticket.pdf', index: 0 },
+  };
+
+  it('BOOKING-IMPORT-TX-001: freezes the rate first, writes booking and cost in one call, announces the cost after the booking', async () => {
+    const { svc, reservations, order, costEvents } = makeConfirm();
+
+    const res = await svc.confirm('5', 1, [priced as never], 'sock');
+
+    expect(res.created).toEqual([{ id: 1 }]);
+    expect(reservations.createWithCostInTx).toHaveBeenCalledWith(
+      '5',
+      expect.objectContaining({ title: 'ICE 123', type: 'train' }),
+      {
+        total_price: 49.9,
+        category: 'transport',
+        currency: 'CHF',
+        preparedRate: { kind: 'freeze', rate: { exchange_rate: 0.5 } },
+      },
+    );
+    expect(reservations.announceCost).toHaveBeenCalledWith('5', costEvents, 'sock');
+    expect(order).toEqual([
+      'freeze',
+      'begin',
+      'write',
+      'commit',
+      'reservation:created',
+      'announceStayMirror',
+      'announceCost',
+    ]);
+  });
+
+  it('BOOKING-IMPORT-2895: a rail ticket with changes is one booking with one cost for its fare', async () => {
+    const segment = (from: string, to: string, departureTime: string, arrivalTime: string, trainNumber: string) => ({
+      '@type': 'TrainReservation',
+      reservationNumber: '297199016704',
+      totalPrice: 71.67,
+      priceCurrency: 'EUR',
+      reservationFor: {
+        trainNumber,
+        departureStation: { name: from },
+        arrivalStation: { name: to },
+        departureTime,
+        arrivalTime,
+      },
+    });
+    const { svc: importer, maps } = make({
+      kit: true,
+      extract: async () => [
+        segment('Klagenfurt West', 'Villach Hbf', '2026-07-04T06:12:00', '2026-07-04T06:30:00', 'S1'),
+        segment('Villach Hbf', 'Heidelberg Hbf', '2026-07-04T06:40:00', '2026-07-04T12:50:00', 'ICE 116'),
+        segment('Heidelberg Hbf', 'Ludwigshafen (Rhein) Mitte', '2026-07-04T13:05:00', '2026-07-04T13:30:00', 'S1'),
+        segment('Ludwigshafen (Rhein) Mitte', 'Rheingönheim', '2026-07-04T13:41:00', '2026-07-04T13:55:00', 'STR 7'),
+      ],
+    });
+    maps.geocodeQuery.mockResolvedValue({ lat: 49, lng: 8 });
+    const preview = await importer.preview([file('ticket.pdf')], 'no-ai', 1);
+    expect(preview.items).toHaveLength(1);
+
+    const { svc, reservations } = makeConfirm({ freeze: async () => {} });
+    await svc.confirm('5', 1, preview.items as never, undefined);
+
+    expect(reservations.createWithCostInTx).toHaveBeenCalledTimes(1);
+    expect(reservations.createWithCostInTx).toHaveBeenCalledWith(
+      '5',
+      expect.objectContaining({ type: 'train', confirmation_number: '297199016704' }),
+      expect.objectContaining({ total_price: 71.67, category: 'transport', currency: 'EUR' }),
+    );
+  });
+
+  it('BOOKING-IMPORT-TX-002: no cost without the Costs addon or without a price', async () => {
+    const off = makeConfirm({ budget: false });
+    await off.svc.confirm('5', 1, [priced as never], undefined);
+    expect(off.budget.prepareRate).not.toHaveBeenCalled();
+    expect(off.reservations.createWithCostInTx).toHaveBeenCalledWith('5', expect.anything(), undefined);
+
+    const free = makeConfirm();
+    await free.svc.confirm('5', 1, [{ ...priced, metadata: { price: '0' } } as never], undefined);
+    expect(free.budget.prepareRate).not.toHaveBeenCalled();
+    expect(free.reservations.createWithCostInTx).toHaveBeenCalledWith('5', expect.anything(), undefined);
+  });
+
+  const atVenue = {
+    type: 'restaurant',
+    title: 'Dîner',
+    _venue: { name: 'Crêperie', lat: 48.03, lng: -3.49 },
+    source: { fileName: 'booking.eml', index: 0 },
+  };
+
+  it('BOOKING-IMPORT-TX-004: writes the venue in the booking transaction and announces it after the commit', async () => {
+    const { svc, places, reservations, order } = makeConfirm({ budget: false });
+
+    await svc.confirm('5', 1, [atVenue as never], 'sock');
+
+    expect(order).toEqual([
+      'begin',
+      'place',
+      'write',
+      'commit',
+      'place:created',
+      'reservation:created',
+      'announceStayMirror',
+      'announceCost',
+    ]);
+    expect(places.create).toHaveBeenCalledWith(
+      '5',
+      expect.objectContaining({ name: 'Crêperie', lat: 48.03, lng: -3.49 }),
+    );
+    expect(reservations.createWithCostInTx).toHaveBeenCalledWith(
+      '5',
+      expect.objectContaining({ place_id: 7 }),
+      undefined,
+    );
+  });
+
+  it('BOOKING-IMPORT-TX-005: a booking that fails takes its venue with it and announces nothing', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { svc, realtime, order } = makeConfirm({ budget: false, failWrite: true });
+
+      const res = await svc.confirm('5', 1, [atVenue as never], 'sock');
+
+      expect(res.created).toEqual([]);
+      // The place insert ran inside the transaction the failure rolls back, never on its own.
+      expect(order).toEqual(['begin', 'place']);
+      expect(realtime.broadcast).not.toHaveBeenCalled();
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it('BOOKING-IMPORT-TX-003: a rate that cannot be frozen keeps the booking, without its cost', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { svc, reservations } = makeConfirm({
+        freeze: async () => {
+          throw new Error('rates down');
+        },
+      });
+      const res = await svc.confirm('5', 1, [priced as never], undefined);
+      expect(res.created).toEqual([{ id: 1 }]);
+      expect(reservations.createWithCostInTx).toHaveBeenCalledWith('5', expect.anything(), undefined);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
+describe('BookingImportService.confirm reports every item it did not create', () => {
+  function makeReport(write: () => Promise<unknown>) {
+    const reservations = {
+      createWithCostInTx: vi.fn(write),
+      announceStayMirror: vi.fn(),
+      announceCost: vi.fn(),
+      verifyTripAccess: tripAccess,
+    };
+    const svc = buildService({
+      extractor: {},
+      llmParse: {},
+      reservationsRepo: reservationsRepoStub,
+      reservations,
+      guards: guardsStub,
+      addons: { isAddonEnabled: async () => false, isEnabledForTrip: async () => false },
+      realtime: { broadcast: vi.fn() },
+      maps: { geocodeQuery: vi.fn() },
+      places: { create: vi.fn() },
+      uow: uowStub,
+      origins,
+    });
+    return { svc, reservations };
+  }
+  const NO_LOCAL_TIME = { timezone: null, local_time: null, local_date: null };
+  const flight = {
+    type: 'flight',
+    title: 'LH 716',
+    confirmation_number: ' abc 123 ',
+    reservation_time: '2026-09-01T10:00',
+    endpoints: [
+      { role: 'from', name: 'Frankfurt', code: 'FRA', lat: 50, lng: 8.5, ...NO_LOCAL_TIME },
+      { role: 'to', name: 'Tokyo Narita', code: 'NRT', lat: 35.7, lng: 140.4, ...NO_LOCAL_TIME },
+    ],
+    source: { fileName: 'ticket.pdf', index: 0 },
+  };
+
+  it('BOOKING-IMPORT-REPORT-001: a referenced booking is written with its origin, sync off', async () => {
+    const { svc, reservations } = makeReport(async () => ({
+      reservation: { id: 1 },
+      accommodationCreated: false,
+      costEvents: [],
+      stayMirror: {},
+    }));
+
+    const res = await svc.confirm('5', 1, [flight as never], undefined);
+
+    expect(res).toEqual({ created: [{ id: 1 }], failed: [] });
+    expect(findIdByExternal).toHaveBeenCalledWith(5, 'import', 'ABC123|flight|2026-09-01|fra-nrt');
+    expect(reservations.createWithCostInTx).toHaveBeenCalledWith(
+      '5',
+      expect.objectContaining({
+        external_source: 'import',
+        external_id: 'ABC123|flight|2026-09-01|fra-nrt',
+        sync_enabled: false,
+      }),
+      undefined,
+    );
+  });
+
+  it('BOOKING-IMPORT-REPORT-002: the origin an item names itself is ignored, and an item without a reference has none', async () => {
+    const { svc, reservations } = makeReport(async () => ({
+      reservation: { id: 2 },
+      accommodationCreated: false,
+      costEvents: [],
+      stayMirror: {},
+    }));
+    const posing = { ...flight, confirmation_number: null, external_source: 'airtrail', external_id: '42' };
+
+    await svc.confirm('5', 1, [posing as never], undefined);
+
+    expect(findIdByExternal).not.toHaveBeenCalled();
+    const written = (reservations.createWithCostInTx.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty('external_source');
+    expect(written).not.toHaveProperty('external_id');
+  });
+
+  it('BOOKING-IMPORT-REPORT-003: a booking already imported, one the index refuses and one that fails are each named', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { UniqueConstraintViolationException } = await import('@mikro-orm/core');
+      const writes = [
+        () => Promise.reject(new UniqueConstraintViolationException(new Error('UNIQUE constraint failed'))),
+        () => Promise.reject(new Error('disk full')),
+      ];
+      const { svc } = makeReport(async () => {
+        const write = writes.shift();
+        if (!write) throw new Error('the case planned no further write');
+        return write();
+      });
+      findIdByExternal.mockResolvedValueOnce(9);
+
+      const res = await svc.confirm(
+        '5',
+        1,
+        [
+          flight,
+          { ...flight, reservation_time: '2026-09-02T10:00' },
+          { ...flight, confirmation_number: null },
+        ] as never,
+        undefined,
+      );
+
+      expect(res).toEqual({
+        created: [],
+        failed: [
+          { index: 0, reason: 'duplicate' },
+          { index: 1, reason: 'duplicate' },
+          { index: 2, reason: 'write_failed' },
+        ],
+      });
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it('BOOKING-IMPORT-REPORT-004: refuses a trip the person cannot reach, and one whose bookings they may not edit', async () => {
+    const { svc, reservations } = makeReport(async () => ({}));
+    tripAccess.mockResolvedValueOnce(undefined);
+    await expect(svc.confirm('5', 1, [flight as never], undefined)).rejects.toMatchObject({ status: 404 });
+
+    guardsStub.hasTripPermission.mockResolvedValueOnce(false);
+    await expect(svc.confirm('5', 2, [flight as never], undefined)).rejects.toMatchObject({ status: 403 });
+    // The right is asked of the shared guard for that person and trip, which reads their role.
+    expect(guardsStub.hasTripPermission).toHaveBeenLastCalledWith('reservation_edit', '5', 2);
+    expect(reservations.createWithCostInTx).not.toHaveBeenCalled();
+  });
+
+  it('BOOKING-IMPORT-REPORT-005: a booking a forwarded mail already wrote into the trip is a duplicate too', async () => {
+    const { svc, reservations } = makeReport(async () => ({}));
+    findIdByExternal.mockResolvedValueOnce(undefined).mockResolvedValueOnce(4);
+
+    const res = await svc.confirm('5', 1, [flight as never], undefined);
+
+    expect(res).toEqual({ created: [], failed: [{ index: 0, reason: 'duplicate' }] });
+    expect(findIdByExternal).toHaveBeenCalledWith(5, 'mail', 'ABC123|flight|2026-09-01|fra-nrt');
+    expect(reservations.createWithCostInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookingImportService: reading a forwarded mail', () => {
+  it('reads the whole mail first and the attachments only when it gave nothing', async () => {
+    const { svc, extractor } = make({ kit: true, extract: async () => [HOTEL_KI] });
+    const items = await svc.readMailBookings(Buffer.from('mail'), [{ fileName: 'a.pdf', data: Buffer.from('a') }], 1);
+    expect(items).toHaveLength(1);
+    expect(extractor.extract).toHaveBeenCalledTimes(1);
+    expect(extractor.extract.mock.calls[0][1]).toBe('mail.eml');
+  });
+
+  it('falls back to each attachment when the mail as a whole names no booking', async () => {
+    const extract = vi.fn(async (_buffer: Buffer, name: string) => (name === 'a.pdf' ? [HOTEL_KI] : []));
+    const { svc } = make({ kit: true, extract });
+    const items = await svc.readMailBookings(Buffer.from('mail'), [{ fileName: 'a.pdf', data: Buffer.from('a') }], 1);
+    expect(items.map((item) => item.source.fileName)).toEqual(['a.pdf']);
+    expect(await svc.readMailBookings(Buffer.from('mail'), [], 1)).toEqual([]);
+  });
+
+  it('reads nothing where kitinerary is not installed', async () => {
+    const { svc, extractor } = make({ kit: false, ai: true });
+    expect(await svc.readMailBookings(Buffer.from('mail'), [], 1)).toEqual([]);
+    expect(extractor.extract).not.toHaveBeenCalled();
+  });
+
+  it('maps an AI reading of a mail to items flagged for review', async () => {
+    const { svc } = make({});
+    const [item] = await svc.mapAiReservations([HOTEL_KI], 'mail');
+    expect(item).toMatchObject({ type: 'hotel', needs_review: true, confirmation_number: 'ABC' });
+  });
+
+  it('names the key a booking is stored under', () => {
+    const { svc } = make({});
+    const item = { type: 'hotel', title: 'Hotel X', confirmation_number: 'ab c', source: { fileName: 'm', index: 0 } };
+    expect(svc.externalKey({ ...item, _accommodation: { check_in: '2026-06-11' } })).toBe('ABC|hotel|2026-06-11|');
+    expect(svc.externalKey({ ...item, confirmation_number: null })).toBeNull();
   });
 });

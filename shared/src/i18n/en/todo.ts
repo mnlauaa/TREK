@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'No list',
   'todo.namePlaceholder': 'Task name',
   'todo.descriptionPlaceholder': 'Description (optional)',
+  'todo.editDescription': 'Click to edit, links open directly',
   'todo.unassigned': 'Unassigned',
   'todo.noCategory': 'No list',
   'todo.hasDescription': 'Has description',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'Priority',
   'todo.detail.noPriority': 'None',
   'todo.detail.create': 'Create task',
+  'todo.progressCount': '{done} of {total} done',
+  'todo.allDone': 'All done!',
+  'todo.filter.myShort': 'Mine',
 };
 export default todo;

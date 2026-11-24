@@ -11,11 +11,12 @@ import { useTranslation } from '../../../../i18n'
 import { useSettingsStore } from '../../../../store/settingsStore'
 import { useTripStore } from '../../../../store/tripStore'
 import ChargingInfo from '../../../../components/Roadtrip/ChargingInfo'
+import StopPhoto from '../../../../components/Roadtrip/StopPhoto'
 import { formatDurationShort } from '../../../../components/Roadtrip/roadtripModel'
 import { roadtripRows, stageOf, type StopRow } from '../../../../components/Roadtrip/roadtripRowModel'
 import { readStay, shownStay } from '../../../../components/Roadtrip/stayReading'
 import { STOP_KIND_BY_KEY } from '../../../../components/Roadtrip/stopKinds'
-import { getNavigationTargets, openNavigationTarget } from '../../../../components/Planner/placeNavigation'
+import { navigationTargetLabel, getNavigationTargets, openNavigationTarget } from '../../../../components/Planner/placeNavigation'
 import { NavigationMenu } from '../../../../components/shared/NavigationMenu'
 import { formatDistance } from '../../../../utils/units'
 import { Eyebrow, displayTime } from '../sheets/MTripSheetUi'
@@ -127,7 +128,7 @@ function ActionTile({ icon, label, value, onClick, tileRef }: {
       </span>
     </>
   )
-  const box = 'flex h-14 min-w-0 items-center gap-2.5 rounded-[14px] bg-[color:var(--m-ic)] px-3 text-left'
+  const box = 'flex h-14 min-w-0 items-center gap-2.5 rounded-[14px] bg-[color:var(--m-ic)] px-3 text-start'
   if (!onClick) return <div className={box}>{inner}</div>
   return <button ref={tileRef} type="button" onClick={onClick} className={`${box} border-0`}>{inner}</button>
 }
@@ -209,8 +210,8 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
     ...day.driveWarnings.filter(w => w.index === index && (w.code === 'leg' || w.code === 'range')),
   ]
   const warningText = (w: ScheduleWarning): string => {
-    if (w.code === 'late') return t('roadtrip.warn.late', { minutes: w.minutes ?? 0 })
-    if (w.code === 'missedLeave') return t('roadtrip.warn.missedLeave', { minutes: w.minutes ?? 0 })
+    if (w.code === 'late') return t('roadtrip.warn.late', { count: w.minutes ?? 0 })
+    if (w.code === 'missedLeave') return t('roadtrip.warn.missedLeave', { count: w.minutes ?? 0 })
     if (w.code === 'range') return t('roadtrip.limit.range', { distance: formatDistance(w.sinceKm ?? 0, unit) })
     return t('roadtrip.limit.legOver', { time: formatDurationShort((w.overMinutes ?? 0) * 60) })
   }
@@ -290,7 +291,7 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
   const tiles = (navTargets.length > 0 ? 1 : 0) + 1
 
   return (
-    <MSheet open={open && !!live} onClose={shell.closeSheet} variant="bottom" material="opaque" ariaLabel={stop.name}>
+    <MSheet open={open && !!live} onClose={shell.closeSheet} variant="bottom" material="glass" ariaLabel={stop.name}>
       {/* ── Header: the disc the chain draws, the name, the way to the editor and the way out ── */}
       <div className="flex-none px-[18px] pt-4">
         {/* Centred, not top-aligned: one line of the name is shorter than the 34px disc, so
@@ -336,6 +337,11 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-[18px]">
+        {/* ── The place's picture, which is often what decides whether a stop is worth it
+            when the day runs short (#2629). Full width under the name, where the eye lands
+            first; a tap opens the rest of its photos. Absent when the place has none. ── */}
+        <StopPhoto place={place} className="mt-[14px] h-[140px] w-full rounded-[16px] bg-[color:var(--m-ic)]" />
+
         {/* ── The two clock readings, and where they come from ── */}
         {(arrive || leave) && (
           <div className="mt-[14px] rounded-[16px] bg-[color:var(--m-inner)] px-3.5 py-3">
@@ -360,7 +366,9 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
             </div>
             {/* The desktop says this in a tooltip, which a phone has nowhere to put. */}
             <div className="mt-2 font-geist text-[0.65625rem] leading-snug text-m-faint">
-              {entry?.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}
+              {entry?.plannedArrival && entry.plannedArrival !== entry.arrival
+                ? `${t('places.startTime')} ${displayTime(entry.plannedArrival, locale, timeFormat)} · ${t('timing.arrival')}`
+                : entry?.anchored ? t('roadtrip.stop.pinned') : t('roadtrip.stop.computed')}
             </div>
             {/* Only where it is true. Reached too late the stop is left on arrival, which
                 the finding below says; with the travel hours over first the drive goes on
@@ -411,7 +419,7 @@ export default function MRtStopSheet({ planner, shell }: MTripSheetsProps) {
               tileRef={navBtnRef}
               icon={<Navigation size={16} strokeWidth={2} />}
               label={t('inspector.navigation')}
-              value={navTargets.length === 1 ? navTargets[0].label : undefined}
+              value={navTargets.length === 1 ? navigationTargetLabel(navTargets[0], t) : undefined}
               onClick={openDirections}
             />
           )}

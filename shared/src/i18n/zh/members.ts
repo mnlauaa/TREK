@@ -1,13 +1,11 @@
 import type { TranslationStrings } from '../types';
 
 const members: TranslationStrings = {
-  'members.shareTrip': '分享旅行',
   'members.inviteUser': '邀请用户',
   'members.selectUser': '选择用户…',
   'members.invite': '邀请',
   'members.allHaveAccess': '所有用户均已拥有访问权限。',
   'members.access': '访问权限',
-  'members.person': '人',
   'members.persons': '人',
   'members.you': '你',
   'members.owner': '所有者',
@@ -32,23 +30,7 @@ const members: TranslationStrings = {
   'members.guestAddError': '添加访客失败',
   'members.guestRenameError': '重命名访客失败',
   'members.guestRemoved': '已移除访客',
-  'members.confirmRemoveGuest': '移除此访客？其分配和费用分摊也将被移除。',
-  'members.identityTransfer.title': 'Does a Guest represent you?',
-  'members.identityTransfer.description':
-    'Transfer that Guest’s trip participation to your signed-in account. This cannot be undone.',
-  'members.identityTransfer.thisIsMe': 'This is me',
-  'members.identityTransfer.success': 'Guest participation transferred.',
-  'members.identityTransfer.error': 'Guest identity transfer failed.',
-  'members.identityTransfer.impact.expenses': '{count} expenses',
-  'members.identityTransfer.impact.payments': '{count} payments',
-  'members.identityTransfer.impact.itinerary': '{count} itinerary items',
-  'members.identityTransfer.impact.bookings': '{count} bookings',
-  'members.identityTransfer.impact.todos': '{count} tasks',
-  'members.identityTransfer.impact.packing': '{count} packing items',
-  'members.identityTransfer.impact.ratings': '{count} ratings',
-  'members.identityTransfer.ratingOverlap': '{count} duplicate ratings will keep your account rating.',
-  'members.identityTransfer.conflicts': 'Resolve these financial conflicts first',
-  'members.identityTransfer.none': 'No Guest identities are available.',
-  'members.identityTransfer.noneOfThese': 'None of these are me',
+  'members.confirmRemoveGuest': '移除此访客？其分配将被移除，其在每笔费用中的分摊将转给其他参与者。',
+  'members.guestHasPayments': '此访客支付过费用或涉及已记录的付款。请先更改付款人或删除该付款。',
 };
 export default members;

@@ -7,13 +7,12 @@ import { useTripStore } from '../../../../src/store/tripStore'
 import { buildPlanner, buildShell } from '../../../helpers/mobileTrip'
 import { buildTrip, buildUser } from '../../../helpers/factories'
 import { resetAllStores, seedStore } from '../../../helpers/store'
-import { render, screen, waitFor } from '../../../helpers/render'
+import { fireEvent, render, screen, waitFor } from '../../../helpers/render'
 
 // FE-MOB-SHOST-030 to FE-MOB-SHOST-031 (001 to 029 and 032 live in MTripSheets.test.tsx)
 //
-// The phone has no share sheet of its own: the Mehr sheet opens the desktop
-// TripMembersModal through this host. Every other sheet is stubbed away so the real
-// modal is what the phone user gets (#2478).
+// The Mehr sheet opens the phone's own MTripSettingsSheet through this host. Every
+// other sheet is stubbed away so the real sheet is what the phone user gets (#2478).
 
 vi.mock('../../../../src/mobile/screens/trip/sheets/MPlaceSheet', () => ({ default: () => null }))
 vi.mock('../../../../src/mobile/screens/trip/sheets/MDaySheet', () => ({ default: () => null }))
@@ -39,16 +38,18 @@ vi.mock('../../../../src/mobile/screens/settings/MConfirmSheet', () => ({ defaul
 vi.mock('../../../../src/components/Planner/BookingImportModal', () => ({ default: () => null }))
 vi.mock('../../../../src/components/Planner/AirTrailImportModal', () => ({ default: () => null }))
 vi.mock('../../../../src/components/Planner/TransitJourneyModal', () => ({ default: () => null }))
-vi.mock('../../../../src/components/Trips/TripFormModal', () => ({ default: () => null }))
+vi.mock('../../../../src/mobile/screens/dashboard/MNewTripSheet', () => ({ default: () => null }))
 
 import MTripSheets from '../../../../src/mobile/screens/trip/sheets/MTripSheets'
 
 const owner = buildUser({ id: 1, username: 'owner' })
 const alice = buildUser({ id: 2, username: 'alice' })
 
-function openShareSheet() {
+async function openShareSheet() {
   const planner = buildPlanner()
   render(<MTripSheets planner={planner} shell={buildShell({ sheet: { id: 'members' } })} />)
+  // The sheet opens on its list of areas; the people are one tap away.
+  fireEvent.click(await screen.findByRole('button', { name: /^People/ }))
   return { planner }
 }
 
@@ -69,7 +70,7 @@ describe('MTripSheets share sheet', () => {
 
   it('FE-MOB-SHOST-030: the user picked on the phone shows in the field before the invite is sent', async () => {
     const user = userEvent.setup()
-    openShareSheet()
+    await openShareSheet()
 
     const trigger = (await screen.findByText('Select user…')).closest('button') as HTMLButtonElement
     await user.click(trigger)
@@ -89,7 +90,7 @@ describe('MTripSheets share sheet', () => {
         return HttpResponse.json({ success: true })
       }),
     )
-    const { planner } = openShareSheet()
+    const { planner } = await openShareSheet()
 
     const trigger = (await screen.findByText('Select user…')).closest('button') as HTMLButtonElement
     await user.click(trigger)

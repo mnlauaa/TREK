@@ -12,45 +12,19 @@
  * These routes are unauthenticated BY DESIGN (audit SEC-M9): server-chosen
  * UUIDv4 filenames; gating them would break share-link trip cards, journey
  * public pages, and email-embedded avatars. No auth setup here is deliberate.
+ * Each hit is the object's location-free copy (PublicMediaService); the PNG
+ * magic below holds no metadata, so the copy carries the same 8 bytes.
+ * /uploads/journey refuses journey entry media and its thumbs/ unless a
+ * journey uses it as its cover (PUBMEDIA-010 in public-media-privacy.test.ts).
  */
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import request from 'supertest';
-import type { Application } from 'express';
-import type { INestApplication } from '@nestjs/common';
-import path from 'path';
-import fs from 'fs';
-
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    canAccessTrip: () => undefined,
-    isOwner: () => false,
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-vi.mock('../../src/db/database', () => dbMock);
-vi.mock('../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-  SESSION_DURATION: '24h',
-  SESSION_DURATION_MS: 86400000,
-  SESSION_DURATION_SECONDS: 86400,
-  DEFAULT_LANGUAGE: 'en',
-}));
-vi.mock('../../src/websocket', () => ({ broadcast: vi.fn(), broadcastToUser: vi.fn(), getOnlineUserIds: vi.fn(() => []) }));
-
 import { buildApp } from '../../src/bootstrap';
-import { createTables } from '../../src/db/schema';
-import { runMigrations } from '../../src/db/migrations';
+import type { INestApplication } from '@nestjs/common';
+
+import type { Application } from 'express';
+import fs from 'fs';
+import path from 'path';
+import request from 'supertest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 let nestApp: INestApplication;
 let app: Application;
@@ -73,8 +47,6 @@ function writeFixture(rel: string, bytes: Buffer = BYTES): void {
 }
 
 beforeAll(async () => {
-  createTables(testDb);
-  runMigrations(testDb);
   nestApp = await buildApp();
   app = nestApp.getHttpAdapter().getInstance();
   // Written AFTER buildApp(): LocalDriver init ensures + realpaths the
@@ -90,8 +62,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await nestApp.close();
-  testDb.close();
-  for (const abs of created) fs.rmSync(abs, { force: true });
+  for (const abs of created) {
+    fs.rmSync(abs, { force: true });
+    // The location-free copy the first hit made beside it.
+    fs.rmSync(path.join(path.dirname(abs), 'public', path.basename(abs)), { force: true });
+  }
   fs.rmSync(path.join(uploadsDir, 'avatars/.tmp'), { recursive: true, force: true });
   fs.rmSync(path.join(uploadsDir, 'journey/parity-subdir'), { recursive: true, force: true });
 });
@@ -187,10 +162,7 @@ describe('/uploads static parity — Range', () => {
   });
 
   it('UPLOADS-P11 — stale If-Range drops the range → 200 full', async () => {
-    const res = await request(app)
-      .get(`/uploads/avatars/${NAME}`)
-      .set('Range', 'bytes=0-3')
-      .set('If-Range', 'W/"0-0"');
+    const res = await request(app).get(`/uploads/avatars/${NAME}`).set('Range', 'bytes=0-3').set('If-Range', 'W/"0-0"');
     expect(res.status).toBe(200);
     expect(res.headers['content-length']).toBe('8');
   });
@@ -245,7 +217,7 @@ describe('/uploads static parity — miss falls through to the Nest 404 envelope
 });
 
 describe('/uploads static parity — all four mounts', () => {
-  it('UPLOADS-P21 — covers/journey(nested)/places each serve a hit and 404 a miss', async () => {
+  it('UPLOADS-P21: covers/journey/places each serve a hit and 404 a miss, journey thumbs are refused', async () => {
     // Fixtures are (re)written immediately before each request: other suites
     // rm their whole category dir in afterAll (collections/trips → covers,
     // collections → places, journey.test → journey), so a beforeAll-written
@@ -257,14 +229,19 @@ describe('/uploads static parity — all four mounts', () => {
     expect(coverMiss.status).toBe(404);
     expect(coverMiss.body.error).toBe('Cannot GET /uploads/covers/nope.png');
 
-    // Nested name — journey thumbs live at journey/thumbs/<hash>.jpg and are
-    // served through the same mount; pins multi-segment storage keys.
+    // Journey thumbs live at journey/thumbs/<hash>.jpg and go through the
+    // share proxy, so the mount answers a miss for the object that exists
+    // exactly as for one that does not.
     writeFixture('journey/thumbs/uploads-static-parity.jpg');
-    const journeyHit = await request(app).get('/uploads/journey/thumbs/uploads-static-parity.jpg');
-    expect(journeyHit.status).toBe(200);
-    expect(journeyHit.headers['content-type']).toBe('image/jpeg');
+    const journeyThumb = await request(app).get('/uploads/journey/thumbs/uploads-static-parity.jpg');
+    expect(journeyThumb.status).toBe(404);
+    expect(journeyThumb.body.error).toBe('Cannot GET /uploads/journey/thumbs/uploads-static-parity.jpg');
     const journeyMiss = await request(app).get('/uploads/journey/thumbs/nope.jpg');
     expect(journeyMiss.status).toBe(404);
+    // An object no journey entry holds (a trip cover may point here) is served.
+    writeFixture(`journey/${NAME}`);
+    const journeyHit = await request(app).get(`/uploads/journey/${NAME}`);
+    expect(journeyHit.status).toBe(200);
 
     writeFixture(`places/${NAME}`);
     const placeHit = await request(app).get(`/uploads/places/${NAME}`);

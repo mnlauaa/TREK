@@ -4,38 +4,25 @@
  * get_place_details, search_pois, reverse_geocode, resolve_maps_url,
  * get_weather, get_detailed_weather.
  */
+import { Tags } from '../../../src/db/entities/Tags.entity';
+import { MapsService } from '../../../src/nest/maps/maps.service';
+import { OsmClient } from '../../../src/nest/maps/providers/osm.client';
+import { getWeather, getDetailedWeather } from '../../../src/nest/weather/weather.impl';
+import { makeTag } from '../../helpers/factories/places';
+import { findRow } from '../../helpers/factories/rows';
+import { makeUser } from '../../helpers/factories/users';
+import { FakeRealtimeService } from '../../helpers/fake-realtime';
+import { createMcpHarness, parseToolResult, type McpHarness } from '../../helpers/mcp-harness';
+import { resetDatabase } from '../../helpers/reset-database';
+import { bootTestApp } from '../../helpers/test-app';
+import { MikroORM } from '@mikro-orm/core';
+
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 
-const { testDb, dbMock } = vi.hoisted(() => {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
-  const mock = {
-    db,
-    closeDb: () => {},
-    reinitialize: () => {},
-    getPlaceWithTags: () => null,
-    canAccessTrip: (tripId: any, userId: number) =>
-      db.prepare(`SELECT t.id, t.user_id FROM trips t LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ? WHERE t.id = ? AND (t.user_id = ? OR m.user_id IS NOT NULL)`).get(userId, tripId, userId),
-    isOwner: (tripId: any, userId: number) =>
-      !!db.prepare('SELECT id FROM trips WHERE id = ? AND user_id = ?').get(tripId, userId),
-  };
-  return { testDb: db, dbMock: mock };
-});
-
-vi.mock('../../../src/db/database', () => dbMock);
-vi.mock('../../../src/config', () => ({
-  JWT_SECRET: 'test-jwt-secret-for-trek-testing-only',
-  ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2',
-  updateJwtSecret: () => {},
-}));
-
-const { broadcastMock } = vi.hoisted(() => ({ broadcastMock: vi.fn() }));
-vi.mock('../../../src/websocket', () => ({ broadcast: broadcastMock }));
-
-vi.mock('../../../src/nest/weather/weather.impl', () => ({
+// The rest of the module stays real: the booted container's WeatherService
+// starts and stops its cache sweep through it.
+vi.mock('../../../src/nest/weather/weather.impl', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/nest/weather/weather.impl')>()),
   getWeather: vi.fn().mockResolvedValue({ temp: 20, condition: 'sunny' }),
   getDetailedWeather: vi.fn().mockResolvedValue({ hourly: [] }),
 }));
@@ -45,24 +32,21 @@ vi.mock('../../../src/nest/weather/weather.impl', () => ({
 // alone on purpose: it fails open, so these cases run on the shipping default
 // with the index answering nothing, which is the drop-through they are about.
 const { trekNearbyMock } = vi.hoisted(() => ({
-  trekNearbyMock: vi.fn(async (
-    _lat: number,
-    _lng: number,
-    _opts?: { radius?: number; limit?: number; category?: string },
-  ): Promise<unknown[]> => []),
+  trekNearbyMock: vi.fn(
+    async (
+      _lat: number,
+      _lng: number,
+      _opts?: { radius?: number; limit?: number; category?: string },
+    ): Promise<unknown[]> => [],
+  ),
 }));
 vi.mock('../../../src/nest/maps/trek-places.client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/nest/maps/trek-places.client')>()),
   trekPlacesNearby: trekNearbyMock,
 }));
 
-import { createTables } from '../../../src/db/schema';
-import { runMigrations } from '../../../src/db/migrations';
-import { resetTestDb } from '../../helpers/test-db';
-import { createUser } from '../../helpers/factories';
-import { createMcpHarness, parseToolResult, type McpHarness } from '../../helpers/mcp-harness';
-import { MapsService } from '../../../src/nest/maps/maps.service';
-import { getWeather, getDetailedWeather } from '../../../src/nest/weather/weather.impl';
+const realtime = new FakeRealtimeService();
+const broadcastMock = realtime.broadcastMock;
 
 // The geo tools live on the DI-discovered maps.mcp.ts since the maps fold; the
 // test registry builds a real MapsService over the mocked db proxy, so stub the
@@ -79,14 +63,14 @@ vi.spyOn(MapsService.prototype, 'getPlaceDetailsExpanded').mockResolvedValue({
 } as never);
 // Overpass is stubbed one level below the facade so MapsService.pois() itself
 // still runs, the way the geo tools reach it.
-vi.spyOn(MapsService.prototype, 'searchOverpassPois').mockResolvedValue({
+vi.spyOn(OsmClient.prototype, 'searchOverpassPois').mockResolvedValue({
   pois: [{ osm_id: 'node:1', name: 'Chez Nous', lat: 48.86, lng: 2.34, category: 'restaurant' }],
   source: 'openstreetmap',
   truncated: false,
   clamped: false,
 } as never);
 // Off by default, so the existing cases exercise the lookup rather than the gate.
-vi.spyOn(MapsService.prototype, 'detailsDisabled').mockReturnValue(false);
+vi.spyOn(MapsService.prototype, 'detailsDisabled').mockResolvedValue(false);
 vi.spyOn(MapsService.prototype, 'reverseGeocode').mockResolvedValue({ name: 'Paris', address: 'France' });
 vi.spyOn(MapsService.prototype, 'resolveGoogleMapsUrl').mockResolvedValue({
   lat: 48.8566,
@@ -94,24 +78,29 @@ vi.spyOn(MapsService.prototype, 'resolveGoogleMapsUrl').mockResolvedValue({
   name: 'Paris',
 } as never);
 
-beforeAll(() => {
-  createTables(testDb);
-  runMigrations(testDb);
-});
-
-beforeEach(() => {
-  resetTestDb(testDb);
+beforeEach(async () => {
+  await resetDatabase(orm);
   broadcastMock.mockClear();
   delete process.env.DEMO_MODE;
 });
 
-afterAll(() => {
-  testDb.close();
+let orm: MikroORM;
+
+beforeAll(async () => {
+  orm = (await bootTestApp(realtime)).get(MikroORM);
+});
+
+afterAll(async () => {
+  await (await bootTestApp(realtime)).close();
 });
 
 async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>) {
-  const h = await createMcpHarness({ userId, withResources: false });
-  try { await fn(h); } finally { await h.cleanup(); }
+  const h = await createMcpHarness({ realtime, userId, withResources: false });
+  try {
+    await fn(h);
+  } finally {
+    await h.cleanup();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +109,7 @@ async function withHarness(userId: number, fn: (h: McpHarness) => Promise<void>)
 
 describe('Tool: list_tags', () => {
   it('returns empty array initially', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_tags', arguments: {} });
       const data = parseToolResult(result) as any;
@@ -129,10 +118,10 @@ describe('Tool: list_tags', () => {
   });
 
   it('returns only tags belonging to the current user', async () => {
-    const { user } = createUser(testDb);
-    const { user: other } = createUser(testDb);
-    testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(user.id, 'My Tag', '#ff0000');
-    testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(other.id, 'Other Tag', '#00ff00');
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    await makeTag(orm, user.id, { name: 'My Tag', color: '#ff0000' });
+    await makeTag(orm, other.id, { name: 'Other Tag', color: '#00ff00' });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'list_tags', arguments: {} });
       const data = parseToolResult(result) as any;
@@ -148,7 +137,7 @@ describe('Tool: list_tags', () => {
 
 describe('Tool: create_tag', () => {
   it('creates a tag and returns the tag object', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_tag',
@@ -163,7 +152,7 @@ describe('Tool: create_tag', () => {
   });
 
   it('creates a tag with only a name', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_tag',
@@ -176,7 +165,7 @@ describe('Tool: create_tag', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'create_tag',
@@ -193,9 +182,8 @@ describe('Tool: create_tag', () => {
 
 describe('Tool: update_tag', () => {
   it('updates tag name and color', async () => {
-    const { user } = createUser(testDb);
-    const r = testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(user.id, 'Old Name', '#aaaaaa');
-    const tagId = r.lastInsertRowid as number;
+    const { user } = await makeUser(orm);
+    const tagId = (await makeTag(orm, user.id, { name: 'Old Name', color: '#aaaaaa' })).id;
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'update_tag',
@@ -209,7 +197,7 @@ describe('Tool: update_tag', () => {
   });
 
   it('returns isError for non-existent tagId', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'update_tag',
@@ -221,16 +209,15 @@ describe('Tool: update_tag', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const r = testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(user.id, 'Demo Tag', '#aaaaaa');
-    const tagId = r.lastInsertRowid as number;
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const tagId = (await makeTag(orm, user.id, { name: 'Demo Tag', color: '#aaaaaa' })).id;
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'update_tag',
         arguments: { tagId, name: 'Blocked' },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT name FROM tags WHERE id = ?').get(tagId)).toEqual({ name: 'Demo Tag' });
+      expect((await findRow(orm, Tags, { id: tagId }))?.name).toBe('Demo Tag');
     });
   });
 });
@@ -241,9 +228,8 @@ describe('Tool: update_tag', () => {
 
 describe('Tool: delete_tag', () => {
   it('removes the tag row', async () => {
-    const { user } = createUser(testDb);
-    const r = testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(user.id, 'To Delete', '#cccccc');
-    const tagId = r.lastInsertRowid as number;
+    const { user } = await makeUser(orm);
+    const tagId = (await makeTag(orm, user.id, { name: 'To Delete', color: '#cccccc' })).id;
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_tag',
@@ -251,12 +237,12 @@ describe('Tool: delete_tag', () => {
       });
       const data = parseToolResult(result) as any;
       expect(data.success).toBe(true);
-      expect(testDb.prepare('SELECT id FROM tags WHERE id = ?').get(tagId)).toBeUndefined();
+      expect(await findRow(orm, Tags, { id: tagId })).toBeNull();
     });
   });
 
   it('returns isError for non-existent tagId', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_tag',
@@ -268,17 +254,43 @@ describe('Tool: delete_tag', () => {
 
   it('blocks demo user', async () => {
     process.env.DEMO_MODE = 'true';
-    const { user } = createUser(testDb, { email: 'demo@nomad.app' });
-    const r = testDb.prepare('INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)').run(user.id, 'Demo Tag', '#aaaaaa');
-    const tagId = r.lastInsertRowid as number;
+    const { user } = await makeUser(orm, { email: 'demo@nomad.app' });
+    const tagId = (await makeTag(orm, user.id, { name: 'Demo Tag', color: '#aaaaaa' })).id;
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'delete_tag',
         arguments: { tagId },
       });
       expect(result.isError).toBe(true);
-      expect(testDb.prepare('SELECT id FROM tags WHERE id = ?').get(tagId)).toBeDefined();
+      expect(await findRow(orm, Tags, { id: tagId })).not.toBeNull();
     });
+  });
+});
+
+describe('Tag writes reach every tab of the user', () => {
+  it('MCP-TAGS-001: create_tag, update_tag and delete_tag each ping the tag pickers of every tab', async () => {
+    const { user } = await makeUser(orm);
+    realtime.broadcastToUserMock.mockClear();
+    await withHarness(user.id, async (h) => {
+      const created = parseToolResult(
+        await h.client.callTool({ name: 'create_tag', arguments: { name: 'Beach' } }),
+      ) as { tag: { id: number } };
+      await h.client.callTool({ name: 'update_tag', arguments: { tagId: created.tag.id, name: 'Coast' } });
+      await h.client.callTool({ name: 'delete_tag', arguments: { tagId: created.tag.id } });
+    });
+    const ping = [user.id, { type: 'tags:changed' }, undefined];
+    expect(realtime.broadcastToUserMock.mock.calls).toEqual([ping, ping, ping]);
+  });
+
+  it('MCP-TAGS-002: a tag of another user is refused without a ping', async () => {
+    const { user } = await makeUser(orm);
+    const { user: other } = await makeUser(orm);
+    const foreign = await makeTag(orm, other.id);
+    realtime.broadcastToUserMock.mockClear();
+    await withHarness(user.id, async (h) => {
+      expect((await h.client.callTool({ name: 'delete_tag', arguments: { tagId: foreign.id } })).isError).toBe(true);
+    });
+    expect(realtime.broadcastToUserMock).not.toHaveBeenCalled();
   });
 });
 
@@ -290,7 +302,7 @@ describe('Tags tools: scope gating', () => {
   const TAG_TOOLS = ['list_tags', 'create_tag', 'update_tag', 'delete_tag'];
 
   async function listToolNames(userId: number, scopes: string[] | null): Promise<string[]> {
-    const h = await createMcpHarness({ userId, withResources: false, scopes });
+    const h = await createMcpHarness({ realtime, userId, withResources: false, scopes });
     try {
       return (await h.client.listTools()).tools.map((t) => t.name);
     } finally {
@@ -299,13 +311,13 @@ describe('Tags tools: scope gating', () => {
   }
 
   it('registers all four tag tools with null scopes (full access)', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const names = await listToolNames(user.id, null);
     for (const tool of TAG_TOOLS) expect(names).toContain(tool);
   });
 
   it('registers only list_tags with places:read', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const names = await listToolNames(user.id, ['places:read']);
     expect(names).toContain('list_tags');
     expect(names).not.toContain('create_tag');
@@ -314,13 +326,13 @@ describe('Tags tools: scope gating', () => {
   });
 
   it('registers all four tag tools with places:write (write implies read)', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const names = await listToolNames(user.id, ['places:write']);
     for (const tool of TAG_TOOLS) expect(names).toContain(tool);
   });
 
   it('registers no tag tools for an unrelated scope', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const names = await listToolNames(user.id, ['budget:read']);
     for (const tool of TAG_TOOLS) expect(names).not.toContain(tool);
   });
@@ -332,7 +344,7 @@ describe('Tags tools: scope gating', () => {
 
 describe('Tool: get_place_details', () => {
   it('returns details from mocked service', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'get_place_details',
@@ -352,7 +364,7 @@ describe('Tool: get_place_details', () => {
   // to stay on the lean lookup: nothing an existing caller does may start costing
   // more (#31).
   it('takes the lean path when expand is not asked for', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(MapsService.prototype.getPlaceDetails).mockClear();
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
@@ -364,7 +376,7 @@ describe('Tool: get_place_details', () => {
   });
 
   it('explicitly passing expand: false also stays on the lean path', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
     await withHarness(user.id, async (h) => {
@@ -377,7 +389,7 @@ describe('Tool: get_place_details', () => {
   });
 
   it('expand routes to the expanded lookup and returns reviews and the summary', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(MapsService.prototype.getPlaceDetails).mockClear();
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
@@ -389,13 +401,18 @@ describe('Tool: get_place_details', () => {
       const data = parseToolResult(result) as any;
       expect(data.details.summary).toBe('Wrought-iron lattice tower.');
       expect(data.details.reviews).toHaveLength(1);
-      expect(MapsService.prototype.getPlaceDetailsExpanded).toHaveBeenCalledWith(user.id, 'ChIJD7fiBh9u5kcRYJSMaMOCCwQ', 'de', false);
+      expect(MapsService.prototype.getPlaceDetailsExpanded).toHaveBeenCalledWith(
+        user.id,
+        'ChIJD7fiBh9u5kcRYJSMaMOCCwQ',
+        'de',
+        false,
+      );
       expect(MapsService.prototype.getPlaceDetails).not.toHaveBeenCalled();
     });
   });
 
   it('forwards refresh so a stale expanded payload can be re-fetched', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
     await withHarness(user.id, async (h) => {
@@ -403,12 +420,17 @@ describe('Tool: get_place_details', () => {
         name: 'get_place_details',
         arguments: { placeId: 'ChIJD7fiBh9u5kcRYJSMaMOCCwQ', expand: true, refresh: true },
       });
-      expect(MapsService.prototype.getPlaceDetailsExpanded).toHaveBeenCalledWith(user.id, 'ChIJD7fiBh9u5kcRYJSMaMOCCwQ', 'en', true);
+      expect(MapsService.prototype.getPlaceDetailsExpanded).toHaveBeenCalledWith(
+        user.id,
+        'ChIJD7fiBh9u5kcRYJSMaMOCCwQ',
+        'en',
+        true,
+      );
     });
   });
 
   it('refuses a non-boolean expand', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
     await withHarness(user.id, async (h) => {
@@ -418,6 +440,60 @@ describe('Tool: get_place_details', () => {
       });
       expect(result.isError).toBe(true);
       expect(MapsService.prototype.getPlaceDetailsExpanded).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// search_nearby_places (#976)
+// ---------------------------------------------------------------------------
+
+describe('Tool: search_nearby_places', () => {
+  it('lists what the index holds around the point, nearest first with the distance', async () => {
+    const { user } = await makeUser(orm);
+    trekNearbyMock.mockClear();
+    trekNearbyMock.mockResolvedValueOnce([
+      { gers: 'n-2', name: 'Farther', lat: 48.8611, lng: 2.3364, address: null, contact: null },
+      { gers: 'n-1', name: 'Closer', lat: 48.8607, lng: 2.3376, address: null, contact: null },
+    ]);
+
+    await withHarness(user.id, async (h) => {
+      const result = await h.client.callTool({
+        name: 'search_nearby_places',
+        arguments: { lat: 48.8606, lng: 2.3376, radius: 200, limit: 5 },
+      });
+      const data = parseToolResult(result) as any;
+      expect(data.source).toBe('trek-places');
+      expect(data.places.map((p: any) => p.name)).toEqual(['Closer', 'Farther']);
+      expect(data.places[0].distance_m).toBe(11);
+      expect(trekNearbyMock).toHaveBeenCalledWith(48.8606, 2.3376, { radius: 200, limit: 5, lang: 'en' });
+    });
+  });
+
+  it('asks the index in the language the tool was given, as the REST route does (#2592)', async () => {
+    const { user } = await makeUser(orm);
+    trekNearbyMock.mockClear();
+    trekNearbyMock.mockResolvedValueOnce([
+      { gers: 'n-1', name: 'Closer', lat: 35.7104, lng: 139.8119, address: null, contact: null },
+    ]);
+
+    await withHarness(user.id, async (h) => {
+      await h.client.callTool({
+        name: 'search_nearby_places',
+        arguments: { lat: 35.7103, lng: 139.8118, radius: 200, limit: 5, lang: 'de' },
+      });
+      expect(trekNearbyMock).toHaveBeenCalledWith(35.7103, 139.8118, { radius: 200, limit: 5, lang: 'de' });
+    });
+  });
+
+  it('refuses a circle wider than the REST route allows', async () => {
+    const { user } = await makeUser(orm);
+    await withHarness(user.id, async (h) => {
+      const result = await h.client.callTool({
+        name: 'search_nearby_places',
+        arguments: { lat: 48.8606, lng: 2.3376, radius: 5001 },
+      });
+      expect(result.isError).toBe(true);
     });
   });
 });
@@ -433,8 +509,8 @@ describe('Tool: search_pois', () => {
   // the drop-through: an empty index page must reach Overpass rather than come
   // back as an empty POI list.
   it('returns the POIs of a category inside the bbox', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockClear();
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockClear();
     trekNearbyMock.mockClear();
 
     await withHarness(user.id, async (h) => {
@@ -448,7 +524,7 @@ describe('Tool: search_pois', () => {
       expect(data.source).toBe('openstreetmap');
       expect(trekNearbyMock).toHaveBeenCalled();
       // The caller's per-category budget rides along on the fallback too.
-      expect(MapsService.prototype.searchOverpassPois).toHaveBeenCalledWith('restaurant', BBOX, 'fr', 60);
+      expect(OsmClient.prototype.searchOverpassPois).toHaveBeenCalledWith('restaurant', BBOX, 'fr', 60);
     });
   });
 
@@ -456,8 +532,8 @@ describe('Tool: search_pois', () => {
   // 'openstreetmap' because the client switches on it and these are the same
   // places; where they were read is this method's business, not the pill's.
   it('answers from the TREK Places index and leaves Overpass alone', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockClear();
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockClear();
     trekNearbyMock.mockClear();
     trekNearbyMock.mockResolvedValueOnce([
       {
@@ -490,14 +566,15 @@ describe('Tool: search_pois', () => {
       expect(data.source).toBe('trek-places');
       expect(data.pois[0].source).toBe('trek-places');
       expect(data.clamped).toBe(false);
-      expect(MapsService.prototype.searchOverpassPois).not.toHaveBeenCalled();
+      expect(OsmClient.prototype.searchOverpassPois).not.toHaveBeenCalled();
 
       // The bbox becomes a centre plus half its diagonal, and the category
       // becomes the Overture terms it maps to.
       const [lat, lng, opts] = trekNearbyMock.mock.calls[0];
       expect(lat).toBeCloseTo(48.86, 5);
       expect(lng).toBeCloseTo(2.345, 5);
-      expect(opts?.category).toBe('restaurant,casual_eatery,fast_food');
+      // Overture paths, so a pill cannot catch what is only spelled like it (#2663).
+      expect(opts?.category).toBe('food_and_drink>restaurant,food_and_drink>casual_eatery');
       // Sixty per category, the same allowance the Overpass path spends, rather
       // than a number this branch made up for itself.
       expect(opts?.limit).toBe(60);
@@ -509,10 +586,19 @@ describe('Tool: search_pois', () => {
   // The index searches a disc, so a viewport wider than 40km is narrowed there
   // as well — and says so, the same way the Overpass path does.
   it('reports a viewport the index had to narrow as clamped', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     trekNearbyMock.mockClear();
     trekNearbyMock.mockResolvedValueOnce([
-      { gers: 'wide-1', name: 'Far Away', lat: 48.9, lng: 2.4, category: null, address: null, contact: null, hours: null },
+      {
+        gers: 'wide-1',
+        name: 'Far Away',
+        lat: 48.9,
+        lng: 2.4,
+        category: null,
+        address: null,
+        contact: null,
+        hours: null,
+      },
     ]);
 
     await withHarness(user.id, async (h) => {
@@ -529,21 +615,21 @@ describe('Tool: search_pois', () => {
   });
 
   it('passes no language through when none is given', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockClear();
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockClear();
     trekNearbyMock.mockClear();
 
     await withHarness(user.id, async (h) => {
       await h.client.callTool({ name: 'search_pois', arguments: { category: 'museum', bbox: BBOX } });
-      expect(MapsService.prototype.searchOverpassPois).toHaveBeenCalledWith('museum', BBOX, undefined, 60);
+      expect(OsmClient.prototype.searchOverpassPois).toHaveBeenCalledWith('museum', BBOX, undefined, 60);
     });
   });
 
   // The enum is built from CATEGORY_OSM_FILTERS, so a category with no OSM tag
   // mapping never reaches Overpass in the first place.
   it('refuses a category that has no OSM mapping', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockClear();
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockClear();
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -551,13 +637,13 @@ describe('Tool: search_pois', () => {
         arguments: { category: 'dentist', bbox: BBOX },
       });
       expect(result.isError).toBe(true);
-      expect(MapsService.prototype.searchOverpassPois).not.toHaveBeenCalled();
+      expect(OsmClient.prototype.searchOverpassPois).not.toHaveBeenCalled();
     });
   });
 
   it('refuses a bbox edge outside the coordinate range', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockClear();
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockClear();
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -565,13 +651,13 @@ describe('Tool: search_pois', () => {
         arguments: { category: 'cafe', bbox: { ...BBOX, north: 118 } },
       });
       expect(result.isError).toBe(true);
-      expect(MapsService.prototype.searchOverpassPois).not.toHaveBeenCalled();
+      expect(OsmClient.prototype.searchOverpassPois).not.toHaveBeenCalled();
     });
   });
 
   it('answers isError when every Overpass mirror is unreachable', async () => {
-    const { user } = createUser(testDb);
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockRejectedValueOnce(new Error('all mirrors failed'));
+    const { user } = await makeUser(orm);
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockRejectedValueOnce(new Error('all mirrors failed'));
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_pois', arguments: { category: 'bar', bbox: BBOX } });
@@ -584,10 +670,10 @@ describe('Tool: search_pois', () => {
   // failure is logged and Overpass failing under it is still what reaches the
   // caller.
   it('answers isError when the index fails and every Overpass mirror is unreachable', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     trekNearbyMock.mockRejectedValueOnce(new Error('index down'));
-    vi.mocked(MapsService.prototype.searchOverpassPois).mockRejectedValueOnce(new Error('all mirrors failed'));
+    vi.mocked(OsmClient.prototype.searchOverpassPois).mockRejectedValueOnce(new Error('all mirrors failed'));
 
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_pois', arguments: { category: 'bar', bbox: BBOX } });
@@ -604,7 +690,7 @@ describe('Tool: search_pois', () => {
 
 describe('Tool: reverse_geocode', () => {
   it('returns result from mocked service', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'reverse_geocode',
@@ -623,7 +709,7 @@ describe('Tool: reverse_geocode', () => {
 
 describe('Tool: resolve_maps_url', () => {
   it('returns result from mocked service', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'resolve_maps_url',
@@ -643,7 +729,7 @@ describe('Tool: resolve_maps_url', () => {
 
 describe('Tool: get_weather', () => {
   it('returns weather from mocked service', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'get_weather',
@@ -663,7 +749,7 @@ describe('Tool: get_weather', () => {
 
 describe('Tool: get_detailed_weather', () => {
   it('returns detailed weather from mocked service', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'get_detailed_weather',
@@ -687,7 +773,7 @@ describe('Tool: get_detailed_weather', () => {
 
 describe('Weather tools: provider failure', () => {
   it('get_weather answers isError with the upstream message', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(getWeather).mockRejectedValueOnce(new Error('Open-Meteo unreachable'));
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -700,7 +786,7 @@ describe('Weather tools: provider failure', () => {
   });
 
   it('get_weather falls back to a generic message when the rejection is not an Error', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     // A non-Error rejection has no .message, which is the only way the ?? fallback
     // fires — `new Error('')` still carries an (empty) message and passes through.
     vi.mocked(getWeather).mockRejectedValueOnce('boom' as unknown as Error);
@@ -715,7 +801,7 @@ describe('Weather tools: provider failure', () => {
   });
 
   it('get_detailed_weather answers isError with the upstream message', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     vi.mocked(getDetailedWeather).mockRejectedValueOnce(new Error('rate limited'));
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
@@ -737,19 +823,19 @@ describe('Weather tools: provider failure', () => {
 
 describe('Tool: search_airports', () => {
   it('returns matches for a city name, capped by limit', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_airports', arguments: { query: 'zurich', limit: 5 } });
       const data = parseToolResult(result) as { airports: { iata: string }[] };
       expect(Array.isArray(data.airports)).toBe(true);
       expect(data.airports.length).toBeGreaterThan(0);
       expect(data.airports.length).toBeLessThanOrEqual(5);
-      expect(data.airports.some(a => a.iata === 'ZRH')).toBe(true);
+      expect(data.airports.some((a) => a.iata === 'ZRH')).toBe(true);
     });
   });
 
   it('applies the default limit of 10 when none is given', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_airports', arguments: { query: 'a' } });
       const data = parseToolResult(result) as { airports: unknown[] };
@@ -758,7 +844,7 @@ describe('Tool: search_airports', () => {
   });
 
   it('returns an empty list for a query that matches nothing', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'search_airports', arguments: { query: 'zzzzzznotanairport' } });
       const data = parseToolResult(result) as { airports: unknown[] };
@@ -769,7 +855,7 @@ describe('Tool: search_airports', () => {
 
 describe('Tool: get_airport', () => {
   it('returns the airport for a known IATA code, lowercase input included', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_airport', arguments: { iata: 'zrh' } });
       const data = parseToolResult(result) as { airport: { iata: string; tz: string } };
@@ -779,7 +865,7 @@ describe('Tool: get_airport', () => {
   });
 
   it('answers isError for an unknown code rather than a null airport', async () => {
-    const { user } = createUser(testDb);
+    const { user } = await makeUser(orm);
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({ name: 'get_airport', arguments: { iata: 'QQQ' } });
       expect((result as { isError?: boolean }).isError).toBe(true);
@@ -799,12 +885,12 @@ describe('Tool: get_airport', () => {
 
 describe('Tool: get_place_details (admin kill switch)', () => {
   afterEach(() => {
-    vi.mocked(MapsService.prototype.detailsDisabled).mockReturnValue(false);
+    vi.mocked(MapsService.prototype.detailsDisabled).mockResolvedValue(false);
   });
 
   it('fetches nothing when an admin has turned Place Details off', async () => {
-    const { user } = createUser(testDb);
-    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockReturnValue(true);
+    const { user } = await makeUser(orm);
+    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockResolvedValue(true);
     vi.mocked(MapsService.prototype.getPlaceDetails).mockClear();
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
@@ -822,8 +908,8 @@ describe('Tool: get_place_details (admin kill switch)', () => {
   });
 
   it('the switch also stops the expensive expanded path', async () => {
-    const { user } = createUser(testDb);
-    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockReturnValue(true);
+    const { user } = await makeUser(orm);
+    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockResolvedValue(true);
     vi.mocked(MapsService.prototype.getPlaceDetailsExpanded).mockClear();
 
     await withHarness(user.id, async (h) => {
@@ -837,8 +923,8 @@ describe('Tool: get_place_details (admin kill switch)', () => {
   });
 
   it('leaves the lookup alone while the switch is on', async () => {
-    const { user } = createUser(testDb);
-    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockReturnValue(false);
+    const { user } = await makeUser(orm);
+    vi.spyOn(MapsService.prototype, 'detailsDisabled').mockResolvedValue(false);
     vi.mocked(MapsService.prototype.getPlaceDetails).mockClear();
 
     await withHarness(user.id, async (h) => {

@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle, ExternalLink, Fingerprint, Trash2 } from 'lucide-react'
-import { adminApi } from '../../../api/client'
+import { AlertTriangle, CheckCircle, ExternalLink, Fingerprint, ShieldOff, Trash2, Unlink, UserPlus, UserCog, Download, KeyRound, RotateCcw } from 'lucide-react'
+import { useAdminUserActions } from '../../../components/Admin/useAdminUserActions'
 import type { TranslationFn } from '../../../types'
 import type { useAdmin } from '../../../pages/admin/useAdmin'
 import MSheet from '../../components/MSheet'
 import MSegmented from '../../components/MSegmented'
+import MAdminResetMfaSheet from './MAdminResetMfaSheet'
+import MConfirmSheet from '../settings/MConfirmSheet'
 import { MAdminButton, MAdminField, MAdminInput, MAdminSecretInput, MAdminSheetFrame } from './MAdminUi'
+import { NO_AUTOFILL } from '../../../utils/noAutofill'
 
 interface MAdminSheetsProps {
   admin: ReturnType<typeof useAdmin>
@@ -25,12 +28,11 @@ docker run -d --name trek \\
 // and delete), the "how to update" instructions and the rotate-JWT confirm.
 export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
   const {
-    logout, navigate, toast, currentUser,
     editingUser, setEditingUser, editForm, setEditForm,
     showCreateUser, setShowCreateUser, createForm, setCreateForm,
     updateInfo, showUpdateModal, setShowUpdateModal,
-    showRotateJwtModal, setShowRotateJwtModal, rotatingJwt, setRotatingJwt,
-    handleCreateUser, handleSaveUser, handleDeleteUser,
+    showRotateJwtModal, setShowRotateJwtModal, rotatingJwt,
+    handleCreateUser, handleSaveUser,
   } = admin
 
   const roleOptions = [
@@ -38,41 +40,17 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
     { value: 'admin', label: t('settings.roleAdmin') },
   ]
 
-  const [showResetPasskeys, setShowResetPasskeys] = useState(false)
-  const [resettingPk, setResettingPk] = useState(false)
 
-  const resetPasskeys = async () => {
-    if (!editingUser) return
-    setResettingPk(true)
-    try {
-      const r = await adminApi.resetUserPasskeys(editingUser.id)
-      toast.success(t('admin.passkey.resetDone', { count: r.deleted ?? 0 }))
-      setShowResetPasskeys(false)
-    } catch {
-      toast.error(t('common.error'))
-    } finally {
-      setResettingPk(false)
-    }
-  }
+  const userActions = useAdminUserActions(admin, t)
+  const { rotateJwt } = userActions
 
-  const rotateJwt = async () => {
-    setRotatingJwt(true)
-    try {
-      await adminApi.rotateJwtSecret()
-      setShowRotateJwtModal(false)
-      logout()
-      navigate('/login', { state: { noRedirect: true } })
-    } catch {
-      toast.error(t('common.error'))
-      setRotatingJwt(false)
-    }
-  }
 
   return (
     <>
       {/* Create user */}
       <MSheet open={showCreateUser} onClose={() => setShowCreateUser(false)} ariaLabel={t('admin.createUser')}>
         <MAdminSheetFrame
+          icon={<UserPlus size={19} strokeWidth={1.8} />}
           title={t('admin.createUser')}
           onClose={() => setShowCreateUser(false)}
           footer={
@@ -91,6 +69,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                 value={createForm.username}
                 onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
                 placeholder={t('settings.username')}
+                {...NO_AUTOFILL}
               />
             </MAdminField>
             <MAdminField label={`${t('common.email')} *`}>
@@ -99,6 +78,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                 value={createForm.email}
                 onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
                 placeholder={t('common.email')}
+                {...NO_AUTOFILL}
               />
             </MAdminField>
             <MAdminField label={`${t('common.password')} *`}>
@@ -106,6 +86,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                 value={createForm.password}
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 placeholder={t('common.password')}
+                autoComplete="new-password"
               />
             </MAdminField>
             <MAdminField label={t('settings.role')}>
@@ -122,6 +103,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
       {/* Edit user */}
       <MSheet open={!!editingUser} onClose={() => setEditingUser(null)} ariaLabel={t('admin.editUser')}>
         <MAdminSheetFrame
+          icon={<UserCog size={19} strokeWidth={1.8} />}
           title={t('admin.editUser')}
           onClose={() => setEditingUser(null)}
           footer={
@@ -140,6 +122,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                   type="text"
                   value={editForm.username}
                   onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+                  {...NO_AUTOFILL}
                 />
               </MAdminField>
               <MAdminField label={t('common.email')}>
@@ -147,6 +130,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                   type="email"
                   value={editForm.email}
                   onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                  {...NO_AUTOFILL}
                 />
               </MAdminField>
               <MAdminField label={t('admin.newPassword')} hint={t('admin.newPasswordHint')}>
@@ -154,6 +138,7 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                   value={editForm.password}
                   onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
                   placeholder={t('admin.newPasswordPlaceholder')}
+                  autoComplete="new-password"
                 />
               </MAdminField>
               <MAdminField label={t('settings.role')}>
@@ -163,37 +148,17 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
                   onChange={(role) => setEditForm((f) => ({ ...f, role }))}
                 />
               </MAdminField>
-              <div className="border-t border-[color:var(--m-rowbr)] pt-3">
-                <p className="mb-2 font-geist text-[0.625rem] leading-relaxed text-m-muted">
-                  {t('admin.passkey.resetHint')}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <MAdminButton variant="ghost" className="text-[color:var(--m-st-danger)]" onClick={() => setShowResetPasskeys(true)}>
-                    <Fingerprint size={12} strokeWidth={2.2} />
-                    {t('admin.passkey.reset')}
-                  </MAdminButton>
-                  <MAdminButton
-                    variant="danger"
-                    disabled={editingUser.id === currentUser?.id}
-                    onClick={() => {
-                      const user = editingUser
-                      setEditingUser(null)
-                      handleDeleteUser(user)
-                    }}
-                  >
-                    <Trash2 size={12} strokeWidth={2.2} />
-                    {t('admin.deleteUserTitle')}
-                  </MAdminButton>
-                </div>
-              </div>
+              <MUserDangerActions admin={admin} t={t} user={editingUser} />
             </div>
           )}
         </MAdminSheetFrame>
       </MSheet>
 
+
       {/* How to update */}
       <MSheet open={showUpdateModal} onClose={() => setShowUpdateModal(false)} ariaLabel={t('admin.update.howTo')}>
         <MAdminSheetFrame
+          icon={<Download size={19} strokeWidth={1.8} />}
           title={t('admin.update.howTo')}
           onClose={() => setShowUpdateModal(false)}
           footer={<MAdminButton onClick={() => setShowUpdateModal(false)}>{t('common.close')}</MAdminButton>}
@@ -242,9 +207,133 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
         </MAdminSheetFrame>
       </MSheet>
 
+
+      {/* Rotate JWT confirm */}
+      <MSheet open={showRotateJwtModal} onClose={() => setShowRotateJwtModal(false)} ariaLabel={t('admin.rotateJwt.title')}>
+        <MAdminSheetFrame
+          icon={<RotateCcw size={19} strokeWidth={1.8} />}
+          title={t('admin.rotateJwt.title')}
+          onClose={() => setShowRotateJwtModal(false)}
+          footer={
+            <>
+              <MAdminButton variant="ghost" disabled={rotatingJwt} onClick={() => setShowRotateJwtModal(false)}>
+                {t('common.cancel')}
+              </MAdminButton>
+              <MAdminButton variant="danger" busy={rotatingJwt} onClick={rotateJwt}>
+                {t('admin.rotateJwt.confirm')}
+              </MAdminButton>
+            </>
+          }
+        >
+          <div className="flex gap-3">
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--m-st-danger)_12%,transparent)] text-[color:var(--m-st-danger)]">
+              <AlertTriangle size={18} strokeWidth={2.2} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.8125rem] font-bold text-m-ink">
+                {t('admin.rotateJwt.warning')}
+              </p>
+              <p className="mt-1 font-geist text-[0.625rem] leading-relaxed text-m-muted">
+                {t('admin.rotateJwt.body')}
+              </p>
+            </div>
+          </div>
+        </MAdminSheetFrame>
+      </MSheet>
+    </>
+  )
+}
+
+/**
+ * The ways an admin acts on another account from its edit sheet, each behind
+ * its own confirm: passkeys, two-factor, the SSO link, and deleting the user.
+ */
+function MUserDangerActions({ admin, t, user }: { admin: MAdminSheetsProps['admin']; t: TranslationFn; user: NonNullable<MAdminSheetsProps['admin']['editingUser']> }) {
+  const { currentUser, setEditingUser, handleDeleteUser, oidcConfigured } = admin
+  const editingUser = user
+  const [showResetPasskeys, setShowResetPasskeys] = useState(false)
+  const [resettingPk, setResettingPk] = useState(false)
+  const [showResetMfa, setShowResetMfa] = useState(false)
+  const [showUnlinkSso, setShowUnlinkSso] = useState(false)
+  const userActions = useAdminUserActions(admin, t)
+
+  // The sheet stays open and busy while the reset runs and closes once it worked.
+  const resetPasskeys = async () => {
+    if (!editingUser) return
+    setResettingPk(true)
+    try {
+      if (await userActions.resetPasskeys(editingUser)) setShowResetPasskeys(false)
+    } finally {
+      setResettingPk(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="border-t border-[color:var(--m-rowbr)] pt-3">
+        <p className="mb-2 font-geist text-[0.625rem] leading-relaxed text-m-muted">
+          {t('admin.passkey.resetHint')}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <MAdminButton variant="ghost" className="text-[color:var(--m-st-danger)]" onClick={() => setShowResetPasskeys(true)}>
+            <Fingerprint size={12} strokeWidth={2.2} />
+            {t('admin.passkey.reset')}
+          </MAdminButton>
+          {editingUser.id !== currentUser?.id && (
+            <MAdminButton variant="ghost" className="text-[color:var(--m-st-danger)]" onClick={() => setShowResetMfa(true)}>
+              <ShieldOff size={12} strokeWidth={2.2} />
+              {t('admin.mfa.reset')}
+            </MAdminButton>
+          )}
+          {/* Unlinking single sign-on, as on the desktop: only once SSO is set up, and never for yourself. */}
+          {oidcConfigured && editingUser.id !== currentUser?.id && (
+            <MAdminButton variant="ghost" className="text-[color:var(--m-st-danger)]" onClick={() => setShowUnlinkSso(true)}>
+              <Unlink size={12} strokeWidth={2.2} />
+              {t('admin.sso.unlink')}
+            </MAdminButton>
+          )}
+          <MAdminButton
+            variant="danger"
+            disabled={editingUser.id === currentUser?.id}
+            onClick={() => {
+              setEditingUser(null)
+              void handleDeleteUser(editingUser)
+            }}
+          >
+            <Trash2 size={12} strokeWidth={2.2} />
+            {t('admin.deleteUserTitle')}
+          </MAdminButton>
+        </div>
+      </div>
+
+      {/* Unlink single sign-on confirm */}
+      <MConfirmSheet
+        open={showUnlinkSso && !!editingUser}
+        onClose={() => setShowUnlinkSso(false)}
+        title={t('admin.sso.unlink')}
+        message={`${t('admin.sso.unlinkHint')} ${t('admin.sso.unlinkConfirm', { name: editingUser?.username ?? '' })}`}
+        confirmLabel={t('admin.sso.unlink')}
+        cancelLabel={t('common.cancel')}
+        danger
+        onConfirm={() => {
+          setShowUnlinkSso(false)
+          if (editingUser) void userActions.unlinkSso(editingUser)
+        }}
+      />
+
+      {/* Reset two-factor confirm */}
+      <MAdminResetMfaSheet
+        open={showResetMfa}
+        onClose={() => setShowResetMfa(false)}
+        user={editingUser}
+        onReset={userActions.resetMfa}
+        t={t}
+      />
+
       {/* Reset passkeys confirm */}
       <MSheet open={showResetPasskeys} onClose={() => setShowResetPasskeys(false)} ariaLabel={t('admin.passkey.reset')}>
         <MAdminSheetFrame
+          icon={<KeyRound size={19} strokeWidth={1.8} />}
           title={t('admin.passkey.reset')}
           onClose={() => setShowResetPasskeys(false)}
           footer={
@@ -268,39 +357,6 @@ export default function MAdminSheets({ admin, t }: MAdminSheetsProps) {
               </p>
               <p className="mt-1 font-geist text-[0.625rem] leading-relaxed text-m-muted">
                 {t('admin.passkey.resetHint')}
-              </p>
-            </div>
-          </div>
-        </MAdminSheetFrame>
-      </MSheet>
-
-      {/* Rotate JWT confirm */}
-      <MSheet open={showRotateJwtModal} onClose={() => setShowRotateJwtModal(false)} ariaLabel="Rotate JWT Secret">
-        <MAdminSheetFrame
-          title="Rotate JWT Secret"
-          onClose={() => setShowRotateJwtModal(false)}
-          footer={
-            <>
-              <MAdminButton variant="ghost" disabled={rotatingJwt} onClick={() => setShowRotateJwtModal(false)}>
-                {t('common.cancel')}
-              </MAdminButton>
-              <MAdminButton variant="danger" busy={rotatingJwt} onClick={rotateJwt}>
-                Rotate &amp; Log out
-              </MAdminButton>
-            </>
-          }
-        >
-          <div className="flex gap-3">
-            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--m-st-danger)_12%,transparent)] text-[color:var(--m-st-danger)]">
-              <AlertTriangle size={18} strokeWidth={2.2} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[0.8125rem] font-bold text-m-ink">
-                Warning, this will invalidate all sessions and log you out.
-              </p>
-              <p className="mt-1 font-geist text-[0.625rem] leading-relaxed text-m-muted">
-                A new JWT secret will be generated immediately. Every logged-in user — including you — will be signed
-                out and will need to log in again.
               </p>
             </div>
           </div>

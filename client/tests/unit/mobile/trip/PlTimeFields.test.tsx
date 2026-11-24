@@ -7,7 +7,7 @@ import { seedStore } from '../../../helpers/store'
 import { buildSettings } from '../../../helpers/factories'
 import { useSettingsStore } from '../../../../src/store/settingsStore'
 
-// FE-MOB-PLTIME-001 to FE-MOB-PLTIME-015
+// FE-MOB-PLTIME-001 to FE-MOB-PLTIME-017
 
 const planner = buildPlanner()
 
@@ -26,6 +26,7 @@ const SELF = assignment(1, 'Museum', '10:00', '11:00')
 interface Options {
   startTime?: string
   endTime?: string
+  stay?: string
   dayAssignments?: Assignment[]
   hasTimeError?: boolean
   assignmentId?: number
@@ -34,6 +35,7 @@ interface Options {
 function setup({
   startTime = '10:00',
   endTime = '11:00',
+  stay,
   dayAssignments = [SELF],
   hasTimeError = false,
   assignmentId = 1,
@@ -44,6 +46,7 @@ function setup({
       planner={planner}
       startTime={startTime}
       endTime={endTime}
+      stay={stay}
       onChange={onChange}
       assignmentId={assignmentId}
       dayAssignments={dayAssignments}
@@ -78,6 +81,14 @@ describe('PlTimeFields', () => {
     const { end, onChange } = setup()
     fireEvent.change(end, { target: { value: '12:45' } })
     expect(onChange).toHaveBeenCalledWith('end_time', '12:45')
+  })
+
+  it('keeps a saved long stay and reports exact seven-day edits', () => {
+    const { onChange } = setup({ stay: '2880' })
+    const stayInput = screen.getByRole('textbox', { name: 'roadtrip.stop.stayShort (roadtrip.limit.minutes)' })
+    expect(stayInput).toHaveValue('2880')
+    fireEvent.change(stayInput, { target: { value: '10080' } })
+    expect(onChange).toHaveBeenCalledWith('assignment_stay', '10080')
   })
 
   // #2067 — the desktop twin (PlaceFormModal) has used CustomTimePicker for ages;
@@ -170,5 +181,41 @@ describe('PlTimeFields', () => {
   it('FE-MOB-PLTIME-015: from the plan tab End stays a plain label', () => {
     setup()
     expect(screen.queryByText('roadtrip.stop.endIsLeave')).not.toBeInTheDocument()
+  })
+
+  // TIME-02: an imported hike of 12 km, 300 m up and 500 m down, estimated at 4 h.
+  const hike = {
+    place_id: 1, name: 'Museum ridge', tour_type: 'hike', distance: 12, elevation_gain: 300, elevation_loss: 500,
+    duration: null, planned_duration_minutes: null, break_additional_minutes: null, difficulty: null, wanderer_ref: null,
+    match_confidence: 1, max_hiking_difficulty: null, planned: true, caution: false,
+  }
+
+  function renderTour(startTime: string, endTime: string) {
+    seedStore(useSettingsStore, { settings: buildSettings({ time_format: '24h' }) })
+    return render(
+      <PlTimeFields
+        planner={buildPlanner({ tours: [hike] } as never)}
+        startTime={startTime}
+        endTime={endTime}
+        onChange={vi.fn()}
+        assignmentId={1}
+        dayAssignments={[SELF]}
+        hasTimeError={false}
+      />,
+    )
+  }
+
+  it('FE-MOB-PLTIME-016: a tour without a typed end says the end its start and its time work out to', () => {
+    renderTour('09:00', '')
+    expect(screen.getByTestId('tour-day-end-hint')).toHaveTextContent('13:00')
+    expect(screen.getByTestId('tour-day-end-hint')).toHaveTextContent('≈ 4 h')
+  })
+
+  it('FE-MOB-PLTIME-017: before a start it says one will set the end, and a typed end needs no hint', () => {
+    const view = renderTour('', '')
+    expect(screen.getByTestId('tour-day-end-hint')).toHaveTextContent('≈ 4 h')
+    view.unmount()
+    renderTour('09:00', '15:00')
+    expect(screen.queryByTestId('tour-day-end-hint')).not.toBeInTheDocument()
   })
 })

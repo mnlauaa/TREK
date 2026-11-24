@@ -4,7 +4,7 @@ const dawarich: TranslationStrings = {
   // ── Connection ─────────────────────────────────────────────────────────────
   'dawarich.title': 'Dawarich',
   'dawarich.intro':
-    'Kết nối phiên bản Dawarich của riêng bạn để xem bạn đã thực sự đi những đâu. TREK đọc dữ liệu đó và gợi ý mục nhật ký, địa điểm và quốc gia — không có gì được thêm vào cho đến khi bạn xác nhận, và không có gì được ghi ngược lại Dawarich.',
+    'Kết nối phiên bản Dawarich của riêng bạn để xem bạn đã thực sự đi những đâu. TREK đọc dữ liệu đó và gợi ý mục nhật ký, địa điểm và quốc gia; không có gì được thêm vào cho đến khi bạn xác nhận, và không có gì được ghi ngược lại Dawarich.',
   'dawarich.url': 'Địa chỉ phiên bản',
   'dawarich.apiKey': 'Khóa API',
   'dawarich.apiKeyPlaceholder': 'Dán khóa API Dawarich của bạn',
@@ -80,7 +80,7 @@ const dawarich: TranslationStrings = {
   'dawarich.badge.sourceMissing': 'Không còn trong Dawarich',
 
   'dawarich.suggestions.title': 'Từ Dawarich',
-  'dawarich.suggestions.pending': '{count} đang chờ bạn',
+  'dawarich.suggestions.pending': '{count} điểm lưu trú đang chờ bạn',
   'dawarich.suggestions.loading': 'Đang đọc Dawarich…',
   'dawarich.suggestions.notConnected': 'Hãy kết nối Dawarich trong Cài đặt để xem các điểm lưu trú của bạn ở đây.',
   'dawarich.suggestions.unavailable': 'Không đọc được Dawarich.',
@@ -113,7 +113,7 @@ const dawarich: TranslationStrings = {
   'dawarich.accept.confirm.journal': 'Thêm mục nhập',
   'dawarich.accept.confirm.bucket_list': 'Đánh dấu hoàn thành',
   'dawarich.accept.recorded': 'Được ghi từ {from} đến {to}',
-  'dawarich.accept.duration': '{minutes} phút',
+  'dawarich.accept.duration': '{count} phút',
   'dawarich.accept.name': 'Tên',
   'dawarich.accept.date': 'Ngày',
   'dawarich.accept.from': 'Đến nơi',
@@ -156,7 +156,6 @@ const dawarich: TranslationStrings = {
   'dawarich.atlas.loading': 'Đang đọc các bản ghi của bạn…',
   'dawarich.atlas.empty': 'Các bản ghi của bạn không có quốc gia nào mà TREK chưa biết.',
   'dawarich.atlas.cities': '{count} thành phố',
-  'dawarich.atlas.citiesOne': '1 thành phố',
   'dawarich.atlas.accept': 'Thêm {count} quốc gia',
   'dawarich.atlas.accepted': 'Đã thêm {count} quốc gia',
   'dawarich.atlas.unresolved': 'TREK không khớp được những mục này với quốc gia nào: {names}.',
@@ -172,10 +171,8 @@ const dawarich: TranslationStrings = {
   'dawarich.again': 'Kiểm tra lại',
   'dawarich.bucket.metersAway': 'cách {meters} m',
   'dawarich.bucket.kilometersAway': 'cách {km} km',
-  'dawarich.bucket.rule': 'Một điều ước được tính là đã đến khi trong vòng {meters} m và sau {minutes} phút tại chỗ.',
-
-  'dawarich.journey.dayStays.one': '1 điểm dừng từ Dawarich',
-  'dawarich.journey.dayStays.other': '{count} điểm dừng từ Dawarich',
+  'dawarich.bucket.rule': 'Một điều ước được tính là đã đến khi trong vòng {meters} m và sau {count} phút tại chỗ.',
+  'dawarich.journey.dayStays.other': '{count} điểm lưu trú từ Dawarich',
 };
 
 export default dawarich;

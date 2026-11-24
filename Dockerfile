@@ -2,8 +2,10 @@
 # Rebuild gosu with a current Go toolchain so the runtime image ships no stale
 # Go stdlib (Debian's apt gosu is built with an old Go that trips CVE scanners).
 # The binary and its runtime behaviour are identical to the apt package.
-FROM golang:1.25-alpine AS gosu-build
-RUN CGO_ENABLED=0 GOBIN=/out go install github.com/tianon/gosu@latest
+FROM golang:1.26-alpine AS gosu-build
+# Pinned to the commit of gosu's 1.19 tag: @latest made every build pick up whatever
+# was pushed last, and the tag itself is not a semver version go install accepts.
+RUN CGO_ENABLED=0 GOBIN=/out go install github.com/tianon/gosu@6456aaa0f3c854d199d0f037f068eb97515b7513
 
 # ── Stage 1: shared ──────────────────────────────────────────────────────────
 FROM node:24-alpine AS shared-builder
@@ -20,10 +22,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY client/package.json ./client/
-COPY client/scripts/patch-maplibre.mjs ./client/scripts/
 RUN npm ci --workspace=client --include=dev
 COPY --from=shared-builder /app/shared/dist ./shared/dist
 COPY client/ ./client/
+# A prerelease build does not bump client/package.json, so the bundle takes its
+# version from the same build argument the server's VERSION file comes from.
+ARG APP_VERSION=dev
 RUN npm run build --workspace=client
 
 # ── Stage 3: server ──────────────────────────────────────────────────────────
@@ -37,7 +41,9 @@ COPY server/package.json ./server/
 RUN npm ci --workspace=server --include=dev --ignore-scripts
 COPY --from=shared-builder /app/shared/dist ./shared/dist
 COPY server/ ./server/
-RUN npm run build --workspace=server
+# tsc needs more than the 2 GB heap Node picks on a host with about 12 GB of RAM;
+# on a bigger build machine the default is larger, so only small hosts failed.
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build --workspace=server
 
 # ── Stage 4: production runtime ──────────────────────────────────────────────
 FROM node:24-trixie-slim
@@ -64,16 +70,32 @@ COPY server/package.json ./server/
 # gypfile:false (npm/cli#9837). The only other install scripts among the runtime
 # deps are esbuild's binary check, redundant next to its optional platform
 # package, and a telemetry ping.
-RUN apt-get update && \
+# The upgrade takes the Debian security fixes the base image was built before
+# (zlib, 11/2026, failed the image scan until node:24-trixie-slim caught up).
+#
+# postgresql-client-18 brings pg_dump, pg_restore and psql to
+# /usr/lib/postgresql/18/bin, which back up and restore an install on Postgres
+# (TREK_DB_URL). A client handles every server up to its own major and refuses
+# a newer one, so the image carries the newest major TREK supports (14 to 18).
+# Debian 13 ships 17 only, so it comes from the PostgreSQL project's apt
+# repository (PGDG): the `18` component lists that major's packages and no
+# other, and the repository's signing key (fingerprint B97B 0AFC AA1A 47F0 44F2
+# 44A0 7FCC 7D46 ACCC 4CF8) is kept beside the entrypoint instead of fetched at
+# build time. Raise both together when TREK supports a newer major.
+COPY server/scripts/pgdg-apt-key.asc /etc/apt/keyrings/pgdg.asc
+RUN echo 'deb [signed-by=/etc/apt/keyrings/pgdg.asc] http://apt.postgresql.org/pub/repos/apt trixie-pgdg main 18' \
+      > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends tzdata dumb-init wget ca-certificates \
-    libkitinerary-bin libsqlite3-0 && \
+    libkitinerary-bin libsqlite3-0 postgresql-client-18 && \
     npm ci --workspace=server --omit=dev --ignore-scripts && \
-    ln -sf "$(find /usr/lib -name kitinerary-extractor -type f | head -1)" /usr/local/bin/kitinerary-extractor; \
+    { ln -sf "$(find /usr/lib -name kitinerary-extractor -type f | head -1)" /usr/local/bin/kitinerary-extractor || true; } && \
     rm -rf /var/lib/apt/lists/* /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx && \
     chown -R node:node /app
 
-# gosu rebuilt with a current Go toolchain (stage 0) — the entrypoint script uses
-# it to drop to node.
+# gosu rebuilt with a current Go toolchain (stage 0). The entrypoint drops to node
+# with setpriv since #3135; gosu stays in the image for anyone who calls it by hand.
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
 
 ENV XDG_CACHE_HOME=/tmp/kf6-cache
@@ -85,7 +107,9 @@ ENV KITINERARY_EXTRACTOR_PATH=/usr/local/bin/kitinerary-extractor
 
 COPY --chown=node:node --from=server-builder /app/server/dist ./server/dist
 # Runtime data assets read from server/assets at runtime: airports.json (flight
-# transport search) and atlas/*.geojson.gz (Atlas country/region map). The build
+# transport search), atlas/*.geojson.gz + atlas/admin1/*.geojson.gz (Atlas
+# country/region map) and postgres/baseline.* (the schema a fresh Postgres
+# database starts from). The build
 # only emits dist, so these must be copied explicitly or the features silently
 # degrade to empty in the image.
 COPY --chown=node:node --from=server-builder /app/server/assets ./server/assets
@@ -96,9 +120,9 @@ COPY --chown=node:node wiki ./wiki
 # tsconfig-paths/register reads this at runtime to resolve MCP SDK paths.
 COPY --chown=node:node server/tsconfig.json ./server/
 # Encryption-key rotation is run on demand via tsx (a prod dep) straight from the
-# raw .ts source — it never enters dist, so it must be copied in explicitly or
+# raw .ts source (the command and its stores module). They never enter dist, so they must be copied in explicitly or
 # `node --import tsx scripts/migrate-encryption.ts` fails with module-not-found.
-COPY --chown=node:node server/scripts/migrate-encryption.ts ./server/scripts/migrate-encryption.ts
+COPY --chown=node:node server/scripts/migrate-encryption.ts server/scripts/migrate-encryption-stores.ts ./server/scripts/
 # Admin recovery script (node server/reset-admin.js) for locked-out installs.
 COPY --chown=node:node server/reset-admin.js ./server/reset-admin.js
 COPY --chown=node:node --from=shared-builder /app/shared/dist ./shared/dist
@@ -120,24 +144,39 @@ RUN mkdir -p /app/data/logs /app/uploads/files /app/uploads/covers /app/uploads/
 ENV NODE_ENV=production
 ENV NODE_USE_ENV_PROXY=1
 ENV PORT=3000
-ARG APP_VERSION=dev
-ENV APP_VERSION=${APP_VERSION}
-# Release builds override this with the immutable fork revision they build.
 ARG SOURCE_CODE_URL=https://github.com/mnlauaa/TREK
 ENV SOURCE_CODE_URL=${SOURCE_CODE_URL}
+# The version goes into a file, not into ENV. A container keeps its environment
+# when it is recreated on a newer image (Portainer's recreate, a copied run
+# config), so an APP_VERSION env var would keep announcing the old release and
+# the clients would never pick up the new bundle. The server reads this file
+# first (server/src/app-config/image-version.ts).
+ARG APP_VERSION=dev
+RUN if [ "$APP_VERSION" != "dev" ]; then printf '%s\n' "$APP_VERSION" > /app/server/VERSION; fi
+
+# OCI metadata: Renovate, Watchtower and the registries read the source label to
+# link an image update to its release notes (#1498). The release workflows add
+# the commit and the build time; a local build carries everything else.
+LABEL org.opencontainers.image.title="TREK" \
+      org.opencontainers.image.description="Self-hosted collaborative travel planner" \
+      org.opencontainers.image.url="https://github.com/liketrek/TREK" \
+      org.opencontainers.image.source="https://github.com/liketrek/TREK" \
+      org.opencontainers.image.documentation="https://github.com/liketrek/TREK/wiki" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${APP_VERSION}"
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/health || exit 1
+  CMD wget -qO- "http://localhost:${PORT:-3000}/api/health" || exit 1
 
 # Start-up lives in a script, not an inline `sh -c` string: container management
 # UIs re-tokenise Config.Cmd when you edit a container in place, and a command
 # carrying quotes does not survive that round-trip (the container then dies with
 # a shell syntax error before Node starts). A CMD of one bare token does.
 COPY server/scripts/entrypoint.sh /usr/local/bin/trek-entrypoint
-# Root-owned on purpose — this is what calls gosu, so it runs before the drop to
-# node. chmod is explicit because a checkout on Windows carries no exec bit.
+# Root-owned on purpose: it runs as root and drops to node itself, with setpriv.
+# chmod is explicit because a checkout on Windows carries no exec bit.
 RUN chmod 0755 /usr/local/bin/trek-entrypoint
 
 ENTRYPOINT ["dumb-init", "--"]

@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const uk: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const uk: NotificationLocale = {
     booking_change: (p) => ({
       title: `Нове бронювання: ${p.booking}`,
       body: `${p.actor} додав бронювання "${p.booking}" (${p.type}) до "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} вилетів`,
+      body: `${p.flight} з ${p.from} до ${p.to} у повітрі.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} затримується`,
+      body: `${p.flight} з ${p.from} до ${p.to} відстає від розкладу приблизно на ${p.delay} хв.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} приземлився`,
+      body: `${p.flight} з ${p.from} приземлився в ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Нагадування про подорож: ${p.trip}`,
@@ -37,7 +50,12 @@ const uk: NotificationLocale = {
       body: `${p.actor} запрошує вас поділитися колекцією. Відкрийте TREK, щоб прийняти або відхилити.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} фото поділились`,
+      title: pluralForm(p.count, 'uk', {
+        one: `${p.count} нове фото`,
+        few: `${p.count} нові фото`,
+        many: `${p.count} нових фото`,
+        other: `${p.count} нового фото`,
+      }),
       body: `${p.actor} поділився ${p.count} фото у "${p.trip}".`,
     }),
     collab_message: (p) => ({
@@ -56,11 +74,46 @@ const uk: NotificationLocale = {
       title: 'Збій репліки сховища',
       body:
         `Помилка запису в репліку '${p.backend}': ${p.op} для ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Із моменту останнього сповіщення приховано ще ${p.suppressed} помилок.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'uk', {
+              one: ` Із моменту останнього сповіщення приховано ще ${p.suppressed} помилку.`,
+              few: ` Із моменту останнього сповіщення приховано ще ${p.suppressed} помилки.`,
+              many: ` Із моменту останнього сповіщення приховано ще ${p.suppressed} помилок.`,
+              other: ` Із моменту останнього сповіщення приховано ще ${p.suppressed} помилки.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Запитано регіон для сплаву',
+      body: `${p.actor} планує сплав у регіоні ${p.region}. Завантажте або відхиліть його дані про воду в адмініструванні в розділі «Доповнення».`,
     }),
     synology_session_cleared: () => ({
       title: 'Сеанс Synology скинуто',
       body: 'Ваш обліковий запис або URL Synology змінився. Ви вийшли з Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Маршрут wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `«${p.tour}» у «${p.trip}» змінено в wanderer. Відкрийте тур і перевірте його джерело, щоб побачити всі зміни. У подорожі нічого не змінюється само.`
+          : p.state === 'unverifiable'
+            ? `«${p.tour}» у «${p.trip}» більше не можна перевірити в wanderer. Тур у вашій подорожі залишається як є.`
+            : `«${p.tour}» у «${p.trip}», можливо, змінено в wanderer. Відкрийте тур і перевірте його джерело. У подорожі нічого не змінюється само.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Додано з листа: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} додав(ла) «${p.booking}» до «${p.trip}» з пересланого листа.`
+          : `«${p.booking}» з вашого пересланого листа додано до «${p.trip}». У TREK це можна скасувати протягом 7 днів.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Переслані бронювання для перевірки',
+      body: `Пересланих бронювань чекає на вас у TREK: ${p.count}. Біля кожного вказано, чому його не додано автоматично.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Імпорт листів призупинено',
+      body: 'TREK поки що не приймає переслані листи з бронюваннями, тож поки не пересилайте їх. Ваші адреси зберігаються й знову працюватимуть, коли імпорт повернеться, а вже додані бронювання залишаються у ваших подорожах.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

@@ -1,10 +1,12 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { DatabaseService } from '../../database/database.service';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../auth-core/jwt-auth.guard';
+import { toRowId } from '../../common/row-id';
+import { TripAccessService } from '../../trip-membership/trip-access.service';
 import { pluginsEnabled } from '../kill-switch';
 import { PluginHooks } from '../plugin-hooks.service';
 import { stripEmoji } from '../text-sanitize';
+import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+
+import type { Request } from 'express';
 
 /**
  * GET /api/map-markers/:tripId — bounded markers plugins overlay on the trip map
@@ -40,7 +42,9 @@ function safeUrl(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw === '') return undefined;
   try {
     const u = new URL(raw);
-    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' ? raw.slice(0, 2048) : undefined;
+    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:'
+      ? raw.slice(0, 2048)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -56,7 +60,8 @@ function normalize(pluginId: string, raw: unknown): MapMarker[] {
     const lng = Number(m.lng);
     const id = cap(m.id, 64);
     // A marker with no id or out-of-range coordinates is meaningless — drop it.
-    if (!id || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    if (!id || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180)
+      continue;
     out.push({
       pluginId,
       id,
@@ -80,7 +85,7 @@ function normalize(pluginId: string, raw: unknown): MapMarker[] {
 export class MapMarkersController {
   constructor(
     private readonly hooks: PluginHooks,
-    private readonly dbs: DatabaseService,
+    private readonly trips: TripAccessService,
   ) {}
 
   @Get(':tripId')
@@ -89,9 +94,9 @@ export class MapMarkersController {
     @Req() req: Request & { user?: { id: number } },
   ): Promise<{ markers: MapMarker[] }> {
     if (!pluginsEnabled()) return { markers: [] };
-    const tripId = Number(tripIdRaw);
+    const tripId = toRowId(tripIdRaw);
     const userId = req.user?.id;
-    if (!Number.isFinite(tripId) || userId == null || !this.dbs.canAccessTrip(tripId, userId)) return { markers: [] };
+    if (tripId === null || userId == null || !(await this.trips.findAccessible(tripId, userId))) return { markers: [] };
 
     const ids = this.hooks.providersOf('mapMarkerProvider');
     const perProvider = await Promise.all(

@@ -1,11 +1,12 @@
-// FE-ADMIN-DUS-001 to FE-ADMIN-DUS-027
+// FE-ADMIN-DUS-001 to FE-ADMIN-DUS-031
+import { render, screen, waitFor, within, fireEvent } from '../../../tests/helpers/render';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { buildAdmin } from '../../../tests/helpers/factories';
 import { server } from '../../../tests/helpers/msw/server';
-import { fireEvent, render, screen, waitFor, within } from '../../../tests/helpers/render';
 import { resetAllStores, seedStore } from '../../../tests/helpers/store';
+import { buildAdmin } from '../../../tests/helpers/factories';
 import { useAuthStore } from '../../store/authStore';
+import { AMAP_ROAD } from '../../constants/mapDefaults';
 import { ToastContainer } from '../shared/Toast';
 import DefaultUserSettingsTab from './DefaultUserSettingsTab';
 
@@ -27,30 +28,25 @@ function stubDefaults(initial: Record<string, unknown> = {}) {
   server.use(
     http.get('/api/admin/default-user-settings', () => HttpResponse.json(state)),
     http.put('/api/admin/default-user-settings', async ({ request }) => {
-      const body = (await request.json()) as Record<string, unknown>;
+      const body = await request.json() as Record<string, unknown>;
       puts.push(body);
       for (const [key, value] of Object.entries(body)) {
         if (value === null) delete state[key];
         else state[key] = value;
       }
       return HttpResponse.json({ ...state });
-    })
+    }),
   );
   return { puts, state };
 }
 
 function withToast() {
-  return render(
-    <>
-      <ToastContainer />
-      <DefaultUserSettingsTab />
-    </>
-  );
+  return render(<><ToastContainer /><DefaultUserSettingsTab /></>);
 }
 
-/** The selected option button is the one drawn with the strong border token. */
+/** The selected option is the pressed button of its segmented group. */
 function isActive(button: HTMLElement): boolean {
-  return (button.style.border || '').includes('var(--text-primary)');
+  return button.getAttribute('aria-pressed') === 'true';
 }
 
 /**
@@ -58,13 +54,13 @@ function isActive(button: HTMLElement): boolean {
  * element the wrapping label becomes its accessible name, so it is queried positionally.
  */
 function resetLink(label: string): HTMLElement {
-  const el = screen.getAllByText(label).find((node) => node.tagName === 'LABEL');
+  const el = screen.getAllByText(label).find(node => node.tagName === 'LABEL');
   if (!el) throw new Error(`no label found for ${label}`);
   return within(el).getByRole('button');
 }
 
 function hasResetLink(label: string): boolean {
-  const el = screen.getAllByText(label).find((node) => node.tagName === 'LABEL');
+  const el = screen.getAllByText(label).find(node => node.tagName === 'LABEL');
   return !!el && within(el).queryByRole('button') !== null;
 }
 
@@ -74,7 +70,7 @@ function cartoInput(): HTMLInputElement {
 }
 
 /** Opens a CustomSelect by its trigger label and picks an option from the portal. */
-async function pickFromSelect(user: ReturnType<typeof userEvent.setup>, trigger: string, option: string) {
+async function pickFromSelect(user: ReturnType<typeof userEvent.setup>, trigger: string | RegExp, option: string | RegExp) {
   await user.click(screen.getByRole('button', { name: trigger }));
   const choices = await screen.findAllByRole('button', { name: option });
   await user.click(choices[choices.length - 1]);
@@ -102,14 +98,7 @@ describe('DefaultUserSettingsTab', () => {
     for (const name of ['Light', 'Dark', 'Auto', '°C Celsius', 'km Metric', '24h (14:30)', 'On', 'Off']) {
       expect(isActive(screen.getByRole('button', { name }))).toBe(false);
     }
-    for (const label of [
-      'Color Mode',
-      'Temperature Unit',
-      'Distance Unit',
-      'Time Format',
-      'Display currency',
-      'Map Template',
-    ]) {
+    for (const label of ['Color Mode', 'Temperature Unit', 'Distance Unit', 'Time Format', 'Display currency', 'Map Template']) {
       expect(hasResetLink(label)).toBe(false);
     }
     expect(screen.getByTestId('map-preview')).toBeInTheDocument();
@@ -165,9 +154,11 @@ describe('DefaultUserSettingsTab', () => {
     await waitFor(() => expect(resetLink('Distance Unit')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: '12h (2:30 PM)' }));
 
-    await waitFor(() =>
-      expect(puts).toEqual([{ temperature_unit: 'fahrenheit' }, { distance_unit: 'imperial' }, { time_format: '12h' }])
-    );
+    await waitFor(() => expect(puts).toEqual([
+      { temperature_unit: 'fahrenheit' },
+      { distance_unit: 'imperial' },
+      { time_format: '12h' },
+    ]));
   });
 
   it('FE-ADMIN-DUS-007: a set default gets a reset link that clears it server-side', async () => {
@@ -191,9 +182,9 @@ describe('DefaultUserSettingsTab', () => {
     render(<DefaultUserSettingsTab />);
     await screen.findByText('Default User Settings');
 
-    await pickFromSelect(user, 'USD — US Dollar', 'EUR — Euro');
+    await pickFromSelect(user, /^USD/, /^EUR/);
     await waitFor(() => expect(puts).toEqual([{ default_currency: 'EUR' }]));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'EUR — Euro' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^EUR/ })).toBeInTheDocument());
 
     await user.click(resetLink('Display currency'));
     await waitFor(() => expect(puts).toHaveLength(2));
@@ -210,7 +201,10 @@ describe('DefaultUserSettingsTab', () => {
     await waitFor(() => expect(isActive(screen.getByRole('button', { name: 'On' }))).toBe(true));
     await user.click(screen.getByRole('button', { name: 'Off' }));
 
-    await waitFor(() => expect(puts).toEqual([{ blur_booking_codes: true }, { blur_booking_codes: false }]));
+    await waitFor(() => expect(puts).toEqual([
+      { blur_booking_codes: true },
+      { blur_booking_codes: false },
+    ]));
   });
 
   it('FE-ADMIN-DUS-010: the tile preset dropdown fills the URL field and hands it to the preview', async () => {
@@ -225,6 +219,18 @@ describe('DefaultUserSettingsTab', () => {
     await waitFor(() => expect(puts).toEqual([{ map_tile_url: url }]));
     expect(screen.getByPlaceholderText(TILE_PLACEHOLDER)).toHaveValue(url);
     expect(screen.getByTestId('map-preview')).toHaveAttribute('data-tile', url);
+  });
+
+  it('FE-ADMIN-DUS-029: the Amap presets a user can pick are offered as instance defaults too', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults();
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    await pickFromSelect(user, 'Select template...', '高德地图 (Amap)');
+
+    await waitFor(() => expect(puts).toEqual([{ map_tile_url: AMAP_ROAD }]));
+    expect(screen.getByTestId('map-preview')).toHaveAttribute('data-tile', AMAP_ROAD);
   });
 
   it('FE-ADMIN-DUS-011: a hand-typed tile URL is saved on blur', async () => {
@@ -389,10 +395,11 @@ describe('DefaultUserSettingsTab', () => {
     render(<DefaultUserSettingsTab />);
     await screen.findByText('3D buildings & terrain');
 
-    // 3D defaults to on, quality mode to off when neither is stored
-    const threeD = within(screen.getByText('3D buildings & terrain').closest('div') as HTMLElement);
+    // 3D defaults to on, quality mode to off when neither is stored. The row
+    // (label left, control right) holds the On/Off pair.
+    const threeD = within(screen.getByText('3D buildings & terrain').closest('.flex-wrap') as HTMLElement);
     expect(isActive(threeD.getByRole('button', { name: 'On' }))).toBe(true);
-    const quality = within(screen.getByText('High-quality mode').closest('div') as HTMLElement);
+    const quality = within(screen.getByText('High-quality mode').closest('.flex-wrap') as HTMLElement);
     expect(isActive(quality.getByRole('button', { name: 'Off' }))).toBe(true);
 
     await user.click(threeD.getByRole('button', { name: 'Off' }));
@@ -406,7 +413,7 @@ describe('DefaultUserSettingsTab', () => {
     const user = userEvent.setup();
     server.use(
       http.get('/api/admin/default-user-settings', () => HttpResponse.json({})),
-      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 500 }))
+      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 500 })),
     );
     withToast();
     await screen.findByText('Default User Settings');
@@ -421,7 +428,7 @@ describe('DefaultUserSettingsTab', () => {
     const user = userEvent.setup();
     server.use(
       http.get('/api/admin/default-user-settings', () => HttpResponse.json({ time_format: '12h' })),
-      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 503 }))
+      http.put('/api/admin/default-user-settings', () => HttpResponse.json({ error: 'nope' }, { status: 503 })),
     );
     withToast();
     await screen.findByText('Default User Settings');
@@ -458,5 +465,51 @@ describe('DefaultUserSettingsTab', () => {
     await screen.findByText('Default User Settings');
 
     expect(screen.queryByText('Shared CARTO key')).not.toBeInTheDocument();
+  });
+});
+
+describe('DefaultUserSettingsTab week start (#2029)', () => {
+  it('FE-ADMIN-DUS-028: the week-start default saves its own key and can be reset', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults();
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    await user.click(screen.getByRole('button', { name: 'Sunday' }));
+    await waitFor(() => expect(resetLink('Week starts on')).toBeInTheDocument());
+    await user.click(resetLink('Week starts on'));
+
+    await waitFor(() => expect(puts).toEqual([{ week_start: 'sunday' }, { week_start: null }]));
+  });
+});
+
+describe('DefaultUserSettingsTab date format (#2971)', () => {
+  beforeEach(() => {
+    resetAllStores();
+    seedStore(useAuthStore, { isAuthenticated: true, user: buildAdmin() });
+  });
+
+  it('FE-ADMIN-DUS-030: the date-format default saves its own key', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults({ date_format: 'YYYY-MM-DD' });
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    // The choices are labelled by how they write 31 December.
+    await pickFromSelect(user, '2026-12-31', '31.12.2026');
+
+    await waitFor(() => expect(puts).toEqual([{ date_format: 'DD.MM.YYYY' }]));
+    await waitFor(() => expect(screen.getByRole('button', { name: '31.12.2026' })).toBeInTheDocument());
+  });
+
+  it('FE-ADMIN-DUS-031: auto is offered with the example of the interface language', async () => {
+    const user = userEvent.setup();
+    const { puts } = stubDefaults({ date_format: 'DD/MM/YYYY' });
+    render(<DefaultUserSettingsTab />);
+    await screen.findByText('Default User Settings');
+
+    await pickFromSelect(user, '31/12/2026', /\(12\/31\/2026\)/);
+
+    await waitFor(() => expect(puts).toEqual([{ date_format: 'auto' }]));
   });
 });

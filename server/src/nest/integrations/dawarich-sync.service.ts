@@ -1,3 +1,31 @@
+import { ADDON_IDS } from '../../addons';
+import { BucketList } from '../../db/entities/BucketList.entity';
+import { DawarichConnections } from '../../db/entities/DawarichConnections.entity';
+import { DawarichVisitSuggestions } from '../../db/entities/DawarichVisitSuggestions.entity';
+import { Trips } from '../../db/entities/Trips.entity';
+import { BucketListRepository } from '../../db/repositories/BucketList.repository';
+import { DawarichConnectionsRepository } from '../../db/repositories/DawarichConnections.repository';
+import { DawarichVisitSuggestionsRepository } from '../../db/repositories/DawarichVisitSuggestions.repository';
+import { TripsRepository } from '../../db/repositories/Trips.repository';
+import { AddonsService } from '../addons/addons.service';
+import { getCountryFromCoords } from '../atlas/atlas-geo';
+import { logError, logInfo } from '../audit/audit-log.logger';
+import { UnitOfWork } from '../database/unit-of-work';
+import { JourneyRecordingPrepService, type PreparedJourney } from '../journey/journey-recording-prep.service';
+import { DawarichClient, DawarichError, type DawarichCreds, type DawarichVisitRaw } from './dawarich.client';
+import {
+  distanceMeters,
+  isPlaceholderName,
+  localDateOf,
+  nameFromGeocodedPoints,
+  normalizeVisit,
+  STAY_NAME_PENDING,
+  syncWindow,
+  UNNAMED_STAY,
+  visitHash,
+} from './dawarich.helpers';
+import { DawarichService } from './dawarich.service';
+import { InjectRepository } from '@mikro-orm/nestjs';
 import { Injectable } from '@nestjs/common';
 import {
   DAWARICH_SYNC_LOOKAHEAD_DAYS,
@@ -6,14 +34,31 @@ import {
   DAWARICH_BUCKET_MATCH_MIN_MINUTES,
   type DawarichSyncState,
 } from '@trek/shared';
-import { ADDON_IDS } from '../../addons';
-import { DatabaseService } from '../database/database.service';
-import { AddonsService } from '../addons/addons.service';
-import { logError, logInfo } from '../audit/audit-log.logger';
-import { getCountryFromCoords } from '../atlas/atlas-geo';
-import { DawarichClient, DawarichError, type DawarichCreds } from './dawarich.client';
-import { DawarichService } from './dawarich.service';
-import { distanceMeters, localDateOf, normalizeVisit, syncWindow, visitHash } from './dawarich.helpers';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Stays one run reads points for to name them. A first sync of a long trip
+ * can hold hundreds without a name; the rest wait for the next run rather than
+ * holding this one open (see `stayNamer`).
+ */
+const MAX_STAY_NAME_LOOKUPS = 100;
+
+/**
+ * Stays already read once without a name that one run reads again, from what
+ * the stays never read yet left of MAX_STAY_NAME_LOOKUPS.
+ */
+const MAX_UNNAMED_STAY_REREADS = 20;
+
+/**
+ * Names a stay from its points (`read`): the name, null when none of them was
+ * geocoded, undefined when they were not read this run. `unnamed` collects the
+ * stays read before without a name, read again once every other stay had its read.
+ */
+interface StayNamer {
+  read: (startedAt: string, endedAt: string) => Promise<string | null | undefined>;
+  unnamed: Array<{ id: number; startedAt: string; endedAt: string }>;
+}
 
 /** What one user's sync produced — plus whether it ran at all. */
 export interface DawarichSyncOutcome {
@@ -65,25 +110,36 @@ export class DawarichSyncService {
    */
   private readonly inFlight = new Set<number>();
 
+  /**
+   * Per user, the last unnamed stay read again, so the next run goes on after
+   * it instead of asking about the same first MAX_UNNAMED_STAY_REREADS again.
+   */
+  private readonly lastUnnamedReread = new Map<number, number>();
+
   constructor(
-    private readonly db: DatabaseService,
+    @InjectRepository(DawarichVisitSuggestions) private readonly suggestions: DawarichVisitSuggestionsRepository,
     private readonly addons: AddonsService,
     private readonly client: DawarichClient,
     private readonly dawarich: DawarichService,
+    @InjectRepository(Trips) private readonly trips: TripsRepository,
+    @InjectRepository(BucketList) private readonly bucketList: BucketListRepository,
+    @InjectRepository(DawarichConnections) private readonly connections: DawarichConnectionsRepository,
+    private readonly uow: UnitOfWork,
+    private readonly journeyPrep: JourneyRecordingPrepService,
   ) {}
 
   /** The addon gate, evaluated per tick so an admin toggle lands without a restart. */
-  syncGloballyEnabled(): boolean {
+  async syncGloballyEnabled(): Promise<boolean> {
     return this.addons.isAddonEnabled(ADDON_IDS.DAWARICH);
   }
 
   /** Every connected user, one after another. The cron's entry point. */
   async runSync(): Promise<void> {
-    if (!this.syncGloballyEnabled()) return;
+    if (!(await this.syncGloballyEnabled())) return;
     if (this.running) return;
     this.running = true;
     try {
-      const userIds = this.dawarich.listSyncableUserIds();
+      const userIds = await this.dawarich.listSyncableUserIds();
       for (const userId of userIds) {
         try {
           await this.syncUser(userId);
@@ -110,12 +166,9 @@ export class DawarichSyncService {
       // Not a failure and not a fresh result: the run that is already going will
       // record its own. Reporting the state the connection currently holds keeps
       // the card honest, and `alreadyRunning` lets the caller say so.
-      const current = this.db.get<{ last_sync_state: string }>(
-        'SELECT last_sync_state FROM dawarich_connections WHERE user_id = ?',
-        userId,
-      );
+      const currentState = await this.connections.getLastSyncState(userId);
       return {
-        state: (current?.last_sync_state as DawarichSyncState) ?? 'never',
+        state: (currentState as DawarichSyncState) ?? 'never',
         created: 0,
         updated: 0,
         missing: 0,
@@ -132,63 +185,47 @@ export class DawarichSyncService {
 
   /** The body of a sync, with the guard above already held. */
   private async syncUserOnce(userId: number): Promise<DawarichSyncOutcome> {
-    if (!this.syncGloballyEnabled()) {
-      this.dawarich.recordSyncResult(userId, 'failed', 'addon_disabled');
+    if (!(await this.syncGloballyEnabled())) {
+      await this.dawarich.recordSyncResult(userId, 'failed', 'addon_disabled');
       return { state: 'failed', created: 0, updated: 0, missing: 0 };
     }
 
-    const creds = this.dawarich.getCredentials(userId);
+    const creds = await this.dawarich.getCredentials(userId);
     if (!creds) {
-      this.dawarich.recordSyncResult(userId, 'failed', 'not_connected');
+      await this.dawarich.recordSyncResult(userId, 'failed', 'not_connected');
       return { state: 'failed', created: 0, updated: 0, missing: 0 };
     }
 
-    const trips = this.listTripsToSync(userId);
-    if (trips.length === 0) {
+    const trips = await this.listTripsToSync(userId);
+    const journeys = await this.journeysToPrepare(userId);
+    if (trips.length === 0 && journeys.length === 0) {
       // Nothing to ask about is a successful sync, not a failure — otherwise a
       // user with no dated trips sees a permanent red badge for doing nothing wrong.
-      this.dawarich.recordSyncResult(userId, 'ok', null);
+      await this.dawarich.recordSyncResult(userId, 'ok', null);
       return { state: 'ok', created: 0, updated: 0, missing: 0 };
     }
 
-    let created = 0;
-    let updated = 0;
-    let missing = 0;
-    let failures = 0;
-    let lastError: string | null = null;
     const now = new Date();
+    const journeyTrips = tripsOnlyJourneysHold(journeys, trips);
+    const { created, updated, missing, failures, lastError, outcomes } = await this.syncTrips(
+      userId,
+      creds,
+      trips,
+      journeyTrips,
+      now,
+    );
+    await this.recordJourneyPrep(userId, journeys, outcomes, now);
 
-    for (const trip of trips) {
-      const window = syncWindow(
-        trip.start_date,
-        trip.end_date,
-        now,
-        DAWARICH_SYNC_LOOKBACK_DAYS,
-        DAWARICH_SYNC_LOOKAHEAD_DAYS,
-      );
-      if (!window) continue;
-
-      try {
-        const result = await this.syncTripWindow(userId, trip.id, creds, window.from, window.to, trips);
-        created += result.created;
-        updated += result.updated;
-        missing += result.missing;
-      } catch (err) {
-        failures++;
-        lastError = err instanceof DawarichError ? err.code : 'unreachable';
-      }
-    }
-
-    const state: DawarichSyncState =
-      failures === 0 ? 'ok' : failures === trips.length ? 'failed' : 'partial';
-    this.dawarich.recordSyncResult(userId, state, state === 'ok' ? null : lastError);
+    const asked = trips.length + journeyTrips.length;
+    const state: DawarichSyncState = failures === 0 ? 'ok' : failures === asked ? 'failed' : 'partial';
+    await this.dawarich.recordSyncResult(userId, state, state === 'ok' ? null : lastError);
 
     // The probe is cheap next to the windows just fetched, and re-running it is
     // how a Dawarich upgrade that finally ships `updated_at` starts being used
     // without anyone reconnecting.
     if (state !== 'failed') {
       try {
-        this.dawarich.storeCapabilities(userId, await this.dawarich.probeCapabilities(creds));
+        await this.dawarich.storeCapabilities(userId, await this.dawarich.probeCapabilities(creds));
       } catch {
         // Capabilities are an optimisation; a failed probe is not a failed sync.
       }
@@ -201,6 +238,52 @@ export class DawarichSyncService {
   }
 
   /**
+   * Every trip's window in turn, one failing without stopping the next: the
+   * person's own trips reconciled in full, then the trips only a journey they
+   * prepare holds (JRN-03), read for new and changed stays only, since such a
+   * window is no full re-read of anything their own sync keeps and its stays
+   * belong to no trip of theirs. `outcomes` holds what each window came back
+   * with, null when it went through and the reason otherwise.
+   *
+   * @txIndependent each window reconciles on its own after its network read.
+   */
+  private async syncTrips(userId: number, creds: DawarichCreds, trips: TripRow[], journeyTrips: TripRow[], now: Date) {
+    let created = 0;
+    let updated = 0;
+    let missing = 0;
+    let failures = 0;
+    let lastError: string | null = null;
+    const outcomes = new Map<number, string | null>();
+    const own = new Set(trips.map((trip) => trip.id));
+
+    for (const trip of [...trips, ...journeyTrips]) {
+      const window = syncWindow(
+        trip.start_date,
+        trip.end_date,
+        now,
+        DAWARICH_SYNC_LOOKBACK_DAYS,
+        DAWARICH_SYNC_LOOKAHEAD_DAYS,
+      );
+      if (!window) continue;
+
+      try {
+        const result = await (own.has(trip.id)
+          ? this.syncTripWindow(userId, trip.id, creds, window.from, window.to, trips)
+          : this.upsertWindow(userId, creds, window.from, window.to, trips));
+        created += result.created;
+        updated += result.updated;
+        if ('missing' in result) missing += result.missing;
+        outcomes.set(trip.id, null);
+      } catch (err) {
+        failures++;
+        lastError = err instanceof DawarichError ? err.code : 'unreachable';
+        outcomes.set(trip.id, lastError);
+      }
+    }
+    return { created, updated, missing, failures, lastError, outcomes };
+  }
+
+  /**
    * Trips worth asking about: the ones the user owns or is on, not archived,
    * with a start date, and either still running or recent enough that a
    * recording could still arrive.
@@ -209,20 +292,8 @@ export class DawarichSyncService {
    * generous rather than tight, because someone who connects Dawarich for the
    * first time wants their last holiday filled in, not just today's.
    */
-  private listTripsToSync(userId: number): TripRow[] {
-    return this.db.all<TripRow>(
-      `SELECT DISTINCT t.id, t.start_date, t.end_date
-         FROM trips t
-         LEFT JOIN trip_members m ON m.trip_id = t.id AND m.user_id = ?
-        WHERE (t.user_id = ? OR m.user_id IS NOT NULL)
-          AND COALESCE(t.is_archived, 0) = 0
-          AND t.start_date IS NOT NULL
-          AND (t.end_date IS NULL OR t.end_date >= date('now', '-400 days'))
-          AND t.start_date <= date('now', '+1 day')
-        ORDER BY t.start_date DESC`,
-      userId,
-      userId,
-    );
+  private async listTripsToSync(userId: number): Promise<TripRow[]> {
+    return this.trips.listTripsToSync(userId);
   }
 
   /**
@@ -249,114 +320,266 @@ export class DawarichSyncService {
   ): Promise<{ created: number; updated: number; missing: number }> {
     const { visits } = await this.client.listVisits(creds, from, to);
 
+    const nameStay = this.stayNamer(creds);
     const seenIds = new Set<string>();
     let created = 0;
     let updated = 0;
-
     for (const raw of visits) {
-      const visit = normalizeVisit(raw);
-      if (!visit) continue;
-      seenIds.add(visit.sourceVisitId);
+      const outcome = await this.upsertVisit(userId, tripId, raw, trips, nameStay);
+      if (!outcome) continue;
+      seenIds.add(outcome.sourceVisitId);
+      if (outcome.change === 'created') created++;
+      else if (outcome.change === 'updated') updated++;
+    }
+    await this.rereadUnnamed(userId, nameStay);
 
-      const hash = visitHash(raw);
-      const existing = this.db.get<SuggestionRow>(
-        'SELECT * FROM dawarich_visit_suggestions WHERE user_id = ? AND source_visit_id = ?',
-        userId,
-        visit.sourceVisitId,
-      );
+    const missing = await this.flagMissing(userId, tripId, from, to, seenIds);
+    return { created, updated, missing };
+  }
 
-      // Dawarich has no country code on a visit's place, so it is resolved here
-      // from the coordinates against the same borders the Atlas draws. A code
-      // the source does start sending one day wins, because it is the source's
-      // own answer.
-      const countryCode =
-        visit.countryCodeFromSource ??
-        (visit.lat !== null && visit.lng !== null ? getCountryFromCoords(visit.lat, visit.lng) : null);
-
-      const ownerTripId = tripForVisit(visit.localDate, tripId, existing?.trip_id ?? null, trips);
-
-      if (!existing) {
-        this.db.run(
-          `INSERT INTO dawarich_visit_suggestions
-             (user_id, source_visit_id, trip_id, name, lat, lng, started_at, ended_at,
-              duration_minutes, local_date, source_status, confidence, confidence_band,
-              country_code, state, source_hash, first_seen_at, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
-          userId,
-          visit.sourceVisitId,
-          ownerTripId,
-          visit.name,
-          visit.lat,
-          visit.lng,
-          visit.startedAt,
-          visit.endedAt,
-          visit.durationMinutes,
-          visit.localDate,
-          visit.status,
-          visit.confidence,
-          visit.confidenceBand,
-          countryCode,
-          hash,
-          new Date().toISOString(),
-          new Date().toISOString(),
-        );
-        created++;
-        this.matchBucketList(userId, visit.sourceVisitId, visit.lat, visit.lng, visit.durationMinutes);
-        continue;
+  /**
+   * Reads a stay's points for a name, for one run. A run reads at most
+   * MAX_STAY_NAME_LOOKUPS stays, and stops reading after the first failure,
+   * since an instance that did not answer one will not answer the rest either.
+   * Either way the stay is left for the next run, not given up on.
+   */
+  private stayNamer(creds: DawarichCreds): StayNamer {
+    let left = MAX_STAY_NAME_LOOKUPS;
+    const read = async (startedAt: string, endedAt: string) => {
+      if (left <= 0) return undefined;
+      left--;
+      try {
+        const points = await this.client.listGeocodedPoints(creds, new Date(startedAt), new Date(endedAt));
+        return nameFromGeocodedPoints(points);
+      } catch {
+        left = 0;
+        return undefined;
       }
+    };
+    return { read, unnamed: [] };
+  }
 
-      const changed = existing.source_hash !== hash;
+  /**
+   * The unnamed stays of a run read again with the budget the others left,
+   * at most MAX_UNNAMED_STAY_REREADS of them, so a Dawarich that geocodes
+   * nothing is not asked about the same stays in full on every run. Each run
+   * starts after the stay the last one stopped at, so every unnamed stay gets
+   * its turn even when the first ones never get a name.
+   *
+   * @txStandalone a name found later is a derived refresh of a stay already stored.
+   * @txIndependent one stay at a time after its network read.
+   */
+  private async rereadUnnamed(userId: number, nameStay: StayNamer): Promise<void> {
+    const after = this.lastUnnamedReread.get(userId) ?? 0;
+    const byId = [...nameStay.unnamed].sort((a, b) => a.id - b.id);
+    const turn = [...byId.filter((s) => s.id > after), ...byId.filter((s) => s.id <= after)];
+    // One after another: a read that finds the budget spent stops the rest.
+    await turn.slice(0, MAX_UNNAMED_STAY_REREADS).reduce<Promise<boolean>>(async (going, stay) => {
+      if (!(await going)) return false;
+      const found = await nameStay.read(stay.startedAt, stay.endedAt);
+      if (found === undefined) return false;
+      this.lastUnnamedReread.set(userId, stay.id);
+      if (found !== null) await this.suggestions.renameNewVisit(stay.id, found);
+      return true;
+    }, Promise.resolve(true));
+  }
 
-      if (existing.state === 'new') {
-        // Nobody has acted on it yet, so the newest version of the source is
-        // simply the better suggestion. Overwriting here loses nothing, and
-        // that includes the trip: a stay parked on a neighbour by an earlier
-        // run moves to the trip whose dates hold it.
-        this.db.run(
-          `UPDATE dawarich_visit_suggestions
-              SET name = ?, lat = ?, lng = ?, started_at = ?, ended_at = ?, duration_minutes = ?,
-                  local_date = ?, source_status = ?, confidence = ?, confidence_band = ?,
-                  country_code = ?, source_hash = ?, source_missing_at = NULL,
-                  trip_id = ?, last_seen_at = ?
-            WHERE id = ?`,
-          visit.name,
-          visit.lat,
-          visit.lng,
-          visit.startedAt,
-          visit.endedAt,
-          visit.durationMinutes,
-          visit.localDate,
-          visit.status,
-          visit.confidence,
-          visit.confidenceBand,
-          countryCode,
-          hash,
-          ownerTripId,
-          new Date().toISOString(),
-          existing.id,
-        );
-        if (changed) updated++;
-        this.matchBucketList(userId, visit.sourceVisitId, visit.lat, visit.lng, visit.durationMinutes);
-        continue;
-      }
+  /**
+   * What a stay is called. Its own name when Dawarich sent one. Otherwise the
+   * reverse-geocoded points recorded during it name it (#3105): Dawarich sends
+   * a placeholder for a visit without a place even when its points know the
+   * town. A name found earlier is kept while the visit is unchanged. A stay
+   * none of whose points was geocoded yet is read again at the end of a later
+   * run, since Dawarich geocodes in the background and can lag behind by days;
+   * one whose points were not read yet is read next run, keeping the
+   * placeholder meanwhile.
+   */
+  private async stayName(
+    visit: { name: string; named: boolean; startedAt: string; endedAt: string },
+    hash: string,
+    existing: { id: number; name: string | null; source_hash: string | null } | null,
+    nameStay: StayNamer,
+  ): Promise<string> {
+    if (visit.named) return visit.name;
+    const kept = existing?.source_hash === hash ? existing.name : null;
+    if (existing && kept === UNNAMED_STAY) {
+      nameStay.unnamed.push({ id: existing.id, startedAt: visit.startedAt, endedAt: visit.endedAt });
+      return kept;
+    }
+    if (kept && !isPlaceholderName(kept)) return kept;
+    const found = await nameStay.read(visit.startedAt, visit.endedAt);
+    if (found === undefined) return STAY_NAME_PENDING;
+    return found ?? UNNAMED_STAY;
+  }
 
-      // Accepted or dismissed: the hash is refreshed so the flag is raised once
-      // rather than on every tick, but nothing the user can see is rewritten.
-      // `accepted_hash` is what they said yes to; the difference between that
-      // and the current hash is what the UI reports.
-      this.db.run(
-        `UPDATE dawarich_visit_suggestions
-            SET source_hash = ?, source_missing_at = NULL, last_seen_at = ?
-          WHERE id = ?`,
-        hash,
-        new Date().toISOString(),
-        existing.id,
-      );
-      if (changed) updated++;
+  /**
+   * One visit into the user's suggestions: inserted when new, overwritten while
+   * nobody acted on it, only its hash refreshed once accepted or dismissed.
+   * Null for a visit too broken to read.
+   *
+   * @txIndependent the stay is whole once written; the wish match after it is
+   * a derived hint the next sync works out again.
+   */
+  private async upsertVisit(
+    userId: number,
+    tripId: number | null,
+    raw: DawarichVisitRaw,
+    trips: TripRow[],
+    nameStay: StayNamer,
+  ): Promise<{ sourceVisitId: string; change: 'created' | 'updated' | 'unchanged' } | null> {
+    const visit = normalizeVisit(raw);
+    if (!visit) return null;
+
+    const hash = visitHash(raw);
+    const existing = await this.suggestions.findByUserAndVisit(userId, visit.sourceVisitId);
+
+    // Dawarich has no country code on a visit's place, so it is resolved here
+    // from the coordinates against the same borders the Atlas draws. A code
+    // the source does start sending one day wins, because it is the source's
+    // own answer.
+    const countryCode =
+      visit.countryCodeFromSource ??
+      (visit.lat !== null && visit.lng !== null ? getCountryFromCoords(visit.lat, visit.lng) : null);
+
+    const ownerTripId = tripForVisit(visit.localDate, tripId, existing?.trip_id ?? null, trips);
+
+    if (!existing) {
+      await this.suggestions.insertVisit({
+        user_id: userId,
+        source_visit_id: visit.sourceVisitId,
+        trip_id: ownerTripId,
+        name: await this.stayName(visit, hash, null, nameStay),
+        lat: visit.lat,
+        lng: visit.lng,
+        started_at: visit.startedAt,
+        ended_at: visit.endedAt,
+        duration_minutes: visit.durationMinutes,
+        local_date: visit.localDate,
+        source_status: visit.status,
+        confidence: visit.confidence,
+        confidence_band: visit.confidenceBand,
+        country_code: countryCode,
+        source_hash: hash,
+        first_seen_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
+      });
+      await this.matchBucketList(userId, visit.sourceVisitId, visit.lat, visit.lng, visit.durationMinutes);
+      return { sourceVisitId: visit.sourceVisitId, change: 'created' };
     }
 
-    const missing = this.flagMissing(userId, tripId, from, to, seenIds);
-    return { created, updated, missing };
+    const changed = existing.source_hash !== hash;
+
+    if (existing.state === 'new') {
+      // Nobody has acted on it yet, so the newest version of the source is
+      // simply the better suggestion. Overwriting here loses nothing, and
+      // that includes the trip: a stay parked on a neighbour by an earlier
+      // run moves to the trip whose dates hold it.
+      await this.suggestions.updateNewVisit(existing.id, {
+        name: await this.stayName(visit, hash, existing, nameStay),
+        lat: visit.lat,
+        lng: visit.lng,
+        started_at: visit.startedAt,
+        ended_at: visit.endedAt,
+        duration_minutes: visit.durationMinutes,
+        local_date: visit.localDate,
+        source_status: visit.status,
+        confidence: visit.confidence,
+        confidence_band: visit.confidenceBand,
+        country_code: countryCode,
+        source_hash: hash,
+        trip_id: ownerTripId,
+        last_seen_at: new Date().toISOString(),
+      });
+      await this.matchBucketList(userId, visit.sourceVisitId, visit.lat, visit.lng, visit.durationMinutes);
+      return { sourceVisitId: visit.sourceVisitId, change: changed ? 'updated' : 'unchanged' };
+    }
+
+    // Accepted or dismissed: the hash is refreshed so the flag is raised once
+    // rather than on every tick, but nothing the user can see is rewritten.
+    // `accepted_hash` is what they said yes to; the difference between that
+    // and the current hash is what the UI reports.
+    await this.suggestions.refreshHash(existing.id, hash, new Date().toISOString());
+    return { sourceVisitId: visit.sourceVisitId, change: changed ? 'updated' : 'unchanged' };
+  }
+
+  /**
+   * The stays of one local day read again from Dawarich (JRN-02), so the day
+   * review shows what the recording holds now and not only what the last sync
+   * of a trip window brought in. The window reaches a day past both sides,
+   * because a stay's day is in its own zone and Dawarich filters on the start.
+   *
+   * Upserts only: nothing is flagged missing or deleted, since a window this
+   * narrow is no full re-read of anything a trip's sync holds.
+   *
+   * @txIndependent one stay at a time after the network read, as the trip
+   * sync writes them.
+   */
+  async refreshDay(userId: number, creds: DawarichCreds, date: string): Promise<{ truncated: boolean }> {
+    const day = Date.parse(`${date}T00:00:00Z`);
+    const trips = await this.listTripsToSync(userId);
+    const { truncated } = await this.upsertWindow(
+      userId,
+      creds,
+      new Date(day - DAY_MS),
+      new Date(day + 2 * DAY_MS),
+      trips,
+    );
+    return { truncated };
+  }
+
+  /**
+   * A window's stays inserted or brought up to date, never flagged missing:
+   * for a window that is no full re-read of a trip the person's own sync holds.
+   *
+   * @txIndependent one stay at a time after the network read, as the trip sync writes them.
+   */
+  private async upsertWindow(
+    userId: number,
+    creds: DawarichCreds,
+    from: Date,
+    to: Date,
+    trips: TripRow[],
+  ): Promise<{ created: number; updated: number; truncated: boolean }> {
+    const { visits, truncated } = await this.client.listVisits(creds, from, to);
+    const nameStay = this.stayNamer(creds);
+    let created = 0;
+    let updated = 0;
+    for (const raw of visits) {
+      const outcome = await this.upsertVisit(userId, null, raw, trips, nameStay);
+      if (outcome?.change === 'created') created++;
+      else if (outcome?.change === 'updated') updated++;
+    }
+    await this.rereadUnnamed(userId, nameStay);
+    return { created, updated, truncated };
+  }
+
+  /**
+   * The journeys whose recorded days this person prepares (JRN-03), while the
+   * Journey addon is on; none otherwise, so the switch costs nothing then.
+   */
+  private async journeysToPrepare(userId: number): Promise<PreparedJourney[]> {
+    if (!(await this.addons.isAddonEnabled(ADDON_IDS.JOURNEY))) return [];
+    return await this.journeyPrep.listFor(userId);
+  }
+
+  /**
+   * Each prepared journey's outcome of this run, for this person: failed when
+   * one of its trip windows failed, through when all of them came back. Nothing
+   * is written into a journey; the stays wait at their day until the person
+   * reviews them. A journey none of whose periods has begun records nothing.
+   */
+  private async recordJourneyPrep(
+    userId: number,
+    journeys: PreparedJourney[],
+    outcomes: Map<number, string | null>,
+    now: Date,
+  ): Promise<void> {
+    const runs = journeys.flatMap((journey) => {
+      const reasons = journey.trips.filter((trip) => outcomes.has(trip.id)).map((trip) => outcomes.get(trip.id));
+      if (reasons.length === 0) return [];
+      return [{ journeyId: journey.journeyId, failure: reasons.find((reason) => typeof reason === 'string') ?? null }];
+    });
+    await Promise.all(runs.map((run) => this.journeyPrep.record(run.journeyId, userId, run.failure, now)));
   }
 
   /**
@@ -368,13 +591,13 @@ export class DawarichSyncService {
    * say "this is gone in Dawarich" next to an entry they wrote. Deleting that
    * would delete their work.
    */
-  private flagMissing(
+  private async flagMissing(
     userId: number,
     tripId: number,
     from: Date,
     to: Date,
     seenIds: Set<string>,
-  ): number {
+  ): Promise<number> {
     // Bounded on `local_date`, not on `started_at`. Dawarich renders a visit's
     // start as local wall-clock plus an offset (`2026-09-01T14:23:00+02:00`)
     // while the window is UTC (`…Z`), and comparing those two shapes as strings
@@ -383,11 +606,7 @@ export class DawarichSyncService {
     // YYYY-MM-DD on both sides of the comparison, and a day of slack at each
     // end is deliberate: a row just outside the window is left alone rather
     // than deleted for not having been seen.
-    const candidates = this.db.all<{ id: number; source_visit_id: string; state: string }>(
-      `SELECT id, source_visit_id, state
-         FROM dawarich_visit_suggestions
-        WHERE user_id = ? AND trip_id = ?
-          AND local_date >= ? AND local_date <= ?`,
+    const candidates = await this.suggestions.listCandidatesForWindow(
       userId,
       tripId,
       localDateOf(from.toISOString()),
@@ -398,16 +617,12 @@ export class DawarichSyncService {
     if (gone.length === 0) return 0;
 
     const stamp = new Date().toISOString();
-    this.db.transaction(() => {
+    await this.uow.transactional(async () => {
       for (const row of gone) {
         if (row.state === 'new') {
-          this.db.run('DELETE FROM dawarich_visit_suggestions WHERE id = ?', row.id);
+          await this.suggestions.deleteById(row.id);
         } else {
-          this.db.run(
-            'UPDATE dawarich_visit_suggestions SET source_missing_at = COALESCE(source_missing_at, ?) WHERE id = ?',
-            stamp,
-            row.id,
-          );
+          await this.suggestions.stampMissingIfUnset(row.id, stamp);
         }
       }
     });
@@ -423,13 +638,13 @@ export class DawarichSyncService {
    * from going past it. The link is only a hint; ticking the wish off still
    * needs the user.
    */
-  private matchBucketList(
+  private async matchBucketList(
     userId: number,
     sourceVisitId: string,
     lat: number | null,
     lng: number | null,
     durationMinutes: number,
-  ): void {
+  ): Promise<void> {
     if (lat === null || lng === null) return;
     if (durationMinutes < DAWARICH_BUCKET_MATCH_MIN_MINUTES) return;
 
@@ -437,10 +652,7 @@ export class DawarichSyncService {
     // degree of latitude is ~111 km, and longitude shrinks with latitude, so the
     // box is deliberately generous and the real test is the distance below.
     const degrees = (DAWARICH_BUCKET_MATCH_RADIUS_M / 111_000) * 2 + 0.01;
-    const nearby = this.db.all<{ id: number; lat: number; lng: number }>(
-      `SELECT id, lat, lng FROM bucket_list
-        WHERE user_id = ? AND lat IS NOT NULL AND lng IS NOT NULL
-          AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`,
+    const nearby = await this.bucketList.listInBoundingBox(
       userId,
       lat - degrees,
       lat + degrees,
@@ -450,13 +662,14 @@ export class DawarichSyncService {
 
     let best: { id: number; lat: number; lng: number; distance: number } | null = null;
     for (const item of nearby) {
+      if (item.lat === null || item.lng === null) continue;
       const distance = distanceMeters(lat, lng, item.lat, item.lng);
       if (distance > DAWARICH_BUCKET_MATCH_RADIUS_M) continue;
       if (!best || distance < best.distance) best = { id: item.id, lat: item.lat, lng: item.lng, distance };
     }
     if (!best) return;
 
-    this.claimWish(userId, sourceVisitId, best, lat, lng, durationMinutes);
+    await this.claimWish(userId, sourceVisitId, best, lat, lng, durationMinutes);
   }
 
   /**
@@ -473,50 +686,27 @@ export class DawarichSyncService {
    * Every previous claim on the same wish is cleared, so re-running a sync after
    * the recordings change cannot leave two stays holding it.
    */
-  private claimWish(
+  private async claimWish(
     userId: number,
     sourceVisitId: string,
     wish: { id: number; lat: number; lng: number; distance: number },
     lat: number,
     lng: number,
     durationMinutes: number,
-  ): void {
-    const holders = this.db.all<{
-      id: number;
-      source_visit_id: string;
-      lat: number | null;
-      lng: number | null;
-      duration_minutes: number;
-    }>(
-      `SELECT id, source_visit_id, lat, lng, duration_minutes
-         FROM dawarich_visit_suggestions
-        WHERE user_id = ? AND matched_bucket_list_item_id = ? AND source_visit_id <> ?`,
-      userId,
-      wish.id,
-      sourceVisitId,
-    );
+  ): Promise<void> {
+    const holders = await this.suggestions.listHoldersOfWish(userId, wish.id, sourceVisitId);
 
     for (const holder of holders) {
       if (holder.lat === null || holder.lng === null) continue;
       const distance = distanceMeters(holder.lat, holder.lng, wish.lat, wish.lng);
       const holderWins =
-        distance < wish.distance ||
-        (distance === wish.distance && holder.duration_minutes > durationMinutes);
+        distance < wish.distance || (distance === wish.distance && holder.duration_minutes > durationMinutes);
       if (holderWins) return;
     }
 
-    this.db.transaction(() => {
-      this.db.run(
-        'UPDATE dawarich_visit_suggestions SET matched_bucket_list_item_id = NULL WHERE user_id = ? AND matched_bucket_list_item_id = ?',
-        userId,
-        wish.id,
-      );
-      this.db.run(
-        'UPDATE dawarich_visit_suggestions SET matched_bucket_list_item_id = ? WHERE user_id = ? AND source_visit_id = ?',
-        wish.id,
-        userId,
-        sourceVisitId,
-      );
+    await this.uow.transactional(async () => {
+      await this.suggestions.clearWishHolders(userId, wish.id);
+      await this.suggestions.assignWishHolder(userId, sourceVisitId, wish.id);
     });
   }
 }
@@ -527,11 +717,19 @@ interface TripRow {
   end_date: string | null;
 }
 
-interface SuggestionRow {
-  id: number;
-  trip_id: number | null;
-  state: string;
-  source_hash: string;
+/**
+ * The linked trips of the prepared journeys that the person's own trip sync
+ * does not walk (a journey they write in but do not travel on), each once.
+ */
+function tripsOnlyJourneysHold(journeys: PreparedJourney[], trips: TripRow[]): TripRow[] {
+  const seen = new Set(trips.map((trip) => trip.id));
+  const extra: TripRow[] = [];
+  for (const trip of journeys.flatMap((journey) => journey.trips)) {
+    if (seen.has(trip.id)) continue;
+    seen.add(trip.id);
+    extra.push(trip);
+  }
+  return extra;
 }
 
 /**
@@ -561,10 +759,10 @@ function tripCovers(trip: TripRow, localDate: string): boolean {
  */
 function tripForVisit(
   localDate: string,
-  currentTripId: number,
+  currentTripId: number | null,
   existingTripId: number | null,
   trips: TripRow[],
-): number {
+): number | null {
   const existing = existingTripId === null ? undefined : trips.find((t) => t.id === existingTripId);
   if (existing && tripCovers(existing, localDate)) return existing.id;
   const current = trips.find((t) => t.id === currentTripId);

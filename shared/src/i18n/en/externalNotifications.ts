@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const en: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const en: NotificationLocale = {
     booking_change: (p) => ({
       title: `New booking: ${p.booking}`,
       body: `${p.actor} added a new ${p.type} "${p.booking}" to "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} departed`,
+      body: `${p.flight} from ${p.from} to ${p.to} is in the air.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} is running late`,
+      body: `${p.flight} from ${p.from} to ${p.to} is running about ${p.delay} minutes behind schedule.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} has landed`,
+      body: `${p.flight} from ${p.from} has landed in ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Trip reminder: ${p.trip}`,
@@ -37,8 +50,11 @@ const en: NotificationLocale = {
       body: `${p.actor} invited you to share a collection. Open TREK to accept or decline.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} photos shared`,
-      body: `${p.actor} shared ${p.count} photo(s) in "${p.trip}".`,
+      title: pluralForm(p.count, 'en', { one: `${p.count} photo shared`, other: `${p.count} photos shared` }),
+      body: pluralForm(p.count, 'en', {
+        one: `${p.actor} shared ${p.count} photo in "${p.trip}".`,
+        other: `${p.actor} shared ${p.count} photos in "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `New message in "${p.trip}"`,
@@ -56,11 +72,44 @@ const en: NotificationLocale = {
       title: 'Storage replica failure',
       body:
         `Replica write failed on '${p.backend}': ${p.op} of ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` ${p.suppressed} more failures were suppressed since the last notification.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'en', {
+              one: ` ${p.suppressed} more failure was suppressed since the last notification.`,
+              other: ` ${p.suppressed} more failures were suppressed since the last notification.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Paddle region requested',
+      body: `${p.actor} is planning a paddle tour in ${p.region}. Load or decline its water data in the admin area under Addons.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology session cleared',
       body: 'Your Synology account or URL changed. You have been logged out of Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer trail: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `"${p.tour}" in "${p.trip}" was changed in wanderer. Open the tour and check its source to see everything that changed. Nothing in the trip changes by itself.`
+          : p.state === 'unverifiable'
+            ? `"${p.tour}" in "${p.trip}" can no longer be checked in wanderer. The tour in your trip stays as it is.`
+            : `"${p.tour}" in "${p.trip}" may have changed in wanderer. Open the tour and check its source to see whether it did. Nothing in the trip changes by itself.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Added from a mail: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} added "${p.booking}" to "${p.trip}" from a forwarded mail.`
+          : `"${p.booking}" from your forwarded mail was added to "${p.trip}". You can undo it in TREK for 7 days.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Forwarded bookings to review',
+      body: `Forwarded bookings waiting for you in TREK: ${p.count}. Each one says why it was not added on its own.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Mail import paused',
+      body: 'TREK does not take in forwarded booking mails for now, so hold off forwarding them. Your addresses stay and work again once the import is back, and bookings already added stay in your trips.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

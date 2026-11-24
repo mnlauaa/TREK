@@ -8,11 +8,11 @@ import {
   budgetReorderCategoriesRequestSchema,
   budgetCreateSettlementRequestSchema,
   budgetUpdateSettlementRequestSchema,
-  setTripExchangeRateRequestSchema,
-  previewTripExchangeRateRequestSchema,
-  applyTripExchangeRateRequestSchema,
   budgetFreezeRatesRequestSchema,
   budgetSettlementQuerySchema,
+  applyTripExchangeRateRequestSchema,
+  previewTripExchangeRateRequestSchema,
+  setTripExchangeRateRequestSchema,
 } from '@trek/shared';
 
 import { createZodDto } from 'nestjs-zod';
@@ -32,9 +32,10 @@ export class BudgetReorderItemsDto extends createZodDto(budgetReorderItemsReques
 export class BudgetReorderCategoriesDto extends createZodDto(budgetReorderCategoriesRequestSchema) {}
 export class BudgetCreateSettlementDto extends createZodDto(budgetCreateSettlementRequestSchema) {}
 export class BudgetUpdateSettlementDto extends createZodDto(budgetUpdateSettlementRequestSchema) {}
-export class SetTripExchangeRateDto extends createZodDto(setTripExchangeRateRequestSchema) {}
-export class PreviewTripExchangeRateDto extends createZodDto(previewTripExchangeRateRequestSchema) {}
-export class ApplyTripExchangeRateDto extends createZodDto(applyTripExchangeRateRequestSchema) {}
 export class BudgetFreezeRatesDto extends createZodDto(budgetFreezeRatesRequestSchema) {}
 /** GET …/settlement query (`base`, and `base_rate` coerced from the query string). */
 export class BudgetSettlementQueryDto extends createZodDto(budgetSettlementQuerySchema) {}
+
+export class SetTripExchangeRateDto extends createZodDto(setTripExchangeRateRequestSchema) {}
+export class PreviewTripExchangeRateDto extends createZodDto(previewTripExchangeRateRequestSchema) {}
+export class ApplyTripExchangeRateDto extends createZodDto(applyTripExchangeRateRequestSchema) {}

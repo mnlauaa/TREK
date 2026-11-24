@@ -5,6 +5,7 @@ import {
   nextTripDate,
   planDatedAppend,
   planDayGrid,
+  reorderedDayDates,
   resolveDayGridRange,
 } from './day-grid';
 import { MAX_TRIP_DAYS } from './trip.schema';
@@ -199,6 +200,42 @@ describe('planDayGrid', () => {
     expect(gone(p)).toEqual(['10:overflow', '11:spare']);
   });
 
+  describe('keeping dates (#3119)', () => {
+    const keep = (startDate: string, endDate: string, stays: DayGridStay[] = []) =>
+      planDayGrid({ days: tenDays, stays, startDate, endDate, keepDates: true });
+
+    it('a day before the start is a new first day, every other day keeps its date', () => {
+      const p = keep('2026-09-30', '2026-10-10');
+      expect(p.rows[0]).toEqual({ id: null, date: '2026-09-30' });
+      expect(p.rows.slice(1, 11)).toEqual(tenDays.slice(0, 10).map((d) => ({ id: d.id, date: d.date })));
+      expect(ids(p).slice(-1)).toEqual([12]);
+      expect(gone(p)).toEqual(['11:spare']);
+    });
+
+    it('days at both ends keep the middle where it was and add the days after the spare ones', () => {
+      const p = keep('2026-09-28', '2026-10-12');
+      expect(ids(p)).toEqual([null, null, null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      expect(p.rows[3]).toEqual({ id: 1, date: '2026-10-01' });
+      expect(p.rows[12]).toEqual({ id: 10, date: '2026-10-10' });
+      expect(p.removed).toEqual([]);
+    });
+
+    it('a later end is laid out as without it', () => {
+      expect(keep('2026-10-01', '2026-10-14')).toEqual(plan('2026-10-01', '2026-10-14'));
+    });
+
+    it('a moved or shorter range does not hold every day, so the days follow their position', () => {
+      for (const [start, end] of [
+        ['2026-10-03', '2026-10-10'],
+        ['2026-10-01', '2026-10-08'],
+        ['2026-10-05', '2026-10-14'],
+        ['2026-09-29', '2026-10-09'],
+      ] as const) {
+        expect(keep(start, end)).toEqual(plan(start, end));
+      }
+    });
+  });
+
   describe('without dates', () => {
     const undated = (n: number, planned: number[] = [], stays: DayGridStay[] = [], dayCount?: number) =>
       planDayGrid({
@@ -236,5 +273,40 @@ describe('planDayGrid', () => {
       expect(undated(0).rows).toHaveLength(7);
       expect(undated(3, [], [], MAX_TRIP_DAYS + 1).rows).toHaveLength(MAX_TRIP_DAYS);
     });
+  });
+});
+
+describe('reorderedDayDates', () => {
+  const days = [
+    { id: 1, date: '2026-10-01' },
+    { id: 2, date: '2026-10-02' },
+    { id: 3, date: '2026-10-03' },
+    { id: 4, date: null },
+  ];
+
+  it('keeps the dates on their slots while dated days change places', () => {
+    expect([...reorderedDayDates(days, [3, 1, 2, 4])]).toEqual([
+      [3, '2026-10-01'],
+      [1, '2026-10-02'],
+      [2, '2026-10-03'],
+      [4, null],
+    ]);
+  });
+
+  it('moves a day without a date to the front without handing it a date', () => {
+    expect([...reorderedDayDates(days, [4, 1, 2, 3])]).toEqual([
+      [4, null],
+      [1, '2026-10-01'],
+      [2, '2026-10-02'],
+      [3, '2026-10-03'],
+    ]);
+  });
+
+  it('leaves every day without a date on a trip without dates', () => {
+    const undated = [{ id: 1, date: null }, { id: 2 }];
+    expect([...reorderedDayDates(undated, [2, 1])]).toEqual([
+      [2, null],
+      [1, null],
+    ]);
   });
 });

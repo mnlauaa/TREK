@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const nl: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const nl: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nieuwe boeking: ${p.booking}`,
       body: `${p.actor} heeft een boeking "${p.booking}" (${p.type}) toegevoegd aan "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} is vertrokken`,
+      body: `${p.flight} van ${p.from} naar ${p.to} is in de lucht.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} heeft vertraging`,
+      body: `${p.flight} van ${p.from} naar ${p.to} loopt ongeveer ${p.delay} minuten achter op schema.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} is geland`,
+      body: `${p.flight} uit ${p.from} is geland in ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Reisherinnering: ${p.trip}`,
@@ -37,8 +50,11 @@ const nl: NotificationLocale = {
       body: `${p.actor} nodigt je uit om een collectie te delen. Open TREK om te accepteren of af te wijzen.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} foto's gedeeld`,
-      body: `${p.actor} heeft ${p.count} foto('s) gedeeld in "${p.trip}".`,
+      title: pluralForm(p.count, 'nl', { one: `${p.count} foto gedeeld`, other: `${p.count} foto's gedeeld` }),
+      body: pluralForm(p.count, 'nl', {
+        one: `${p.actor} heeft ${p.count} foto gedeeld in "${p.trip}".`,
+        other: `${p.actor} heeft ${p.count} foto's gedeeld in "${p.trip}".`,
+      }),
     }),
     collab_message: (p) => ({
       title: `Nieuw bericht in "${p.trip}"`,
@@ -56,11 +72,44 @@ const nl: NotificationLocale = {
       title: 'Opslagreplica mislukt',
       body:
         `Schrijven naar replica '${p.backend}' is mislukt: ${p.op} van ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` ${p.suppressed} extra fout(en) zijn onderdrukt sinds de laatste melding.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'nl', {
+              one: ` ${p.suppressed} extra fout is onderdrukt sinds de laatste melding.`,
+              other: ` ${p.suppressed} extra fouten zijn onderdrukt sinds de laatste melding.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Peddelregio aangevraagd',
+      body: `${p.actor} plant een peddeltocht in ${p.region}. Laad of wijs de watergegevens af in het beheer onder Add-ons.`,
     }),
     synology_session_cleared: () => ({
       title: 'Synology-sessie gewist',
       body: 'Je Synology-account of URL is gewijzigd. Je bent uitgelogd bij Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `wanderer-trail: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `‘${p.tour}’ in ‘${p.trip}’ is gewijzigd in wanderer. Open de tocht en controleer de bron om alle wijzigingen te zien. In de reis verandert niets vanzelf.`
+          : p.state === 'unverifiable'
+            ? `‘${p.tour}’ in ‘${p.trip}’ kan niet meer worden gecontroleerd in wanderer. De tocht in je reis blijft zoals hij is.`
+            : `‘${p.tour}’ in ‘${p.trip}’ is mogelijk gewijzigd in wanderer. Open de tocht en controleer de bron om het te zien. In de reis verandert niets vanzelf.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Toegevoegd uit een mail: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} heeft "${p.booking}" uit een doorgestuurde mail aan "${p.trip}" toegevoegd.`
+          : `"${p.booking}" uit je doorgestuurde mail is toegevoegd aan "${p.trip}". Je kunt dit 7 dagen lang in TREK ongedaan maken.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Doorgestuurde boekingen om te controleren',
+      body: `In TREK wachten doorgestuurde boekingen op je: ${p.count}. Bij elke staat waarom hij niet vanzelf is toegevoegd.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Mailimport gepauzeerd',
+      body: 'TREK neemt doorgestuurde boekingsmails voorlopig niet aan, stuur er dus even geen door. Je adressen blijven en werken weer zodra de import terug is, en boekingen die al zijn toegevoegd blijven in je reizen.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

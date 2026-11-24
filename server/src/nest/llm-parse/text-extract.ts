@@ -1,7 +1,8 @@
+import { stripHtmlTags } from '../common/stripHtmlTags';
 import { parseEmail } from './mime-email';
+
 import { extname } from 'node:path';
 import { PDFParse } from 'pdf-parse';
-import { stripHtmlTags } from '../common/stripHtmlTags';
 
 /** File extensions whose bytes are inherently text and can be decoded directly. */
 const TEXT_LIKE = new Set(['.txt', '.html', '.htm', '.eml']);
@@ -95,11 +96,8 @@ function decodeEntities(s: string): string {
  * an uploaded .eml or .html is free to carry one — makes the engine rescan the
  * tail once per bracket.
  */
-function stripMarkup(s: string): string {
-  const withoutTags = stripHtmlTags(
-    s.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' '),
-    ' ',
-  );
+export function stripMarkup(s: string): string {
+  const withoutTags = stripHtmlTags(dropElement(dropElement(s, 'script'), 'style'), ' ');
   // Entities come last so that a decoded `&lt;` cannot turn into a tag the
   // stripper would then eat.
   return decodeEntities(withoutTags)
@@ -108,8 +106,31 @@ function stripMarkup(s: string): string {
     .trim();
 }
 
+/**
+ * Replace each `<name ...>...</name>` with a space, as `/<name[\s\S]*?<\/name>/gi`
+ * did. Written as a scan because that pattern rescans the tail from every
+ * opening tag when no closing one follows.
+ */
+function dropElement(s: string, name: string): string {
+  const open = new RegExp(`<${name}`, 'gi');
+  const close = new RegExp(`</${name}>`, 'gi');
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    open.lastIndex = cursor;
+    const start = open.exec(s);
+    if (!start) break;
+    close.lastIndex = start.index + start[0].length;
+    const end = close.exec(s);
+    if (!end) break;
+    out += `${s.slice(cursor, start.index)} `;
+    cursor = end.index + end[0].length;
+  }
+  return out + s.slice(cursor);
+}
+
 /** Whitespace cleanup for text that is already plain — no tags to strip out. */
-function collapseWhitespace(s: string): string {
+export function collapseWhitespace(s: string): string {
   return s
     .replace(/[ \t\u00a0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
@@ -131,7 +152,7 @@ function extractEmailText(buffer: Buffer): string {
   const html = mail.html !== null ? stripMarkup(mail.html) : '';
   const body = html || (mail.text !== null ? collapseWhitespace(mail.text) : '');
   if (!body) return '';
-  return [mail.headerLines.join('\n'), body].filter(section => section.length > 0).join('\n\n');
+  return [mail.headerLines.join('\n'), body].filter((section) => section.length > 0).join('\n\n');
 }
 
 /** Extract the embedded text layer from a PDF (empty for scanned/image-only PDFs). */
@@ -263,14 +284,16 @@ function stripPageMarkers(text: string): string {
  *    a common PDF kerning artifact that otherwise hides booking fields
  */
 function cleanPdfText(text: string): string {
-  return stripPageMarkers(text)
-    .replace(/[ \t]+/g, ' ')
-    // Same run of three-or-more spaced capitals, written so the repeated group no
-    // longer overlaps the [A-Z] behind it and has to hand characters back to it.
-    .replace(/\b[A-Z](?: [A-Z]){2,}\b/g, m => m.replaceAll(' ', ''))
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return (
+    stripPageMarkers(text)
+      .replace(/[ \t]+/g, ' ')
+      // Same run of three-or-more spaced capitals, written so the repeated group no
+      // longer overlaps the [A-Z] behind it and has to hand characters back to it.
+      .replace(/\b[A-Z](?: [A-Z]){2,}\b/g, (m) => m.replaceAll(' ', ''))
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
 }
 
 /**

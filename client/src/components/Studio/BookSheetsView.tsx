@@ -1,5 +1,6 @@
 import type { BookDocument } from '@trek/shared'
 import { SpreadView } from './SpreadView'
+import { DeferPrintPhotos } from './bookRender'
 import { MARK_LENGTH, MARK_WEIGHT, sheetBox, sheetsFor, type Sheet, type SheetMode, foliosOf } from './bookSheets'
 
 /**
@@ -91,7 +92,7 @@ function SheetView({
           height: `${sheet.height + box.bleed * 2}mm`,
           // The spread's own paper colour, carried out into the bleed. Without
           // it a coloured page would be cut with a white edge on three sides.
-          background: sheet.spread.background ?? '#ffffff', // theme-lint-disable — paper, not app chrome
+          background: (sheet.spread.backgroundPaint ? null : sheet.spread.background) ?? '#ffffff', // theme-lint-disable: paper, not app chrome
           overflow: 'hidden',
         }}
       >
@@ -104,13 +105,15 @@ function SheetView({
             height: `${sheet.height}mm`,
           }}
         >
-          <SpreadView
-            spread={sheet.spread}
-            page={doc.page}
-            folios={foliosOf(doc.spreads, sheet.spreadIndex, doc.page.pageNumbers.startAt)}
-            big
-            print
-          />
+          <DeferPrintPhotos.Provider value>
+            <SpreadView
+              spread={sheet.spread}
+              page={doc.page}
+              folios={foliosOf(doc.spreads, sheet.spreadIndex, doc.page.pageNumbers.startAt)}
+              big
+              print
+            />
+          </DeferPrintPhotos.Provider>
         </div>
       </div>
 

@@ -11,6 +11,7 @@ const todo: TranslationStrings = {
   'todo.uncategorized': 'بلا قائمة',
   'todo.namePlaceholder': 'اسم المهمة',
   'todo.descriptionPlaceholder': 'وصف (اختياري)',
+  'todo.editDescription': 'انقر للتعديل، الروابط تُفتح مباشرة',
   'todo.unassigned': 'غير مُسنَد',
   'todo.noCategory': 'بلا قائمة',
   'todo.hasDescription': 'له وصف',
@@ -37,5 +38,8 @@ const todo: TranslationStrings = {
   'todo.detail.priority': 'الأولوية',
   'todo.detail.noPriority': 'لا شيء',
   'todo.detail.create': 'إنشاء مهمة',
+  'todo.progressCount': 'تم {done} من {total}',
+  'todo.allDone': 'تم كل شيء!',
+  'todo.filter.myShort': 'مهامي',
 };
 export default todo;

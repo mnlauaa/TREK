@@ -1,4 +1,5 @@
 import type { NotificationLocale } from '../externalNotifications/types';
+import { pluralForm } from '../plural';
 
 const it: NotificationLocale = {
   email: {
@@ -15,6 +16,18 @@ const it: NotificationLocale = {
     booking_change: (p) => ({
       title: `Nuova prenotazione: ${p.booking}`,
       body: `${p.actor} ha aggiunto una prenotazione "${p.booking}" (${p.type}) a "${p.trip}".`,
+    }),
+    flight_departed: (p) => ({
+      title: `${p.flight} è decollato`,
+      body: `${p.flight} da ${p.from} a ${p.to} è in volo.`,
+    }),
+    flight_delayed: (p) => ({
+      title: `${p.flight} è in ritardo`,
+      body: `${p.flight} da ${p.from} a ${p.to} ha circa ${p.delay} minuti di ritardo.`,
+    }),
+    flight_landed: (p) => ({
+      title: `${p.flight} è atterrato`,
+      body: `${p.flight} da ${p.from} è atterrato a ${p.to}.`,
     }),
     trip_reminder: (p) => ({
       title: `Promemoria viaggio: ${p.trip}`,
@@ -37,7 +50,7 @@ const it: NotificationLocale = {
       body: `${p.actor} ti ha invitato a condividere una raccolta. Apri TREK per accettare o rifiutare.`,
     }),
     photos_shared: (p) => ({
-      title: `${p.count} foto condivise`,
+      title: pluralForm(p.count, 'it', { one: `${p.count} foto condivisa`, other: `${p.count} foto condivise` }),
       body: `${p.actor} ha condiviso ${p.count} foto in "${p.trip}".`,
     }),
     collab_message: (p) => ({
@@ -56,11 +69,44 @@ const it: NotificationLocale = {
       title: "Errore di replica dell'archiviazione",
       body:
         `Scrittura sulla replica non riuscita su '${p.backend}': ${p.op} di ${p.key} — ${p.error}.` +
-        (p.suppressed !== '0' ? ` Altri ${p.suppressed} errori sono stati soppressi dall'ultima notifica.` : ''),
+        (p.suppressed !== '0'
+          ? pluralForm(p.suppressed, 'it', {
+              one: " Dall'ultima notifica è stato soppresso un altro errore.",
+              other: ` Dall'ultima notifica sono stati soppressi altri ${p.suppressed} errori.`,
+            })
+          : ''),
+    }),
+    paddle_region_requested: (p) => ({
+      title: 'Regione canoa richiesta',
+      body: `${p.actor} sta pianificando un giro in canoa in ${p.region}. Carica o rifiuta i suoi dati sull'acqua nell'area amministrazione, sotto Componenti.`,
     }),
     synology_session_cleared: () => ({
       title: 'Sessione Synology rimossa',
       body: 'Il tuo account o URL Synology è cambiato. Sei stato disconnesso da Synology Photos.',
+    }),
+    wanderer_source_hint: (p) => ({
+      title: `Sentiero wanderer: ${p.tour}`,
+      body:
+        p.state === 'changed'
+          ? `«${p.tour}» in «${p.trip}» è stato modificato in wanderer. Apri il percorso e controlla la sua fonte per vedere tutte le modifiche. Nel viaggio non cambia nulla da solo.`
+          : p.state === 'unverifiable'
+            ? `«${p.tour}» in «${p.trip}» non si può più controllare in wanderer. Il percorso nel tuo viaggio resta com'è.`
+            : `«${p.tour}» in «${p.trip}» potrebbe essere cambiato in wanderer. Apri il percorso e controlla la sua fonte per saperlo. Nel viaggio non cambia nulla da solo.`,
+    }),
+    mail_booking_added: (p) => ({
+      title: `Aggiunta da un’email: ${p.booking}`,
+      body:
+        p.role === 'traveller'
+          ? `${p.actor} ha aggiunto «${p.booking}» a «${p.trip}» da un’email inoltrata.`
+          : `«${p.booking}» dalla tua email inoltrata è stata aggiunta a «${p.trip}». Puoi annullarla in TREK per 7 giorni.`,
+    }),
+    mail_booking_pending: (p) => ({
+      title: 'Prenotazioni inoltrate da controllare',
+      body: `Prenotazioni inoltrate in attesa in TREK: ${p.count}. Ognuna indica perché non è stata aggiunta da sola.`,
+    }),
+    mail_ingest_paused: () => ({
+      title: 'Importazione email in pausa',
+      body: 'Per ora TREK non accetta le email di prenotazione inoltrate, quindi aspetta prima di inoltrarle. I tuoi indirizzi restano e funzioneranno di nuovo quando l’importazione tornerà, e le prenotazioni già aggiunte restano nei tuoi viaggi.',
     }),
     plugin_notification: (p) => ({ title: p.title ?? '', body: p.body ?? '' }),
   },

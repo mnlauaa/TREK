@@ -73,6 +73,7 @@ const docsync: TranslationStrings = {
   'docsync.state.scope_drift': 'Kikerült a mappából',
 
   'docsync.conflict.resolve': '{count} megoldása',
+  'docsync.conflict.resolve.one': '{count} megoldása',
 
   'docsync.conflict.title': 'Mindkét példány megváltozott',
   'docsync.conflict.keepTrek': 'A TREK-verzió megtartása',
@@ -182,6 +183,12 @@ const docsync: TranslationStrings = {
   'docsync.error.provider_disabled':
     'Szüneteltetve: egy rendszergazda kikapcsolta ezt a szolgáltatót. A szinkronizálás folytatódik, amint újra bekapcsolják.',
   'docsync.binding.reconnect': 'Újracsatlakozás',
+  'docsync.connection.title': 'Kapcsolat',
+  'docsync.connection.hint': 'A cím és a bejelentkezés, amelyet a TREK ehhez a tárhoz használ.',
+  'docsync.connection.edit': 'Kapcsolat szerkesztése',
+  'docsync.connection.remove': 'Kapcsolat eltávolítása',
+  'docsync.connection.confirmRemove':
+    'A TREK elfelejti ennek a tárnak a címét és a bejelentkezést, és az utazás minden ezen keresztül futó szinkronizálása leáll. A dokumentumok a TREK-ben és a tárban is megmaradnak.',
 };
 
 export default docsync;

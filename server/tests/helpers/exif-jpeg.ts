@@ -23,16 +23,24 @@ export interface ExifJpegTags {
   OffsetTimeDigitized?: string;
   /** Decimal degrees, stored as the usual degree/minute/second rationals plus N/S and E/W. */
   gps?: { lat: number; lng: number };
+  /** 0x0112 in IFD0, 1 to 8. */
+  Orientation?: number;
 }
 
 const BASE_JPEG = path.join(__dirname, '../fixtures/small-image.jpg');
 
 const BYTE = 1;
 const ASCII = 2;
+const SHORT = 3;
 const LONG = 4;
 const RATIONAL = 5;
 
-interface Entry { tag: number; type: number; count: number; data: Buffer }
+interface Entry {
+  tag: number;
+  type: number;
+  count: number;
+  data: Buffer;
+}
 
 function ascii(tag: number, value: string): Entry {
   const data = Buffer.from(`${value}\0`, 'latin1');
@@ -59,7 +67,11 @@ function dms(deg: number): Array<[number, number]> {
   const d = Math.floor(abs);
   const m = Math.floor((abs - d) * 60);
   const s = Math.round(((abs - d) * 60 - m) * 60 * 10000);
-  return [[d, 1], [m, 1], [s, 10000]];
+  return [
+    [d, 1],
+    [m, 1],
+    [s, 10000],
+  ];
 }
 
 function ifdSize(entries: Entry[]): number {
@@ -109,12 +121,18 @@ export function jpegWithExif(tags: ExifJpegTags): Buffer {
     gpsEntries.push(rationals(0x0004, dms(tags.gps.lng)));
   }
 
-  // IFD0 holds only the two pointers, so its size is known before the offsets are.
-  const ifd0Count = (exifEntries.length ? 1 : 0) + (gpsEntries.length ? 1 : 0);
+  // IFD0 holds the orientation and the two pointers, so its size is known before the offsets are.
+  const ifd0Count =
+    (tags.Orientation !== undefined ? 1 : 0) + (exifEntries.length ? 1 : 0) + (gpsEntries.length ? 1 : 0);
   const ifd0At = 8;
   const exifAt = ifd0At + 2 + ifd0Count * 12 + 4;
   const gpsAt = exifAt + (exifEntries.length ? ifdSize(exifEntries) : 0);
   const ifd0Entries: Entry[] = [];
+  if (tags.Orientation !== undefined) {
+    const data = Buffer.alloc(2);
+    data.writeUInt16LE(tags.Orientation);
+    ifd0Entries.push({ tag: 0x0112, type: SHORT, count: 1, data });
+  }
   if (exifEntries.length) ifd0Entries.push(long(0x8769, exifAt));
   if (gpsEntries.length) ifd0Entries.push(long(0x8825, gpsAt));
 

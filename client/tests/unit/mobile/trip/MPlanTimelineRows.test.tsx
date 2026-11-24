@@ -193,7 +193,7 @@ describe('TransportRow', () => {
 
     expect(screen.getByText('LH 714 to Tokyo')).toBeInTheDocument()
     expect(container.textContent).toContain('08:15 – 18:40')
-    expect(screen.getByText('Lufthansa · LH714 · MUC → HND')).toBeInTheDocument()
+    expect(screen.getByText('Lufthansa, LH714, MUC → HND')).toBeInTheDocument()
   })
 
   it('FE-MOB-PLROW-014: a multi-day span shows only the day-relevant time', () => {
@@ -234,7 +234,7 @@ describe('TransportRow', () => {
     } as unknown as TransportEntry
     render(<TransportRow {...base} res={train} />)
 
-    expect(screen.getByText('ICE 599 · Gl. 7 · Sitz 21A')).toBeInTheDocument()
+    expect(screen.getByText('ICE 599, reservations.meta.platform 7, reservations.meta.seat 21A')).toBeInTheDocument()
   })
 
   it('FE-MOB-PLROW-018: an untimed booking of an unknown type still renders its title', () => {
@@ -327,6 +327,18 @@ describe('TransitRow', () => {
     expect(screen.getByText('transit.min:1 · transit.walkTo:Hotel')).toBeInTheDocument()
   })
 
+  it('FE-MOB-PLROW-046: the expanded legs show every stop name in full and each ride arrival time (#3139)', () => {
+    const { container } = render(<TransitRow {...base} open />)
+
+    const ride = screen.getByText('Shibuya Sta. → Asakusa Sta.')
+    expect(ride).not.toHaveClass('truncate')
+    expect(ride).toHaveClass('break-words')
+    expect(screen.getByText('transit.min:4 · transit.walkTo:Shibuya Sta.')).not.toHaveClass('truncate')
+    expect(screen.getByText('10:30')).toBeInTheDocument()
+    // the departure keeps its place beside the arrival
+    expect(container.textContent).toContain('10:05')
+  })
+
   it('FE-MOB-PLROW-024: tapping the header toggles the row', () => {
     const onToggle = vi.fn()
     render(<TransitRow {...base} open={false} onToggle={onToggle} />)
@@ -375,6 +387,14 @@ describe('TransitRow', () => {
 
     expect(onOpenJourney).toHaveBeenCalledTimes(1)
   })
+
+  it('FE-MOB-PLROW-026b: a journey that now arrives after the next city walk starts says so under its strip (CW-08)', () => {
+    const { rerender } = render(<TransitRow {...base} open={false} late={{ walk: 'Harbour', time: '13:00' }} />)
+    expect(screen.getByTestId('transit-walk-late')).toHaveTextContent('Arrives after Harbour starts at 13:00')
+
+    rerender(<TransitRow {...base} open={false} late={null} />)
+    expect(screen.queryByTestId('transit-walk-late')).not.toBeInTheDocument()
+  })
 })
 
 describe('ConnRow', () => {
@@ -382,7 +402,10 @@ describe('ConnRow', () => {
     const { container } = render(<ConnRow seg={SEG} />)
 
     expect(screen.getByText('14 min')).toBeInTheDocument()
-    expect(screen.getByText('· 5.4 km')).toBeInTheDocument()
+    // The distance sits in the same pill as the time, with no dot between them.
+    expect(screen.getByText('5.4 km')).toBeInTheDocument()
+    expect(screen.getByText('14 min').parentElement).toBe(screen.getByText('5.4 km').parentElement)
+    expect(container.textContent).not.toContain('·')
     expect(container.querySelector('button')).toBeNull()
   })
 
@@ -440,7 +463,7 @@ describe('HotelConnRow', () => {
 
     expect(top.children[0].textContent).toBe('Hotel Sacher')
     expect(top.children[1].textContent).toContain('14 min')
-    expect(top.children[1].textContent).toContain('· 5.4 km')
+    expect(top.children[1].textContent).toContain('5.4 km')
     unmount()
 
     const bottom = render(<HotelConnRow seg={SEG} name="Hotel Sacher" placement="bottom" />)
@@ -481,8 +504,8 @@ describe('NoteRow', () => {
 
     expect(screen.getByText('09:30')).toBeInTheDocument()
     expect(screen.getByText('Buy museum tickets')).toBeInTheDocument()
-    // Two separate blocks since #1629: the extra title lines are plain text, the
-    // detail is rendered Markdown, so they cannot be joined into one string.
+    // Two separate blocks since #1629: the extra title lines and the detail are
+    // each rendered Markdown, so they cannot be joined into one string.
     expect(screen.getByText('Cash only')).toBeInTheDocument()
     expect(screen.getByText('at the kiosk')).toBeInTheDocument()
   })
@@ -531,6 +554,17 @@ describe('NoteRow', () => {
 
     fireEvent.click(screen.getByText('Buy museum tickets'))
     expect(onEdit).toHaveBeenCalledTimes(1)
+  })
+
+  it('FE-MOB-PLROW-045: extra title lines keep their line breaks and turn a pasted URL into a link (#2576)', () => {
+    const url = 'https://www.google.com/maps/place/Museum/@48.1371079,11.5753822,17z/data=!3m1!4b1!4m6!3m5!1s0x0'
+    const { container } = render(<NoteRow {...base} note={note({ text: `Museum
+Open at nine
+${url}`, time: null })} />)
+
+    expect(screen.getByRole('link', { name: url })).toHaveAttribute('href', url)
+    // remark-breaks turns the kept newline into a <br>; joined with a space it would not be there.
+    expect(container.querySelector('.collab-note-md br')).not.toBeNull()
   })
 })
 
