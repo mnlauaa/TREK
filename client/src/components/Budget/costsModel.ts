@@ -45,7 +45,7 @@ export function currencyOf(e: BudgetItem, ctx: CostsCtx): string {
 }
 
 /** An amount of this expense in the display currency, at the rate the expense was booked at. */
-export function awaitingConversion(
+function awaitingConversion(
   row: Pick<BudgetItem, 'currency' | 'exchange_rate' | 'exchange_rate_source'>,
   tripCurrency: string
 ): boolean {

@@ -26,38 +26,28 @@ import { TripMembershipService } from '../trip-membership/trip-membership.servic
 import { BudgetWritesService } from './budget-writes.service';
 import { BudgetService } from './budget.service';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { COST_CATEGORY_HINT, budgetCreateSettlementRequestSchema, exchangeRateWriteSchema, idSchema, sumMinor, toMinor } from '@trek/shared';
+import {
+  COST_CATEGORY_HINT,
+  budgetCreateSettlementRequestSchema,
+  exchangeRateWriteSchema,
+  idSchema,
+  sumMinor,
+  toMinor,
+} from '@trek/shared';
 
 import { z } from 'zod';
 
 /** Legacy registrar gate: the whole budget surface rides the budget addon. */
 const budgetAddonOn = addonGate(ADDON_IDS.BUDGET);
 
-/**
- * Reusable Zod shape for the per-payer amounts on a budget item. Amounts are
- * signed like the REST contract's (#2176): a negative payer is the recipient
- * of a refund recorded as a negative expense.
- */
-const payersSchema = z
-  .array(
-    z.strictObject({
-      user_id: idSchema,
-      amount: z.number(),
-    }),
-  )
-  .describe('Who actually paid, and how much each paid, in the expense currency. Ask the user; do not guess.');
-
-/** Reusable Zod shape for an unequal split: what each participant owes. Signed, like the REST contract (#2176). */
-const splitMembersSchema = z
-  .array(
-    z.strictObject({
-      user_id: idSchema,
-      amount: z.number(),
-    }),
-  )
-  .describe(
-    'Unequal split: what each participant owes, in the expense currency. The amounts must add up to the expense total. Ask the user; do not guess.',
-  );
+// Both paid amounts and unequal shares are signed so refunds can be entered (#2176).
+const participantAmounts = z.array(z.strictObject({ user_id: idSchema, amount: z.number() }));
+const payersSchema = participantAmounts.describe(
+  'Who actually paid, and how much each paid, in the expense currency. Ask the user; do not guess.',
+);
+const splitMembersSchema = participantAmounts.describe(
+  'Unequal split: what each participant owes, in the expense currency. The amounts must add up to the expense total. Ask the user; do not guess.',
+);
 
 function formatCents(cents: number): string {
   return (cents / 100).toFixed(2);
@@ -635,7 +625,8 @@ export class BudgetMcp {
       "Record a settle-up payment: from_user_id paid to_user_id the given amount to settle shared expenses, optionally with a note. The amount is in the trip's base currency unless `currency` says otherwise. Use get_settlement_summary to find who owes whom. When recording an offered payment, pass its amount, the summary currency, and the flow exchange_rate if provided. Use the summary trip_currency as rate_base_currency.",
     inputSchema: {
       ...exchangeRateWriteSchema.shape,
-      rate_base_currency: budgetCreateSettlementRequestSchema.shape.rate_base_currency.describe('Trip currency from the quote'),
+      rate_base_currency:
+        budgetCreateSettlementRequestSchema.shape.rate_base_currency.describe('Trip currency from the quote'),
       tripId: idSchema,
       from_user_id: idSchema.describe('User ID of the member who paid'),
       to_user_id: idSchema.describe('User ID of the member who received the payment'),
@@ -697,7 +688,17 @@ export class BudgetMcp {
     if (!(await this.guards.hasTripPermission('budget_edit', tripId, ctx.userId))) return permissionDenied();
     const settlement = await this.budget.createSettlement(
       tripId,
-      { from_user_id, to_user_id, amount, currency, exchange_rate, rate_base_currency, exchange_rate_note, settled_at, note },
+      {
+        from_user_id,
+        to_user_id,
+        amount,
+        currency,
+        exchange_rate,
+        rate_base_currency,
+        exchange_rate_note,
+        settled_at,
+        note,
+      },
       ctx.userId,
     );
     if (!settlement) return errorResult('Settlement not found.');

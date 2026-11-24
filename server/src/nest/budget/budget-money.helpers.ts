@@ -136,16 +136,26 @@ export function settlementFx(opts: SettlementRates, hasSelectedRows: boolean) {
   const displayUnit = 10 ** Math.max(0, 2 - currencyDecimals(currency));
   const tripUnit = 10 ** Math.max(0, 2 - currencyDecimals(trip));
   const displayRate = currency === trip ? 1 : bridge;
-  const convertRow = (rowCurrency: string | null | undefined, saved: number | null, source?: string, payment = false) => {
+  const convertRow = (
+    rowCurrency: string | null | undefined,
+    saved: number | null,
+    source?: string,
+    payment = false,
+  ) => {
     const from = rowCurrency?.trim().toUpperCase() || (payment ? currency : trip);
     const booked = from !== trip && source !== 'identity' && isFrozenRate(saved, source) ? saved : null;
     const fromRate = booked ?? rateFor(from) ?? (from === currency ? displayRate : null);
     // The frozen quote only covers the row currency ↔ trip currency pair.
     const toTrip = fromRate === null ? null : (amount: number) => amount / fromRate;
     const direct = booked === null ? quoteRatio(global, currency, from) : null;
-    const toDisplay = from === currency ? (amount: number) => amount
-      : displayRate !== null && toTrip ? (amount: number) => toTrip(amount) * displayRate
-      : direct === null ? null : (amount: number) => amount * direct;
+    const toDisplay =
+      from === currency
+        ? (amount: number) => amount
+        : displayRate !== null && toTrip
+          ? (amount: number) => toTrip(amount) * displayRate
+          : direct === null
+            ? null
+            : (amount: number) => amount * direct;
     return { toTrip, toDisplay };
   };
   return { currency, trip, bridge: displayRate, displayUnit, tripUnit, convertRow };
@@ -155,18 +165,23 @@ export function settlementFx(opts: SettlementRates, hasSelectedRows: boolean) {
 export function allocateShownUnits(cents: number[], unit: number, shownTotal?: number): number[] {
   if (unit === 1) return cents;
   const whole = cents.map((value) => Math.floor(value / unit));
-  const target = shownTotal === undefined
-    ? Math.round(cents.reduce((sum, value) => sum + value, 0) / unit)
-    : shownTotal / unit;
+  const target =
+    shownTotal === undefined ? Math.round(cents.reduce((sum, value) => sum + value, 0) / unit) : shownTotal / unit;
   const remainder = target - whole.reduce((sum, value) => sum + value, 0);
-  const order = cents.map((value, i) => ({ i, frac: value - whole[i] * unit }))
+  const order = cents
+    .map((value, i) => ({ i, frac: value - whole[i] * unit }))
     .sort((a, b) => b.frac - a.frac || a.i - b.i);
   for (let k = 0; k < remainder && k < order.length; k++) whole[order[k].i]++;
   return whole.map((value) => value * unit);
 }
 
 type ParticipantBalance = { user_id: number; username: string; avatar_url: string | null; cents: number };
-type SettlementFlow = { from: Omit<ParticipantBalance, 'cents'>; to: Omit<ParticipantBalance, 'cents'>; amount: number; exchange_rate?: number };
+type SettlementFlow = {
+  from: Omit<ParticipantBalance, 'cents'>;
+  to: Omit<ParticipantBalance, 'cents'>;
+  amount: number;
+  exchange_rate?: number;
+};
 
 export function settlementFlows(ledger: ParticipantBalance[]): SettlementFlow[] {
   const debtors = ledger.filter((p) => p.cents < 0).map((p) => ({ ...p, remaining: -p.cents }));

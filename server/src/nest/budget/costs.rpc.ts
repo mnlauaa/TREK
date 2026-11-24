@@ -152,9 +152,7 @@ export class CostsRpc {
     return this.guards.tripRead(params, ctx, async (actor) => {
       const tripId = rowIdParam(params.tripId, 'tripId');
       await this.requireBudgetAddon(tripId, actor);
-      return this.costWrite(() =>
-        this.exchangeRates.resolveExchangeRate(tripId, str(params.currency, 'currency')),
-      );
+      return this.costWrite(() => this.exchangeRates.resolveExchangeRate(tripId, str(params.currency, 'currency')));
     });
   }
 

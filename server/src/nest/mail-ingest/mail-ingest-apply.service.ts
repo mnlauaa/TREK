@@ -306,7 +306,11 @@ export class MailIngestApplyService {
    * there is no cost to write, null where the mail names a price that cannot
    * be written without guessing (the field is marked instead).
    */
-  private async costOf(item: BookingImportPreviewItem, trip: TripOption, forwarderId: number): Promise<CostEntry | null> {
+  private async costOf(
+    item: BookingImportPreviewItem,
+    trip: TripOption,
+    forwarderId: number,
+  ): Promise<CostEntry | null> {
     const meta = item.metadata ?? {};
     if (meta.price == null || meta.price === '') return undefined;
     if (!(await this.addons.isEnabledForTrip(trip.id, ADDON_IDS.BUDGET))) return undefined;

@@ -10,6 +10,7 @@ import { Trips } from '../../../src/db/entities/Trips.entity';
 import type { TripAccess } from '../../../src/db/repositories/Trips.repository';
 import { BudgetController } from '../../../src/nest/budget/budget.controller';
 import { ExchangeRatesService } from '../../../src/nest/budget/exchange-rates.service';
+import { inOrder } from '../../../src/nest/common/in-order';
 import { withRequestContext } from '../../../src/nest/database/request-context';
 import type { User } from '../../../src/types';
 import { makeBudgetItem, addBudgetItemMember, addBudgetItemPayer } from '../../helpers/factories/budget';
@@ -513,77 +514,117 @@ describe('Settlement tools', () => {
   });
 
   it.each([
-    { name: 'trip default', tripRate: 0.02, globalRate: 0.04, expenses: [['JPY', 5000, 1, 'identity']], repayment: 50, basis: 0.02 },
-    { name: 'global fallback', tripRate: null, globalRate: 0.02, expenses: [['JPY', 5000, 1, 'identity']], repayment: 50, basis: 0.02 },
-    { name: 'different saved rates', tripRate: 0.04, globalRate: 0.05, expenses: [
-      ['HKD', 100, 0.02, 'explicit'], ['HKD', 200, 0.04, 'explicit'], ['JPY', 5000, 1, 'identity'],
-    ], repayment: 250, basis: 1 / 30 },
-  ] as const)('books the selected-currency quote unchanged using $name', async ({
-    name, tripRate, globalRate, expenses, repayment, basis,
-  }) => {
-    const { user, other, trip } = await tripWithTwo();
-    await updateRows(orm, Trips, { id: trip.id }, { currency: 'JPY' });
-    const rates = (await bootTestApp(realtime)).get(ExchangeRatesService);
-    if (tripRate !== null) {
-      await withRequestContext(orm, () => rates.setTripExchangeRate(trip.id, 'HKD', tripRate, user.id));
-    }
-    const global = vi.spyOn(ExchangeRatesService.prototype, 'getRates').mockResolvedValue({ JPY: 1, HKD: globalRate });
-    try {
-      for (const [currency, amount, exchange_rate, exchange_rate_source] of expenses) {
-        const item = await makeBudgetItem(orm, trip.id, { total_price: amount });
-        await updateRows(orm, BudgetItems, { id: item.id }, { currency, exchange_rate, exchange_rate_source });
-        await addBudgetItemMember(orm, item.id, user.id, { paid: 0 });
-        await addBudgetItemMember(orm, item.id, other.id, { paid: 0 });
-        await addBudgetItemPayer(orm, item.id, user.id, amount);
+    {
+      name: 'trip default',
+      tripRate: 0.02,
+      globalRate: 0.04,
+      expenses: [['JPY', 5000, 1, 'identity']],
+      repayment: 50,
+      basis: 0.02,
+    },
+    {
+      name: 'global fallback',
+      tripRate: null,
+      globalRate: 0.02,
+      expenses: [['JPY', 5000, 1, 'identity']],
+      repayment: 50,
+      basis: 0.02,
+    },
+    {
+      name: 'different saved rates',
+      tripRate: 0.04,
+      globalRate: 0.05,
+      expenses: [
+        ['HKD', 100, 0.02, 'explicit'],
+        ['HKD', 200, 0.04, 'explicit'],
+        ['JPY', 5000, 1, 'identity'],
+      ],
+      repayment: 250,
+      basis: 1 / 30,
+    },
+  ] as const)(
+    'books the selected-currency quote unchanged using $name',
+    async ({ name, tripRate, globalRate, expenses, repayment, basis }) => {
+      const { user, other, trip } = await tripWithTwo();
+      await updateRows(orm, Trips, { id: trip.id }, { currency: 'JPY' });
+      const rates = (await bootTestApp(realtime)).get(ExchangeRatesService);
+      if (tripRate !== null) {
+        await withRequestContext(orm, () => rates.setTripExchangeRate(trip.id, 'HKD', tripRate, user.id));
       }
-      const access = { id: trip.id, user_id: user.id, currency: 'JPY' } as TripAccess;
-      const actor = { id: user.id } as User;
-      const read = (base: string) => restSettlement(actor, access, String(trip.id), { base });
-      const quote = await read('HKD');
-      expect(quote.currency).toBe('HKD');
-      expect(quote.flows).toHaveLength(1);
-      expect(quote.flows[0].amount).toBe(repayment);
-      expect(quote.flows[0].exchange_rate).toBeCloseTo(basis);
-      expect((await read('JPY')).flows[0].amount).toBeCloseTo(repayment / basis);
-
-      const controller = (await bootTestApp(realtime)).get(BudgetController);
-      const refetch = vi.spyOn(ExchangeRatesService.prototype, 'getGlobalRateSnapshot');
+      const global = vi
+        .spyOn(ExchangeRatesService.prototype, 'getRates')
+        .mockResolvedValue({ JPY: 1, HKD: globalRate });
       try {
-        const save = (amount: number) => withRequestContext(orm, () => controller.createSettlement(actor, String(trip.id), {
-          from_user_id: other.id, to_user_id: user.id, amount,
-          currency: quote.currency, exchange_rate: quote.flows[0].exchange_rate, rate_base_currency: quote.trip_currency,
-        }));
-        let remaining = quote.flows[0].amount;
-        if (name === 'different saved rates') {
-          const partial = await save(100);
-          expect(partial.settlement).toMatchObject({ amount: 100, currency: 'HKD' });
-          remaining = (await read('HKD')).flows[0].amount;
-          expect(remaining).toBe(150);
-          expect((await read('JPY')).flows[0].amount).toBe(4500);
-        }
-        const payment = await save(remaining);
-        expect(payment.settlement).toMatchObject({
-          amount: remaining, currency: 'HKD', exchange_rate: quote.flows[0].exchange_rate,
+        await inOrder(expenses, async ([currency, amount, exchange_rate, exchange_rate_source]) => {
+          const item = await makeBudgetItem(orm, trip.id, { total_price: amount });
+          await updateRows(orm, BudgetItems, { id: item.id }, { currency, exchange_rate, exchange_rate_source });
+          await addBudgetItemMember(orm, item.id, user.id, { paid: 0 });
+          await addBudgetItemMember(orm, item.id, other.id, { paid: 0 });
+          await addBudgetItemPayer(orm, item.id, user.id, amount);
         });
-        expect(refetch).not.toHaveBeenCalled();
+        const access = { id: trip.id, user_id: user.id, currency: 'JPY' } as TripAccess;
+        const actor = { id: user.id } as User;
+        const read = (base: string) => restSettlement(actor, access, String(trip.id), { base });
+        const quote = await read('HKD');
+        expect(quote.currency).toBe('HKD');
+        expect(quote.flows).toHaveLength(1);
+        expect(quote.flows[0].amount).toBe(repayment);
+        expect(quote.flows[0].exchange_rate).toBeCloseTo(basis);
+        expect((await read('JPY')).flows[0].amount).toBeCloseTo(repayment / basis);
+
+        const controller = (await bootTestApp(realtime)).get(BudgetController);
+        const refetch = vi.spyOn(ExchangeRatesService.prototype, 'getGlobalRateSnapshot');
+        try {
+          const save = (amount: number) =>
+            withRequestContext(orm, () =>
+              controller.createSettlement(actor, String(trip.id), {
+                from_user_id: other.id,
+                to_user_id: user.id,
+                amount,
+                currency: quote.currency,
+                exchange_rate: quote.flows[0].exchange_rate,
+                rate_base_currency: quote.trip_currency,
+              }),
+            );
+          let remaining = quote.flows[0].amount;
+          if (name === 'different saved rates') {
+            const partial = await save(100);
+            expect(partial.settlement).toMatchObject({ amount: 100, currency: 'HKD' });
+            remaining = (await read('HKD')).flows[0].amount;
+            expect(remaining).toBe(150);
+            expect((await read('JPY')).flows[0].amount).toBe(4500);
+          }
+          const payment = await save(remaining);
+          expect(payment.settlement).toMatchObject({
+            amount: remaining,
+            currency: 'HKD',
+            exchange_rate: quote.flows[0].exchange_rate,
+          });
+          expect(refetch).not.toHaveBeenCalled();
+        } finally {
+          refetch.mockRestore();
+        }
+        expect((await read('HKD')).flows).toEqual([]);
+        expect((await read('JPY')).flows).toEqual([]);
       } finally {
-        refetch.mockRestore();
+        global.mockRestore();
       }
-      expect((await read('HKD')).flows).toEqual([]);
-      expect((await read('JPY')).flows).toEqual([]);
-    } finally {
-      global.mockRestore();
-    }
-  });
+    },
+  );
 
   it('refuses a repayment quote from before the trip changed currency', async () => {
     const { user, other, trip } = await tripWithTwo();
     await updateRows(orm, Trips, { id: trip.id }, { currency: 'JPY' });
     const controller = (await bootTestApp(realtime)).get(BudgetController);
-    const save = () => controller.createSettlement({ id: user.id } as User, String(trip.id), {
-      from_user_id: other.id, to_user_id: user.id, amount: 50,
-      currency: 'HKD', exchange_rate: 0.02, rate_base_currency: 'CNY',
-    });
+    const save = () =>
+      controller.createSettlement({ id: user.id } as User, String(trip.id), {
+        from_user_id: other.id,
+        to_user_id: user.id,
+        amount: 50,
+        currency: 'HKD',
+        exchange_rate: 0.02,
+        rate_base_currency: 'CNY',
+      });
     await expect(withRequestContext(orm, save)).rejects.toMatchObject({ status: 409 });
     expect(await countRows(orm, BudgetSettlements, { trip: trip.id })).toBe(0);
   });

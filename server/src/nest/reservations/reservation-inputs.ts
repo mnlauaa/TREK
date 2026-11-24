@@ -84,7 +84,14 @@ export type AccommodationTimesMeta = {
 
 /** A booking's linked cost as a write takes it. */
 export type BudgetEntry =
-  { total_price?: number; category?: string; currency?: string | null; exchange_rate?: number; exchange_rate_note?: string | null } | undefined;
+  | {
+      total_price?: number;
+      category?: string;
+      currency?: string | null;
+      exchange_rate?: number;
+      exchange_rate_note?: string | null;
+    }
+  | undefined;
 export type PreparedBudgetEntry = (NonNullable<BudgetEntry> & { preparedRate?: PreparedRate }) | undefined;
 
 /** A booking's cost as written: the entry, dated on the booking's day (bookingDate), never by the caller. */

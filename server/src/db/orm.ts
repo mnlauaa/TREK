@@ -6,7 +6,7 @@ import { preMigrateSnapshot } from './pre-migrate-snapshot';
 import { warnAboutSchemaGaps } from './schema-gaps';
 import type { AnyEntity, EntityClass, EntityManager, EntitySchema, IDatabaseDriver, MikroORM } from '@mikro-orm/core';
 import type { SqlEntityManager } from '@mikro-orm/sql';
-import { MikroORM as SqliteMikroORM, type SqliteConnection } from '@mikro-orm/sqlite';
+import type { SqliteConnection } from '@mikro-orm/sqlite';
 
 /**
  * Schema ownership at startup. The migrator is async, so the schema is brought

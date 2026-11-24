@@ -1,5 +1,5 @@
-import { commonCurrencyListSchema } from '../settings/settings.schema';
 import { rowIdInputSchema } from '../common/primitives.schema';
+import { commonCurrencyListSchema } from '../settings/settings.schema';
 
 import { z } from 'zod';
 

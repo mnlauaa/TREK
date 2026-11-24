@@ -945,10 +945,15 @@ describe('getSharedTripData redaction (#2320)', () => {
 
     const data = await svc.getSharedTripData(token);
     if (!data) throw new Error('no shared payload');
-    expect(data.days).toEqual([{
-      id: day.id, day_number: day.day_number, date: '2026-09-01', title: 'Paris',
-      timing: { enabled: true, start: '09:00', travel: [] },
-    }]);
+    expect(data.days).toEqual([
+      {
+        id: day.id,
+        day_number: day.day_number,
+        date: '2026-09-01',
+        title: 'Paris',
+        timing: { enabled: true, start: '09:00', travel: [] },
+      },
+    ]);
     expect(Object.keys(data.dayNotes[day.id][0]).sort()).toEqual([
       'color',
       'day_id',
