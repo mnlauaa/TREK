@@ -3,36 +3,8 @@ name: Native apps
 permissions:
   contents: read
 
-# Builds the iOS and Android shells whenever they, their address screen or the
-# Capacitor plugins change. Nobody on the team has to own a Mac for the Swift
-# side to be compiled on every change, and every run leaves a debug APK to
-# install on a phone.
-#
-# Unsigned on purpose: signing and store uploads need secrets that fork PRs do
-# not get, and belong in a release workflow of their own.
-#
-# package-lock.json is not a trigger: every dependency bump touches it, and a
-# Mac build per bump only held the queue. The shells link nothing but the
-# @capacitor/* packages, all declared in client/package.json, and a Dependabot
-# bump of one of them raises the range there too, so it still runs. The client
-# typecheck and the watch and widget snapshot tests run in test.yml on every
-# change under client/.
+# Build the native apps on demand. This fork deploys the web app to Lightsail.
 on:
-  pull_request:
-    paths:
-      - 'client/android/**'
-      - 'client/ios/**'
-      - 'client/native-shell/**'
-      - 'client/src/native/trekShell.ts'
-      - 'client/src/native/watch.ts'
-      - 'client/src/native/serverAddress.ts'
-      - 'client/capacitor.config.ts'
-      - 'client/vite.native.config.js'
-      - 'client/scripts/check-store-metadata.mjs'
-      - 'client/fastlane/**'
-      - 'client/package.json'
-      - 'shared/src/i18n/*/native.ts'
-      - '.github/workflows/native.yml'
   workflow_dispatch:
 
 concurrency:
